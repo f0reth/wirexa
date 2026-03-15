@@ -1,0 +1,146 @@
+import { clsx } from "clsx";
+import { ChevronRight, Folder, FolderPlus, Plus, Trash2 } from "lucide-solid";
+import { createSignal, For, Show } from "solid-js";
+import type { Collection, TreeItem } from "../http/types";
+import styles from "./sidebar.module.css";
+import { TreeItemNode } from "./tree-item-node";
+
+export function CollectionNode(props: {
+  collection: Collection;
+  onDeleteCollection: (id: string, name: string) => void;
+  onAddFolder: (collectionId: string, parentId: string) => void;
+  onAddRequest: (collectionId: string, parentId: string) => void;
+  onDeleteItem: (
+    collectionId: string,
+    itemId: string,
+    name: string,
+    type: string,
+  ) => void;
+  onSelectRequest: (item: TreeItem) => void;
+  onRenameItem: (collectionId: string, itemId: string, name: string) => void;
+  onRenameCollection: (id: string, name: string) => void;
+  activeRequestId: string | null;
+  dirtyRequestId: string | null;
+  renamingItemId: string | null;
+  setRenamingItemId: (id: string | null) => void;
+  renamingCollectionId: string | null;
+  setRenamingCollectionId: (id: string | null) => void;
+}) {
+  const [expanded, setExpanded] = createSignal(true);
+
+  const isRenaming = () => props.renamingCollectionId === props.collection.id;
+
+  const handleRenameCommit = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed && trimmed !== props.collection.name) {
+      props.onRenameCollection(props.collection.id, trimmed);
+    }
+    props.setRenamingCollectionId(null);
+  };
+
+  return (
+    <div class={styles.treeNode}>
+      <div class={styles.treeNodeHeader}>
+        <button
+          type="button"
+          class={styles.treeNodeToggle}
+          onClick={() => setExpanded(!expanded())}
+        >
+          <ChevronRight
+            size={12}
+            class={clsx(styles.chevron, expanded() && styles.chevronExpanded)}
+          />
+          <Folder size={14} />
+          <Show
+            when={isRenaming()}
+            fallback={
+              <>
+                {/* biome-ignore lint/a11y/noStaticElementInteractions: double-click-to-rename is a progressive enhancement; primary rename path is accessible via keyboard */}
+                <span
+                  class={styles.treeNodeName}
+                  onDblClick={(e) => {
+                    e.stopPropagation();
+                    props.setRenamingCollectionId(props.collection.id);
+                  }}
+                >
+                  {props.collection.name}
+                </span>
+              </>
+            }
+          >
+            <input
+              class={styles.renameInput}
+              value={props.collection.name}
+              ref={(el) => {
+                requestAnimationFrame(() => {
+                  el.focus();
+                  el.select();
+                });
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter")
+                  handleRenameCommit(e.currentTarget.value);
+                if (e.key === "Escape") props.setRenamingCollectionId(null);
+              }}
+              onBlur={(e) => handleRenameCommit(e.currentTarget.value)}
+            />
+          </Show>
+        </button>
+        <div class={styles.treeNodeActions}>
+          <button
+            type="button"
+            class={styles.treeActionBtn}
+            title="Add folder"
+            onClick={() => props.onAddFolder(props.collection.id, "")}
+          >
+            <FolderPlus size={12} />
+          </button>
+          <button
+            type="button"
+            class={styles.treeActionBtn}
+            title="Add request"
+            onClick={() => props.onAddRequest(props.collection.id, "")}
+          >
+            <Plus size={12} />
+          </button>
+          <button
+            type="button"
+            class={clsx(styles.treeActionBtn, styles.treeActionBtnDanger)}
+            title="Delete collection"
+            onClick={() =>
+              props.onDeleteCollection(
+                props.collection.id,
+                props.collection.name,
+              )
+            }
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      </div>
+      <Show when={expanded()}>
+        <div class={styles.treeChildren}>
+          <For each={props.collection.items}>
+            {(item) => (
+              <TreeItemNode
+                item={item}
+                collectionId={props.collection.id}
+                depth={1}
+                onAddFolder={props.onAddFolder}
+                onAddRequest={props.onAddRequest}
+                onDeleteItem={props.onDeleteItem}
+                onSelectRequest={props.onSelectRequest}
+                onRenameItem={props.onRenameItem}
+                activeRequestId={props.activeRequestId}
+                dirtyRequestId={props.dirtyRequestId}
+                renamingItemId={props.renamingItemId}
+                setRenamingItemId={props.setRenamingItemId}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  );
+}

@@ -1,0 +1,138 @@
+version: "2"
+
+issues:
+  # 同一内容のIssue最大数
+  max-same-issues: 50
+
+# -----------------------------
+# Formatter
+# -----------------------------
+formatters:
+  enable:
+    # gofmtの厳格版
+    - gofumpt
+
+    # import整理
+    - goimports
+
+  settings:
+    gofumpt:
+      # gofumpt追加ルール
+      extra-rules: true
+
+    goimports:
+      # 自分のmodule
+      local-prefixes:
+        - github.com/f0reth/Wirexa
+
+# -----------------------------
+# Linters
+# -----------------------------
+linters:
+  enable:
+    # ---------- Go公式 ----------
+    - govet
+
+    # ---------- 最重要 ----------
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - unused
+
+    # ---------- error処理 ----------
+    - errorlint
+    - nilerr
+    - nilnil
+
+    # ---------- セキュリティ ----------
+    - gosec
+
+    # ---------- IO / DB ----------
+    - bodyclose
+    - sqlclosecheck
+    - rowserrcheck
+
+    # ---------- コード品質 ----------
+    - revive
+    - gocritic
+    - goconst
+
+    # ---------- モダンGo ----------
+    - modernize
+    - copyloopvar
+
+    # ---------- 最適化 ----------
+    - perfsprint
+    - unconvert
+
+    # ---------- テスト ----------
+    - testifylint
+    - tparallel
+
+    # ---------- lint管理 ----------
+    - nolintlint
+
+    # ---------- その他 ----------
+    - whitespace
+
+  settings:
+    errcheck:
+      # 型アサーションもチェック
+      check-type-assertions: true
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1016
+        - -QF1008
+
+    perfsprint:
+      strconcat: false
+
+    nolintlint:
+      allow-no-explanation:
+        - gofumpt
+      require-explanation: true
+      require-specific: true
+
+    rowserrcheck:
+      packages:
+        - github.com/jmoiron/sqlx
+
+  # -----------------------------
+  # Exclusions
+  # -----------------------------
+  exclusions:
+    warn-unused: true
+
+    presets:
+      - std-error-handling
+      - common-false-positives
+
+    rules:
+      - source: "TODO"
+        linters:
+          - revive
+
+      - path: "_test\\.go"
+        linters:
+          - gosec
+          - errcheck
+
+      - linters:
+          - revive
+        text: "stutters"
+
+      - linters:
+          - revive
+        text: "var-naming: type Http"
+
+      - linters:
+          - staticcheck
+        text: "ST1003: type Http"

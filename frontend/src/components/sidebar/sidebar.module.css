@@ -1,0 +1,398 @@
+/* ── Sidebar container ──────────────────────────────────── */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--sidebar);
+  backdrop-filter: blur(20px) saturate(1.5);
+}
+
+.sidebarEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 1rem;
+}
+
+.sidebarEmptyText {
+  font-size: 0.75rem;
+  color: var(--color-muted-foreground);
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* ── Activity bar (vertical icon bar) ─────────────────── */
+.activityBar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 48px;
+  height: 100%;
+  padding: 0.25rem 0;
+  gap: 0.25rem;
+  background-color: var(--activity-bar-bg);
+  box-shadow: 1px 0 0 var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.activityIcon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: var(--color-muted-foreground);
+  background: none;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition:
+    color var(--transition-normal),
+    background-color var(--transition-normal);
+}
+
+.activityIcon:hover {
+  color: var(--color-foreground);
+  background-color: var(--hover-overlay-strong);
+}
+
+.activityIconActive {
+  color: var(--color-foreground);
+  background-color: var(--active-overlay);
+  box-shadow: var(--inner-glow);
+}
+
+.activityIconActive::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 25%;
+  height: 50%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background-color: var(--color-primary);
+}
+
+/* ── Collection tree ───────────────────────────────────── */
+.collectionTree {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.collectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.625rem;
+  height: 2.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.collectionTitle {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--color-muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.collectionAction {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--color-muted-foreground);
+}
+
+.collectionAction:hover {
+  color: var(--color-foreground);
+}
+
+.createForm {
+  padding: 0.375rem 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.createInput {
+  font-size: 0.75rem;
+}
+
+.treeScroll {
+  flex: 1;
+}
+
+.treeList {
+  padding: 0.25rem;
+}
+
+.emptyTree {
+  font-size: 0.75rem;
+  color: var(--color-muted-foreground);
+  text-align: center;
+  padding: 1.5rem 0.5rem;
+}
+
+/* ── Tree nodes ────────────────────────────────────────── */
+.treeNode {
+  display: flex;
+  flex-direction: column;
+}
+
+.treeNodeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.25rem 0.375rem;
+  border-radius: 0.375rem;
+  transition: background-color var(--transition-fast);
+}
+
+.treeNodeHeader:hover {
+  background-color: var(--hover-overlay);
+}
+
+.treeNodeToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  color: var(--color-foreground);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0;
+  text-align: left;
+}
+
+.treeNodeName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.treeNodeActions {
+  display: none;
+  align-items: center;
+  gap: 0.125rem;
+  flex-shrink: 0;
+}
+
+.treeNodeHeader:hover .treeNodeActions {
+  display: flex;
+}
+
+.treeActionBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: none;
+  background: none;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  border-radius: 0.25rem;
+  padding: 0;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.treeActionBtn:hover {
+  color: var(--color-foreground);
+  background-color: var(--color-accent);
+}
+
+.treeActionBtnDanger:hover {
+  color: var(--color-destructive);
+  background-color: color-mix(
+    in oklch,
+    var(--color-destructive) 15%,
+    transparent
+  );
+}
+
+.treeChildren {
+  margin-left: 0.25rem;
+}
+
+.chevron {
+  transition: transform var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.chevronExpanded {
+  transform: rotate(90deg);
+}
+
+/* ── Request items ─────────────────────────────────────── */
+.requestItem {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.75rem;
+  color: var(--color-foreground);
+  text-align: left;
+  transition: background-color var(--transition-fast);
+}
+
+.requestItem:hover {
+  background-color: var(--hover-overlay);
+}
+
+.requestRow {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: 100%;
+  border-radius: 0.375rem;
+  padding-right: 0.25rem;
+  transition: background-color var(--transition-fast);
+}
+
+.requestRow:hover {
+  background-color: var(--hover-overlay);
+}
+
+.requestSelectBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.25rem 0 0.25rem 0.5rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.75rem;
+  color: var(--color-foreground);
+  text-align: left;
+}
+
+.requestItemActive {
+  background-color: var(--selected-bg);
+  box-shadow: var(--inner-glow);
+}
+
+.requestItemActive:hover {
+  background-color: var(--selected-bg);
+}
+
+.dirtyDot {
+  flex-shrink: 0;
+  color: var(--color-muted-foreground);
+}
+
+.methodBadge {
+  font-size: 0.625rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.requestName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Broker items ─────────────────────────────────────── */
+.brokerItem {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.brokerItem:hover {
+  background-color: var(--hover-overlay);
+}
+
+.brokerItem:hover .treeNodeActions {
+  display: flex;
+}
+
+.brokerItemActive {
+  background-color: var(--selected-bg);
+  box-shadow: var(--inner-glow);
+}
+
+.brokerItemActive:hover {
+  background-color: var(--selected-bg);
+}
+
+.brokerDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.brokerDotConnected {
+  background-color: var(--color-success);
+}
+
+.brokerDotDisconnected {
+  background-color: var(--color-muted-foreground);
+}
+
+.brokerInfo {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.brokerName {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brokerUrl {
+  font-size: 0.625rem;
+  color: var(--color-muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Inline rename input ──────────────────────────────── */
+.renameInput {
+  font-size: 0.75rem;
+  font-family: inherit;
+  font-weight: 500;
+  color: var(--color-foreground);
+  background: transparent;
+  border: 1px solid var(--ring);
+  border-radius: 0.25rem;
+  padding: 0 0.25rem;
+  outline: none;
+  min-width: 0;
+  flex: 1;
+}

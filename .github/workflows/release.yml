@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  lint-go:
+    name: Go Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: golangci/golangci-lint-action@v7
+
+  lint-frontend:
+    name: Frontend Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install
+        working-directory: frontend
+
+      - run: bun run ci
+        working-directory: frontend
+
+  build:
+    name: Build Windows
+    needs: [lint-go, lint-frontend]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - run: bun install
+        working-directory: frontend
+
+      - name: Build
+        run: wails build -trimpath -ldflags="-s -w"
+
+      - name: Create zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/bin/Wirexa.exe -DestinationPath Wirexa-${{ github.ref_name }}-windows-amd64.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: Wirexa-${{ github.ref_name }}-windows-amd64.zip

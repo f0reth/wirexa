@@ -1,0 +1,41 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: none;
+  padding: 0.0625rem 0.5rem;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 500;
+  width: fit-content;
+  white-space: nowrap;
+  flex-shrink: 0;
+  overflow: hidden;
+  letter-spacing: -0.01em;
+}
+
+.variantDefault {
+  background-color: var(--color-primary);
+  color: var(--color-primary-foreground);
+  box-shadow: var(--inner-glow);
+}
+
+.variantSecondary {
+  background-color: var(--surface-2);
+  color: var(--color-secondary-foreground);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--inner-glow);
+}
+
+.variantDestructive {
+  background-color: var(--color-destructive);
+  color: white;
+  box-shadow: var(--inner-glow);
+}
+
+.variantOutline {
+  border: 1px solid var(--border-prominent);
+  background-color: transparent;
+  color: var(--color-foreground);
+}

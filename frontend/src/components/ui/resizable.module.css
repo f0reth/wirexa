@@ -1,0 +1,91 @@
+.panelGroup {
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+
+.panelGroupHorizontal {
+  flex-direction: row;
+}
+
+.panelGroupVertical {
+  flex-direction: column;
+}
+
+.panel {
+  overflow: hidden;
+}
+
+.handle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: transparent;
+  flex-shrink: 0;
+  z-index: 10;
+  border: none;
+  padding: 0;
+  outline: none;
+}
+
+.handle::after {
+  content: "";
+  position: absolute;
+  background-color: var(--border-subtle);
+  pointer-events: none;
+  transition: background-color var(--transition-normal);
+}
+
+.handle:hover::after {
+  background-color: var(--border-prominent);
+}
+
+.handleHorizontal {
+  width: 5px;
+  cursor: col-resize;
+}
+
+.handleHorizontal::after {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.handleVertical {
+  height: 5px;
+  width: 100%;
+  cursor: row-resize;
+}
+
+.handleVertical::after {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.handleGrip {
+  z-index: 10;
+  display: flex;
+  height: 1rem;
+  width: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border-prominent);
+  background-color: var(--grip-top);
+  box-shadow: var(--shadow-sm);
+  transition: background-color var(--transition-normal);
+}
+
+.handle:hover .handleGrip {
+  background-color: var(--grip-hover-top);
+}
+
+.handleGripVertical {
+  transform: rotate(90deg);
+}

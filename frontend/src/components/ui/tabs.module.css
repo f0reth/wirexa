@@ -1,0 +1,37 @@
+.tabList {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+}
+
+.tab {
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--foreground);
+}
+
+.tabActive {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.tabActive:hover {
+  color: var(--primary);
+}
+
+.tabPanel {
+  display: contents;
+}

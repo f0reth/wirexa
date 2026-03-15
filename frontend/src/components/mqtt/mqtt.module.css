@@ -1,0 +1,987 @@
+/* ── Container ─────────────────────────────────────────── */
+.container {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+}
+
+/* ── Connection bar ─────────────────────────────────────── */
+.connectionBar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--surface-2);
+  padding: 0.75rem 1rem;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-bar);
+}
+
+.connectionStatus {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.statusText {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+.statusConnected {
+  color: var(--color-success);
+}
+
+.statusDisconnected {
+  color: var(--color-muted-foreground);
+}
+
+.brokerInput {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+/* ── Tab bar (segmented control style) ──────────────────── */
+.tabBar {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--surface-2);
+  padding: 0 1rem;
+  height: 2.75rem;
+  flex-shrink: 0;
+  gap: 0.25rem;
+  box-shadow: var(--shadow-bar);
+}
+
+.tab {
+  padding: 0.375rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-muted-foreground);
+  background: none;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition:
+    color var(--transition-normal),
+    background-color var(--transition-normal),
+    box-shadow var(--transition-normal);
+  letter-spacing: -0.01em;
+}
+
+.tab:hover {
+  color: var(--color-foreground);
+  background-color: var(--hover-overlay);
+}
+
+.tabActive {
+  color: var(--color-foreground);
+  background-color: var(--surface-3);
+  box-shadow: var(--shadow-sm), var(--inner-glow);
+}
+
+.tabActive:hover {
+  color: var(--color-foreground);
+  background-color: var(--surface-3);
+}
+
+/* ── Main panels ─────────────────────────────────────────── */
+.mainContent {
+  flex: 1;
+  overflow: hidden;
+}
+
+.tabContent {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Section header (shared) ────────────────────────────── */
+.sectionHeader {
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--surface-2);
+  padding: 0 1rem;
+  height: 2.75rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: var(--shadow-bar);
+}
+
+.sectionHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.sectionTitle {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  color: var(--color-foreground);
+  letter-spacing: -0.01em;
+}
+
+/* ── Header action button ───────────────────────────────── */
+.headerAction {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  border-radius: 0.375rem;
+  border: none;
+  background: var(--color-muted);
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  transition:
+    color var(--transition-normal),
+    background-color var(--transition-normal);
+  font-family: inherit;
+  letter-spacing: -0.01em;
+}
+
+.headerAction:hover {
+  color: var(--color-foreground);
+  background-color: var(--color-accent);
+}
+
+.headerActionActive {
+  color: var(--color-primary);
+  background-color: color-mix(in oklch, var(--color-primary) 15%, transparent);
+}
+
+/* ── Shared list styles ─────────────────────────────────── */
+.listPadding {
+  padding: 0.625rem;
+}
+
+.emptyText {
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--color-muted-foreground);
+  padding: 2rem 0;
+}
+
+.itemList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.deleteButton {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--color-muted-foreground);
+}
+
+.deleteButton:hover {
+  color: var(--color-destructive);
+}
+
+.qosSelect {
+  width: 80px;
+}
+
+/* ── Subscriptions panel ─────────────────────────────────── */
+.subscriptionsPanel {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  background-color: var(--surface-1);
+}
+
+.addSubscriptionSection {
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.625rem;
+  flex-shrink: 0;
+}
+
+.addSubscriptionInputs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.addSubscriptionRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.monoInput {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.subscribeButton {
+  flex: 1;
+}
+
+.subscriptionScrollArea {
+  flex: 1;
+}
+
+.subscriptionItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 0.5rem;
+  background-color: var(--surface-2);
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm), var(--inner-glow);
+  transition:
+    box-shadow var(--transition-normal),
+    border-color var(--transition-normal);
+}
+
+.subscriptionItem:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-prominent);
+}
+
+.subscriptionInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.subscriptionTopic {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--color-foreground);
+}
+
+/* ── Broker topics panel ─────────────────────────────────── */
+.brokerTopicsPanel {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  background-color: var(--surface-1);
+}
+
+.brokerTopicItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 0.5rem;
+  background-color: var(--surface-2);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm), var(--inner-glow);
+  transition:
+    box-shadow var(--transition-normal),
+    border-color var(--transition-normal);
+}
+
+.brokerTopicItem:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-prominent);
+}
+
+.brokerTopicName {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.brokerTopicAddButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-muted);
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  transition:
+    color var(--transition-normal),
+    background-color var(--transition-normal);
+}
+
+.brokerTopicAddButton:hover:not(:disabled) {
+  color: var(--color-primary-foreground);
+  background-color: var(--color-primary);
+}
+
+.brokerTopicAddButtonDone {
+  color: var(--color-primary-foreground);
+  background-color: var(--color-success);
+  cursor: default;
+}
+
+/* ── Messages panel ──────────────────────────────────────── */
+.messagesPanel {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+}
+
+.messagesScrollArea {
+  flex: 1;
+  background-color: var(--surface-1);
+}
+
+.messageItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border-radius: 0.5rem;
+  background-color: var(--surface-2);
+  padding: 0.625rem 0.75rem;
+  text-align: left;
+  transition:
+    border-color var(--transition-normal),
+    background-color var(--transition-normal),
+    box-shadow var(--transition-normal);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  width: 100%;
+  color: var(--color-foreground);
+  font-family: inherit;
+  box-shadow: var(--shadow-sm), var(--inner-glow);
+}
+
+.messageItem:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-prominent);
+  background-color: var(--item-hover-bg);
+}
+
+.messageItemSelected,
+.messageItemSelected:hover {
+  border-color: var(--selected-border);
+  border-width: 1px;
+  background-color: color-mix(
+    in oklch,
+    var(--color-primary) 8%,
+    var(--surface-2)
+  );
+  box-shadow:
+    0 0 0 1px var(--selected-shadow),
+    var(--shadow-sm);
+}
+
+.messageItemHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.messageItemLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.messageTopic {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  color: var(--color-foreground);
+}
+
+.messageTime {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  color: var(--color-muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.messagePayload {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  color: var(--color-muted-foreground);
+}
+
+/* ── Message detail ──────────────────────────────────────── */
+.messageDetail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--surface-1);
+  padding: 1rem;
+  overflow: hidden;
+}
+
+.messageDetailHeader {
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.messageDetailTopic {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-foreground);
+}
+
+.messageDetailBadges {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.messageDetailTime {
+  font-size: 0.6875rem;
+  color: var(--color-muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.messageDetailPayload {
+  flex: 1;
+  overflow: auto;
+  border-radius: 0.5rem;
+  background-color: var(--surface-0);
+  padding: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: var(--color-foreground);
+  margin: 0;
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 3px var(--inset-shadow);
+}
+
+/* ── Presets panel ───────────────────────────────────────── */
+.presetsPanel {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  background-color: var(--surface-1);
+}
+
+.savePresetSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.625rem;
+  flex-shrink: 0;
+}
+
+.presetNameInput {
+  font-size: 0.8125rem;
+}
+
+.savePresetButton {
+  width: 100%;
+}
+
+.presetItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 0.5rem;
+  background-color: var(--surface-2);
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-normal),
+    box-shadow var(--transition-normal),
+    border-color var(--transition-normal);
+  box-shadow: var(--shadow-sm), var(--inner-glow);
+}
+
+.presetItem:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-prominent);
+  background-color: var(--item-hover-bg);
+}
+
+.presetItemBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25rem;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-foreground);
+  font-family: inherit;
+  min-width: 0;
+}
+
+.presetName {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-foreground);
+  letter-spacing: -0.01em;
+}
+
+.presetTopic {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Publish panel ───────────────────────────────────────── */
+.publishPanel {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  background-color: var(--surface-1);
+}
+
+.publishForm {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 1rem;
+}
+
+.publishTopicRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.publishTopicInput {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.publishPayload {
+  flex: 1;
+  resize: none;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  margin-bottom: 0.75rem;
+}
+
+/* ── Broker tab bar ─────────────────────────────────────── */
+.brokerBar {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--surface-2);
+  padding: 0 0.5rem;
+  height: 2.75rem;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-bar);
+}
+
+.brokerTabs {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.brokerTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.brokerTab {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-muted-foreground);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition:
+    color var(--transition-normal),
+    background-color var(--transition-normal),
+    border-color var(--transition-normal),
+    box-shadow var(--transition-normal);
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.brokerTab:hover {
+  color: var(--color-foreground);
+  background-color: var(--hover-overlay);
+}
+
+.brokerTabActive {
+  color: var(--color-foreground);
+  background-color: var(--surface-3);
+  border-color: var(--border-prominent);
+  box-shadow: var(--shadow-sm), var(--inner-glow);
+}
+
+.brokerTabActive:hover {
+  color: var(--color-foreground);
+  background-color: var(--surface-3);
+}
+
+.brokerTabDot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.brokerTabDotConnected {
+  background-color: var(--color-success);
+}
+
+.brokerTabDotDisconnected {
+  background-color: var(--color-muted-foreground);
+}
+
+.brokerTabName {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.brokerTabClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border: none;
+  background: none;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  border-radius: 0.25rem;
+  padding: 0;
+  flex-shrink: 0;
+  transition:
+    color var(--transition-normal),
+    background-color var(--transition-normal);
+}
+
+.brokerTabClose:hover {
+  color: var(--color-destructive);
+  background-color: color-mix(
+    in oklch,
+    var(--color-destructive) 15%,
+    transparent
+  );
+}
+
+.brokerAddButton {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px dashed var(--border-dashed);
+  background: none;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  border-radius: 0.375rem;
+  transition:
+    color var(--transition-normal),
+    border-color var(--transition-normal),
+    background-color var(--transition-normal);
+}
+
+.brokerAddButton:hover {
+  color: var(--color-foreground);
+  border-color: var(--border-dashed-hover);
+  background-color: var(--hover-overlay);
+}
+
+/* ── Connection info bar ────────────────────────────────── */
+.connectionInfoBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--surface-2);
+  padding: 0 1rem;
+  height: 2.75rem;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-bar);
+}
+
+.connectionInfoLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.connectionInfoStatus {
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.connectionInfoBroker {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connectionInfoBrokerInput {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  min-width: 12rem;
+}
+
+.connectionInfoActions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-shrink: 0;
+}
+
+/* ── Profile selector dropdown ──────────────────────────── */
+.profileDropdownBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+.profileDropdown {
+  position: fixed;
+  z-index: 100;
+  width: 20rem;
+  max-height: 24rem;
+  overflow-y: auto;
+  background-color: var(--popover);
+  backdrop-filter: blur(24px) saturate(1.8);
+  border: 1px solid var(--border-prominent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-xl);
+  animation: scaleIn 0.15s ease-out;
+}
+
+.profileDropdownHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.profileDropdownTitle {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+
+.profileList {
+  display: flex;
+  flex-direction: column;
+  padding: 0.375rem;
+  gap: 0.25rem;
+}
+
+.profileItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.375rem;
+  transition: background-color var(--transition-normal);
+}
+
+.profileItem:hover {
+  background-color: var(--hover-overlay);
+}
+
+.profileInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.profileNameRow {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.profileName {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileBroker {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileActions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+}
+
+.profileActionIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: none;
+  background: none;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  border-radius: 0.375rem;
+  transition:
+    color var(--transition-normal),
+    background-color var(--transition-normal);
+}
+
+.profileActionIcon:hover {
+  color: var(--color-foreground);
+  background-color: var(--hover-overlay);
+}
+
+.profileActionIconDanger:hover {
+  color: var(--color-destructive);
+  background-color: color-mix(
+    in oklch,
+    var(--color-destructive) 15%,
+    transparent
+  );
+}
+
+/* ── Dialog overlay ─────────────────────────────────────── */
+.dialogOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--overlay);
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.15s ease-out;
+}
+
+.dialogCard {
+  width: 24rem;
+  background-color: var(--surface-3);
+  border: 1px solid var(--border-prominent);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-xl), var(--inner-glow-strong);
+  animation: scaleIn 0.2s ease-out;
+}
+
+.dialogTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-foreground);
+  margin: 0 0 1rem;
+}
+
+.dialogForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dialogLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-muted-foreground);
+}
+
+.dialogCheckboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-foreground);
+  cursor: pointer;
+}
+
+.dialogPasswordInput {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  background-color: var(--surface-0);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  color: var(--color-foreground);
+  outline: none;
+  font-family: inherit;
+  box-shadow: inset 0 1px 3px var(--inset-shadow);
+}
+
+.dialogPasswordInput:focus {
+  border-color: var(--color-primary);
+  box-shadow:
+    0 0 0 2px var(--ring),
+    inset 0 1px 2px var(--inset-shadow-focus);
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+/* ── Empty state ────────────────────────────────────────── */
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+.emptyStateText {
+  font-size: 0.875rem;
+  color: var(--color-muted-foreground);
+}

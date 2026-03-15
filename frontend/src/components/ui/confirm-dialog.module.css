@@ -1,0 +1,42 @@
+/* ── Confirm dialog overlay ────────────────────────────── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--overlay);
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.15s ease-out;
+}
+
+.card {
+  width: 22rem;
+  background-color: var(--surface-3);
+  border: 1px solid var(--border-prominent);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-xl), var(--inner-glow-strong);
+  animation: scaleIn 0.2s ease-out;
+}
+
+.title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-foreground);
+  margin: 0 0 0.5rem;
+}
+
+.message {
+  font-size: 0.8125rem;
+  color: var(--color-muted-foreground);
+  line-height: 1.5;
+  margin: 0 0 1.25rem;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}

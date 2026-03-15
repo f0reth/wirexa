@@ -1,0 +1,33 @@
+.input {
+  display: flex;
+  height: 2rem;
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid var(--input);
+  background-color: var(--surface-0);
+  padding: 0.25rem 0.625rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  transition:
+    border-color var(--transition-normal),
+    box-shadow var(--transition-normal);
+  outline: none;
+  color: var(--color-foreground);
+  box-shadow: inset 0 1px 3px var(--inset-shadow);
+}
+
+.input::placeholder {
+  color: var(--color-muted-foreground);
+}
+
+.input:focus-visible {
+  border-color: var(--color-primary);
+  box-shadow:
+    0 0 0 2px var(--ring),
+    inset 0 1px 2px var(--inset-shadow-focus);
+}
+
+.input:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
