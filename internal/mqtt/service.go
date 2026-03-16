@@ -126,9 +126,7 @@ func (s *MqttService) Connect(config ConnectionConfig) (string, error) {
 	s.connections[connID] = &connection{client: client, config: config}
 	s.mu.Unlock()
 
-	s.connectWg.Add(1)
-	go func() {
-		defer s.connectWg.Done()
+	s.connectWg.Go(func() {
 		token := client.Connect()
 		if !token.WaitTimeout(tokenTimeout) {
 			s.mu.Lock()
@@ -149,7 +147,7 @@ func (s *MqttService) Connect(config ConnectionConfig) (string, error) {
 				"error":        err.Error(),
 			})
 		}
-	}()
+	})
 
 	return connID, nil
 }
