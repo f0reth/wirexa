@@ -18,6 +18,7 @@ jobs:
           go-version-file: go.mod
 
       - run: mkdir -p frontend/dist
+      - run: touch frontend/dist/index.html
 
       - uses: golangci/golangci-lint-action@v7
 
