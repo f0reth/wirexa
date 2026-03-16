@@ -17,6 +17,8 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - run: mkdir -p frontend/dist
+
       - uses: golangci/golangci-lint-action@v7
 
   lint-frontend:
