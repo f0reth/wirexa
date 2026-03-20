@@ -37,7 +37,10 @@ export function createSubscriptionsState(
     if (!t) return;
     const connId = activeConnectionId();
     const conn = connId ? connections().get(connId) : null;
-    if (conn?.subscriptions.some((s) => s.topic === t)) return;
+    if (conn?.subscriptions.some((s) => s.topic === t)) {
+      if (!topic) setNewTopic("");
+      return;
+    }
 
     const q = qos ?? newQos();
 
