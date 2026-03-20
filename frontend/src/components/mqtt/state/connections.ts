@@ -207,18 +207,14 @@ export function createConnectionsState(
       "mqtt:connection-failed",
       (data: { connectionId: string; error: string }) => {
         console.error("[MQTT] Connection failed:", data.error);
-        // Remove the failed connection entry entirely
-        setConnections((prev) => {
-          const next = new Map(prev);
-          next.delete(data.connectionId);
-
-          if (activeConnectionId() === data.connectionId) {
-            const first = next.keys().next().value;
-            setActiveConnectionId(first ?? null);
-          }
-
-          return next;
-        });
+        // Keep the entry as disconnected so the user's broker selection is
+        // preserved.  The entry already has connected: false, so we only need
+        // to ensure scanning state is cleared.
+        updateConnection(data.connectionId, (state) => ({
+          ...state,
+          connected: false,
+          isScanning: false,
+        }));
       },
     );
 
@@ -313,9 +309,12 @@ export function createConnectionsState(
 
       setConnections((prev) => {
         const next = new Map(prev);
-        // Remove stale offline entry for this profile
-        const offlineKey = `offline-${profile.id}`;
-        next.delete(offlineKey);
+        // Remove any stale entry for this profile (offline or previously failed)
+        for (const [key, conn] of next) {
+          if (conn.profileId === profile.id) {
+            next.delete(key);
+          }
+        }
         next.set(connId, newState);
         return next;
       });
