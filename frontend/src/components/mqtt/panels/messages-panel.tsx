@@ -1,12 +1,9 @@
-import { createVirtualizer } from "@tanstack/solid-virtual";
 import { clsx } from "clsx";
 import { Radio, X, Zap } from "lucide-solid";
-import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, For, Show } from "solid-js";
 import { useMqtt } from "../context";
 import styles from "../mqtt.module.css";
 import { formatTime, getTopicColor } from "../utils";
-
-const ROW_HEIGHT = 56;
 
 export function MessagesPanel() {
   const {
@@ -16,24 +13,27 @@ export function MessagesPanel() {
     autoFollow,
     setAutoFollow,
     clearMessages,
+    setMessagesScrollRef,
   } = useMqtt();
 
-  const [scrollRef, setScrollRef] = createSignal<HTMLDivElement>();
+  let scrollRef!: HTMLDivElement;
 
-  const virtualizer = createVirtualizer({
-    get count() {
-      return messages().length;
-    },
-    getScrollElement: () => scrollRef() ?? null,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 10,
+  const formattedTimes = createMemo(() => {
+    const msgs = messages();
+    const times = new Array<string>(msgs.length);
+    for (let i = 0; i < msgs.length; i++) {
+      times[i] = formatTime(msgs[i].timestamp);
+    }
+    return times;
   });
 
   // Auto-follow: scroll to bottom when new messages arrive
   createEffect(() => {
     const len = messages().length;
     if (autoFollow() && len > 0) {
-      virtualizer.scrollToIndex(len - 1, { align: "end" });
+      requestAnimationFrame(() => {
+        scrollRef.scrollTop = scrollRef.scrollHeight;
+      });
     }
   });
 
@@ -66,76 +66,48 @@ export function MessagesPanel() {
         </div>
       </div>
 
-      <Show
-        when={messages().length > 0}
-        fallback={
-          <div class={styles.listPadding}>
-            <p class={styles.emptyText}>No messages yet</p>
-          </div>
-        }
+      <div
+        ref={(el) => {
+          scrollRef = el;
+          setMessagesScrollRef(el);
+        }}
+        class={styles.messagesScrollArea}
+        style={{ overflow: "auto" }}
       >
-        {(() => {
-          const formattedTimes = createMemo(() => {
-            const msgs = messages();
-            const times = new Array<string>(msgs.length);
-            for (let i = 0; i < msgs.length; i++) {
-              times[i] = formatTime(msgs[i].timestamp);
-            }
-            return times;
-          });
-
-          return (
-            <div
-              ref={setScrollRef}
-              class={styles.messagesScrollArea}
-              style={{ overflow: "auto" }}
-            >
-              <div
-                style={{
-                  height: `${virtualizer.getTotalSize()}px`,
-                  width: "100%",
-                  position: "relative",
-                }}
-              >
-                {virtualizer.getVirtualItems().map((virtualRow) => {
-                  const msg = messages()[virtualRow.index];
-                  if (!msg) return null;
-                  return (
-                    <button
-                      type="button"
-                      class={clsx(
-                        styles.messageItem,
-                        selectedMessage()?.id === msg.id &&
-                          styles.messageItemSelected,
-                      )}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: `${virtualRow.size}px`,
-                        transform: `translateY(${virtualRow.start}px)`,
-                      }}
-                      onClick={() => setSelectedMessage(msg)}
-                    >
-                      <div class={styles.messageItemHeader}>
-                        <div class={styles.messageItemLeft}>
-                          <Radio size={14} color={getTopicColor(msg.topic)} />
-                          <span class={styles.messageTopic}>{msg.topic}</span>
-                        </div>
-                        <span class={styles.messageTime}>
-                          {formattedTimes()[virtualRow.index]}
-                        </span>
-                      </div>
-                      <p class={styles.messagePayload}>{msg.payload}</p>
-                    </button>
-                  );
-                })}
-              </div>
+        <Show
+          when={messages().length > 0}
+          fallback={
+            <div class={styles.listPadding}>
+              <p class={styles.emptyText}>No messages yet</p>
             </div>
-          );
-        })()}
-      </Show>
+          }
+        >
+          <For each={messages()}>
+            {(msg, i) => (
+              <button
+                type="button"
+                class={clsx(
+                  styles.messageItem,
+                  selectedMessage()?.id === msg.id &&
+                    styles.messageItemSelected,
+                )}
+                onClick={() => setSelectedMessage(msg)}
+              >
+                <div class={styles.messageItemHeader}>
+                  <div class={styles.messageItemLeft}>
+                    <Radio size={14} color={getTopicColor(msg.topic)} />
+                    <span class={styles.messageTopic}>{msg.topic}</span>
+                  </div>
+                  <span class={styles.messageTime}>
+                    {formattedTimes()[i()]}
+                  </span>
+                </div>
+                <p class={styles.messagePayload}>{msg.payload}</p>
+              </button>
+            )}
+          </For>
+        </Show>
+      </div>
     </div>
   );
 }

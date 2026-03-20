@@ -45,12 +45,17 @@ export function createMessagesState(
     const tab = activeTab();
 
     if (follow && msgs.length > 0) {
-      const connId = activeConnectionId();
-      if (connId) {
-        updateConnection(connId, (state) => ({
-          ...state,
-          selectedMessage: msgs[msgs.length - 1],
-        }));
+      const lastMsg = msgs[msgs.length - 1];
+      // Only update if selectedMessage actually changed to break the
+      // reactive cycle: updateConnection → new Map → messages() re-evals → effect re-runs
+      if (selectedMessage() !== lastMsg) {
+        const connId = activeConnectionId();
+        if (connId) {
+          updateConnection(connId, (state) => ({
+            ...state,
+            selectedMessage: lastMsg,
+          }));
+        }
       }
     }
 
