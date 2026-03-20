@@ -100,6 +100,7 @@ func (s *MqttService) Connect(config ConnectionConfig) (string, error) {
 	}
 
 	opts.SetAutoReconnect(true)
+	opts.SetResumeSubs(true)
 	opts.SetConnectTimeout(10 * time.Second)
 
 	// Capture ctx once under lock so handlers don't race on s.ctx.

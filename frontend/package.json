@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@corvu/resizable": "^0.2.5",
-    "@tanstack/solid-virtual": "^3.13.22",
     "clsx": "^2.1.1",
     "lucide-solid": "^0.577.0",
     "solid-js": "^1.9.11"
