@@ -22,7 +22,10 @@ export function SubscriptionsPanel() {
     removeSubscription,
   } = useMqttSubscribe();
   const { activeConnection } = useMqttConnection();
-  const isConnected = () => activeConnection()?.connected ?? false;
+  const isConnected = () => {
+    const conn = activeConnection();
+    return conn?.type === "online" && conn.connected;
+  };
 
   return (
     <div class={styles.subscriptionsPanel}>

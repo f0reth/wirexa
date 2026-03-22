@@ -109,7 +109,10 @@ function PublishForm(props: {
   setPublishQos: (v: number) => void;
 }) {
   const { activeConnection, activeConnectionId } = useMqttConnection();
-  const isConnected = () => activeConnection()?.connected ?? false;
+  const isConnected = () => {
+    const conn = activeConnection();
+    return conn?.type === "online" && conn.connected;
+  };
 
   const handlePublish = async () => {
     const connId = activeConnectionId();

@@ -4,36 +4,24 @@ import type { ConnectionState, Subscription } from "../../domain/mqtt/types";
 import * as client from "../../infrastructure/mqtt/client";
 
 export function createSubscriptionsState(
-  connections: () => Map<string, ConnectionState>,
+  activeConnection: () => ConnectionState | null,
   updateConnection: (
     id: string,
     updater: (state: ConnectionState) => ConnectionState,
   ) => void,
-  activeConnectionId: () => string | null,
 ) {
   const [newTopic, setNewTopic] = createSignal("");
   const [newQos, setNewQos] = createSignal<number>(0);
 
-  const subscriptions = () => {
-    const id = activeConnectionId();
-    return id ? (connections().get(id)?.subscriptions ?? []) : [];
-  };
-
-  const brokerTopics = () => {
-    const id = activeConnectionId();
-    return id ? (connections().get(id)?.brokerTopics ?? []) : [];
-  };
-
-  const isScanning = () => {
-    const id = activeConnectionId();
-    return id ? (connections().get(id)?.isScanning ?? false) : false;
-  };
+  const subscriptions = () => activeConnection()?.subscriptions ?? [];
+  const brokerTopics = () => activeConnection()?.brokerTopics ?? [];
+  const isScanning = () => activeConnection()?.isScanning ?? false;
 
   const addSubscription = async (topic?: string, qos?: number) => {
     const t = (topic ?? newTopic()).trim();
     if (!t) return;
-    const connId = activeConnectionId();
-    const conn = connId ? connections().get(connId) : null;
+    const conn = activeConnection();
+    const connId = conn?.connectionId;
     // 重複トピックの場合はトピック入力をクリアしてリターン
     if (conn?.subscriptions.some((s) => s.topic === t)) {
       if (!topic) setNewTopic("");
@@ -63,12 +51,12 @@ export function createSubscriptionsState(
   };
 
   const removeSubscription = async (id: string) => {
-    const connId = activeConnectionId();
+    const connId = activeConnection()?.connectionId;
     if (!connId) return;
     const sub = subscriptions().find((s) => s.id === id);
     if (!sub) return;
-    const isConnected = connections().get(connId)?.connected ?? false;
-    if (isConnected) {
+    const conn = activeConnection();
+    if (conn?.type === "online" && conn.connected) {
       try {
         await client.unsubscribe(connId, sub.topic);
       } catch (err) {
@@ -84,10 +72,9 @@ export function createSubscriptionsState(
   const setIsScanning = async (
     value: boolean | ((prev: boolean) => boolean),
   ) => {
-    const connId = activeConnectionId();
+    const conn = activeConnection();
+    const connId = conn?.connectionId;
     if (!connId) return;
-    const conn = connections().get(connId);
-    if (!conn) return;
     const newValue =
       typeof value === "function" ? value(conn.isScanning) : value;
     if (newValue) {

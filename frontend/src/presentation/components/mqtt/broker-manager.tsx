@@ -3,6 +3,7 @@ import { Wifi, WifiOff, Zap } from "lucide-solid";
 import { Show } from "solid-js";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { isConnected } from "../../../domain/mqtt/types";
 import { useMqttConnection } from "../../providers/mqtt-provider";
 import styles from "./mqtt.module.css";
 
@@ -20,7 +21,7 @@ export function BrokerManager() {
         <div class={styles.connectionInfoBar}>
           <div class={styles.connectionInfoLeft}>
             <Show
-              when={conn().connected}
+              when={isConnected(conn())}
               fallback={
                 <WifiOff size={14} color="var(--color-muted-foreground)" />
               }
@@ -30,15 +31,15 @@ export function BrokerManager() {
             <span
               class={clsx(
                 styles.connectionInfoStatus,
-                conn().connected
+                isConnected(conn())
                   ? styles.statusConnected
                   : styles.statusDisconnected,
               )}
             >
-              {conn().connected ? "Connected" : "Disconnected"}
+              {isConnected(conn()) ? "Connected" : "Disconnected"}
             </span>
             <Show
-              when={conn().connected}
+              when={isConnected(conn())}
               fallback={
                 <Input
                   value={conn().profile.broker}
@@ -60,7 +61,7 @@ export function BrokerManager() {
           </div>
           <div class={styles.connectionInfoActions}>
             <Show
-              when={conn().connected}
+              when={isConnected(conn())}
               fallback={
                 <Button
                   size="sm"

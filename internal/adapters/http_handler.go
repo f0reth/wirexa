@@ -24,7 +24,7 @@ func SetupHTTPHandler(h *HttpHandler, reqSvc domain.RequestUseCase, collSvc doma
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
-func (h *HttpHandler) SendRequest(req domain.HttpRequest) domain.HttpResponse {
+func (h *HttpHandler) SendRequest(req domain.HttpRequest) (domain.HttpResponse, error) {
 	return h.reqSvc.SendRequest(req)
 }
 

@@ -44,8 +44,10 @@ export function BrokerTree() {
     return map;
   });
 
-  const isProfileConnected = (profileId: string) =>
-    connectionByProfileId().get(profileId)?.connected ?? false;
+  const isProfileConnected = (profileId: string) => {
+    const conn = connectionByProfileId().get(profileId);
+    return conn?.type === "online" && conn.connected;
+  };
 
   const getConnectionForProfile = (profileId: string) =>
     connectionByProfileId().get(profileId);
@@ -58,7 +60,8 @@ export function BrokerTree() {
     if (existingConn) {
       switchConnection(existingConn.connectionId);
     } else {
-      handleConnect(profileId);
+      const profile = profiles().find((p) => p.id === profileId);
+      if (profile) createOfflineConnection(profile);
     }
   };
 

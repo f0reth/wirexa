@@ -63,3 +63,18 @@ export const HTTP_METHODS: HttpMethod[] = [
 ];
 
 export type BodyType = RequestBody["type"];
+export const BODY_TYPES: BodyType[] = [
+  "none",
+  "json",
+  "text",
+  "form-urlencoded",
+  "form-data",
+];
+
+export function isHttpMethod(v: string): v is HttpMethod {
+  return (HTTP_METHODS as string[]).includes(v);
+}
+
+export function isBodyType(v: string): v is BodyType {
+  return (BODY_TYPES as string[]).includes(v);
+}

@@ -2,27 +2,15 @@ import { createEffect } from "solid-js";
 import type { ConnectionState, MqttMessage } from "../../domain/mqtt/types";
 
 export function createMessagesState(
-  connections: () => Map<string, ConnectionState>,
+  activeConnection: () => ConnectionState | null,
   updateConnection: (
     id: string,
     updater: (state: ConnectionState) => ConnectionState,
   ) => void,
-  activeConnectionId: () => string | null,
 ) {
-  const messages = () => {
-    const id = activeConnectionId();
-    return id ? (connections().get(id)?.messages ?? []) : [];
-  };
-
-  const selectedMessage = () => {
-    const id = activeConnectionId();
-    return id ? (connections().get(id)?.selectedMessage ?? null) : null;
-  };
-
-  const autoFollow = () => {
-    const id = activeConnectionId();
-    return id ? (connections().get(id)?.autoFollow ?? false) : false;
-  };
+  const messages = () => activeConnection()?.messages ?? [];
+  const selectedMessage = () => activeConnection()?.selectedMessage ?? null;
+  const autoFollow = () => activeConnection()?.autoFollow ?? false;
 
   // autoFollow が true のとき selectedMessage を末尾に追従させる
   // scrollTop は操作しない（Presentation 層の責務）
@@ -32,7 +20,7 @@ export function createMessagesState(
     if (follow && msgs.length > 0) {
       const lastMsg = msgs[msgs.length - 1];
       if (selectedMessage() !== lastMsg) {
-        const connId = activeConnectionId();
+        const connId = activeConnection()?.connectionId;
         if (connId) {
           updateConnection(connId, (state) => ({
             ...state,
@@ -44,13 +32,13 @@ export function createMessagesState(
   });
 
   const setSelectedMessage = (msg: MqttMessage | null) => {
-    const connId = activeConnectionId();
+    const connId = activeConnection()?.connectionId;
     if (!connId) return;
     updateConnection(connId, (state) => ({ ...state, selectedMessage: msg }));
   };
 
   const setAutoFollow = (value: boolean | ((prev: boolean) => boolean)) => {
-    const connId = activeConnectionId();
+    const connId = activeConnection()?.connectionId;
     if (!connId) return;
     updateConnection(connId, (state) => ({
       ...state,
@@ -59,7 +47,7 @@ export function createMessagesState(
   };
 
   const clearMessages = () => {
-    const connId = activeConnectionId();
+    const connId = activeConnection()?.connectionId;
     if (!connId) return;
     updateConnection(connId, (state) => ({
       ...state,

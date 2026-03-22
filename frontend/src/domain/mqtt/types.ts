@@ -32,11 +32,9 @@ export interface PublishPreset {
   qos: 0 | 1 | 2;
 }
 
-export interface ConnectionState {
-  connectionId: string;
+interface BaseConnectionState {
   profileId: string;
   profile: BrokerProfile;
-  connected: boolean;
   subscriptions: Subscription[];
   messages: MqttMessage[];
   selectedMessage: MqttMessage | null;
@@ -44,6 +42,24 @@ export interface ConnectionState {
   brokerTopics: string[];
   brokerTopicsSet: Set<string>;
   isScanning: boolean;
+}
+
+export interface OfflineConnectionState extends BaseConnectionState {
+  readonly type: "offline";
+  connectionId: string;
+}
+
+export interface OnlineConnectionState extends BaseConnectionState {
+  readonly type: "online";
+  connectionId: string;
+  connected: boolean;
+}
+
+export type ConnectionState = OfflineConnectionState | OnlineConnectionState;
+
+/** オンライン接続かつ connected === true かどうかを返す */
+export function isConnected(conn: ConnectionState): boolean {
+  return conn.type === "online" && conn.connected;
 }
 
 export type Tab = "subscribe" | "publish";

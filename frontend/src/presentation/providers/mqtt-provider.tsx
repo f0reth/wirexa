@@ -80,10 +80,12 @@ export interface PublishContextValue {
   removePreset: (id: string) => void;
 }
 
-const MqttConnectionContext = createContext<ConnectionContextValue>();
-const MqttSubscribeContext = createContext<SubscribeContextValue>();
-const MqttMessagesContext = createContext<MessagesContextValue>();
-const MqttPublishContext = createContext<PublishContextValue>();
+type MqttContextValue = ConnectionContextValue &
+  SubscribeContextValue &
+  MessagesContextValue &
+  PublishContextValue;
+
+const MqttContext = createContext<MqttContextValue>();
 
 export function MqttProvider(props: { children: JSX.Element }) {
   const { profiles, loadProfiles, saveProfile, deleteProfile } =
@@ -104,19 +106,17 @@ export function MqttProvider(props: { children: JSX.Element }) {
     loadProfiles();
   });
   const subsState = createSubscriptionsState(
-    connState.connections,
+    connState.activeConnection,
     connState.updateConnection,
-    connState.activeConnectionId,
   );
   const msgState = createMessagesState(
-    connState.connections,
+    connState.activeConnection,
     connState.updateConnection,
-    connState.activeConnectionId,
   );
   const presetState = createPresetsState();
 
   return (
-    <MqttConnectionContext.Provider
+    <MqttContext.Provider
       value={{
         profiles,
         saveProfile,
@@ -133,42 +133,39 @@ export function MqttProvider(props: { children: JSX.Element }) {
         closeConnection: connState.closeConnection,
         switchConnection: connState.switchConnection,
         updateConnectionBroker: connState.updateConnectionBroker,
+        ...subsState,
+        ...msgState,
+        ...presetState,
       }}
     >
-      <MqttSubscribeContext.Provider value={subsState}>
-        <MqttMessagesContext.Provider value={msgState}>
-          <MqttPublishContext.Provider value={presetState}>
-            {props.children}
-          </MqttPublishContext.Provider>
-        </MqttMessagesContext.Provider>
-      </MqttSubscribeContext.Provider>
-    </MqttConnectionContext.Provider>
+      {props.children}
+    </MqttContext.Provider>
   );
 }
 
 // Hooks
 export function useMqttConnection(): ConnectionContextValue {
-  const ctx = useContext(MqttConnectionContext);
+  const ctx = useContext(MqttContext);
   if (!ctx)
     throw new Error("useMqttConnection must be used within MqttProvider");
   return ctx;
 }
 
 export function useMqttSubscribe(): SubscribeContextValue {
-  const ctx = useContext(MqttSubscribeContext);
+  const ctx = useContext(MqttContext);
   if (!ctx)
     throw new Error("useMqttSubscribe must be used within MqttProvider");
   return ctx;
 }
 
 export function useMqttMessages(): MessagesContextValue {
-  const ctx = useContext(MqttMessagesContext);
+  const ctx = useContext(MqttContext);
   if (!ctx) throw new Error("useMqttMessages must be used within MqttProvider");
   return ctx;
 }
 
 export function useMqttPublish(): PublishContextValue {
-  const ctx = useContext(MqttPublishContext);
+  const ctx = useContext(MqttContext);
   if (!ctx) throw new Error("useMqttPublish must be used within MqttProvider");
   return ctx;
 }

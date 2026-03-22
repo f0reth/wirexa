@@ -11,14 +11,15 @@ import {
   UpdateRequest,
 } from "../../../wailsjs/go/adapters/HttpHandler";
 import { httpdomain } from "../../../wailsjs/go/models";
-import type {
-  Collection,
-  HttpMethod,
-  HttpRequest,
-  HttpResponse,
-  KeyValuePair,
-  RequestBody,
-  TreeItem,
+import {
+  type Collection,
+  type HttpRequest,
+  type HttpResponse,
+  isBodyType,
+  isHttpMethod,
+  type KeyValuePair,
+  type RequestBody,
+  type TreeItem,
 } from "../../domain/http/types";
 
 // domain → Wails
@@ -32,17 +33,23 @@ function fromWailsKeyValuePair(kv: httpdomain.KeyValuePair): KeyValuePair {
 }
 
 function fromWailsRequestBody(body: httpdomain.RequestBody): RequestBody {
+  if (!isBodyType(body.type)) {
+    throw new Error(`Unknown body type: ${body.type}`);
+  }
   return {
-    type: body.type as RequestBody["type"],
+    type: body.type,
     content: body.content,
   };
 }
 
 function fromWailsHttpRequest(req: httpdomain.HttpRequest): HttpRequest {
+  if (!isHttpMethod(req.method)) {
+    throw new Error(`Unknown HTTP method: ${req.method}`);
+  }
   return {
     id: req.id,
     name: req.name,
-    method: req.method as HttpMethod,
+    method: req.method,
     url: req.url,
     headers: req.headers.map(fromWailsKeyValuePair),
     params: req.params.map(fromWailsKeyValuePair),
@@ -64,8 +71,11 @@ function fromWailsHttpResponse(res: httpdomain.HttpResponse): HttpResponse {
 }
 
 function fromWailsTreeItem(item: httpdomain.TreeItem): TreeItem {
+  if (item.type !== "folder" && item.type !== "request") {
+    throw new Error(`Unknown tree item type: ${item.type}`);
+  }
   return {
-    type: item.type as "folder" | "request",
+    type: item.type,
     id: item.id,
     name: item.name,
     children: (item.children ?? []).map(fromWailsTreeItem),

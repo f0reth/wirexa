@@ -12,6 +12,8 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
+var _ domain.RequestUseCase = (*HttpRequestService)(nil)
+
 const (
 	requestTimeout  = 30 * time.Second
 	maxResponseBody = 10 * 1024 * 1024 // 10 MB
@@ -35,14 +37,15 @@ func NewHTTPRequestService() *HttpRequestService {
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
-func (s *HttpRequestService) SendRequest(req domain.HttpRequest) domain.HttpResponse {
+// ネットワーク障害・入力不正は error を返す。HTTP 4xx/5xx は正常レスポンスとして扱う。
+func (s *HttpRequestService) SendRequest(req domain.HttpRequest) (domain.HttpResponse, error) {
 	if !validMethods[req.Method] {
-		return domain.HttpResponse{Error: fmt.Sprintf("invalid HTTP method: %s", req.Method)}
+		return domain.HttpResponse{}, &domain.ValidationError{Field: "method", Message: req.Method}
 	}
 
 	parsedURL, err := url.Parse(req.URL)
 	if err != nil {
-		return domain.HttpResponse{Error: fmt.Sprintf("invalid URL: %v", err)}
+		return domain.HttpResponse{}, fmt.Errorf("invalid URL: %w", err)
 	}
 
 	q := parsedURL.Query()
@@ -71,7 +74,7 @@ func (s *HttpRequestService) SendRequest(req domain.HttpRequest) domain.HttpResp
 
 	httpReq, err := http.NewRequestWithContext(context.Background(), req.Method, parsedURL.String(), bodyReader)
 	if err != nil {
-		return domain.HttpResponse{Error: fmt.Sprintf("failed to create request: %v", err)}
+		return domain.HttpResponse{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	for _, h := range req.Headers {
@@ -88,13 +91,13 @@ func (s *HttpRequestService) SendRequest(req domain.HttpRequest) domain.HttpResp
 	elapsed := time.Since(start).Milliseconds()
 
 	if err != nil {
-		return domain.HttpResponse{Error: fmt.Sprintf("request failed: %v", err), TimingMs: elapsed}
+		return domain.HttpResponse{}, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody+1))
 	if err != nil {
-		return domain.HttpResponse{Error: fmt.Sprintf("failed to read response: %v", err), TimingMs: elapsed}
+		return domain.HttpResponse{}, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	truncated := false
@@ -122,5 +125,5 @@ func (s *HttpRequestService) SendRequest(req domain.HttpRequest) domain.HttpResp
 	if truncated {
 		result.Error = fmt.Sprintf("response body truncated at %d bytes", maxResponseBody)
 	}
-	return result
+	return result, nil
 }

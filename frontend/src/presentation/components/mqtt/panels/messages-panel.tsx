@@ -1,6 +1,7 @@
+import { createVirtualizer } from "@tanstack/solid-virtual";
 import { clsx } from "clsx";
 import { Radio, X, Zap } from "lucide-solid";
-import { createEffect, createMemo, For, Show } from "solid-js";
+import { createEffect, For, Show } from "solid-js";
 import { useMqttMessages } from "../../../providers/mqtt-provider";
 import styles from "../mqtt.module.css";
 import { formatTime, getTopicColor } from "../utils";
@@ -17,20 +18,18 @@ export function MessagesPanel() {
 
   let scrollRef!: HTMLDivElement;
 
-  const formattedTimes = createMemo(() => {
-    const msgs = messages();
-    const times = new Array<string>(msgs.length);
-    for (let i = 0; i < msgs.length; i++) {
-      times[i] = formatTime(msgs[i].timestamp);
-    }
-    return times;
+  const virtualizer = createVirtualizer({
+    get count() {
+      return messages().length;
+    },
+    getScrollElement: () => scrollRef,
+    estimateSize: () => 74,
+    overscan: 5,
   });
 
   createEffect(() => {
     if (autoFollow() && messages().length > 0) {
-      requestAnimationFrame(() => {
-        scrollRef.scrollTop = scrollRef.scrollHeight;
-      });
+      virtualizer.scrollToIndex(messages().length - 1, { align: "end" });
     }
   });
 
@@ -68,7 +67,6 @@ export function MessagesPanel() {
           scrollRef = el;
         }}
         class={styles.messagesScrollArea}
-        style={{ overflow: "auto" }}
       >
         <Show
           when={messages().length > 0}
@@ -78,30 +76,43 @@ export function MessagesPanel() {
             </div>
           }
         >
-          <For each={messages()}>
-            {(msg, i) => (
-              <button
-                type="button"
-                class={clsx(
-                  styles.messageItem,
-                  selectedMessage()?.id === msg.id &&
-                    styles.messageItemSelected,
-                )}
-                onClick={() => setSelectedMessage(msg)}
-              >
-                <div class={styles.messageItemHeader}>
-                  <div class={styles.messageItemLeft}>
-                    <Radio size={14} color={getTopicColor(msg.topic)} />
-                    <span class={styles.messageTopic}>{msg.topic}</span>
+          <div
+            class={styles.messagesVirtualContainer}
+            style={{ height: `${virtualizer.getTotalSize()}px` }}
+          >
+            <For each={virtualizer.getVirtualItems()}>
+              {(virtualItem) => {
+                const msg = () => messages()[virtualItem.index];
+                return (
+                  <div
+                    class={styles.messagesVirtualItem}
+                    style={{ transform: `translateY(${virtualItem.start}px)` }}
+                  >
+                    <button
+                      type="button"
+                      class={clsx(
+                        styles.messageItem,
+                        selectedMessage()?.id === msg().id &&
+                          styles.messageItemSelected,
+                      )}
+                      onClick={() => setSelectedMessage(msg())}
+                    >
+                      <div class={styles.messageItemHeader}>
+                        <div class={styles.messageItemLeft}>
+                          <Radio size={14} color={getTopicColor(msg().topic)} />
+                          <span class={styles.messageTopic}>{msg().topic}</span>
+                        </div>
+                        <span class={styles.messageTime}>
+                          {formatTime(msg().timestamp)}
+                        </span>
+                      </div>
+                      <p class={styles.messagePayload}>{msg().payload}</p>
+                    </button>
                   </div>
-                  <span class={styles.messageTime}>
-                    {formattedTimes()[i()]}
-                  </span>
-                </div>
-                <p class={styles.messagePayload}>{msg.payload}</p>
-              </button>
-            )}
-          </For>
+                );
+              }}
+            </For>
+          </div>
         </Show>
       </div>
     </div>

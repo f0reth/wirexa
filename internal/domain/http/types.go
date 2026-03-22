@@ -38,9 +38,9 @@ type HttpResponse struct {
 
 // Collection はリクエストコレクションを表す。
 type Collection struct {
-	ID    string     `json:"id"`
-	Name  string     `json:"name"`
-	Items []TreeItem `json:"items"`
+	ID    string      `json:"id"`
+	Name  string      `json:"name"`
+	Items []*TreeItem `json:"items"`
 }
 
 // TreeItem はコレクション内のフォルダまたはリクエストアイテムを表す。
@@ -48,7 +48,7 @@ type TreeItem struct {
 	Type     string       `json:"type"`
 	ID       string       `json:"id"`
 	Name     string       `json:"name"`
-	Children []TreeItem   `json:"children"`
+	Children []*TreeItem  `json:"children"`
 	Request  *HttpRequest `json:"request,omitempty"`
 }
 

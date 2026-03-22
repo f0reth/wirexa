@@ -14,6 +14,8 @@ import type {
   BrokerProfile,
   ConnectionState,
   MqttMessage,
+  OfflineConnectionState,
+  OnlineConnectionState,
   Tab,
 } from "../../domain/mqtt/types";
 import { onMqttEvent } from "../../infrastructure/mqtt/events";
@@ -37,6 +39,47 @@ interface RawMessage {
   payload: string;
   qos: number;
   timestamp: number;
+}
+
+// オフライン接続の ID 生成ロジックをここに集約
+function offlineId(profileId: string): string {
+  return `offline-${profileId}`;
+}
+
+function makeOfflineState(profile: BrokerProfile): OfflineConnectionState {
+  return {
+    type: "offline",
+    connectionId: offlineId(profile.id),
+    profileId: profile.id,
+    profile: { ...profile },
+    subscriptions: [],
+    messages: [],
+    selectedMessage: null,
+    autoFollow: false,
+    brokerTopics: [],
+    brokerTopicsSet: new Set(),
+    isScanning: false,
+  };
+}
+
+function makeOnlineState(
+  connId: string,
+  profile: BrokerProfile,
+): OnlineConnectionState {
+  return {
+    type: "online",
+    connectionId: connId,
+    profileId: profile.id,
+    profile: { ...profile },
+    connected: false,
+    subscriptions: [],
+    messages: [],
+    selectedMessage: null,
+    autoFollow: false,
+    brokerTopics: [],
+    brokerTopicsSet: new Set(),
+    isScanning: false,
+  };
 }
 
 export function createConnectionsState(
@@ -148,7 +191,7 @@ export function createConnectionsState(
           brokerTopics: newBrokerTopics,
           brokerTopicsSet: newBrokerTopicsSet,
           messages: newMessages,
-        };
+        } as ConnectionState;
       });
     }
   }
@@ -164,16 +207,18 @@ export function createConnectionsState(
 
   const cancelConnected = onMqttEvent("mqtt:connected", (data) => {
     const { connectionId } = data as { connectionId: string };
-    updateConnection(connectionId, (state) => ({ ...state, connected: true }));
+    updateConnection(connectionId, (state) => {
+      if (state.type !== "online") return state;
+      return { ...state, connected: true };
+    });
   });
 
   const cancelDisconnected = onMqttEvent("mqtt:disconnected", (data) => {
     const { connectionId } = data as { connectionId: string };
-    updateConnection(connectionId, (state) => ({
-      ...state,
-      connected: false,
-      isScanning: false,
-    }));
+    updateConnection(connectionId, (state) => {
+      if (state.type !== "online") return state;
+      return { ...state, connected: false, isScanning: false };
+    });
   });
 
   const cancelConnectionLost = onMqttEvent("mqtt:connection-lost", (data) => {
@@ -182,10 +227,10 @@ export function createConnectionsState(
       error: string;
     };
     console.error("[MQTT] Connection lost:", error);
-    updateConnection(connectionId, (state) => ({
-      ...state,
-      connected: false,
-    }));
+    updateConnection(connectionId, (state) => {
+      if (state.type !== "online") return state;
+      return { ...state, connected: false };
+    });
   });
 
   const cancelConnectionFailed = onMqttEvent(
@@ -196,11 +241,10 @@ export function createConnectionsState(
         error: string;
       };
       console.error("[MQTT] Connection failed:", error);
-      updateConnection(connectionId, (state) => ({
-        ...state,
-        connected: false,
-        isScanning: false,
-      }));
+      updateConnection(connectionId, (state) => {
+        if (state.type !== "online") return state;
+        return { ...state, connected: false, isScanning: false };
+      });
     },
   );
 
@@ -212,7 +256,7 @@ export function createConnectionsState(
     cancelConnectionFailed();
   });
 
-  // 前回アクティブだったプロファイルをオフラインタブとして復元
+  // 起動時に全プロファイルをオフラインタブとして復元し、最後に使ったプロファイルをアクティブにする
   // profiles はバックエンドから非同期でロードされるため、createEffect で反応する
   let profilesRestored = false;
   createEffect(() => {
@@ -221,32 +265,24 @@ export function createConnectionsState(
     profilesRestored = true;
 
     const savedProfileId = persistence.loadLastProfileId();
-    const savedProfile = savedProfileId
-      ? ps.find((p) => p.id === savedProfileId)
-      : undefined;
-    if (savedProfile) {
-      const offlineId = `offline-${savedProfile.id}`;
-      untrack(() => {
-        setConnections((prev) => {
-          const next = new Map(prev);
-          next.set(offlineId, {
-            connectionId: offlineId,
-            profileId: savedProfile.id,
-            profile: { ...savedProfile },
-            connected: false,
-            subscriptions: [],
-            messages: [],
-            selectedMessage: null,
-            autoFollow: false,
-            brokerTopics: [],
-            brokerTopicsSet: new Set(),
-            isScanning: false,
-          });
-          return next;
-        });
-        setActiveConnectionId(offlineId);
+
+    untrack(() => {
+      setConnections((prev) => {
+        const next = new Map(prev);
+        for (const profile of ps) {
+          const entry = makeOfflineState(profile);
+          next.set(entry.connectionId, entry);
+        }
+        return next;
       });
-    }
+
+      if (savedProfileId) {
+        const savedProfile = ps.find((p) => p.id === savedProfileId);
+        if (savedProfile) {
+          setActiveConnectionId(offlineId(savedProfile.id));
+        }
+      }
+    });
   });
 
   // アクティブプロファイルを永続化
@@ -261,7 +297,7 @@ export function createConnectionsState(
 
   const updateConnectionBroker = (connectionId: string, broker: string) => {
     const conn = connections().get(connectionId);
-    if (!conn || conn.connected) return;
+    if (!conn || (conn.type === "online" && conn.connected)) return;
     const updatedProfile = { ...conn.profile, broker };
     updateConnection(connectionId, (state) => ({
       ...state,
@@ -271,7 +307,7 @@ export function createConnectionsState(
   };
 
   const createOfflineConnection = (profile: BrokerProfile) => {
-    const offlineId = `offline-${profile.id}`;
+    const entry = makeOfflineState(profile);
     setConnections((prev) => {
       const next = new Map(prev);
       for (const [key, conn] of next) {
@@ -279,22 +315,10 @@ export function createConnectionsState(
           next.delete(key);
         }
       }
-      next.set(offlineId, {
-        connectionId: offlineId,
-        profileId: profile.id,
-        profile: { ...profile },
-        connected: false,
-        subscriptions: [],
-        messages: [],
-        selectedMessage: null,
-        autoFollow: false,
-        brokerTopics: [],
-        brokerTopicsSet: new Set(),
-        isScanning: false,
-      });
+      next.set(entry.connectionId, entry);
       return next;
     });
-    setActiveConnectionId(offlineId);
+    setActiveConnectionId(entry.connectionId);
   };
 
   const handleConnect = async (profileId: string) => {
@@ -302,19 +326,7 @@ export function createConnectionsState(
     if (!profile) return;
     try {
       const connId = await api.connect(profile);
-      const newState: ConnectionState = {
-        connectionId: connId,
-        profileId: profile.id,
-        profile: { ...profile },
-        connected: false,
-        subscriptions: [],
-        messages: [],
-        selectedMessage: null,
-        autoFollow: false,
-        brokerTopics: [],
-        brokerTopicsSet: new Set(),
-        isScanning: false,
-      };
+      const newState = makeOnlineState(connId, profile);
       setConnections((prev) => {
         const next = new Map(prev);
         for (const [key, conn] of next) {
@@ -339,21 +351,22 @@ export function createConnectionsState(
     } catch (err) {
       console.error("[MQTT] Disconnect failed:", err);
     }
-    updateConnection(connId, (state) => ({
-      ...state,
-      connected: false,
-      isScanning: false,
-    }));
+    updateConnection(connId, (state) => {
+      if (state.type !== "online") return state;
+      return { ...state, connected: false, isScanning: false };
+    });
   };
 
   const handleReconnect = async (connectionId: string) => {
     const conn = connections().get(connectionId);
     if (!conn) return;
     const profile = conn.profile;
-    try {
-      await api.disconnect(connectionId);
-    } catch {
-      // オフラインタブや既に削除された接続では期待される挙動
+    if (conn.type === "online") {
+      try {
+        await api.disconnect(connectionId);
+      } catch {
+        // 既に切断済みの可能性
+      }
     }
     try {
       const newConnId = await api.connect(profile);
@@ -362,6 +375,7 @@ export function createConnectionsState(
         next.delete(connectionId);
         next.set(newConnId, {
           ...conn,
+          type: "online" as const,
           connectionId: newConnId,
           connected: false,
         });
@@ -387,7 +401,7 @@ export function createConnectionsState(
 
   const closeConnection = (connectionId: string) => {
     const conn = connections().get(connectionId);
-    if (conn?.connected) {
+    if (conn?.type === "online" && conn.connected) {
       api
         .disconnect(connectionId)
         .catch((err) => console.error("[MQTT] Disconnect failed:", err));
