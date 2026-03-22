@@ -26,8 +26,8 @@ func main() {
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
 		Bind: []any{
-			app.mqttService,
-			app.httpService,
+			app.mqttHandler,
+			app.httpHandler,
 		},
 	})
 	if err != nil {

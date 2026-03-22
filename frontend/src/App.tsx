@@ -1,19 +1,19 @@
 import { createEffect, createSignal } from "solid-js";
 import styles from "./App.module.css";
-import { HttpClient } from "./components/http";
-import { HttpProvider } from "./components/http/context";
-import { MqttClient } from "./components/mqtt";
-import { MqttProvider } from "./components/mqtt/context";
-import { Sidebar } from "./components/sidebar";
-import {
-  type Protocol,
-  ProtocolSwitcher,
-} from "./components/sidebar/protocol-switcher";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "./components/ui/resizable";
+import { HttpClient } from "./presentation/components/http";
+import { MqttClient } from "./presentation/components/mqtt";
+import { Sidebar } from "./presentation/components/sidebar";
+import {
+  type Protocol,
+  ProtocolSwitcher,
+} from "./presentation/components/sidebar/protocol-switcher";
+import { HttpProvider } from "./presentation/providers/http-provider";
+import { MqttProvider } from "./presentation/providers/mqtt-provider";
 
 function App() {
   const [protocol, setProtocol] = createSignal<Protocol>("mqtt");

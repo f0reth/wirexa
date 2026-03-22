@@ -1,4 +1,4 @@
-export namespace http {
+export namespace httpdomain {
 	
 	export class RequestBody {
 	    type: string;
@@ -76,7 +76,7 @@ export namespace http {
 	    type: string;
 	    id: string;
 	    name: string;
-	    children?: TreeItem[];
+	    children: TreeItem[];
 	    request?: HttpRequest;
 	
 	    static createFrom(source: any = {}) {
@@ -153,7 +153,7 @@ export namespace http {
 	    contentType: string;
 	    size: number;
 	    timingMs: number;
-	    error?: string;
+	    error: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new HttpResponse(source);
@@ -176,8 +176,32 @@ export namespace http {
 
 }
 
-export namespace mqtt {
+export namespace mqttdomain {
 	
+	export class BrokerProfile {
+	    id: string;
+	    name: string;
+	    broker: string;
+	    clientId: string;
+	    username: string;
+	    password: string;
+	    useTls: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new BrokerProfile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.broker = source["broker"];
+	        this.clientId = source["clientId"];
+	        this.username = source["username"];
+	        this.password = source["password"];
+	        this.useTls = source["useTls"];
+	    }
+	}
 	export class ConnectionConfig {
 	    name: string;
 	    broker: string;
