@@ -56,6 +56,7 @@ export interface SubscribeContextValue {
   setNewQos: Setter<number>;
   addSubscription: (topic?: string, qos?: number) => Promise<void>;
   removeSubscription: (id: string) => Promise<void>;
+  toggleMute: (id: string) => void;
   brokerTopics: Accessor<string[]>;
   isScanning: Accessor<boolean>;
   setIsScanning: (

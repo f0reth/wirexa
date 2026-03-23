@@ -22,6 +22,7 @@ export interface Subscription {
   topic: string;
   qos: 0 | 1 | 2;
   patternParts?: string[];
+  muted: boolean;
 }
 
 export interface PublishPreset {

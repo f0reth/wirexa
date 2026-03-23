@@ -1,4 +1,4 @@
-import { Plus, Trash2 } from "lucide-solid";
+import { Bell, BellOff, Plus, Trash2 } from "lucide-solid";
 import { For, Show } from "solid-js";
 import { Badge } from "../../../../components/ui/badge";
 import { Button } from "../../../../components/ui/button";
@@ -20,6 +20,7 @@ export function SubscriptionsPanel() {
     setNewQos,
     addSubscription,
     removeSubscription,
+    toggleMute,
   } = useMqttSubscribe();
   const { activeConnection } = useMqttConnection();
   const isConnected = () => {
@@ -68,17 +69,32 @@ export function SubscriptionsPanel() {
                 {(sub) => (
                   <div class={styles.subscriptionItem}>
                     <div class={styles.subscriptionInfo}>
-                      <span class={styles.subscriptionTopic}>{sub.topic}</span>
+                      <span
+                        class={`${styles.subscriptionTopic}${sub.muted ? ` ${styles.subscriptionTopicMuted}` : ""}`}
+                      >
+                        {sub.topic}
+                      </span>
                       <Badge variant="secondary">QoS {sub.qos}</Badge>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeSubscription(sub.id)}
-                      class={styles.deleteButton}
-                    >
-                      <Trash2 size={16} />
-                    </Button>
+                    <div class={styles.subscriptionActions}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => toggleMute(sub.id)}
+                        class={`${styles.muteButton}${sub.muted ? ` ${styles.muteButtonActive}` : ""}`}
+                        title={sub.muted ? "Unmute" : "Mute"}
+                      >
+                        {sub.muted ? <BellOff size={15} /> : <Bell size={15} />}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeSubscription(sub.id)}
+                        class={styles.deleteButton}
+                      >
+                        <Trash2 size={16} />
+                      </Button>
+                    </div>
                   </div>
                 )}
               </For>

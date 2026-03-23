@@ -41,6 +41,7 @@ export function createSubscriptionsState(
         topic: t,
         qos: q as 0 | 1 | 2,
         patternParts: isWildcard ? compilePattern(t) : undefined,
+        muted: false,
       };
       updateConnection(connId, (state) => ({
         ...state,
@@ -98,6 +99,17 @@ export function createSubscriptionsState(
     }
   };
 
+  const toggleMute = (id: string) => {
+    const connId = activeConnection()?.connectionId;
+    if (!connId) return;
+    updateConnection(connId, (state) => ({
+      ...state,
+      subscriptions: state.subscriptions.map((s) =>
+        s.id === id ? { ...s, muted: !s.muted } : s,
+      ),
+    }));
+  };
+
   return {
     newTopic,
     setNewTopic,
@@ -108,6 +120,7 @@ export function createSubscriptionsState(
     isScanning,
     addSubscription,
     removeSubscription,
+    toggleMute,
     setIsScanning,
   } as const;
 }

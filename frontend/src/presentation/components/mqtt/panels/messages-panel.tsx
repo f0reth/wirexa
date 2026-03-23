@@ -25,6 +25,8 @@ export function MessagesPanel() {
     getScrollElement: () => scrollRef,
     estimateSize: () => 74,
     overscan: 5,
+    paddingStart: 8,
+    measureElement: (el) => el?.getBoundingClientRect().height ?? 74,
   });
 
   createEffect(() => {
@@ -85,6 +87,8 @@ export function MessagesPanel() {
                 const msg = () => messages()[virtualItem.index];
                 return (
                   <div
+                    data-index={virtualItem.index}
+                    ref={(el) => virtualizer.measureElement(el)}
                     class={styles.messagesVirtualItem}
                     style={{ transform: `translateY(${virtualItem.start}px)` }}
                   >

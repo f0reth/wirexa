@@ -149,12 +149,12 @@ export function createConnectionsState(
           }
 
           const msgParts = data.topic.split("/");
-          const isSubscribed = state.subscriptions.some(
+          const matchingSub = state.subscriptions.find(
             (s) =>
               s.topic === data.topic ||
               (s.patternParts && topicMatchesParts(s.patternParts, msgParts)),
           );
-          if (isSubscribed) {
+          if (matchingSub && !matchingSub.muted) {
             pendingMessages.push({
               id: `${data.timestamp}-${Math.random().toString(36).slice(2, 8)}`,
               topic: data.topic,
