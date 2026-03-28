@@ -58,7 +58,7 @@ export function ListenForm() {
           </SelectContent>
         </Select>
         <Button
-          disabled={loading()}
+          disabled={loading() || sessions.length > 0}
           onClick={() => {
             startListen().catch((err: unknown) => {
               console.error("UDP listen failed:", err);
@@ -75,8 +75,9 @@ export function ListenForm() {
         <For each={sessions}>
           {(session) => (
             <div class={styles.sessionItem}>
+              <span class={styles.listeningDot} />
               <span class={styles.sessionBadge}>
-                :{session.port} ({session.encoding})
+                Listening :{session.port} ({session.encoding})
               </span>
               <Button
                 variant="ghost"
