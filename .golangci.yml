@@ -134,5 +134,21 @@ linters:
         text: "var-naming: type Http"
 
       - linters:
+          - revive
+        text: "var-naming: type Udp"
+
+      - linters:
+          - revive
+        text: "var-naming: func.*Udp"
+
+      - linters:
           - staticcheck
         text: "ST1003: type Http"
+
+      - linters:
+          - staticcheck
+        text: "ST1003: type Udp"
+
+      - linters:
+          - staticcheck
+        text: "ST1003: func.*Udp"
