@@ -245,3 +245,76 @@ export namespace mqttdomain {
 
 }
 
+export namespace udpdomain {
+	
+	export class UdpListenSession {
+	    id: string;
+	    port: number;
+	    encoding: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UdpListenSession(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.port = source["port"];
+	        this.encoding = source["encoding"];
+	    }
+	}
+	export class UdpSendRequest {
+	    host: string;
+	    port: number;
+	    payload: string;
+	    encoding: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UdpSendRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.host = source["host"];
+	        this.port = source["port"];
+	        this.payload = source["payload"];
+	        this.encoding = source["encoding"];
+	    }
+	}
+	export class UdpSendResult {
+	    bytesSent: number;
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UdpSendResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.bytesSent = source["bytesSent"];
+	        this.error = source["error"];
+	    }
+	}
+	export class UdpTarget {
+	    id: string;
+	    name: string;
+	    host: string;
+	    port: number;
+	    encoding: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UdpTarget(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.host = source["host"];
+	        this.port = source["port"];
+	        this.encoding = source["encoding"];
+	    }
+	}
+
+}
+
