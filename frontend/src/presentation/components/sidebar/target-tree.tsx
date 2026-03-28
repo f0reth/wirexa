@@ -6,18 +6,7 @@ import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { Input } from "../../../components/ui/input";
 import { ScrollArea } from "../../../components/ui/scroll-area";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../../../components/ui/select";
-import {
-  PAYLOAD_ENCODINGS,
-  type PayloadEncoding,
-  type UdpTarget,
-} from "../../../domain/udp/types";
+import type { UdpTarget } from "../../../domain/udp/types";
 import { useUdpSend, useUdpTargets } from "../../providers/udp-provider";
 import styles from "./sidebar.module.css";
 
@@ -26,7 +15,6 @@ interface TargetFormState {
   name: string;
   host: string;
   port: string;
-  encoding: PayloadEncoding;
 }
 
 function defaultForm(target?: UdpTarget): TargetFormState {
@@ -35,7 +23,6 @@ function defaultForm(target?: UdpTarget): TargetFormState {
     name: target?.name ?? "",
     host: target?.host ?? "",
     port: target ? String(target.port) : "",
-    encoding: target?.encoding ?? "text",
   };
 }
 
@@ -60,7 +47,6 @@ function TargetDialog(props: TargetDialogProps) {
       name: f.name,
       host: f.host,
       port: Number(f.port),
-      encoding: f.encoding,
     });
   };
 
@@ -101,20 +87,6 @@ function TargetDialog(props: TargetDialogProps) {
               placeholder="12345"
             />
           </label>
-          <span class={styles.dialogLabel}>Encoding</span>
-          <Select
-            value={form().encoding}
-            onValueChange={(v) => update("encoding", v)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="encoding" />
-            </SelectTrigger>
-            <SelectContent>
-              <For each={PAYLOAD_ENCODINGS}>
-                {(enc) => <SelectItem value={enc}>{enc}</SelectItem>}
-              </For>
-            </SelectContent>
-          </Select>
         </div>
         <div class={styles.dialogActions}>
           <Button variant="ghost" onClick={props.onClose}>

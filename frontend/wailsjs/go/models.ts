@@ -366,7 +366,6 @@ export namespace udpdomain {
 	    name: string;
 	    host: string;
 	    port: number;
-	    encoding: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new UdpTarget(source);
@@ -378,7 +377,6 @@ export namespace udpdomain {
 	        this.name = source["name"];
 	        this.host = source["host"];
 	        this.port = source["port"];
-	        this.encoding = source["encoding"];
 	    }
 	}
 

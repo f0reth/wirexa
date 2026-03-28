@@ -7,7 +7,6 @@ export interface UdpTarget {
   name: string;
   host: string;
   port: number;
-  encoding: PayloadEncoding;
 }
 
 export interface FixedLengthField {

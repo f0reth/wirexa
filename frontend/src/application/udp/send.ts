@@ -91,7 +91,6 @@ export function createUdpSendState(api: UdpSendApi) {
     setSelectedTarget(target);
     setHost(target.host);
     setPort(target.port);
-    setEncoding(target.encoding);
   }
 
   return {
