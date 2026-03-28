@@ -5,11 +5,12 @@ import {
   onCleanup,
   untrack,
 } from "solid-js";
+import { createStore, produce } from "solid-js/store";
 import {
-  MAX_MESSAGES,
-  MAX_TOPICS,
-  topicMatchesParts,
-} from "../../domain/mqtt/topic";
+  MQTT_MAX_MESSAGES as MAX_MESSAGES,
+  MQTT_MAX_TOPICS as MAX_TOPICS,
+} from "../../config/limits";
+import { topicMatchesParts } from "../../domain/mqtt/topic";
 import type {
   BrokerProfile,
   MqttMessage,
@@ -97,9 +98,9 @@ export function createConnectionsState(
   profiles: () => BrokerProfile[],
   saveProfile: (p: BrokerProfile) => Promise<void>,
 ) {
-  const [connections, setConnections] = createSignal<
-    Map<string, ConnectionStateExt>
-  >(new Map());
+  const [connections, setConnections] = createStore<
+    Record<string, ConnectionStateExt>
+  >({});
   const [activeConnectionId, setActiveConnectionId] = createSignal<
     string | null
   >(null);
@@ -107,20 +108,16 @@ export function createConnectionsState(
 
   const activeConnection = createMemo((): ConnectionStateExt | null => {
     const id = activeConnectionId();
-    return id ? (connections().get(id) ?? null) : null;
+    return id ? (connections[id] ?? null) : null;
   });
 
   function updateConnection(
     connId: string,
     updater: (state: ConnectionStateExt) => ConnectionStateExt,
   ) {
-    setConnections((prev) => {
-      const existing = prev.get(connId);
-      if (!existing) return prev;
-      const next = new Map(prev);
-      next.set(connId, updater(existing));
-      return next;
-    });
+    const existing = connections[connId];
+    if (!existing) return;
+    setConnections(connId, updater(existing));
   }
 
   // Micro-batch: buffer incoming messages and flush once per animation frame.
@@ -189,10 +186,10 @@ export function createConnectionsState(
         let newMessages = state.messages;
         if (pendingMessages.length > 0) {
           const combined = [...state.messages, ...pendingMessages];
-          newMessages =
-            combined.length > MAX_MESSAGES
-              ? combined.slice(combined.length - MAX_MESSAGES)
-              : combined;
+          if (combined.length > MAX_MESSAGES) {
+            combined.splice(0, combined.length - MAX_MESSAGES);
+          }
+          newMessages = combined;
         }
 
         return {
@@ -276,14 +273,10 @@ export function createConnectionsState(
     const savedProfileId = persistence.loadLastProfileId();
 
     untrack(() => {
-      setConnections((prev) => {
-        const next = new Map(prev);
-        for (const profile of ps) {
-          const entry = makeOfflineState(profile);
-          next.set(entry.connectionId, entry);
-        }
-        return next;
-      });
+      for (const profile of ps) {
+        const entry = makeOfflineState(profile);
+        setConnections(entry.connectionId, entry);
+      }
 
       if (savedProfileId) {
         const savedProfile = ps.find((p) => p.id === savedProfileId);
@@ -305,7 +298,7 @@ export function createConnectionsState(
   });
 
   const updateConnectionBroker = (connectionId: string, broker: string) => {
-    const conn = connections().get(connectionId);
+    const conn = connections[connectionId];
     if (!conn || (conn.type === "online" && conn.connected)) return;
     const updatedProfile = { ...conn.profile, broker };
     updateConnection(connectionId, (state) => ({
@@ -317,16 +310,14 @@ export function createConnectionsState(
 
   const createOfflineConnection = (profile: BrokerProfile) => {
     const entry = makeOfflineState(profile);
-    setConnections((prev) => {
-      const next = new Map(prev);
-      for (const [key, conn] of next) {
-        if (conn.profileId === profile.id) {
-          next.delete(key);
+    setConnections(
+      produce((s) => {
+        for (const key of Object.keys(s)) {
+          if (s[key].profileId === profile.id) delete s[key];
         }
-      }
-      next.set(entry.connectionId, entry);
-      return next;
-    });
+        s[entry.connectionId] = entry;
+      }),
+    );
     setActiveConnectionId(entry.connectionId);
   };
 
@@ -336,16 +327,14 @@ export function createConnectionsState(
     try {
       const connId = await api.connect(profile);
       const newState = makeOnlineState(connId, profile);
-      setConnections((prev) => {
-        const next = new Map(prev);
-        for (const [key, conn] of next) {
-          if (conn.profileId === profile.id) {
-            next.delete(key);
+      setConnections(
+        produce((s) => {
+          for (const key of Object.keys(s)) {
+            if (s[key].profileId === profile.id) delete s[key];
           }
-        }
-        next.set(connId, newState);
-        return next;
-      });
+          s[connId] = newState;
+        }),
+      );
       setActiveConnectionId(connId);
     } catch (err) {
       console.error("[MQTT] Connect failed:", err);
@@ -367,7 +356,7 @@ export function createConnectionsState(
   };
 
   const handleReconnect = async (connectionId: string) => {
-    const conn = connections().get(connectionId);
+    const conn = connections[connectionId];
     if (!conn) return;
     const profile = conn.profile;
     if (conn.type === "online") {
@@ -379,17 +368,17 @@ export function createConnectionsState(
     }
     try {
       const newConnId = await api.connect(profile);
-      setConnections((prev) => {
-        const next = new Map(prev);
-        next.delete(connectionId);
-        next.set(newConnId, {
-          ...conn,
-          type: "online" as const,
-          connectionId: newConnId,
-          connected: false,
-        });
-        return next;
-      });
+      setConnections(
+        produce((s) => {
+          delete s[connectionId];
+          s[newConnId] = {
+            ...conn,
+            type: "online" as const,
+            connectionId: newConnId,
+            connected: false,
+          };
+        }),
+      );
       if (activeConnectionId() === connectionId) {
         setActiveConnectionId(newConnId);
       }
@@ -409,21 +398,21 @@ export function createConnectionsState(
   };
 
   const closeConnection = (connectionId: string) => {
-    const conn = connections().get(connectionId);
+    const conn = connections[connectionId];
     if (conn?.type === "online" && conn.connected) {
       api
         .disconnect(connectionId)
         .catch((err) => console.error("[MQTT] Disconnect failed:", err));
     }
-    setConnections((prev) => {
-      const next = new Map(prev);
-      next.delete(connectionId);
-      if (activeConnectionId() === connectionId) {
-        const first = next.keys().next().value;
-        setActiveConnectionId(first ?? null);
-      }
-      return next;
-    });
+    setConnections(
+      produce((s) => {
+        delete s[connectionId];
+      }),
+    );
+    if (activeConnectionId() === connectionId) {
+      const first = Object.keys(connections)[0] ?? null;
+      setActiveConnectionId(first);
+    }
   };
 
   const switchConnection = (connectionId: string) => {

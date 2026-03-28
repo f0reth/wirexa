@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
+import { UDP_MAX_MESSAGES } from "../../config/limits";
 import type {
   PayloadEncoding,
   UdpListenSession,
@@ -13,8 +14,6 @@ export interface UdpReceiveApi {
   onMessage(cb: (msg: UdpReceivedMessage) => void): () => void;
 }
 
-const MAX_MESSAGES = 500;
-
 export function createUdpReceiveState(api: UdpReceiveApi) {
   const [sessions, setSessions] = createStore<UdpListenSession[]>([]);
   const [messages, setMessages] = createStore<UdpReceivedMessage[]>([]);
@@ -25,7 +24,7 @@ export function createUdpReceiveState(api: UdpReceiveApi) {
   const [error, setError] = createSignal<string | null>(null);
 
   api.onMessage((msg) => {
-    setMessages((prev) => [msg, ...prev].slice(0, MAX_MESSAGES));
+    setMessages((prev) => [msg, ...prev].slice(0, UDP_MAX_MESSAGES));
   });
 
   async function startListen(): Promise<void> {

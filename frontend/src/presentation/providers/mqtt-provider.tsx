@@ -33,7 +33,7 @@ export interface ConnectionContextValue {
   profiles: Accessor<BrokerProfile[]>;
   saveProfile: (p: BrokerProfile) => Promise<void>;
   deleteProfile: (id: string) => Promise<void>;
-  connections: Accessor<Map<string, ConnectionState>>;
+  connections: Record<string, ConnectionState>;
   activeConnectionId: Accessor<string | null>;
   activeConnection: Accessor<ConnectionState | null>;
   activeTab: Accessor<Tab>;

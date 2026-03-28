@@ -1,5 +1,7 @@
-export const MAX_MESSAGES = 5000;
-export const MAX_TOPICS = 500;
+export {
+  MQTT_MAX_MESSAGES as MAX_MESSAGES,
+  MQTT_MAX_TOPICS as MAX_TOPICS,
+} from "../../config/limits";
 
 export function compilePattern(pattern: string): string[] {
   return pattern.split("/");
