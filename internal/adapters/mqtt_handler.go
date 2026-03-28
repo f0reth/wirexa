@@ -11,11 +11,6 @@ type MqttHandler struct {
 	profileSvc domain.ProfileUseCase
 }
 
-// NewMqttHandler は MqttHandler を生成する。
-func NewMqttHandler(svc domain.MqttUseCase, profileSvc domain.ProfileUseCase) *MqttHandler {
-	return &MqttHandler{svc: svc, profileSvc: profileSvc}
-}
-
 // SetupMqttHandler は既存の MqttHandler インスタンスにサービスを注入する。
 // Wails の Bind に渡す前に事前確保した空ハンドラーを startup() で初期化する際に使用する。
 func SetupMqttHandler(h *MqttHandler, svc domain.MqttUseCase, profileSvc domain.ProfileUseCase) {
