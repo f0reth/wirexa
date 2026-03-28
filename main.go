@@ -28,6 +28,7 @@ func main() {
 		Bind: []any{
 			app.mqttHandler,
 			app.httpHandler,
+			app.udpHandler,
 		},
 	})
 	if err != nil {

@@ -12,8 +12,10 @@ import {
   type Protocol,
   ProtocolSwitcher,
 } from "./presentation/components/sidebar/protocol-switcher";
+import { UdpClient } from "./presentation/components/udp";
 import { HttpProvider } from "./presentation/providers/http-provider";
 import { MqttProvider } from "./presentation/providers/mqtt-provider";
+import { UdpProvider } from "./presentation/providers/udp-provider";
 
 function App() {
   const [protocol, setProtocol] = createSignal<Protocol>("mqtt");
@@ -29,44 +31,54 @@ function App() {
 
   return (
     <div class={styles.app}>
-      <HttpProvider>
-        <MqttProvider>
-          <ProtocolSwitcher
-            protocol={protocol()}
-            onProtocolChange={setProtocol}
-            theme={theme()}
-            onThemeToggle={() =>
-              setTheme((t) => (t === "light" ? "dark" : "light"))
-            }
-          />
-          <ResizablePanelGroup direction="horizontal">
-            <ResizablePanel defaultSize={15} minSize={10}>
-              <Sidebar protocol={protocol()} />
-            </ResizablePanel>
-            <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={85}>
-              <main class={styles.main}>
-                <div
-                  class={styles.panel}
-                  style={{
-                    display: protocol() === "mqtt" ? "flex" : "none",
-                  }}
-                >
-                  <MqttClient />
-                </div>
-                <div
-                  class={styles.panel}
-                  style={{
-                    display: protocol() === "http" ? "flex" : "none",
-                  }}
-                >
-                  <HttpClient />
-                </div>
-              </main>
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        </MqttProvider>
-      </HttpProvider>
+      <UdpProvider>
+        <HttpProvider>
+          <MqttProvider>
+            <ProtocolSwitcher
+              protocol={protocol()}
+              onProtocolChange={setProtocol}
+              theme={theme()}
+              onThemeToggle={() =>
+                setTheme((t) => (t === "light" ? "dark" : "light"))
+              }
+            />
+            <ResizablePanelGroup direction="horizontal">
+              <ResizablePanel defaultSize={15} minSize={10}>
+                <Sidebar protocol={protocol()} />
+              </ResizablePanel>
+              <ResizableHandle withHandle />
+              <ResizablePanel defaultSize={85}>
+                <main class={styles.main}>
+                  <div
+                    class={styles.panel}
+                    style={{
+                      display: protocol() === "mqtt" ? "flex" : "none",
+                    }}
+                  >
+                    <MqttClient />
+                  </div>
+                  <div
+                    class={styles.panel}
+                    style={{
+                      display: protocol() === "http" ? "flex" : "none",
+                    }}
+                  >
+                    <HttpClient />
+                  </div>
+                  <div
+                    class={styles.panel}
+                    style={{
+                      display: protocol() === "udp" ? "flex" : "none",
+                    }}
+                  >
+                    <UdpClient />
+                  </div>
+                </main>
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </MqttProvider>
+        </HttpProvider>
+      </UdpProvider>
     </div>
   );
 }
