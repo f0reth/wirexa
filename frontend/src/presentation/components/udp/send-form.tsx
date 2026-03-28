@@ -15,8 +15,6 @@ function isValidAscii(value: string): boolean {
 
 export function SendForm() {
   const {
-    host,
-    setHost,
     port,
     setPort,
     payload,
@@ -38,17 +36,7 @@ export function SendForm() {
   return (
     <div class={styles.sendForm}>
       <div class={styles.formRow}>
-        <span class={styles.formLabel}>Host</span>
-        <Input
-          class={styles.hostInput}
-          type="text"
-          placeholder="127.0.0.1"
-          value={host()}
-          onInput={(e) => setHost(e.currentTarget.value)}
-        />
-        <span class={styles.formLabel} style={{ "min-width": "2.5rem" }}>
-          Port
-        </span>
+        <span class={styles.formLabel}>Port</span>
         <Input
           class={styles.portInput}
           type="number"
