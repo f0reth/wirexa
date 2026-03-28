@@ -283,7 +283,6 @@ export namespace udpdomain {
 	}
 	export class UdpSendResult {
 	    bytesSent: number;
-	    error: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new UdpSendResult(source);
@@ -292,7 +291,6 @@ export namespace udpdomain {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.bytesSent = source["bytesSent"];
-	        this.error = source["error"];
 	    }
 	}
 	export class UdpTarget {
