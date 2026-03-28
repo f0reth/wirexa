@@ -14,11 +14,10 @@ const (
 
 // UdpTarget は保存可能な送信先プリセットを表す。
 type UdpTarget struct {
-	ID       string          `json:"id"`
-	Name     string          `json:"name"`
-	Host     string          `json:"host"`
-	Port     int             `json:"port"`
-	Encoding PayloadEncoding `json:"encoding"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
 }
 
 // FixedLengthField は固定長フィールドを表す。

@@ -31,7 +31,6 @@ function fromWailsTarget(t: udpdomain.UdpTarget): UdpTarget {
     name: t.name,
     host: t.host,
     port: t.port,
-    encoding: t.encoding as UdpTarget["encoding"],
   };
 }
 
