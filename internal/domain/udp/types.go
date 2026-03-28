@@ -21,13 +21,24 @@ type UdpTarget struct {
 	Encoding PayloadEncoding `json:"encoding"`
 }
 
+// FixedLengthField は固定長フィールドを表す。
+type FixedLengthField struct {
+	Name   string `json:"name"`
+	Length int    `json:"length"`
+	Value  string `json:"value"`
+}
+
+// FixedLengthPayload は複数フィールドで構成されるペイロード。
+type FixedLengthPayload struct {
+	Fields []FixedLengthField `json:"fields"`
+}
+
 // UdpSendRequest は UDP 送信リクエストを表す。
 type UdpSendRequest struct {
-	Host          string          `json:"host"`
-	Port          int             `json:"port"`
-	Payload       string          `json:"payload"`
-	Encoding      PayloadEncoding `json:"encoding"`
-	MessageLength int             `json:"messageLength"`
+	Host               string             `json:"host"`
+	Port               int                `json:"port"`
+	Encoding           PayloadEncoding    `json:"encoding"`
+	FixedLengthPayload FixedLengthPayload `json:"fixedLengthPayload"`
 }
 
 // UdpSendResult は UDP 送信結果を表す。

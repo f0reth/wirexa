@@ -26,7 +26,18 @@ func (s *UdpSendService) Send(req domain.UdpSendRequest) (domain.UdpSendResult, 
 		return domain.UdpSendResult{}, &domain.ValidationError{Field: "port", Message: "must be 1-65535"}
 	}
 
-	data, err := domain.DecodePayload(req.Payload, req.Encoding, req.MessageLength)
+	var data []byte
+	var err error
+
+	if req.Encoding == domain.EncodingFixed {
+		data, err = domain.DecodeFixedLengthPayload(&req.FixedLengthPayload)
+	} else {
+		return domain.UdpSendResult{}, &domain.ValidationError{
+			Field:   "encoding",
+			Message: "only 'fixed' encoding is currently supported",
+		}
+	}
+
 	if err != nil {
 		return domain.UdpSendResult{}, err
 	}

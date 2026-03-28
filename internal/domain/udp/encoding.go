@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -71,4 +72,50 @@ func DecodePayload(payload string, encoding PayloadEncoding, messageLength int) 
 	default:
 		return nil, &ValidationError{Field: "encoding", Message: "unknown: " + string(encoding)}
 	}
+}
+
+// DecodeFixedLengthPayload は複数フィールドから単一バイト列を生成する。
+func DecodeFixedLengthPayload(payload *FixedLengthPayload) ([]byte, error) {
+	if payload == nil || len(payload.Fields) == 0 {
+		return nil, &ValidationError{Field: "fixedLengthPayload", Message: "no fields"}
+	}
+
+	var result []byte
+
+	for _, field := range payload.Fields {
+		if field.Length <= 0 {
+			return nil, &ValidationError{
+				Field:   "fixedLengthPayload",
+				Message: fmt.Sprintf("field '%s': length must be > 0", field.Name),
+			}
+		}
+
+		// HEX値をデコード
+		cleaned := strings.ReplaceAll(field.Value, " ", "")
+		data, err := hex.DecodeString(cleaned)
+		if err != nil {
+			return nil, &ValidationError{
+				Field:   "fixedLengthPayload",
+				Message: fmt.Sprintf("field '%s': invalid hex - %v", field.Name, err),
+			}
+		}
+
+		// 長さ検証とパディング
+		if len(data) > field.Length {
+			return nil, &ValidationError{
+				Field:   "fixedLengthPayload",
+				Message: fmt.Sprintf("field '%s': data (%d bytes) exceeds length %d", field.Name, len(data), field.Length),
+			}
+		}
+
+		if len(data) < field.Length {
+			padded := make([]byte, field.Length)
+			copy(padded, data)
+			data = padded
+		}
+
+		result = append(result, data...)
+	}
+
+	return result, nil
 }
