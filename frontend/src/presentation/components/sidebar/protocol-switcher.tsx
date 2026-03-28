@@ -1,9 +1,9 @@
 import { clsx } from "clsx";
-import { Globe, Moon, Radio, Sun } from "lucide-solid";
+import { Globe, Moon, Radio, Sun, Wifi } from "lucide-solid";
 import type { Component } from "solid-js";
 import styles from "./sidebar.module.css";
 
-export type Protocol = "mqtt" | "http";
+export type Protocol = "mqtt" | "http" | "udp";
 
 const PROTOCOLS: {
   value: Protocol;
@@ -12,6 +12,7 @@ const PROTOCOLS: {
 }[] = [
   { value: "mqtt", label: "MQTT", icon: Radio },
   { value: "http", label: "HTTP", icon: Globe },
+  { value: "udp", label: "UDP", icon: Wifi },
 ];
 
 interface ProtocolSwitcherProps {
