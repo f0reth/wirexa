@@ -3,6 +3,7 @@ import { createUdpReceiveState } from "../../application/udp/receive";
 import { createUdpSendState } from "../../application/udp/send";
 import { createTargetsState } from "../../application/udp/targets";
 import type {
+  FixedLengthField,
   PayloadEncoding,
   UdpListenSession,
   UdpReceivedMessage,
@@ -15,12 +16,12 @@ export interface UdpSendContextValue {
   setHost: (v: string) => void;
   port: Accessor<number>;
   setPort: (v: number) => void;
-  payload: Accessor<string>;
-  setPayload: (v: string) => void;
   encoding: Accessor<PayloadEncoding>;
   setEncoding: (v: PayloadEncoding) => void;
-  messageLength: Accessor<number>;
-  setMessageLength: (v: number) => void;
+  fixedLengthFields: Accessor<FixedLengthField[]>;
+  addField: (field?: Partial<FixedLengthField>) => void;
+  updateField: (id: string, updates: Partial<FixedLengthField>) => void;
+  removeField: (id: string) => void;
   loading: Accessor<boolean>;
   send: () => Promise<void>;
   loadTarget: (target: UdpTarget) => void;

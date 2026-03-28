@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import type {
+  FixedLengthField,
   PayloadEncoding,
   UdpSendRequest,
   UdpSendResult,
@@ -13,21 +14,45 @@ export interface UdpSendApi {
 export function createUdpSendState(api: UdpSendApi) {
   const [host, setHost] = createSignal("");
   const [port, setPort] = createSignal(0);
-  const [payload, setPayload] = createSignal("");
-  const [encoding, setEncoding] = createSignal<PayloadEncoding>("text");
-  const [messageLength, setMessageLength] = createSignal(0);
+  const [encoding, setEncoding] = createSignal<PayloadEncoding>("fixed");
+  const [fixedLengthFields, setFixedLengthFields] = createSignal<
+    FixedLengthField[]
+  >([]);
   const [loading, setLoading] = createSignal(false);
+
+  const addField = (field?: Partial<FixedLengthField>) => {
+    const newField: FixedLengthField = {
+      id: crypto.randomUUID(),
+      name: field?.name ?? "",
+      length: field?.length ?? 1,
+      value: field?.value ?? "",
+    };
+    setFixedLengthFields([...fixedLengthFields(), newField]);
+  };
+
+  const updateField = (id: string, updates: Partial<FixedLengthField>) => {
+    setFixedLengthFields(
+      fixedLengthFields().map((f) => (f.id === id ? { ...f, ...updates } : f)),
+    );
+  };
+
+  const removeField = (id: string) => {
+    setFixedLengthFields(fixedLengthFields().filter((f) => f.id !== id));
+  };
 
   async function send(): Promise<void> {
     setLoading(true);
     try {
-      await api.send({
+      const request: UdpSendRequest = {
         host: host(),
         port: port(),
-        payload: payload(),
         encoding: encoding(),
-        messageLength: messageLength(),
-      });
+        fixedLengthPayload: {
+          fields: fixedLengthFields(),
+        },
+      };
+
+      await api.send(request);
     } finally {
       setLoading(false);
     }
@@ -44,12 +69,12 @@ export function createUdpSendState(api: UdpSendApi) {
     setHost,
     port,
     setPort,
-    payload,
-    setPayload,
     encoding,
     setEncoding,
-    messageLength,
-    setMessageLength,
+    fixedLengthFields,
+    addField,
+    updateField,
+    removeField,
     loading,
     send,
     loadTarget,

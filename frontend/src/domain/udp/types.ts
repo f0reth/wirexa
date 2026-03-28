@@ -16,12 +16,22 @@ export interface UdpTarget {
   encoding: PayloadEncoding;
 }
 
+export interface FixedLengthField {
+  id: string;
+  name: string;
+  length: number;
+  value: string;
+}
+
+export interface FixedLengthPayload {
+  fields: FixedLengthField[];
+}
+
 export interface UdpSendRequest {
   host: string;
   port: number;
-  payload: string;
   encoding: PayloadEncoding;
-  messageLength: number;
+  fixedLengthPayload: FixedLengthPayload;
 }
 
 export interface UdpSendResult {
