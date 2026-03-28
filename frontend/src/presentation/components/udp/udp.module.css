@@ -48,9 +48,25 @@
   font-size: 0.8125rem;
 }
 
-.encodingSelect {
-  width: 8rem;
+.encodingRadioGroup {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.encodingRadioLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
   font-size: 0.8125rem;
+  color: var(--color-foreground);
+  cursor: pointer;
+  user-select: none;
+}
+
+.encodingRadioInput {
+  accent-color: var(--color-primary);
+  cursor: pointer;
 }
 
 .payloadTextarea {

@@ -1,12 +1,6 @@
-export type PayloadEncoding = "text" | "hex" | "base64" | "json" | "fixed";
+export type PayloadEncoding = "text" | "json" | "fixed";
 
-export const PAYLOAD_ENCODINGS: PayloadEncoding[] = [
-  "text",
-  "hex",
-  "base64",
-  "json",
-  "fixed",
-];
+export const PAYLOAD_ENCODINGS: PayloadEncoding[] = ["text", "json", "fixed"];
 
 export interface UdpTarget {
   id: string;
