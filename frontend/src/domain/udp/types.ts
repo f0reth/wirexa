@@ -19,7 +19,6 @@ export interface UdpSendRequest {
 
 export interface UdpSendResult {
   bytesSent: number;
-  error: string;
 }
 
 export function isPayloadEncoding(v: string): v is PayloadEncoding {

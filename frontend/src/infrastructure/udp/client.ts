@@ -22,7 +22,7 @@ function toWailsRequest(req: UdpSendRequest): udpdomain.UdpSendRequest {
 }
 
 function fromWailsSendResult(res: udpdomain.UdpSendResult): UdpSendResult {
-  return { bytesSent: res.bytesSent, error: res.error };
+  return { bytesSent: res.bytesSent };
 }
 
 function fromWailsTarget(t: udpdomain.UdpTarget): UdpTarget {

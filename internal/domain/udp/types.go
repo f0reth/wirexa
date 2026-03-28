@@ -29,8 +29,7 @@ type UdpSendRequest struct {
 
 // UdpSendResult は UDP 送信結果を表す。
 type UdpSendResult struct {
-	BytesSent int    `json:"bytesSent"`
-	Error     string `json:"error"`
+	BytesSent int `json:"bytesSent"`
 }
 
 // UdpListenSession はアクティブなリスニングセッションを表す。

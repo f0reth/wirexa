@@ -12,17 +12,12 @@ export function ResultViewer() {
           <p class={styles.resultEmptyText}>No result yet — press Send</p>
         </div>
       </Show>
-      <Show when={result() !== null && result()?.error === ""}>
+      <Show when={result() !== null}>
         <div class={styles.resultSuccess}>
           <span class={styles.resultSuccessText}>
             Sent {result()?.bytesSent} byte
             {result()?.bytesSent !== 1 ? "s" : ""}
           </span>
-        </div>
-      </Show>
-      <Show when={result() !== null && result()?.error !== ""}>
-        <div class={styles.resultError}>
-          <span class={styles.resultErrorText}>{result()?.error}</span>
         </div>
       </Show>
     </div>
