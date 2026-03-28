@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/udp"
 )
 
@@ -73,5 +74,5 @@ func (s *TargetService) DeleteTarget(id string) error {
 			return s.repo.Delete(id)
 		}
 	}
-	return &domain.NotFoundError{Resource: "target", ID: id}
+	return &cmn.NotFoundError{Resource: "target", ID: id}
 }

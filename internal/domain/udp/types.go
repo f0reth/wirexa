@@ -1,5 +1,7 @@
 package udpdomain
 
+import cmn "github.com/f0reth/Wirexa/internal/domain"
+
 // PayloadEncoding はペイロードのエンコーディング形式を表す。
 type PayloadEncoding string
 
@@ -50,10 +52,10 @@ type UdpSendResult struct {
 // Validate は UdpSendRequest のドメイン不変条件を検証する。
 func (r *UdpSendRequest) Validate() error {
 	if r.Host == "" {
-		return &ValidationError{Field: "host", Message: "required"}
+		return &cmn.ValidationError{Field: "host", Message: "required"}
 	}
 	if r.Port < 1 || r.Port > 65535 {
-		return &ValidationError{Field: "port", Message: "must be 1-65535"}
+		return &cmn.ValidationError{Field: "port", Message: "must be 1-65535"}
 	}
 	return nil
 }

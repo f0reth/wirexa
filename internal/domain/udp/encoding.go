@@ -1,3 +1,4 @@
+// Package udpdomain は UDP クライアントのドメイン層を提供する。
 package udpdomain
 
 import (
@@ -7,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 )
 
 // EncodePayload はバイト列を指定エンコーディングで文字列化する。
@@ -37,31 +40,31 @@ func DecodePayload(payload string, encoding PayloadEncoding, messageLength int) 
 		cleaned := strings.ReplaceAll(payload, " ", "")
 		data, err := hex.DecodeString(cleaned)
 		if err != nil {
-			return nil, &ValidationError{Field: "payload", Message: "invalid hex: " + err.Error()}
+			return nil, &cmn.ValidationError{Field: "payload", Message: "invalid hex: " + err.Error()}
 		}
 		return data, nil
 	case EncodingBase64:
 		data, err := base64.StdEncoding.DecodeString(payload)
 		if err != nil {
-			return nil, &ValidationError{Field: "payload", Message: "invalid base64: " + err.Error()}
+			return nil, &cmn.ValidationError{Field: "payload", Message: "invalid base64: " + err.Error()}
 		}
 		return data, nil
 	case EncodingJSON:
 		if !json.Valid([]byte(payload)) {
-			return nil, &ValidationError{Field: "payload", Message: "invalid JSON"}
+			return nil, &cmn.ValidationError{Field: "payload", Message: "invalid JSON"}
 		}
 		return []byte(payload), nil
 	case EncodingFixed:
 		if messageLength <= 0 {
-			return nil, &ValidationError{Field: "messageLength", Message: "must be > 0"}
+			return nil, &cmn.ValidationError{Field: "messageLength", Message: "must be > 0"}
 		}
 		cleaned := strings.ReplaceAll(payload, " ", "")
 		data, err := hex.DecodeString(cleaned)
 		if err != nil {
-			return nil, &ValidationError{Field: "payload", Message: "invalid hex: " + err.Error()}
+			return nil, &cmn.ValidationError{Field: "payload", Message: "invalid hex: " + err.Error()}
 		}
 		if len(data) > messageLength {
-			return nil, &ValidationError{Field: "payload", Message: "payload exceeds messageLength"}
+			return nil, &cmn.ValidationError{Field: "payload", Message: "payload exceeds messageLength"}
 		}
 		if len(data) < messageLength {
 			padded := make([]byte, messageLength)
@@ -70,21 +73,21 @@ func DecodePayload(payload string, encoding PayloadEncoding, messageLength int) 
 		}
 		return data, nil
 	default:
-		return nil, &ValidationError{Field: "encoding", Message: "unknown: " + string(encoding)}
+		return nil, &cmn.ValidationError{Field: "encoding", Message: "unknown: " + string(encoding)}
 	}
 }
 
 // DecodeFixedLengthPayload は複数フィールドから単一バイト列を生成する。
 func DecodeFixedLengthPayload(payload *FixedLengthPayload) ([]byte, error) {
 	if payload == nil || len(payload.Fields) == 0 {
-		return nil, &ValidationError{Field: "fixedLengthPayload", Message: "no fields"}
+		return nil, &cmn.ValidationError{Field: "fixedLengthPayload", Message: "no fields"}
 	}
 
 	var result []byte
 
 	for _, field := range payload.Fields {
 		if field.Length <= 0 {
-			return nil, &ValidationError{
+			return nil, &cmn.ValidationError{
 				Field:   "fixedLengthPayload",
 				Message: fmt.Sprintf("field '%s': length must be > 0", field.Name),
 			}
@@ -94,7 +97,7 @@ func DecodeFixedLengthPayload(payload *FixedLengthPayload) ([]byte, error) {
 		data := make([]byte, 0, len(field.Value))
 		for _, r := range field.Value {
 			if r > 0x7F {
-				return nil, &ValidationError{
+				return nil, &cmn.ValidationError{
 					Field:   "fixedLengthPayload",
 					Message: fmt.Sprintf("field '%s': character '%c' is not single-byte (ASCII only)", field.Name, r),
 				}
@@ -104,7 +107,7 @@ func DecodeFixedLengthPayload(payload *FixedLengthPayload) ([]byte, error) {
 
 		// 長さ検証とパディング
 		if len(data) > field.Length {
-			return nil, &ValidationError{
+			return nil, &cmn.ValidationError{
 				Field:   "fixedLengthPayload",
 				Message: fmt.Sprintf("field '%s': data (%d bytes) exceeds length %d", field.Name, len(data), field.Length),
 			}

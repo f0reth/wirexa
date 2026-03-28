@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 )
 
@@ -32,7 +33,7 @@ type connection struct {
 
 // MqttService は複数の MQTT 接続を管理するアプリケーションサービス。
 type MqttService struct {
-	emitter       domain.EventEmitter
+	emitter       cmn.Emitter
 	clientFactory domain.BrokerClientFactory
 	mu            sync.RWMutex
 	conns         map[string]*connection
@@ -40,7 +41,7 @@ type MqttService struct {
 }
 
 // NewMqttService は MqttService を生成する。
-func NewMqttService(emitter domain.EventEmitter, clientFactory domain.BrokerClientFactory) *MqttService {
+func NewMqttService(emitter cmn.Emitter, clientFactory domain.BrokerClientFactory) *MqttService {
 	return &MqttService{
 		emitter:       emitter,
 		clientFactory: clientFactory,
@@ -51,7 +52,7 @@ func NewMqttService(emitter domain.EventEmitter, clientFactory domain.BrokerClie
 // Connect は MQTT ブローカーへ接続し、接続 ID を返す。
 func (s *MqttService) Connect(config domain.ConnectionConfig) (string, error) {
 	if config.Broker == "" {
-		return "", &domain.ValidationError{Field: "broker URL", Message: "is required"}
+		return "", &cmn.ValidationError{Field: "broker URL", Message: "is required"}
 	}
 
 	connID := uuid.New().String()
@@ -101,7 +102,7 @@ func (s *MqttService) Disconnect(connectionID string) error {
 	conn, ok := s.conns[connectionID]
 	if !ok {
 		s.mu.Unlock()
-		return &domain.NotFoundError{Resource: "connection", ID: connectionID}
+		return &cmn.NotFoundError{Resource: "connection", ID: connectionID}
 	}
 	delete(s.conns, connectionID)
 	s.mu.Unlock()
@@ -117,17 +118,17 @@ func (s *MqttService) Disconnect(connectionID string) error {
 // Publish は指定トピックへメッセージを送信する。
 func (s *MqttService) Publish(connectionID, topic, payload string, qos byte, retain bool) error {
 	if topic == "" {
-		return &domain.ValidationError{Field: "topic", Message: "is required"}
+		return &cmn.ValidationError{Field: "topic", Message: "is required"}
 	}
 	if qos > 2 {
-		return &domain.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
+		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
 	}
 
 	s.mu.RLock()
 	conn, ok := s.conns[connectionID]
 	s.mu.RUnlock()
 	if !ok {
-		return &domain.NotFoundError{Resource: "connection", ID: connectionID}
+		return &cmn.NotFoundError{Resource: "connection", ID: connectionID}
 	}
 
 	if err := conn.client.Publish(topic, qos, retain, payload); err != nil {
@@ -139,17 +140,17 @@ func (s *MqttService) Publish(connectionID, topic, payload string, qos byte, ret
 // Subscribe は指定トピックの購読を開始する。
 func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
 	if topic == "" {
-		return &domain.ValidationError{Field: "topic", Message: "is required"}
+		return &cmn.ValidationError{Field: "topic", Message: "is required"}
 	}
 	if qos > 2 {
-		return &domain.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
+		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
 	}
 
 	s.mu.RLock()
 	conn, ok := s.conns[connectionID]
 	s.mu.RUnlock()
 	if !ok {
-		return &domain.NotFoundError{Resource: "connection", ID: connectionID}
+		return &cmn.NotFoundError{Resource: "connection", ID: connectionID}
 	}
 
 	handler := func(msgTopic, msgPayload string, msgQoS byte, retained bool) {
@@ -172,14 +173,14 @@ func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
 // Unsubscribe は指定トピックの購読を解除する。
 func (s *MqttService) Unsubscribe(connectionID, topic string) error {
 	if topic == "" {
-		return &domain.ValidationError{Field: "topic", Message: "is required"}
+		return &cmn.ValidationError{Field: "topic", Message: "is required"}
 	}
 
 	s.mu.RLock()
 	conn, ok := s.conns[connectionID]
 	s.mu.RUnlock()
 	if !ok {
-		return &domain.NotFoundError{Resource: "connection", ID: connectionID}
+		return &cmn.NotFoundError{Resource: "connection", ID: connectionID}
 	}
 
 	if err := conn.client.Unsubscribe(topic); err != nil {
