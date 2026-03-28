@@ -86,8 +86,11 @@ export function SendForm() {
           <span class={styles.formLabelSub}>bytes</span>
         </div>
       </Show>
-      <div class={styles.formRow} style={{ "align-items": "flex-start" }}>
-        <span class={styles.formLabel} style={{ "padding-top": "0.375rem" }}>
+      <div class={`${styles.formRow} ${styles.payloadRow}`}>
+        <span
+          class={styles.formLabel}
+          style={{ "align-self": "flex-start", "padding-top": "0.375rem" }}
+        >
           Payload
         </span>
         <Textarea

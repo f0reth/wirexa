@@ -11,9 +11,15 @@
   flex-direction: column;
   gap: 0.75rem;
   padding: 1rem;
-  border-bottom: 1px solid var(--border-subtle);
   background-color: var(--surface-2);
-  flex-shrink: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.payloadRow {
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
 }
 
 .formRow {
@@ -49,7 +55,8 @@
 
 .payloadTextarea {
   flex: 1;
-  min-height: 6rem;
+  min-height: 0;
+  height: 100%;
   resize: none;
   font-family: var(--font-mono);
   font-size: 0.8125rem;
