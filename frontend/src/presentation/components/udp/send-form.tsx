@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../components/ui/select";
+import { Textarea } from "../../../components/ui/textarea";
 import {
   PAYLOAD_ENCODINGS,
   type PayloadEncoding,
@@ -36,8 +37,6 @@ export function SendForm() {
     setPayload,
     encoding,
     setEncoding,
-    messageLength,
-    setMessageLength,
     fixedLengthFields,
     addField,
     updateField,
@@ -90,21 +89,6 @@ export function SendForm() {
           </SelectContent>
         </Select>
       </div>
-
-      <Show when={encoding() !== "fixed"}>
-        <div class={styles.formRow}>
-          <span class={styles.formLabel}>Length</span>
-          <Input
-            class={styles.messageLengthInput}
-            type="number"
-            min={1}
-            placeholder="32"
-            value={messageLength() === 0 ? "" : String(messageLength())}
-            onInput={(e) => setMessageLength(Number(e.currentTarget.value))}
-          />
-          <span class={styles.formLabelSub}>bytes</span>
-        </div>
-      </Show>
 
       <Show when={encoding() === "fixed"}>
         <div class={styles.fieldsContainer}>
@@ -218,7 +202,7 @@ export function SendForm() {
           >
             Payload
           </span>
-          <textarea
+          <Textarea
             class={styles.payloadTextarea}
             placeholder={
               encoding() === "hex"
