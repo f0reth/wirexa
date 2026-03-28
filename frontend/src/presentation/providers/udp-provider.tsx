@@ -16,8 +16,12 @@ export interface UdpSendContextValue {
   setHost: (v: string) => void;
   port: Accessor<number>;
   setPort: (v: number) => void;
+  payload: Accessor<string>;
+  setPayload: (v: string) => void;
   encoding: Accessor<PayloadEncoding>;
   setEncoding: (v: PayloadEncoding) => void;
+  messageLength: Accessor<number>;
+  setMessageLength: (v: number) => void;
   fixedLengthFields: Accessor<FixedLengthField[]>;
   addField: (field?: Partial<FixedLengthField>) => void;
   updateField: (id: string, updates: Partial<FixedLengthField>) => void;

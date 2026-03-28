@@ -32,8 +32,12 @@ export function SendForm() {
     setHost,
     port,
     setPort,
+    payload,
+    setPayload,
     encoding,
     setEncoding,
+    messageLength,
+    setMessageLength,
     fixedLengthFields,
     addField,
     updateField,
@@ -86,6 +90,21 @@ export function SendForm() {
           </SelectContent>
         </Select>
       </div>
+
+      <Show when={encoding() !== "fixed"}>
+        <div class={styles.formRow}>
+          <span class={styles.formLabel}>Length</span>
+          <Input
+            class={styles.messageLengthInput}
+            type="number"
+            min={1}
+            placeholder="32"
+            value={messageLength() === 0 ? "" : String(messageLength())}
+            onInput={(e) => setMessageLength(Number(e.currentTarget.value))}
+          />
+          <span class={styles.formLabelSub}>bytes</span>
+        </div>
+      </Show>
 
       <Show when={encoding() === "fixed"}>
         <div class={styles.fieldsContainer}>
@@ -188,6 +207,31 @@ export function SendForm() {
           >
             + Add Field
           </Button>
+        </div>
+      </Show>
+
+      <Show when={encoding() !== "fixed"}>
+        <div class={`${styles.formRow} ${styles.payloadRow}`}>
+          <span
+            class={styles.formLabel}
+            style={{ "align-self": "flex-start", "padding-top": "0.375rem" }}
+          >
+            Payload
+          </span>
+          <textarea
+            class={styles.payloadTextarea}
+            placeholder={
+              encoding() === "hex"
+                ? "DE AD BE EF ..."
+                : encoding() === "base64"
+                  ? "SGVsbG8gV29ybGQ="
+                  : encoding() === "json"
+                    ? '{"key": "value"}'
+                    : "Enter payload..."
+            }
+            value={payload()}
+            onInput={(e) => setPayload(e.currentTarget.value)}
+          />
         </div>
       </Show>
 

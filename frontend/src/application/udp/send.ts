@@ -14,7 +14,9 @@ export interface UdpSendApi {
 export function createUdpSendState(api: UdpSendApi) {
   const [host, setHost] = createSignal("");
   const [port, setPort] = createSignal(0);
-  const [encoding, setEncoding] = createSignal<PayloadEncoding>("fixed");
+  const [payload, setPayload] = createSignal("");
+  const [encoding, setEncoding] = createSignal<PayloadEncoding>("text");
+  const [messageLength, setMessageLength] = createSignal(0);
   const [fixedLengthFields, setFixedLengthFields] = createSignal<
     FixedLengthField[]
   >([]);
@@ -46,10 +48,13 @@ export function createUdpSendState(api: UdpSendApi) {
       const request: UdpSendRequest = {
         host: host(),
         port: port(),
+        payload: payload(),
         encoding: encoding(),
-        fixedLengthPayload: {
-          fields: fixedLengthFields(),
-        },
+        messageLength: messageLength(),
+        fixedLengthPayload:
+          encoding() === "fixed"
+            ? { fields: fixedLengthFields() }
+            : { fields: [] },
       };
 
       await api.send(request);
@@ -69,8 +74,12 @@ export function createUdpSendState(api: UdpSendApi) {
     setHost,
     port,
     setPort,
+    payload,
+    setPayload,
     encoding,
     setEncoding,
+    messageLength,
+    setMessageLength,
     fixedLengthFields,
     addField,
     updateField,

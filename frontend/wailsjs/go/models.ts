@@ -313,6 +313,8 @@ export namespace udpdomain {
 	    host: string;
 	    port: number;
 	    encoding: string;
+	    payload: string;
+	    messageLength: number;
 	    fixedLengthPayload: FixedLengthPayload;
 	
 	    static createFrom(source: any = {}) {
@@ -324,6 +326,8 @@ export namespace udpdomain {
 	        this.host = source["host"];
 	        this.port = source["port"];
 	        this.encoding = source["encoding"];
+	        this.payload = source["payload"];
+	        this.messageLength = source["messageLength"];
 	        this.fixedLengthPayload = this.convertValues(source["fixedLengthPayload"], FixedLengthPayload);
 	    }
 	

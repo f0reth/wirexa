@@ -38,6 +38,8 @@ type UdpSendRequest struct {
 	Host               string             `json:"host"`
 	Port               int                `json:"port"`
 	Encoding           PayloadEncoding    `json:"encoding"`
+	Payload            string             `json:"payload"`
+	MessageLength      int                `json:"messageLength"`
 	FixedLengthPayload FixedLengthPayload `json:"fixedLengthPayload"`
 }
 

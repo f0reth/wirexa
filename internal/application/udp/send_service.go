@@ -32,10 +32,7 @@ func (s *UdpSendService) Send(req domain.UdpSendRequest) (domain.UdpSendResult, 
 	if req.Encoding == domain.EncodingFixed {
 		data, err = domain.DecodeFixedLengthPayload(&req.FixedLengthPayload)
 	} else {
-		return domain.UdpSendResult{}, &domain.ValidationError{
-			Field:   "encoding",
-			Message: "only 'fixed' encoding is currently supported",
-		}
+		data, err = domain.DecodePayload(req.Payload, req.Encoding, req.MessageLength)
 	}
 
 	if err != nil {

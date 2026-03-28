@@ -31,6 +31,8 @@ export interface UdpSendRequest {
   host: string;
   port: number;
   encoding: PayloadEncoding;
+  payload: string;
+  messageLength: number;
   fixedLengthPayload: FixedLengthPayload;
 }
 
