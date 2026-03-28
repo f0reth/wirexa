@@ -19,11 +19,8 @@ func NewUdpSendService(socket domain.UdpSocket) *UdpSendService {
 
 // Send は UDP パケットを送信して結果を返す。
 func (s *UdpSendService) Send(req domain.UdpSendRequest) (domain.UdpSendResult, error) {
-	if req.Host == "" {
-		return domain.UdpSendResult{}, &domain.ValidationError{Field: "host", Message: "required"}
-	}
-	if req.Port < 1 || req.Port > 65535 {
-		return domain.UdpSendResult{}, &domain.ValidationError{Field: "port", Message: "must be 1-65535"}
+	if err := req.Validate(); err != nil {
+		return domain.UdpSendResult{}, err
 	}
 
 	var data []byte
