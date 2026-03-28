@@ -48,7 +48,6 @@ interface BaseConnectionState {
   selectedMessage: MqttMessage | null;
   autoFollow: boolean;
   brokerTopics: string[];
-  brokerTopicsSet: Set<string>;
   isScanning: boolean;
 }
 

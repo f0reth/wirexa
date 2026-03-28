@@ -12,13 +12,22 @@ import {
 } from "../../domain/mqtt/topic";
 import type {
   BrokerProfile,
-  ConnectionState,
   MqttMessage,
   OfflineConnectionState,
   OnlineConnectionState,
   Tab,
 } from "../../domain/mqtt/types";
 import { onMqttEvent } from "../../infrastructure/mqtt/events";
+
+// Application層内部でのみ使うSet最適化を保持する拡張型。
+// Domain型 (ConnectionState) には実装詳細のSetは含まれない。
+export type OfflineStateExt = OfflineConnectionState & {
+  readonly brokerTopicsSet: Set<string>;
+};
+export type OnlineStateExt = OnlineConnectionState & {
+  readonly brokerTopicsSet: Set<string>;
+};
+export type ConnectionStateExt = OfflineStateExt | OnlineStateExt;
 
 export interface MqttConnectionApi {
   connect(profile: BrokerProfile): Promise<string>;
@@ -46,7 +55,7 @@ function offlineId(profileId: string): string {
   return `offline-${profileId}`;
 }
 
-function makeOfflineState(profile: BrokerProfile): OfflineConnectionState {
+function makeOfflineState(profile: BrokerProfile): OfflineStateExt {
   return {
     type: "offline",
     connectionId: offlineId(profile.id),
@@ -65,7 +74,7 @@ function makeOfflineState(profile: BrokerProfile): OfflineConnectionState {
 function makeOnlineState(
   connId: string,
   profile: BrokerProfile,
-): OnlineConnectionState {
+): OnlineStateExt {
   return {
     type: "online",
     connectionId: connId,
@@ -89,21 +98,21 @@ export function createConnectionsState(
   saveProfile: (p: BrokerProfile) => Promise<void>,
 ) {
   const [connections, setConnections] = createSignal<
-    Map<string, ConnectionState>
+    Map<string, ConnectionStateExt>
   >(new Map());
   const [activeConnectionId, setActiveConnectionId] = createSignal<
     string | null
   >(null);
   const [activeTab, setActiveTab] = createSignal<Tab>("subscribe");
 
-  const activeConnection = createMemo(() => {
+  const activeConnection = createMemo((): ConnectionStateExt | null => {
     const id = activeConnectionId();
     return id ? (connections().get(id) ?? null) : null;
   });
 
   function updateConnection(
     connId: string,
-    updater: (state: ConnectionState) => ConnectionState,
+    updater: (state: ConnectionStateExt) => ConnectionStateExt,
   ) {
     setConnections((prev) => {
       const existing = prev.get(connId);
@@ -191,7 +200,7 @@ export function createConnectionsState(
           brokerTopics: newBrokerTopics,
           brokerTopicsSet: newBrokerTopicsSet,
           messages: newMessages,
-        } as ConnectionState;
+        };
       });
     }
   }

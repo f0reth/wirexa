@@ -1,11 +1,12 @@
 import { createEffect } from "solid-js";
-import type { ConnectionState, MqttMessage } from "../../domain/mqtt/types";
+import type { MqttMessage } from "../../domain/mqtt/types";
+import type { ConnectionStateExt } from "./connections";
 
 export function createMessagesState(
-  activeConnection: () => ConnectionState | null,
+  activeConnection: () => ConnectionStateExt | null,
   updateConnection: (
     id: string,
-    updater: (state: ConnectionState) => ConnectionState,
+    updater: (state: ConnectionStateExt) => ConnectionStateExt,
   ) => void,
 ) {
   const messages = () => activeConnection()?.messages ?? [];

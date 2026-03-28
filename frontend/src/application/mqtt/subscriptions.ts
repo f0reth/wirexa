@@ -2,12 +2,13 @@ import { createSignal } from "solid-js";
 import { compilePattern } from "../../domain/mqtt/topic";
 import type { ConnectionState, Subscription } from "../../domain/mqtt/types";
 import * as client from "../../infrastructure/mqtt/client";
+import type { ConnectionStateExt } from "./connections";
 
 export function createSubscriptionsState(
   activeConnection: () => ConnectionState | null,
   updateConnection: (
     id: string,
-    updater: (state: ConnectionState) => ConnectionState,
+    updater: (state: ConnectionStateExt) => ConnectionStateExt,
   ) => void,
 ) {
   const [newTopic, setNewTopic] = createSignal("");
