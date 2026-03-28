@@ -13,6 +13,9 @@ export interface UdpSendApi {
 }
 
 export function createUdpSendState(api: UdpSendApi) {
+  const [selectedTarget, setSelectedTarget] = createSignal<UdpTarget | null>(
+    null,
+  );
   const [host, setHost] = createSignal("");
   const [port, setPort] = createSignal(0);
   const [textPayload, setTextPayload] = createSignal("");
@@ -85,12 +88,14 @@ export function createUdpSendState(api: UdpSendApi) {
   }
 
   function loadTarget(target: UdpTarget): void {
+    setSelectedTarget(target);
     setHost(target.host);
     setPort(target.port);
     setEncoding(target.encoding);
   }
 
   return {
+    selectedTarget,
     host,
     setHost,
     port,

@@ -12,6 +12,7 @@ import type {
 import * as udpClient from "../../infrastructure/udp/client";
 
 export interface UdpSendContextValue {
+  selectedTarget: Accessor<UdpTarget | null>;
   host: Accessor<string>;
   setHost: (v: string) => void;
   port: Accessor<number>;
