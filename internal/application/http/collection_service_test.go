@@ -38,9 +38,9 @@ func (r *inMemoryRepo) Delete(id string) error {
 }
 
 func TestCollectionService_Create(t *testing.T) {
-	svc := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}})
-	if err := svc.Initialize(); err != nil {
-		t.Fatalf("Initialize: %v", err)
+	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}})
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
 	}
 	col, err := svc.CreateCollection("My API")
 	if err != nil {
@@ -55,9 +55,9 @@ func TestCollectionService_Create(t *testing.T) {
 }
 
 func TestCollectionService_DeleteNotFound(t *testing.T) {
-	svc := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}})
-	if err := svc.Initialize(); err != nil {
-		t.Fatalf("Initialize: %v", err)
+	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}})
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
 	}
 	if err := svc.DeleteCollection("nonexistent"); err == nil {
 		t.Error("expected error, got nil")

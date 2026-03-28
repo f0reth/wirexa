@@ -26,30 +26,25 @@ type CollectionService struct {
 }
 
 // NewCollectionService は CollectionService を生成する。
-func NewCollectionService(repo domain.CollectionRepository) *CollectionService {
-	return &CollectionService{
+// コンストラクタ内でリポジトリからコレクションを読み込む。
+func NewCollectionService(repo domain.CollectionRepository) (*CollectionService, error) {
+	svc := &CollectionService{
 		repo:      repo,
 		cache:     make(map[string]*domain.Collection),
 		nodeIndex: make(map[string]map[string]*nodeEntry),
 	}
-}
-
-// Initialize はリポジトリからコレクションを読み込みキャッシュとノードインデックスを初期化する。
-func (s *CollectionService) Initialize() error {
-	cols, err := s.repo.Load()
+	cols, err := repo.Load()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	s.mu.Lock()
 	for i := range cols {
 		c := cols[i]
-		s.cache[c.ID] = &c
+		svc.cache[c.ID] = &c
 		idx := make(map[string]*nodeEntry)
 		buildNodeIndex(idx, c.Items, nil)
-		s.nodeIndex[c.ID] = idx
+		svc.nodeIndex[c.ID] = idx
 	}
-	s.mu.Unlock()
-	return nil
+	return svc, nil
 }
 
 // GetCollections は全コレクションを名前順で返す。

@@ -54,8 +54,8 @@ func (a *App) startup(ctx context.Context) {
 	if err != nil {
 		log.Fatalf("startup: failed to create collection repository: %v", err)
 	}
-	collSvc := httpapp.NewCollectionService(collRepo)
-	if err = collSvc.Initialize(); err != nil {
+	collSvc, err := httpapp.NewCollectionService(collRepo)
+	if err != nil {
 		log.Fatalf("startup: failed to initialize collections: %v", err)
 	}
 	netClient := httpinfra.NewNetClient()
