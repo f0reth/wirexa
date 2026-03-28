@@ -55,6 +55,17 @@
   font-size: 0.8125rem;
 }
 
+.messageLengthInput {
+  width: 6rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.formLabelSub {
+  font-size: 0.75rem;
+  color: var(--color-muted-foreground);
+}
+
 .sendButton {
   align-self: flex-end;
 }

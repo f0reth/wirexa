@@ -6,7 +6,6 @@ import type {
   PayloadEncoding,
   UdpListenSession,
   UdpReceivedMessage,
-  UdpSendResult,
   UdpTarget,
 } from "../../domain/udp/types";
 import * as udpClient from "../../infrastructure/udp/client";
@@ -20,7 +19,8 @@ export interface UdpSendContextValue {
   setPayload: (v: string) => void;
   encoding: Accessor<PayloadEncoding>;
   setEncoding: (v: PayloadEncoding) => void;
-  result: Accessor<UdpSendResult | null>;
+  messageLength: Accessor<number>;
+  setMessageLength: (v: number) => void;
   loading: Accessor<boolean>;
   send: () => Promise<void>;
   loadTarget: (target: UdpTarget) => void;

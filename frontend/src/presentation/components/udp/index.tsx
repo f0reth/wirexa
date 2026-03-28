@@ -1,7 +1,6 @@
 import { createSignal } from "solid-js";
 import { ListenForm } from "./listen-form";
 import { MessageLog } from "./message-log";
-import { ResultViewer } from "./result-viewer";
 import { SendForm } from "./send-form";
 import styles from "./udp.module.css";
 
@@ -29,10 +28,7 @@ export function UdpClient() {
         </button>
       </div>
       {tab() === "send" ? (
-        <>
-          <SendForm />
-          <ResultViewer />
-        </>
+        <SendForm />
       ) : (
         <>
           <ListenForm />
