@@ -69,9 +69,10 @@ func (a *App) startup(ctx context.Context) {
 	if err != nil {
 		log.Fatalf("startup: failed to create target service: %v", err)
 	}
-	sendSvc := udpapp.NewUdpSendService()
+	udpSocket := udpinfra.NewNetSocket()
+	sendSvc := udpapp.NewUdpSendService(udpSocket)
 	udpEmitter := udpinfra.NewWailsEmitter(ctx)
-	listenSvc := udpapp.NewUdpListenerService(udpEmitter)
+	listenSvc := udpapp.NewUdpListenerService(udpSocket, udpEmitter)
 	adapters.SetupUdpHandler(a.udpHandler, sendSvc, targetSvc, listenSvc)
 }
 

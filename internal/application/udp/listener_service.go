@@ -1,10 +1,7 @@
 package udpapp
 
 import (
-	"encoding/base64"
-	"encoding/hex"
 	"fmt"
-	"net"
 	"sync"
 	"time"
 
@@ -18,19 +15,21 @@ var _ domain.ListenUseCase = (*UdpListenerService)(nil)
 // listenSession はアクティブなリスニングセッションの内部状態を保持する。
 type listenSession struct {
 	session domain.UdpListenSession
-	conn    net.PacketConn
+	conn    domain.UdpConn
 }
 
 // UdpListenerService は UDP 受信ユースケースの実装。
 type UdpListenerService struct {
+	socket   domain.UdpSocket
 	emitter  domain.UdpEmitter
 	sessions map[string]*listenSession
 	mu       sync.Mutex
 }
 
 // NewUdpListenerService は UdpListenerService を生成する。
-func NewUdpListenerService(emitter domain.UdpEmitter) *UdpListenerService {
+func NewUdpListenerService(socket domain.UdpSocket, emitter domain.UdpEmitter) *UdpListenerService {
 	return &UdpListenerService{
+		socket:   socket,
 		emitter:  emitter,
 		sessions: make(map[string]*listenSession),
 	}
@@ -51,7 +50,7 @@ func (s *UdpListenerService) StartListen(port int, encoding domain.PayloadEncodi
 	}
 	s.mu.Unlock()
 
-	conn, err := net.ListenPacket("udp4", fmt.Sprintf(":%d", port))
+	conn, err := s.socket.Listen(port)
 	if err != nil {
 		return domain.UdpListenSession{}, fmt.Errorf("failed to listen on port %d: %w", port, err)
 	}
@@ -124,29 +123,17 @@ func (s *UdpListenerService) receiveLoop(ls *listenSession) {
 			return
 		}
 
-		payload := encodePayload(buf[:n], ls.session.Encoding)
+		payload := domain.EncodePayload(buf[:n], ls.session.Encoding)
 
 		msg := domain.UdpReceivedMessage{
 			SessionID:  ls.session.ID,
 			Port:       ls.session.Port,
-			RemoteAddr: addr.String(),
+			RemoteAddr: addr,
 			Payload:    payload,
 			Encoding:   ls.session.Encoding,
 			Timestamp:  time.Now().UnixMilli(),
 		}
 
 		s.emitter.Emit("udp:message", msg)
-	}
-}
-
-// encodePayload は受信バイト列を指定エンコーディングで文字列化する。
-func encodePayload(data []byte, encoding domain.PayloadEncoding) string {
-	switch encoding {
-	case domain.EncodingHex:
-		return hex.EncodeToString(data)
-	case domain.EncodingBase64:
-		return base64.StdEncoding.EncodeToString(data)
-	default:
-		return string(data)
 	}
 }
