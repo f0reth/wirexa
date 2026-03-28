@@ -10,28 +10,19 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
-// nodeEntry はツリー内のノードとその親ノードへの参照を保持する。
-// parent が nil の場合はコレクションルート直下のアイテムを意味する。
-type nodeEntry struct {
-	node   *domain.TreeItem
-	parent *domain.TreeItem
-}
-
 // CollectionService はコレクション管理ユースケースを提供する。
 type CollectionService struct {
-	repo      domain.CollectionRepository
-	mu        sync.RWMutex
-	cache     map[string]*domain.Collection
-	nodeIndex map[string]map[string]*nodeEntry // collectionID → itemID → nodeEntry
+	repo  domain.CollectionRepository
+	mu    sync.RWMutex
+	cache map[string]*domain.Collection
 }
 
 // NewCollectionService は CollectionService を生成する。
 // コンストラクタ内でリポジトリからコレクションを読み込む。
 func NewCollectionService(repo domain.CollectionRepository) (*CollectionService, error) {
 	svc := &CollectionService{
-		repo:      repo,
-		cache:     make(map[string]*domain.Collection),
-		nodeIndex: make(map[string]map[string]*nodeEntry),
+		repo:  repo,
+		cache: make(map[string]*domain.Collection),
 	}
 	cols, err := repo.Load()
 	if err != nil {
@@ -40,9 +31,6 @@ func NewCollectionService(repo domain.CollectionRepository) (*CollectionService,
 	for i := range cols {
 		c := cols[i]
 		svc.cache[c.ID] = &c
-		idx := make(map[string]*nodeEntry)
-		buildNodeIndex(idx, c.Items, nil)
-		svc.nodeIndex[c.ID] = idx
 	}
 	return svc, nil
 }
@@ -73,7 +61,6 @@ func (s *CollectionService) CreateCollection(name string) (domain.Collection, er
 	}
 	s.mu.Lock()
 	s.cache[c.ID] = &c
-	s.nodeIndex[c.ID] = make(map[string]*nodeEntry)
 	s.mu.Unlock()
 	return c, nil
 }
@@ -92,7 +79,6 @@ func (s *CollectionService) DeleteCollection(id string) error {
 	}
 	s.mu.Lock()
 	delete(s.cache, id)
-	delete(s.nodeIndex, id)
 	s.mu.Unlock()
 	return nil
 }
@@ -128,14 +114,12 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 
 	if parentID == "" {
 		c.Items = append(c.Items, item)
-		s.nodeIndex[collectionID][item.ID] = &nodeEntry{node: item, parent: nil}
 	} else {
-		entry, ok := s.nodeIndex[collectionID][parentID]
-		if !ok || entry.node.Type != domain.ItemTypeFolder {
+		parent, _, ok := c.FindNode(parentID)
+		if !ok || parent.Type != domain.ItemTypeFolder {
 			return nil, &domain.NotFoundError{Resource: "parent", ID: parentID}
 		}
-		entry.node.Children = append(entry.node.Children, item)
-		s.nodeIndex[collectionID][item.ID] = &nodeEntry{node: item, parent: entry.node}
+		parent.Children = append(parent.Children, item)
 	}
 
 	if err := s.repo.Save(c); err != nil {
@@ -167,14 +151,12 @@ func (s *CollectionService) AddRequest(collectionID, parentID string, req domain
 
 	if parentID == "" {
 		c.Items = append(c.Items, item)
-		s.nodeIndex[collectionID][item.ID] = &nodeEntry{node: item, parent: nil}
 	} else {
-		entry, ok := s.nodeIndex[collectionID][parentID]
-		if !ok || entry.node.Type != domain.ItemTypeFolder {
+		parent, _, ok := c.FindNode(parentID)
+		if !ok || parent.Type != domain.ItemTypeFolder {
 			return nil, &domain.NotFoundError{Resource: "parent", ID: parentID}
 		}
-		entry.node.Children = append(entry.node.Children, item)
-		s.nodeIndex[collectionID][item.ID] = &nodeEntry{node: item, parent: entry.node}
+		parent.Children = append(parent.Children, item)
 	}
 
 	if err := s.repo.Save(c); err != nil {
@@ -193,13 +175,13 @@ func (s *CollectionService) UpdateRequest(collectionID string, req domain.HttpRe
 		return &domain.NotFoundError{Resource: "collection", ID: collectionID}
 	}
 
-	entry, ok := s.nodeIndex[collectionID][req.ID]
-	if !ok || entry.node.Type != domain.ItemTypeRequest {
+	node, _, ok := c.FindNode(req.ID)
+	if !ok || node.Type != domain.ItemTypeRequest {
 		return &domain.NotFoundError{Resource: "request", ID: req.ID}
 	}
 
-	entry.node.Name = req.Name
-	entry.node.Request = &req
+	node.Name = req.Name
+	node.Request = &req
 
 	return s.repo.Save(c)
 }
@@ -214,20 +196,20 @@ func (s *CollectionService) RenameItem(collectionID, itemID, name string) error 
 		return &domain.NotFoundError{Resource: "collection", ID: collectionID}
 	}
 
-	entry, ok := s.nodeIndex[collectionID][itemID]
+	node, _, ok := c.FindNode(itemID)
 	if !ok {
 		return &domain.NotFoundError{Resource: "item", ID: itemID}
 	}
 
-	entry.node.Name = name
-	if entry.node.Request != nil {
-		entry.node.Request.Name = name
+	node.Name = name
+	if node.Request != nil {
+		node.Request.Name = name
 	}
 
 	return s.repo.Save(c)
 }
 
-// DeleteItem はコレクションからアイテムを削除する。
+// DeleteItem はコレクションからアイテムをサブツリーごと削除する。
 func (s *CollectionService) DeleteItem(collectionID, itemID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -237,47 +219,9 @@ func (s *CollectionService) DeleteItem(collectionID, itemID string) error {
 		return &domain.NotFoundError{Resource: "collection", ID: collectionID}
 	}
 
-	entry, ok := s.nodeIndex[collectionID][itemID]
-	if !ok {
+	if !c.RemoveNode(itemID) {
 		return &domain.NotFoundError{Resource: "item", ID: itemID}
 	}
 
-	if entry.parent == nil {
-		for i, n := range c.Items {
-			if n.ID == itemID {
-				c.Items = append(c.Items[:i], c.Items[i+1:]...)
-				break
-			}
-		}
-	} else {
-		for i, n := range entry.parent.Children {
-			if n.ID == itemID {
-				entry.parent.Children = append(entry.parent.Children[:i], entry.parent.Children[i+1:]...)
-				break
-			}
-		}
-	}
-
-	removeSubtreeFromIndex(s.nodeIndex[collectionID], entry.node)
-
 	return s.repo.Save(c)
-}
-
-// buildNodeIndex はツリーを1回走査してノードインデックスを構築する。
-// parent が nil の場合はコレクションルート直下のアイテムを意味する。
-func buildNodeIndex(index map[string]*nodeEntry, items []*domain.TreeItem, parent *domain.TreeItem) {
-	for _, item := range items {
-		index[item.ID] = &nodeEntry{node: item, parent: parent}
-		if item.Type == domain.ItemTypeFolder {
-			buildNodeIndex(index, item.Children, item)
-		}
-	}
-}
-
-// removeSubtreeFromIndex はノードとその全子孫をインデックスから削除する。
-func removeSubtreeFromIndex(index map[string]*nodeEntry, node *domain.TreeItem) {
-	delete(index, node.ID)
-	for _, child := range node.Children {
-		removeSubtreeFromIndex(index, child)
-	}
 }
