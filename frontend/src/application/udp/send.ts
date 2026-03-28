@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import { createStore, produce } from "solid-js/store";
 import type {
   FixedLengthField,
   PayloadEncoding,
@@ -17,7 +18,7 @@ export function createUdpSendState(api: UdpSendApi) {
   const [payload, setPayload] = createSignal("");
   const [encoding, setEncoding] = createSignal<PayloadEncoding>("text");
   const [messageLength, setMessageLength] = createSignal(0);
-  const [fixedLengthFields, setFixedLengthFields] = createSignal<
+  const [fixedLengthFields, setFixedLengthFields] = createStore<
     FixedLengthField[]
   >([]);
   const [loading, setLoading] = createSignal(false);
@@ -29,17 +30,23 @@ export function createUdpSendState(api: UdpSendApi) {
       length: field?.length ?? 1,
       value: field?.value ?? "",
     };
-    setFixedLengthFields([...fixedLengthFields(), newField]);
+    setFixedLengthFields(fixedLengthFields.length, newField);
   };
 
   const updateField = (id: string, updates: Partial<FixedLengthField>) => {
-    setFixedLengthFields(
-      fixedLengthFields().map((f) => (f.id === id ? { ...f, ...updates } : f)),
-    );
+    const index = fixedLengthFields.findIndex((f) => f.id === id);
+    if (index !== -1) {
+      setFixedLengthFields(index, updates);
+    }
   };
 
   const removeField = (id: string) => {
-    setFixedLengthFields(fixedLengthFields().filter((f) => f.id !== id));
+    setFixedLengthFields(
+      produce((fields) => {
+        const index = fields.findIndex((f) => f.id === id);
+        if (index !== -1) fields.splice(index, 1);
+      }),
+    );
   };
 
   async function send(): Promise<void> {
@@ -53,7 +60,14 @@ export function createUdpSendState(api: UdpSendApi) {
         messageLength: messageLength(),
         fixedLengthPayload:
           encoding() === "fixed"
-            ? { fields: fixedLengthFields() }
+            ? {
+                fields: fixedLengthFields.map((f) => ({
+                  id: f.id,
+                  name: f.name,
+                  length: f.length,
+                  value: f.value,
+                })),
+              }
             : { fields: [] },
       };
 

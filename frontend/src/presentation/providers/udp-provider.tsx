@@ -22,7 +22,7 @@ export interface UdpSendContextValue {
   setEncoding: (v: PayloadEncoding) => void;
   messageLength: Accessor<number>;
   setMessageLength: (v: number) => void;
-  fixedLengthFields: Accessor<FixedLengthField[]>;
+  fixedLengthFields: FixedLengthField[];
   addField: (field?: Partial<FixedLengthField>) => void;
   updateField: (id: string, updates: Partial<FixedLengthField>) => void;
   removeField: (id: string) => void;

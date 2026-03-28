@@ -31,9 +31,9 @@ export function SendForm() {
     send,
   } = useUdpSend();
 
-  const totalBytes = createMemo(() => {
-    return fixedLengthFields().reduce((sum, field) => sum + field.length, 0);
-  });
+  const totalBytes = createMemo(() =>
+    fixedLengthFields.reduce((sum, field) => sum + field.length, 0),
+  );
 
   return (
     <div class={styles.sendForm}>
@@ -87,20 +87,30 @@ export function SendForm() {
             <span class={styles.totalBytes}>Total: {totalBytes()} bytes</span>
           </div>
 
-          <For each={fixedLengthFields()}>
-            {(field) => {
-              const isAsciiValid = () => isValidAscii(field.value);
+          <For each={fixedLengthFields}>
+            {(field, index) => {
               const byteCount = () => field.value.length;
+              const isAsciiValid = () => isValidAscii(field.value);
+              const byteCountClass = () => {
+                if (!isAsciiValid()) return styles.byteCountError;
+                if (byteCount() > field.length) return styles.byteCountWarn;
+                return styles.byteCountOk;
+              };
+              const byteCountLabel = () => {
+                if (!isAsciiValid()) return "non-ASCII";
+                return `${byteCount()}/${field.length}`;
+              };
 
               return (
                 <div class={styles.fieldItem}>
-                  <div class={styles.fieldRow}>
+                  <div class={styles.fieldMainRow}>
+                    <span class={styles.fieldNumber}>#{index() + 1}</span>
                     <div class={styles.fieldGroup}>
                       <span class={styles.fieldLabel}>Name</span>
                       <Input
                         class={styles.fieldInput}
                         type="text"
-                        placeholder="Field name"
+                        placeholder="field name"
                         value={field.name}
                         aria-label="Field name"
                         onInput={(e) =>
@@ -108,7 +118,7 @@ export function SendForm() {
                         }
                       />
                     </div>
-                    <div class={styles.fieldGroup}>
+                    <div class={styles.fieldLengthGroup}>
                       <span class={styles.fieldLabel}>Length</span>
                       <Input
                         class={styles.fieldLengthInput}
@@ -124,9 +134,18 @@ export function SendForm() {
                         }
                       />
                     </div>
+                    <Button
+                      class={styles.deleteFieldButton}
+                      variant="ghost"
+                      size="sm"
+                      aria-label="Delete field"
+                      onClick={() => removeField(field.id)}
+                    >
+                      ✕
+                    </Button>
                   </div>
 
-                  <div class={styles.fieldRow}>
+                  <div class={styles.fieldValueRow}>
                     <div class={styles.fieldGroup} style={{ flex: 1 }}>
                       <span class={styles.fieldLabel}>Value (UTF-8)</span>
                       <Input
@@ -146,29 +165,12 @@ export function SendForm() {
                             : undefined,
                         }}
                       />
-                      <span
-                        class={styles.fieldHint}
-                        style={{
-                          color: !isAsciiValid()
-                            ? "#ef4444"
-                            : byteCount() > field.length
-                              ? "#f59e0b"
-                              : undefined,
-                        }}
-                      >
-                        {!isAsciiValid()
-                          ? "ASCII only (1 char = 1 byte)"
-                          : `${byteCount()}/${field.length} bytes`}
-                      </span>
                     </div>
-                    <Button
-                      class={styles.deleteFieldButton}
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeField(field.id)}
+                    <span
+                      class={`${styles.byteCountBadge} ${byteCountClass()}`}
                     >
-                      ✕
-                    </Button>
+                      {byteCountLabel()}
+                    </span>
                   </div>
                 </div>
               );
