@@ -1,13 +1,6 @@
 import { createMemo, For, Show } from "solid-js";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../../../components/ui/select";
 import { Textarea } from "../../../components/ui/textarea";
 import {
   PAYLOAD_ENCODINGS,
@@ -75,19 +68,23 @@ export function SendForm() {
       </div>
       <div class={styles.formRow}>
         <span class={styles.formLabel}>Encoding</span>
-        <Select
-          value={encoding()}
-          onValueChange={(v) => setEncoding(v as PayloadEncoding)}
-        >
-          <SelectTrigger class={styles.encodingSelect}>
-            <SelectValue placeholder="encoding" />
-          </SelectTrigger>
-          <SelectContent>
-            <For each={PAYLOAD_ENCODINGS}>
-              {(enc) => <SelectItem value={enc}>{enc}</SelectItem>}
-            </For>
-          </SelectContent>
-        </Select>
+        <div class={styles.encodingRadioGroup}>
+          <For each={PAYLOAD_ENCODINGS}>
+            {(enc) => (
+              <label class={styles.encodingRadioLabel}>
+                <input
+                  type="radio"
+                  name="encoding"
+                  value={enc}
+                  checked={encoding() === enc}
+                  onChange={() => setEncoding(enc as PayloadEncoding)}
+                  class={styles.encodingRadioInput}
+                />
+                {enc}
+              </label>
+            )}
+          </For>
+        </div>
       </div>
 
       <Show when={encoding() === "fixed"}>
@@ -205,13 +202,7 @@ export function SendForm() {
           <Textarea
             class={styles.payloadTextarea}
             placeholder={
-              encoding() === "hex"
-                ? "DE AD BE EF ..."
-                : encoding() === "base64"
-                  ? "SGVsbG8gV29ybGQ="
-                  : encoding() === "json"
-                    ? '{"key": "value"}'
-                    : "Enter payload..."
+              encoding() === "json" ? '{"key": "value"}' : "Enter payload..."
             }
             value={payload()}
             onInput={(e) => setPayload(e.currentTarget.value)}
