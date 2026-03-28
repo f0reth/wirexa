@@ -15,8 +15,15 @@ export interface UdpSendApi {
 export function createUdpSendState(api: UdpSendApi) {
   const [host, setHost] = createSignal("");
   const [port, setPort] = createSignal(0);
-  const [payload, setPayload] = createSignal("");
+  const [textPayload, setTextPayload] = createSignal("");
+  const [jsonPayload, setJsonPayload] = createSignal("");
   const [encoding, setEncoding] = createSignal<PayloadEncoding>("text");
+
+  const payload = () => (encoding() === "json" ? jsonPayload() : textPayload());
+  const setPayload = (v: string) => {
+    if (encoding() === "json") setJsonPayload(v);
+    else setTextPayload(v);
+  };
   const [messageLength, setMessageLength] = createSignal(0);
   const [fixedLengthFields, setFixedLengthFields] = createStore<
     FixedLengthField[]
