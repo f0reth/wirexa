@@ -379,12 +379,12 @@
   min-height: 0;
   background-color: var(--surface-1);
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .messagesVirtualContainer {
   position: relative;
-  padding: 0.625rem;
-  box-sizing: border-box;
+  width: 100%;
 }
 
 .messagesVirtualItem {

@@ -1,10 +1,4 @@
-import {
-  type Accessor,
-  createContext,
-  type JSX,
-  type Setter,
-  useContext,
-} from "solid-js";
+import { type Accessor, createContext, type JSX, useContext } from "solid-js";
 import { createCollectionsState } from "../../application/http/collections";
 import { createRequestState } from "../../application/http/request";
 import type {
@@ -20,15 +14,15 @@ import * as httpClient from "../../infrastructure/http/client";
 
 export interface RequestContextValue {
   method: Accessor<HttpMethod>;
-  setMethod: Setter<HttpMethod>;
+  setMethod: (val: HttpMethod) => void;
   url: Accessor<string>;
-  setUrl: Setter<string>;
+  setUrl: (val: string) => void;
   headers: Accessor<KeyValuePair[]>;
-  setHeaders: Setter<KeyValuePair[]>;
+  setHeaders: (val: KeyValuePair[]) => void;
   params: Accessor<KeyValuePair[]>;
-  setParams: Setter<KeyValuePair[]>;
+  setParams: (val: KeyValuePair[]) => void;
   body: Accessor<RequestBody>;
-  setBody: Setter<RequestBody>;
+  setBody: (val: RequestBody) => void;
   response: Accessor<HttpResponse | null>;
   loading: Accessor<boolean>;
   dirty: Accessor<boolean>;
@@ -68,11 +62,12 @@ const HttpRequestContext = createContext<RequestContextValue>();
 const HttpCollectionsContext = createContext<CollectionsContextValue>();
 
 export function HttpProvider(props: { children: JSX.Element }) {
+  const collectionsState = createCollectionsState(httpClient);
   const requestState = createRequestState({
     sendRequest: httpClient.sendRequest,
     updateRequest: httpClient.updateRequest,
+    afterSave: () => collectionsState.refreshCollections(),
   });
-  const collectionsState = createCollectionsState(httpClient);
 
   return (
     <HttpRequestContext.Provider value={requestState}>

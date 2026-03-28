@@ -23,9 +23,10 @@ export function MessagesPanel() {
       return messages().length;
     },
     getScrollElement: () => scrollRef,
-    estimateSize: () => 74,
+    estimateSize: () => 62,
     overscan: 5,
-    paddingStart: 8,
+    paddingStart: 10,
+    paddingEnd: 10,
     measureElement: (el) => el?.getBoundingClientRect().height ?? 74,
   });
 

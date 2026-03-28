@@ -10,11 +10,13 @@ import type {
 export interface RequestApi {
   sendRequest(req: HttpRequest): Promise<HttpResponse>;
   updateRequest(collectionId: string, req: HttpRequest): Promise<void>;
+  afterSave?: () => Promise<void>;
 }
 
 export function createRequestState(api: RequestApi) {
   const [method, setMethod] = createSignal<HttpMethod>("GET");
   const [url, setUrl] = createSignal("");
+  const [requestName, setRequestName] = createSignal("");
   const [headers, setHeaders] = createSignal<KeyValuePair[]>([]);
   const [params, setParams] = createSignal<KeyValuePair[]>([]);
   const [body, setBody] = createSignal<RequestBody>({
@@ -53,6 +55,7 @@ export function createRequestState(api: RequestApi) {
   function loadRequest(req: HttpRequest, collectionId: string): void {
     setMethod(req.method);
     setUrl(req.url);
+    setRequestName(req.name);
     setHeaders(req.headers);
     setParams(req.params);
     setBody(req.body);
@@ -78,27 +81,53 @@ export function createRequestState(api: RequestApi) {
     if (!id || !colId) return;
     await api.updateRequest(colId, {
       id,
-      name: "", // 呼び出し元が name を管理
+      name: requestName(),
       method: method(),
       url: url(),
       headers: headers(),
       params: params(),
       body: body(),
     });
+    await api.afterSave?.();
     setDirty(false);
+  }
+
+  function updateMethod(v: HttpMethod): void {
+    setMethod(v);
+    if (activeRequestId() !== null) setDirty(true);
+  }
+
+  function updateUrl(v: string): void {
+    setUrl(v);
+    if (activeRequestId() !== null) setDirty(true);
+  }
+
+  function updateHeaders(v: KeyValuePair[]): void {
+    setHeaders(v);
+    if (activeRequestId() !== null) setDirty(true);
+  }
+
+  function updateParams(v: KeyValuePair[]): void {
+    setParams(v);
+    if (activeRequestId() !== null) setDirty(true);
+  }
+
+  function updateBody(v: RequestBody): void {
+    setBody(v);
+    if (activeRequestId() !== null) setDirty(true);
   }
 
   return {
     method,
-    setMethod,
+    setMethod: updateMethod,
     url,
-    setUrl,
+    setUrl: updateUrl,
     headers,
-    setHeaders,
+    setHeaders: updateHeaders,
     params,
-    setParams,
+    setParams: updateParams,
     body,
-    setBody,
+    setBody: updateBody,
     response,
     loading,
     dirty,
