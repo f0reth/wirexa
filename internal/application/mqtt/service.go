@@ -2,6 +2,7 @@
 package mqttapp
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -11,6 +12,8 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 )
 
+const shutdownTimeout = 5 * time.Second
+
 const (
 	eventConnected        = "mqtt:connected"
 	eventDisconnected     = "mqtt:disconnected"
@@ -18,6 +21,8 @@ const (
 	eventConnectionFailed = "mqtt:connection-failed"
 	eventMessage          = "mqtt:message"
 )
+
+var _ domain.MqttUseCase = (*MqttService)(nil)
 
 type connection struct {
 	id     string
@@ -201,8 +206,20 @@ func (s *MqttService) GetConnections() []domain.ConnectionStatus {
 }
 
 // Shutdown は全接続を切断してサービスを終了する。
+// 接続goroutineの完了を最大 shutdownTimeout 待つ。
 func (s *MqttService) Shutdown() {
-	s.connWg.Wait()
+	done := make(chan struct{})
+	go func() {
+		s.connWg.Wait()
+		close(done)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
 
 	s.mu.Lock()
 	conns := make([]*connection, 0, len(s.conns))
