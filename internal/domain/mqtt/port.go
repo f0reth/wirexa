@@ -32,13 +32,3 @@ type ProfileUseCase interface {
 	SaveProfile(profile BrokerProfile) error
 	DeleteProfile(id string) error
 }
-
-// PasswordVault はブローカーパスワードの安全な保管を担うポート。
-type PasswordVault interface {
-	// Store はプロファイル ID に対してパスワードを保存する。
-	Store(profileID, password string) error
-	// Load はプロファイル ID からパスワードを取得する。
-	Load(profileID string) (string, error)
-	// Delete はプロファイル ID のパスワードを削除する。
-	Delete(profileID string) error
-}
