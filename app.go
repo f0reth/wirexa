@@ -58,7 +58,8 @@ func (a *App) startup(ctx context.Context) {
 	if err = collSvc.Initialize(); err != nil {
 		log.Fatalf("startup: failed to initialize collections: %v", err)
 	}
-	reqSvc := httpapp.NewHTTPRequestService()
+	netClient := httpinfra.NewNetClient()
+	reqSvc := httpapp.NewHTTPRequestService(netClient)
 	adapters.SetupHTTPHandler(a.httpHandler, reqSvc, collSvc)
 
 	targetRepo, err := udpinfra.NewJSONTargetRepository(filepath.Join(configDir, "Wirexa", "udp-targets"))

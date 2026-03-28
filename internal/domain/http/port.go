@@ -1,6 +1,12 @@
 // Package httpdomain は HTTP ドメイン層のポートインターフェースを定義する。
 package httpdomain
 
+// HttpTransport はHTTPリクエスト実行を担うポート。
+// Application層はこのインターフェースを通じてネットワークI/Oを行う。
+type HttpTransport interface {
+	Do(req HttpRequest) (HttpResponse, error)
+}
+
 // CollectionRepository はコレクションの永続化抽象。
 type CollectionRepository interface {
 	Load() ([]Collection, error)
