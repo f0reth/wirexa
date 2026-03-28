@@ -35,10 +35,10 @@ export function BrokerTree() {
     name: string;
   } | null>(null);
 
-  // Memoize profileId → ConnectionState index to avoid repeated Map→Array conversions
+  // Memoize profileId → ConnectionState index to avoid repeated object→Array conversions
   const connectionByProfileId = createMemo(() => {
     const map = new Map<string, ConnectionState>();
-    for (const conn of connections().values()) {
+    for (const conn of Object.values(connections)) {
       map.set(conn.profileId, conn);
     }
     return map;
@@ -91,7 +91,7 @@ export function BrokerTree() {
   const isActive = (profileId: string) => {
     const connId = activeConnectionId();
     if (!connId) return false;
-    const conn = connections().get(connId);
+    const conn = connections[connId];
     return conn?.profileId === profileId;
   };
 
