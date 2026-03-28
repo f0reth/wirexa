@@ -9,14 +9,9 @@ import {
   Subscribe,
   Unsubscribe,
 } from "../../../wailsjs/go/adapters/MqttHandler";
-import type { BrokerProfile } from "../../domain/mqtt/types";
+import type { BrokerProfile, ConnectionStatus } from "../../domain/mqtt/types";
 
-export interface ConnectionStatus {
-  id: string;
-  name: string;
-  broker: string;
-  connected: boolean;
-}
+export type { ConnectionStatus };
 
 export async function connect(profile: BrokerProfile): Promise<string> {
   return Connect({

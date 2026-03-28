@@ -1,3 +1,10 @@
+export interface ConnectionStatus {
+  id: string;
+  name: string;
+  broker: string;
+  connected: boolean;
+}
+
 export interface MqttMessage {
   id: string; // フロントエンドで付与 (UUID)
   topic: string;
