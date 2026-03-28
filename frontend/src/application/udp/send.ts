@@ -15,19 +15,19 @@ export function createUdpSendState(api: UdpSendApi) {
   const [port, setPort] = createSignal(0);
   const [payload, setPayload] = createSignal("");
   const [encoding, setEncoding] = createSignal<PayloadEncoding>("text");
-  const [result, setResult] = createSignal<UdpSendResult | null>(null);
+  const [messageLength, setMessageLength] = createSignal(0);
   const [loading, setLoading] = createSignal(false);
 
   async function send(): Promise<void> {
     setLoading(true);
     try {
-      const res = await api.send({
+      await api.send({
         host: host(),
         port: port(),
         payload: payload(),
         encoding: encoding(),
+        messageLength: messageLength(),
       });
-      setResult(res);
     } finally {
       setLoading(false);
     }
@@ -37,7 +37,6 @@ export function createUdpSendState(api: UdpSendApi) {
     setHost(target.host);
     setPort(target.port);
     setEncoding(target.encoding);
-    setResult(null);
   }
 
   return {
@@ -49,7 +48,8 @@ export function createUdpSendState(api: UdpSendApi) {
     setPayload,
     encoding,
     setEncoding,
-    result,
+    messageLength,
+    setMessageLength,
     loading,
     send,
     loadTarget,

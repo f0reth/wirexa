@@ -268,6 +268,7 @@ export namespace udpdomain {
 	    port: number;
 	    payload: string;
 	    encoding: string;
+	    messageLength: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new UdpSendRequest(source);
@@ -279,6 +280,7 @@ export namespace udpdomain {
 	        this.port = source["port"];
 	        this.payload = source["payload"];
 	        this.encoding = source["encoding"];
+	        this.messageLength = source["messageLength"];
 	    }
 	}
 	export class UdpSendResult {

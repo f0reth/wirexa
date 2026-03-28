@@ -26,7 +26,7 @@ func (s *UdpSendService) Send(req domain.UdpSendRequest) (domain.UdpSendResult, 
 		return domain.UdpSendResult{}, &domain.ValidationError{Field: "port", Message: "must be 1-65535"}
 	}
 
-	data, err := domain.DecodePayload(req.Payload, req.Encoding)
+	data, err := domain.DecodePayload(req.Payload, req.Encoding, req.MessageLength)
 	if err != nil {
 		return domain.UdpSendResult{}, err
 	}

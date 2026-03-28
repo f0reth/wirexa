@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import {
@@ -26,6 +26,8 @@ export function SendForm() {
     setPayload,
     encoding,
     setEncoding,
+    messageLength,
+    setMessageLength,
     loading,
     send,
   } = useUdpSend();
@@ -70,13 +72,35 @@ export function SendForm() {
           </SelectContent>
         </Select>
       </div>
+      <Show when={encoding() === "fixed"}>
+        <div class={styles.formRow}>
+          <span class={styles.formLabel}>Length</span>
+          <Input
+            class={styles.messageLengthInput}
+            type="number"
+            min={1}
+            placeholder="32"
+            value={messageLength() === 0 ? "" : String(messageLength())}
+            onInput={(e) => setMessageLength(Number(e.currentTarget.value))}
+          />
+          <span class={styles.formLabelSub}>bytes</span>
+        </div>
+      </Show>
       <div class={styles.formRow} style={{ "align-items": "flex-start" }}>
         <span class={styles.formLabel} style={{ "padding-top": "0.375rem" }}>
           Payload
         </span>
         <Textarea
           class={styles.payloadTextarea}
-          placeholder="Enter payload..."
+          placeholder={
+            encoding() === "fixed"
+              ? "DE AD BE EF ..."
+              : encoding() === "hex"
+                ? "DE AD BE EF ..."
+                : encoding() === "json"
+                  ? '{"key": "value"}'
+                  : "Enter payload..."
+          }
           value={payload()}
           onInput={(e) => setPayload(e.currentTarget.value)}
         />
