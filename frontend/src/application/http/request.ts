@@ -25,7 +25,6 @@ export function createRequestState(api: RequestApi) {
   });
   const [response, setResponse] = createSignal<HttpResponse | null>(null);
   const [loading, setLoading] = createSignal(false);
-  const [dirty, setDirty] = createSignal(false);
   const [activeRequestId, setActiveRequestId] = createSignal<string | null>(
     null,
   );
@@ -61,7 +60,6 @@ export function createRequestState(api: RequestApi) {
     setBody(req.body);
     setActiveRequestId(req.id);
     setActiveCollectionId(collectionId);
-    setDirty(false);
   }
 
   function newRequest(): void {
@@ -72,7 +70,6 @@ export function createRequestState(api: RequestApi) {
     setBody({ type: "none", content: "" });
     setActiveRequestId(null);
     setActiveCollectionId(null);
-    setDirty(false);
   }
 
   async function saveCurrentRequest(): Promise<void> {
@@ -89,49 +86,21 @@ export function createRequestState(api: RequestApi) {
       body: body(),
     });
     await api.afterSave?.();
-    setDirty(false);
-  }
-
-  function updateMethod(v: HttpMethod): void {
-    setMethod(v);
-    if (activeRequestId() !== null) setDirty(true);
-  }
-
-  function updateUrl(v: string): void {
-    setUrl(v);
-    if (activeRequestId() !== null) setDirty(true);
-  }
-
-  function updateHeaders(v: KeyValuePair[]): void {
-    setHeaders(v);
-    if (activeRequestId() !== null) setDirty(true);
-  }
-
-  function updateParams(v: KeyValuePair[]): void {
-    setParams(v);
-    if (activeRequestId() !== null) setDirty(true);
-  }
-
-  function updateBody(v: RequestBody): void {
-    setBody(v);
-    if (activeRequestId() !== null) setDirty(true);
   }
 
   return {
     method,
-    setMethod: updateMethod,
+    setMethod,
     url,
-    setUrl: updateUrl,
+    setUrl,
     headers,
-    setHeaders: updateHeaders,
+    setHeaders,
     params,
-    setParams: updateParams,
+    setParams,
     body,
-    setBody: updateBody,
+    setBody,
     response,
     loading,
-    dirty,
-    setDirty,
     activeRequestId,
     activeCollectionId,
     sendRequest,

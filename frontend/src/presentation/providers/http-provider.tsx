@@ -1,4 +1,11 @@
-import { type Accessor, createContext, type JSX, useContext } from "solid-js";
+import {
+  type Accessor,
+  createContext,
+  createMemo,
+  createSignal,
+  type JSX,
+  useContext,
+} from "solid-js";
 import { createCollectionsState } from "../../application/http/collections";
 import { createRequestState } from "../../application/http/request";
 import type {
@@ -61,6 +68,14 @@ export interface CollectionsContextValue {
 const HttpRequestContext = createContext<RequestContextValue>();
 const HttpCollectionsContext = createContext<CollectionsContextValue>();
 
+type SavedSnapshot = {
+  method: HttpMethod;
+  url: string;
+  headers: KeyValuePair[];
+  params: KeyValuePair[];
+  body: RequestBody;
+};
+
 export function HttpProvider(props: { children: JSX.Element }) {
   const collectionsState = createCollectionsState(httpClient);
   const requestState = createRequestState({
@@ -69,8 +84,60 @@ export function HttpProvider(props: { children: JSX.Element }) {
     afterSave: () => collectionsState.refreshCollections(),
   });
 
+  // dirty 管理はプレゼンテーション層の責務
+  const [savedSnapshot, setSavedSnapshot] = createSignal<SavedSnapshot | null>(
+    null,
+  );
+
+  function loadRequest(req: HttpRequest, collectionId: string): void {
+    requestState.loadRequest(req, collectionId);
+    setSavedSnapshot({
+      method: req.method,
+      url: req.url,
+      headers: req.headers,
+      params: req.params,
+      body: req.body,
+    });
+  }
+
+  function newRequest(): void {
+    requestState.newRequest();
+    setSavedSnapshot(null);
+  }
+
+  async function saveCurrentRequest(): Promise<void> {
+    await requestState.saveCurrentRequest();
+    setSavedSnapshot({
+      method: requestState.method(),
+      url: requestState.url(),
+      headers: requestState.headers(),
+      params: requestState.params(),
+      body: requestState.body(),
+    });
+  }
+
+  const dirty = createMemo(() => {
+    const snap = savedSnapshot();
+    if (snap === null || requestState.activeRequestId() === null) return false;
+    return (
+      requestState.method() !== snap.method ||
+      requestState.url() !== snap.url ||
+      JSON.stringify(requestState.headers()) !== JSON.stringify(snap.headers) ||
+      JSON.stringify(requestState.params()) !== JSON.stringify(snap.params) ||
+      JSON.stringify(requestState.body()) !== JSON.stringify(snap.body)
+    );
+  });
+
+  const contextValue: RequestContextValue = {
+    ...requestState,
+    dirty,
+    loadRequest,
+    newRequest,
+    saveCurrentRequest,
+  };
+
   return (
-    <HttpRequestContext.Provider value={requestState}>
+    <HttpRequestContext.Provider value={contextValue}>
       <HttpCollectionsContext.Provider value={collectionsState}>
         {props.children}
       </HttpCollectionsContext.Provider>
