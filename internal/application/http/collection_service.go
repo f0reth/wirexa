@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
@@ -70,7 +71,7 @@ func (s *CollectionService) DeleteCollection(id string) error {
 	s.mu.RLock()
 	if _, ok := s.cache[id]; !ok {
 		s.mu.RUnlock()
-		return &domain.NotFoundError{Resource: "collection", ID: id}
+		return &cmn.NotFoundError{Resource: "collection", ID: id}
 	}
 	s.mu.RUnlock()
 
@@ -89,7 +90,7 @@ func (s *CollectionService) RenameCollection(id, name string) error {
 	defer s.mu.Unlock()
 	c, ok := s.cache[id]
 	if !ok {
-		return &domain.NotFoundError{Resource: "collection", ID: id}
+		return &cmn.NotFoundError{Resource: "collection", ID: id}
 	}
 	c.Name = name
 	return s.repo.Save(c)
@@ -109,7 +110,7 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 
 	c, ok := s.cache[collectionID]
 	if !ok {
-		return nil, &domain.NotFoundError{Resource: "collection", ID: collectionID}
+		return nil, &cmn.NotFoundError{Resource: "collection", ID: collectionID}
 	}
 
 	if parentID == "" {
@@ -117,7 +118,7 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 	} else {
 		parent, _, ok := c.FindNode(parentID)
 		if !ok || parent.Type != domain.ItemTypeFolder {
-			return nil, &domain.NotFoundError{Resource: "parent", ID: parentID}
+			return nil, &cmn.NotFoundError{Resource: "parent", ID: parentID}
 		}
 		parent.Children = append(parent.Children, item)
 	}
@@ -146,7 +147,7 @@ func (s *CollectionService) AddRequest(collectionID, parentID string, req domain
 
 	c, ok := s.cache[collectionID]
 	if !ok {
-		return nil, &domain.NotFoundError{Resource: "collection", ID: collectionID}
+		return nil, &cmn.NotFoundError{Resource: "collection", ID: collectionID}
 	}
 
 	if parentID == "" {
@@ -154,7 +155,7 @@ func (s *CollectionService) AddRequest(collectionID, parentID string, req domain
 	} else {
 		parent, _, ok := c.FindNode(parentID)
 		if !ok || parent.Type != domain.ItemTypeFolder {
-			return nil, &domain.NotFoundError{Resource: "parent", ID: parentID}
+			return nil, &cmn.NotFoundError{Resource: "parent", ID: parentID}
 		}
 		parent.Children = append(parent.Children, item)
 	}
@@ -172,12 +173,12 @@ func (s *CollectionService) UpdateRequest(collectionID string, req domain.HttpRe
 
 	c, ok := s.cache[collectionID]
 	if !ok {
-		return &domain.NotFoundError{Resource: "collection", ID: collectionID}
+		return &cmn.NotFoundError{Resource: "collection", ID: collectionID}
 	}
 
 	node, _, ok := c.FindNode(req.ID)
 	if !ok || node.Type != domain.ItemTypeRequest {
-		return &domain.NotFoundError{Resource: "request", ID: req.ID}
+		return &cmn.NotFoundError{Resource: "request", ID: req.ID}
 	}
 
 	node.Name = req.Name
@@ -193,12 +194,12 @@ func (s *CollectionService) RenameItem(collectionID, itemID, name string) error 
 
 	c, ok := s.cache[collectionID]
 	if !ok {
-		return &domain.NotFoundError{Resource: "collection", ID: collectionID}
+		return &cmn.NotFoundError{Resource: "collection", ID: collectionID}
 	}
 
 	node, _, ok := c.FindNode(itemID)
 	if !ok {
-		return &domain.NotFoundError{Resource: "item", ID: itemID}
+		return &cmn.NotFoundError{Resource: "item", ID: itemID}
 	}
 
 	node.Name = name
@@ -216,11 +217,11 @@ func (s *CollectionService) DeleteItem(collectionID, itemID string) error {
 
 	c, ok := s.cache[collectionID]
 	if !ok {
-		return &domain.NotFoundError{Resource: "collection", ID: collectionID}
+		return &cmn.NotFoundError{Resource: "collection", ID: collectionID}
 	}
 
 	if !c.RemoveNode(itemID) {
-		return &domain.NotFoundError{Resource: "item", ID: itemID}
+		return &cmn.NotFoundError{Resource: "item", ID: itemID}
 	}
 
 	return s.repo.Save(c)

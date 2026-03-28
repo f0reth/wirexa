@@ -1,16 +1,16 @@
-// Package udpinfra は UDP インフラストラクチャ層を提供する。
-package udpinfra
+// Package infrastructure は共通インフラストラクチャを提供する。
+package infrastructure
 
 import (
 	"context"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	domain "github.com/f0reth/Wirexa/internal/domain/udp"
+	"github.com/f0reth/Wirexa/internal/domain"
 )
 
-// コンパイル時に domain.UdpEmitter を満たすことを検証。
-var _ domain.UdpEmitter = (*WailsEmitter)(nil)
+// コンパイル時に domain.Emitter を満たすことを検証
+var _ domain.Emitter = (*WailsEmitter)(nil)
 
 // WailsEmitter は Wails ランタイムを使ってフロントエンドへイベントを送信する。
 type WailsEmitter struct {

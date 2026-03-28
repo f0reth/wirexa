@@ -1,6 +1,7 @@
 package httpapp
 
 import (
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
@@ -25,7 +26,7 @@ func NewHTTPRequestService(transport domain.HttpTransport) *HttpRequestService {
 // ネットワーク障害・入力不正は error を返す。HTTP 4xx/5xx は正常レスポンスとして扱う。
 func (s *HttpRequestService) SendRequest(req domain.HttpRequest) (domain.HttpResponse, error) {
 	if !validMethods[req.Method] {
-		return domain.HttpResponse{}, &domain.ValidationError{Field: "method", Message: req.Method}
+		return domain.HttpResponse{}, &cmn.ValidationError{Field: "method", Message: req.Method}
 	}
 	return s.transport.Do(req)
 }

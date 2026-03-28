@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/udp"
 )
 
@@ -21,13 +22,13 @@ type listenSession struct {
 // UdpListenerService は UDP 受信ユースケースの実装。
 type UdpListenerService struct {
 	socket   domain.UdpSocket
-	emitter  domain.UdpEmitter
+	emitter  cmn.Emitter
 	sessions map[string]*listenSession
 	mu       sync.Mutex
 }
 
 // NewUdpListenerService は UdpListenerService を生成する。
-func NewUdpListenerService(socket domain.UdpSocket, emitter domain.UdpEmitter) *UdpListenerService {
+func NewUdpListenerService(socket domain.UdpSocket, emitter cmn.Emitter) *UdpListenerService {
 	return &UdpListenerService{
 		socket:   socket,
 		emitter:  emitter,
@@ -38,14 +39,14 @@ func NewUdpListenerService(socket domain.UdpSocket, emitter domain.UdpEmitter) *
 // StartListen は指定ポートでリスニングを開始し、セッションを返す。
 func (s *UdpListenerService) StartListen(port int, encoding domain.PayloadEncoding) (domain.UdpListenSession, error) {
 	if port < 1 || port > 65535 {
-		return domain.UdpListenSession{}, &domain.ValidationError{Field: "port", Message: "must be 1-65535"}
+		return domain.UdpListenSession{}, &cmn.ValidationError{Field: "port", Message: "must be 1-65535"}
 	}
 
 	s.mu.Lock()
 	for _, ls := range s.sessions {
 		if ls.session.Port == port {
 			s.mu.Unlock()
-			return domain.UdpListenSession{}, &domain.ValidationError{Field: "port", Message: fmt.Sprintf("port %d is already listening", port)}
+			return domain.UdpListenSession{}, &cmn.ValidationError{Field: "port", Message: fmt.Sprintf("port %d is already listening", port)}
 		}
 	}
 	s.mu.Unlock()
@@ -78,7 +79,7 @@ func (s *UdpListenerService) StopListen(sessionID string) error {
 	ls, ok := s.sessions[sessionID]
 	if !ok {
 		s.mu.Unlock()
-		return &domain.NotFoundError{Resource: "session", ID: sessionID}
+		return &cmn.NotFoundError{Resource: "session", ID: sessionID}
 	}
 	delete(s.sessions, sessionID)
 	s.mu.Unlock()

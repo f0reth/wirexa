@@ -11,6 +11,7 @@ import (
 	httpapp "github.com/f0reth/Wirexa/internal/application/http"
 	mqttapp "github.com/f0reth/Wirexa/internal/application/mqtt"
 	udpapp "github.com/f0reth/Wirexa/internal/application/udp"
+	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 	httpinfra "github.com/f0reth/Wirexa/internal/infrastructure/http"
 	mqttinfra "github.com/f0reth/Wirexa/internal/infrastructure/mqtt"
 	udpinfra "github.com/f0reth/Wirexa/internal/infrastructure/udp"
@@ -36,7 +37,7 @@ func (a *App) startup(ctx context.Context) {
 		log.Fatalf("startup: failed to get user config dir: %v", err)
 	}
 
-	emitter := mqttinfra.NewWailsEmitter(ctx)
+	emitter := infra.NewWailsEmitter(ctx)
 	clientFactory := mqttinfra.NewPahoClientFactory()
 	mqttSvc := mqttapp.NewMqttService(emitter, clientFactory)
 
@@ -72,7 +73,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	udpSocket := udpinfra.NewNetSocket()
 	sendSvc := udpapp.NewUdpSendService(udpSocket)
-	udpEmitter := udpinfra.NewWailsEmitter(ctx)
+	udpEmitter := infra.NewWailsEmitter(ctx)
 	listenSvc := udpapp.NewUdpListenerService(udpSocket, udpEmitter)
 	adapters.SetupUdpHandler(a.udpHandler, sendSvc, targetSvc, listenSvc)
 }

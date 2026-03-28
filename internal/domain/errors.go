@@ -1,10 +1,11 @@
-package httpdomain
+// Package domain はドメイン層の共通型を提供する。
+package domain
 
 import "fmt"
 
 // NotFoundError はリソースが見つからない場合のエラー。
 type NotFoundError struct {
-	Resource string // "collection" | "item" | "request" | "parent"
+	Resource string
 	ID       string
 }
 

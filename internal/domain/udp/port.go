@@ -36,11 +36,6 @@ type TargetRepository interface {
 	Delete(id string) error
 }
 
-// UdpEmitter は Wails イベント送信の抽象。
-type UdpEmitter interface {
-	Emit(event string, data any)
-}
-
 // ListenUseCase は UDP 受信管理のユースケース入力ポート。
 type ListenUseCase interface {
 	StartListen(port int, encoding PayloadEncoding) (UdpListenSession, error)
