@@ -9,15 +9,8 @@ import {
 import { useUdpSend } from "../../providers/udp-provider";
 import styles from "./udp.module.css";
 
-function isValidHex(value: string): boolean {
-  if (!value) return true;
-  const cleaned = value.replace(/\s/g, "");
-  return /^([0-9A-Fa-f]{2})*$/.test(cleaned);
-}
-
-function hexByteCount(value: string): number {
-  const cleaned = value.replace(/\s/g, "");
-  return Math.ceil(cleaned.length / 2);
+function isValidAscii(value: string): boolean {
+  return [...value].every((c) => (c.codePointAt(0) ?? 0) <= 0x7f);
 }
 
 export function SendForm() {
@@ -96,8 +89,8 @@ export function SendForm() {
 
           <For each={fixedLengthFields()}>
             {(field) => {
-              const isHexValid = () => isValidHex(field.value);
-              const hexBytes = () => hexByteCount(field.value);
+              const isAsciiValid = () => isValidAscii(field.value);
+              const byteCount = () => field.value.length;
 
               return (
                 <div class={styles.fieldItem}>
@@ -135,35 +128,37 @@ export function SendForm() {
 
                   <div class={styles.fieldRow}>
                     <div class={styles.fieldGroup} style={{ flex: 1 }}>
-                      <span class={styles.fieldLabel}>Value (HEX)</span>
+                      <span class={styles.fieldLabel}>Value (UTF-8)</span>
                       <Input
                         class={styles.fieldValueInput}
                         type="text"
-                        placeholder="DEADBEEF"
+                        placeholder="hello"
                         value={field.value}
-                        aria-label="Field value (HEX)"
+                        aria-label="Field value (UTF-8)"
                         onInput={(e) =>
                           updateField(field.id, {
                             value: e.currentTarget.value,
                           })
                         }
                         style={{
-                          "border-color": !isHexValid() ? "#ef4444" : undefined,
+                          "border-color": !isAsciiValid()
+                            ? "#ef4444"
+                            : undefined,
                         }}
                       />
                       <span
                         class={styles.fieldHint}
                         style={{
-                          color: !isHexValid()
+                          color: !isAsciiValid()
                             ? "#ef4444"
-                            : hexBytes() > field.length
+                            : byteCount() > field.length
                               ? "#f59e0b"
                               : undefined,
                         }}
                       >
-                        {!isHexValid()
-                          ? "Invalid HEX"
-                          : `${hexBytes()}/${field.length} bytes`}
+                        {!isAsciiValid()
+                          ? "ASCII only (1 char = 1 byte)"
+                          : `${byteCount()}/${field.length} bytes`}
                       </span>
                     </div>
                     <Button

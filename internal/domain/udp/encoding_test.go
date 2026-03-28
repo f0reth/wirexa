@@ -15,27 +15,27 @@ func TestDecodeFixedLengthPayload_SingleField(t *testing.T) {
 			name: "single field with exact length",
 			payload: &FixedLengthPayload{
 				Fields: []FixedLengthField{
-					{Name: "field1", Length: 4, Value: "DEADBEEF"},
+					{Name: "field1", Length: 5, Value: "hello"},
 				},
 			},
-			want:    []byte{0xDE, 0xAD, 0xBE, 0xEF},
+			want:    []byte{'h', 'e', 'l', 'l', 'o'},
 			wantErr: false,
 		},
 		{
 			name: "single field with padding",
 			payload: &FixedLengthPayload{
 				Fields: []FixedLengthField{
-					{Name: "field1", Length: 4, Value: "DEAD"},
+					{Name: "field1", Length: 4, Value: "hi"},
 				},
 			},
-			want:    []byte{0xDE, 0xAD, 0x00, 0x00},
+			want:    []byte{'h', 'i', 0x00, 0x00},
 			wantErr: false,
 		},
 		{
 			name: "single field exceeds length",
 			payload: &FixedLengthPayload{
 				Fields: []FixedLengthField{
-					{Name: "field1", Length: 2, Value: "DEADBEEF"},
+					{Name: "field1", Length: 2, Value: "hello"},
 				},
 			},
 			want:    nil,
@@ -78,34 +78,34 @@ func TestDecodeFixedLengthPayload_MultipleFields(t *testing.T) {
 			name: "multiple fields exact lengths",
 			payload: &FixedLengthPayload{
 				Fields: []FixedLengthField{
-					{Name: "header", Length: 2, Value: "DEAD"},
-					{Name: "payload", Length: 2, Value: "BEEF"},
+					{Name: "header", Length: 3, Value: "HDR"},
+					{Name: "payload", Length: 4, Value: "DATA"},
 				},
 			},
-			want:    []byte{0xDE, 0xAD, 0xBE, 0xEF},
+			want:    []byte{'H', 'D', 'R', 'D', 'A', 'T', 'A'},
 			wantErr: false,
 		},
 		{
 			name: "multiple fields with padding",
 			payload: &FixedLengthPayload{
 				Fields: []FixedLengthField{
-					{Name: "field1", Length: 4, Value: "AD"},
-					{Name: "field2", Length: 2, Value: "BE"},
+					{Name: "field1", Length: 4, Value: "AB"},
+					{Name: "field2", Length: 2, Value: "C"},
 				},
 			},
-			want:    []byte{0xAD, 0x00, 0x00, 0x00, 0xBE, 0x00},
+			want:    []byte{'A', 'B', 0x00, 0x00, 'C', 0x00},
 			wantErr: false,
 		},
 		{
 			name: "three fields",
 			payload: &FixedLengthPayload{
 				Fields: []FixedLengthField{
-					{Name: "f1", Length: 1, Value: "12"},
-					{Name: "f2", Length: 1, Value: "34"},
-					{Name: "f3", Length: 1, Value: "56"},
+					{Name: "f1", Length: 1, Value: "X"},
+					{Name: "f2", Length: 1, Value: "Y"},
+					{Name: "f3", Length: 1, Value: "Z"},
 				},
 			},
-			want:    []byte{0x12, 0x34, 0x56},
+			want:    []byte{'X', 'Y', 'Z'},
 			wantErr: false,
 		},
 	}
@@ -144,25 +144,25 @@ func TestDecodeFixedLengthPayload_ErrorCases(t *testing.T) {
 			name: "invalid length (<=0)",
 			payload: &FixedLengthPayload{
 				Fields: []FixedLengthField{
-					{Name: "field1", Length: 0, Value: "DEAD"},
+					{Name: "field1", Length: 0, Value: "hello"},
 				},
 			},
 			wantErr: true,
 		},
 		{
-			name: "invalid hex value",
+			name: "non-ASCII multibyte character",
 			payload: &FixedLengthPayload{
 				Fields: []FixedLengthField{
-					{Name: "field1", Length: 2, Value: "ZZZZ"},
+					{Name: "field1", Length: 4, Value: "あ"},
 				},
 			},
 			wantErr: true,
 		},
 		{
-			name: "odd-length hex without padding",
+			name: "value exceeds field length",
 			payload: &FixedLengthPayload{
 				Fields: []FixedLengthField{
-					{Name: "field1", Length: 2, Value: "ABC"},
+					{Name: "field1", Length: 2, Value: "hello"},
 				},
 			},
 			wantErr: true,
@@ -174,49 +174,6 @@ func TestDecodeFixedLengthPayload_ErrorCases(t *testing.T) {
 			_, err := DecodeFixedLengthPayload(tt.payload)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DecodeFixedLengthPayload() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestDecodeFixedLengthPayload_Whitespace(t *testing.T) {
-	tests := []struct {
-		name    string
-		payload *FixedLengthPayload
-		want    []byte
-		wantErr bool
-	}{
-		{
-			name: "hex with spaces",
-			payload: &FixedLengthPayload{
-				Fields: []FixedLengthField{
-					{Name: "field1", Length: 4, Value: "DE AD BE EF"},
-				},
-			},
-			want:    []byte{0xDE, 0xAD, 0xBE, 0xEF},
-			wantErr: false,
-		},
-		{
-			name: "hex with multiple spaces",
-			payload: &FixedLengthPayload{
-				Fields: []FixedLengthField{
-					{Name: "field1", Length: 2, Value: "D E A D"},
-				},
-			},
-			want:    []byte{0xDE, 0xAD},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := DecodeFixedLengthPayload(tt.payload)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("DecodeFixedLengthPayload() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && !bytesEqual(got, tt.want) {
-				t.Errorf("DecodeFixedLengthPayload() got = %v, want %v", got, tt.want)
 			}
 		})
 	}

@@ -90,14 +90,16 @@ func DecodeFixedLengthPayload(payload *FixedLengthPayload) ([]byte, error) {
 			}
 		}
 
-		// HEX値をデコード
-		cleaned := strings.ReplaceAll(field.Value, " ", "")
-		data, err := hex.DecodeString(cleaned)
-		if err != nil {
-			return nil, &ValidationError{
-				Field:   "fixedLengthPayload",
-				Message: fmt.Sprintf("field '%s': invalid hex - %v", field.Name, err),
+		// UTF-8文字列をバイト列に変換（1文字=1byte、ASCII範囲のみ許可）
+		data := make([]byte, 0, len(field.Value))
+		for _, r := range field.Value {
+			if r > 0x7F {
+				return nil, &ValidationError{
+					Field:   "fixedLengthPayload",
+					Message: fmt.Sprintf("field '%s': character '%c' is not single-byte (ASCII only)", field.Name, r),
+				}
 			}
+			data = append(data, byte(r)) //nolint:gosec // r <= 0x7F が保証済み
 		}
 
 		// 長さ検証とパディング
