@@ -1,5 +1,6 @@
-import { createEffect, createSignal } from "solid-js";
+import { createSignal } from "solid-js";
 import styles from "./App.module.css";
+import { createThemeStore } from "./application/ui/theme";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -19,15 +20,7 @@ import { UdpProvider } from "./presentation/providers/udp-provider";
 
 function App() {
   const [protocol, setProtocol] = createSignal<Protocol>("mqtt");
-  const [theme, setTheme] = createSignal<"light" | "dark">("light");
-
-  createEffect(() => {
-    if (theme() === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  });
+  const { theme, toggleTheme } = createThemeStore();
 
   return (
     <div class={styles.app}>
@@ -38,9 +31,7 @@ function App() {
               protocol={protocol()}
               onProtocolChange={setProtocol}
               theme={theme()}
-              onThemeToggle={() =>
-                setTheme((t) => (t === "light" ? "dark" : "light"))
-              }
+              onThemeToggle={toggleTheme}
             />
             <ResizablePanelGroup direction="horizontal">
               <ResizablePanel defaultSize={15} minSize={10}>
