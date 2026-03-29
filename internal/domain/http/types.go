@@ -1,5 +1,13 @@
 package httpdomain
 
+// RequestAuth はリクエスト認証情報を表す。
+type RequestAuth struct {
+	Type     string `json:"type"`     // "none" | "basic" | "bearer"
+	Username string `json:"username"` // Basic認証用
+	Password string `json:"password"` // Basic認証用
+	Token    string `json:"token"`    // Bearerトークン用
+}
+
 // HttpRequest は HTTP リクエストを表す。
 type HttpRequest struct {
 	ID      string         `json:"id"`
@@ -9,6 +17,7 @@ type HttpRequest struct {
 	Headers []KeyValuePair `json:"headers"`
 	Params  []KeyValuePair `json:"params"`
 	Body    RequestBody    `json:"body"`
+	Auth    RequestAuth    `json:"auth"`
 }
 
 // KeyValuePair はヘッダーやパラメータのキーバリューペアを表す。

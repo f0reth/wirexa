@@ -72,6 +72,12 @@ func (c *NetClient) Do(req domain.HttpRequest) (domain.HttpResponse, error) {
 			httpReq.Header.Set(h.Key, h.Value)
 		}
 	}
+	switch req.Auth.Type {
+	case "basic":
+		httpReq.SetBasicAuth(req.Auth.Username, req.Auth.Password)
+	case "bearer":
+		httpReq.Header.Set("Authorization", "Bearer "+req.Auth.Token)
+	}
 	if contentType != "" && httpReq.Header.Get("Content-Type") == "" {
 		httpReq.Header.Set("Content-Type", contentType)
 	}
