@@ -191,3 +191,207 @@ func bytesEqual(a, b []byte) bool {
 	}
 	return true
 }
+
+func TestEncodePayload(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     []byte
+		encoding PayloadEncoding
+		want     string
+	}{
+		{
+			name:     "text",
+			data:     []byte("hello"),
+			encoding: EncodingText,
+			want:     "hello",
+		},
+		{
+			name:     "hex lowercase",
+			data:     []byte{0xDE, 0xAD, 0xBE, 0xEF},
+			encoding: EncodingHex,
+			want:     "deadbeef",
+		},
+		{
+			name:     "base64",
+			data:     []byte("hello"),
+			encoding: EncodingBase64,
+			want:     "aGVsbG8=",
+		},
+		{
+			name:     "json valid",
+			data:     []byte(`{"key":"val"}`),
+			encoding: EncodingJSON,
+			want:     "{\n  \"key\": \"val\"\n}",
+		},
+		{
+			name:     "json invalid bytes fall back to string",
+			data:     []byte("not json"),
+			encoding: EncodingJSON,
+			want:     "not json",
+		},
+		{
+			name:     "fixed treated as hex",
+			data:     []byte{0xAB, 0xCD},
+			encoding: EncodingFixed,
+			want:     "abcd",
+		},
+		{
+			name:     "unknown encoding falls back to text",
+			data:     []byte("data"),
+			encoding: "unknown",
+			want:     "data",
+		},
+		{
+			name:     "empty bytes",
+			data:     []byte{},
+			encoding: EncodingText,
+			want:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := EncodePayload(tt.data, tt.encoding)
+			if got != tt.want {
+				t.Errorf("EncodePayload() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDecodePayload(t *testing.T) {
+	tests := []struct {
+		name          string
+		payload       string
+		encoding      PayloadEncoding
+		messageLength int
+		want          []byte
+		wantErr       bool
+	}{
+		{
+			name:     "text",
+			payload:  "hello",
+			encoding: EncodingText,
+			want:     []byte("hello"),
+		},
+		{
+			name:     "text empty",
+			payload:  "",
+			encoding: EncodingText,
+			want:     []byte(""),
+		},
+		{
+			name:     "hex valid",
+			payload:  "deadbeef",
+			encoding: EncodingHex,
+			want:     []byte{0xDE, 0xAD, 0xBE, 0xEF},
+		},
+		{
+			name:     "hex with spaces",
+			payload:  "DE AD BE EF",
+			encoding: EncodingHex,
+			want:     []byte{0xDE, 0xAD, 0xBE, 0xEF},
+		},
+		{
+			name:     "hex uppercase",
+			payload:  "DEADBEEF",
+			encoding: EncodingHex,
+			want:     []byte{0xDE, 0xAD, 0xBE, 0xEF},
+		},
+		{
+			name:     "hex invalid",
+			payload:  "zzzz",
+			encoding: EncodingHex,
+			wantErr:  true,
+		},
+		{
+			name:     "hex odd length",
+			payload:  "abc",
+			encoding: EncodingHex,
+			wantErr:  true,
+		},
+		{
+			name:     "base64 valid",
+			payload:  "aGVsbG8=",
+			encoding: EncodingBase64,
+			want:     []byte("hello"),
+		},
+		{
+			name:     "base64 invalid",
+			payload:  "!!!",
+			encoding: EncodingBase64,
+			wantErr:  true,
+		},
+		{
+			name:     "json valid object",
+			payload:  `{"a":1}`,
+			encoding: EncodingJSON,
+			want:     []byte(`{"a":1}`),
+		},
+		{
+			name:     "json valid array",
+			payload:  `[1,2,3]`,
+			encoding: EncodingJSON,
+			want:     []byte(`[1,2,3]`),
+		},
+		{
+			name:     "json invalid",
+			payload:  "not json",
+			encoding: EncodingJSON,
+			wantErr:  true,
+		},
+		{
+			name:          "fixed valid exact length",
+			payload:       "aabb",
+			encoding:      EncodingFixed,
+			messageLength: 2,
+			want:          []byte{0xAA, 0xBB},
+		},
+		{
+			name:          "fixed with padding",
+			payload:       "aa",
+			encoding:      EncodingFixed,
+			messageLength: 4,
+			want:          []byte{0xAA, 0x00, 0x00, 0x00},
+		},
+		{
+			name:          "fixed payload exceeds messageLength",
+			payload:       "aabbccdd",
+			encoding:      EncodingFixed,
+			messageLength: 2,
+			wantErr:       true,
+		},
+		{
+			name:          "fixed messageLength zero",
+			payload:       "aa",
+			encoding:      EncodingFixed,
+			messageLength: 0,
+			wantErr:       true,
+		},
+		{
+			name:          "fixed messageLength negative",
+			payload:       "aa",
+			encoding:      EncodingFixed,
+			messageLength: -1,
+			wantErr:       true,
+		},
+		{
+			name:     "unknown encoding",
+			payload:  "data",
+			encoding: "unknown",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := DecodePayload(tt.payload, tt.encoding, tt.messageLength)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("DecodePayload() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && !bytesEqual(got, tt.want) {
+				t.Errorf("DecodePayload() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
