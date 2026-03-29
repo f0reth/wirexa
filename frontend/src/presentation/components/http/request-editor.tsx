@@ -3,6 +3,7 @@ import {
   parseFormPairs,
   serializeFormPairs,
 } from "../../../application/http/form-pairs";
+import { Input } from "../../../components/ui/input";
 import {
   Select,
   SelectContent,
@@ -12,8 +13,8 @@ import {
 } from "../../../components/ui/select";
 import { TabList } from "../../../components/ui/tabs";
 import { Textarea } from "../../../components/ui/textarea";
-import type { BodyType } from "../../../domain/http/types";
-import { BODY_TYPES } from "../../constants/http";
+import type { AuthType, BodyType } from "../../../domain/http/types";
+import { AUTH_TYPES, BODY_TYPES } from "../../constants/http";
 import { useHttpRequest } from "../../providers/http-provider";
 import styles from "./http.module.css";
 import { KeyValueEditor } from "./key-value-editor";
@@ -22,11 +23,20 @@ const TABS = [
   { value: "params", label: "Params" },
   { value: "headers", label: "Headers" },
   { value: "body", label: "Body" },
+  { value: "auth", label: "Auth" },
 ];
 
 export function RequestEditor() {
-  const { params, setParams, headers, setHeaders, body, setBody } =
-    useHttpRequest();
+  const {
+    params,
+    setParams,
+    headers,
+    setHeaders,
+    body,
+    setBody,
+    auth,
+    setAuth,
+  } = useHttpRequest();
 
   const [requestTab, setRequestTab] = createSignal("params");
 
@@ -132,6 +142,62 @@ export function RequestEditor() {
                     </Show>
                   );
                 })()}
+              </Show>
+            </div>
+          </div>
+        </Show>
+
+        <Show when={requestTab() === "auth"}>
+          <div role="tabpanel" id="tabpanel-auth" aria-labelledby="tab-auth">
+            <div class={styles.authSection}>
+              <div class={styles.authTypeRow}>
+                <Select
+                  value={auth().type}
+                  onValueChange={(v) =>
+                    setAuth({ ...auth(), type: v as AuthType })
+                  }
+                >
+                  <SelectTrigger class={styles.authTypeTrigger}>
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AUTH_TYPES.map((at) => (
+                      <SelectItem value={at.value}>{at.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Show when={auth().type === "basic"}>
+                <div class={styles.authFields}>
+                  <Input
+                    value={auth().username}
+                    onInput={(e) =>
+                      setAuth({ ...auth(), username: e.currentTarget.value })
+                    }
+                    placeholder="Username"
+                  />
+                  <Input
+                    type="password"
+                    value={auth().password}
+                    onInput={(e) =>
+                      setAuth({ ...auth(), password: e.currentTarget.value })
+                    }
+                    placeholder="Password"
+                  />
+                </div>
+              </Show>
+
+              <Show when={auth().type === "bearer"}>
+                <div class={styles.authFields}>
+                  <Input
+                    value={auth().token}
+                    onInput={(e) =>
+                      setAuth({ ...auth(), token: e.currentTarget.value })
+                    }
+                    placeholder="Token"
+                  />
+                </div>
               </Show>
             </div>
           </div>

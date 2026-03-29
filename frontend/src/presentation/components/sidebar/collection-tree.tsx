@@ -84,6 +84,7 @@ export function CollectionTree() {
         headers: [],
         params: [],
         body: { type: "none", content: "" },
+        auth: { type: "none", username: "", password: "", token: "" },
       });
       if (item?.id) {
         setRenamingItemId(item.id);

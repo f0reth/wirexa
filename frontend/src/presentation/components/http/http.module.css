@@ -162,6 +162,27 @@
   font-size: 0.8125rem;
 }
 
+/* ── Auth section ──────────────────────────────────────── */
+.authSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.authTypeRow {
+  flex-shrink: 0;
+}
+
+.authTypeTrigger {
+  width: 12rem;
+}
+
+.authFields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
 /* ── Response panel ────────────────────────────────────── */
 .responsePanel {
   display: flex;
