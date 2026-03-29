@@ -366,6 +366,26 @@
   cursor: default;
 }
 
+/* ── Topic filter select ─────────────────────────────────── */
+.topicFilterSelect {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  border-radius: 0.375rem;
+  border: none;
+  background: var(--color-muted);
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  max-width: 9rem;
+  letter-spacing: -0.01em;
+}
+
+.topicFilterSelect:hover {
+  color: var(--color-foreground);
+  background-color: var(--color-accent);
+}
+
 /* ── Messages panel ──────────────────────────────────────── */
 .messagesPanel {
   display: flex;

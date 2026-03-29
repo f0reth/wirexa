@@ -1,7 +1,7 @@
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { clsx } from "clsx";
 import { Radio, X, Zap } from "lucide-solid";
-import { createEffect, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { useMqttMessages } from "../../../providers/mqtt-provider";
 import styles from "../mqtt.module.css";
 import { formatTime, getTopicColor } from "../utils";
@@ -16,11 +16,32 @@ export function MessagesPanel() {
     clearMessages,
   } = useMqttMessages();
 
+  const [topicFilter, setTopicFilter] = createSignal("");
+
+  const uniqueTopics = createMemo(() => {
+    const topics = new Set(messages().map((m) => m.topic));
+    return Array.from(topics).sort();
+  });
+
+  // Reset filter when the selected topic disappears from messages
+  createEffect(() => {
+    const filter = topicFilter();
+    if (filter && !uniqueTopics().includes(filter)) {
+      setTopicFilter("");
+    }
+  });
+
+  const filteredMessages = createMemo(() => {
+    const filter = topicFilter();
+    if (!filter) return messages();
+    return messages().filter((m) => m.topic === filter);
+  });
+
   let scrollRef!: HTMLDivElement;
 
   const virtualizer = createVirtualizer({
     get count() {
-      return messages().length;
+      return filteredMessages().length;
     },
     getScrollElement: () => scrollRef,
     estimateSize: () => 62,
@@ -31,8 +52,10 @@ export function MessagesPanel() {
   });
 
   createEffect(() => {
-    if (autoFollow() && messages().length > 0) {
-      virtualizer.scrollToIndex(messages().length - 1, { align: "end" });
+    if (autoFollow() && filteredMessages().length > 0) {
+      virtualizer.scrollToIndex(filteredMessages().length - 1, {
+        align: "end",
+      });
     }
   });
 
@@ -41,6 +64,17 @@ export function MessagesPanel() {
       <div class={styles.sectionHeader}>
         <h3 class={styles.sectionTitle}>Messages</h3>
         <div class={styles.sectionHeaderActions}>
+          <select
+            class={styles.topicFilterSelect}
+            value={topicFilter()}
+            onChange={(e) => setTopicFilter(e.target.value)}
+            title="Filter by topic"
+          >
+            <option value="">All topics</option>
+            <For each={uniqueTopics()}>
+              {(topic) => <option value={topic}>{topic}</option>}
+            </For>
+          </select>
           <button
             type="button"
             class={clsx(
@@ -72,7 +106,7 @@ export function MessagesPanel() {
         class={styles.messagesScrollArea}
       >
         <Show
-          when={messages().length > 0}
+          when={filteredMessages().length > 0}
           fallback={
             <div class={styles.listPadding}>
               <p class={styles.emptyText}>No messages yet</p>
@@ -85,7 +119,7 @@ export function MessagesPanel() {
           >
             <For each={virtualizer.getVirtualItems()}>
               {(virtualItem) => {
-                const msg = () => messages()[virtualItem.index];
+                const msg = () => filteredMessages()[virtualItem.index];
                 return (
                   <div
                     data-index={virtualItem.index}
