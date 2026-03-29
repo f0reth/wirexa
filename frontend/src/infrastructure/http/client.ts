@@ -15,9 +15,11 @@ import {
   type Collection,
   type HttpRequest,
   type HttpResponse,
+  isAuthType,
   isBodyType,
   isHttpMethod,
   type KeyValuePair,
+  type RequestAuth,
   type RequestBody,
   type TreeItem,
 } from "../../domain/http/types";
@@ -30,6 +32,15 @@ function toWailsRequest(req: HttpRequest): httpdomain.HttpRequest {
 // Wails → domain
 function fromWailsKeyValuePair(kv: httpdomain.KeyValuePair): KeyValuePair {
   return { key: kv.key, value: kv.value, enabled: kv.enabled };
+}
+
+function fromWailsRequestAuth(auth: httpdomain.RequestAuth): RequestAuth {
+  return {
+    type: auth && isAuthType(auth.type) ? auth.type : "none",
+    username: auth?.username ?? "",
+    password: auth?.password ?? "",
+    token: auth?.token ?? "",
+  };
 }
 
 function fromWailsRequestBody(body: httpdomain.RequestBody): RequestBody {
@@ -54,6 +65,7 @@ function fromWailsHttpRequest(req: httpdomain.HttpRequest): HttpRequest {
     headers: req.headers.map(fromWailsKeyValuePair),
     params: req.params.map(fromWailsKeyValuePair),
     body: fromWailsRequestBody(req.body),
+    auth: fromWailsRequestAuth(req.auth),
   };
 }
 

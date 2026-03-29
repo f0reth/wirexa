@@ -14,6 +14,7 @@ import type {
   HttpRequest,
   HttpResponse,
   KeyValuePair,
+  RequestAuth,
   RequestBody,
   TreeItem,
 } from "../../domain/http/types";
@@ -30,6 +31,8 @@ export interface RequestContextValue {
   setParams: (val: KeyValuePair[]) => void;
   body: Accessor<RequestBody>;
   setBody: (val: RequestBody) => void;
+  auth: Accessor<RequestAuth>;
+  setAuth: (val: RequestAuth) => void;
   response: Accessor<HttpResponse | null>;
   loading: Accessor<boolean>;
   dirty: Accessor<boolean>;
@@ -74,6 +77,7 @@ type SavedSnapshot = {
   headers: KeyValuePair[];
   params: KeyValuePair[];
   body: RequestBody;
+  auth: RequestAuth;
 };
 
 export function HttpProvider(props: { children: JSX.Element }) {
@@ -97,6 +101,7 @@ export function HttpProvider(props: { children: JSX.Element }) {
       headers: req.headers,
       params: req.params,
       body: req.body,
+      auth: req.auth,
     });
   }
 
@@ -113,6 +118,7 @@ export function HttpProvider(props: { children: JSX.Element }) {
       headers: requestState.headers(),
       params: requestState.params(),
       body: requestState.body(),
+      auth: requestState.auth(),
     });
   }
 
@@ -124,7 +130,8 @@ export function HttpProvider(props: { children: JSX.Element }) {
       requestState.url() !== snap.url ||
       JSON.stringify(requestState.headers()) !== JSON.stringify(snap.headers) ||
       JSON.stringify(requestState.params()) !== JSON.stringify(snap.params) ||
-      JSON.stringify(requestState.body()) !== JSON.stringify(snap.body)
+      JSON.stringify(requestState.body()) !== JSON.stringify(snap.body) ||
+      JSON.stringify(requestState.auth()) !== JSON.stringify(snap.auth)
     );
   });
 

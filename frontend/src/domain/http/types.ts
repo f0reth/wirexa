@@ -9,6 +9,16 @@ export interface RequestBody {
   content: string;
 }
 
+export type AuthType = "none" | "basic" | "bearer";
+export const AUTH_TYPES: AuthType[] = ["none", "basic", "bearer"];
+
+export interface RequestAuth {
+  type: AuthType;
+  username: string;
+  password: string;
+  token: string;
+}
+
 export interface HttpRequest {
   id: string;
   name: string;
@@ -17,6 +27,7 @@ export interface HttpRequest {
   headers: KeyValuePair[];
   params: KeyValuePair[];
   body: RequestBody;
+  auth: RequestAuth;
 }
 
 export interface HttpResponse {
@@ -77,4 +88,8 @@ export function isHttpMethod(v: string): v is HttpMethod {
 
 export function isBodyType(v: string): v is BodyType {
   return (BODY_TYPES as string[]).includes(v);
+}
+
+export function isAuthType(v: string): v is AuthType {
+  return (AUTH_TYPES as string[]).includes(v);
 }

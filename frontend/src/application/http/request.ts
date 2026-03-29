@@ -4,6 +4,7 @@ import type {
   HttpRequest,
   HttpResponse,
   KeyValuePair,
+  RequestAuth,
   RequestBody,
 } from "../../domain/http/types";
 
@@ -22,6 +23,12 @@ export function createRequestState(api: RequestApi) {
   const [body, setBody] = createSignal<RequestBody>({
     type: "none",
     content: "",
+  });
+  const [auth, setAuth] = createSignal<RequestAuth>({
+    type: "none",
+    username: "",
+    password: "",
+    token: "",
   });
   const [response, setResponse] = createSignal<HttpResponse | null>(null);
   const [loading, setLoading] = createSignal(false);
@@ -43,6 +50,7 @@ export function createRequestState(api: RequestApi) {
         headers: headers(),
         params: params(),
         body: body(),
+        auth: auth(),
       });
       setResponse(res);
     } finally {
@@ -58,6 +66,7 @@ export function createRequestState(api: RequestApi) {
     setHeaders(req.headers);
     setParams(req.params);
     setBody(req.body);
+    setAuth(req.auth);
     setActiveRequestId(req.id);
     setActiveCollectionId(collectionId);
   }
@@ -68,6 +77,7 @@ export function createRequestState(api: RequestApi) {
     setHeaders([]);
     setParams([]);
     setBody({ type: "none", content: "" });
+    setAuth({ type: "none", username: "", password: "", token: "" });
     setActiveRequestId(null);
     setActiveCollectionId(null);
   }
@@ -84,6 +94,7 @@ export function createRequestState(api: RequestApi) {
       headers: headers(),
       params: params(),
       body: body(),
+      auth: auth(),
     });
     await api.afterSave?.();
   }
@@ -99,6 +110,8 @@ export function createRequestState(api: RequestApi) {
     setParams,
     body,
     setBody,
+    auth,
+    setAuth,
     response,
     loading,
     activeRequestId,

@@ -1,5 +1,23 @@
 export namespace httpdomain {
 	
+	export class RequestAuth {
+	    type: string;
+	    username: string;
+	    password: string;
+	    token: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RequestAuth(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.type = source["type"];
+	        this.username = source["username"];
+	        this.password = source["password"];
+	        this.token = source["token"];
+	    }
+	}
 	export class RequestBody {
 	    type: string;
 	    content: string;
@@ -38,6 +56,7 @@ export namespace httpdomain {
 	    headers: KeyValuePair[];
 	    params: KeyValuePair[];
 	    body: RequestBody;
+	    auth: RequestAuth;
 	
 	    static createFrom(source: any = {}) {
 	        return new HttpRequest(source);
@@ -52,6 +71,7 @@ export namespace httpdomain {
 	        this.headers = this.convertValues(source["headers"], KeyValuePair);
 	        this.params = this.convertValues(source["params"], KeyValuePair);
 	        this.body = this.convertValues(source["body"], RequestBody);
+	        this.auth = this.convertValues(source["auth"], RequestAuth);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -171,6 +191,7 @@ export namespace httpdomain {
 	        this.error = source["error"];
 	    }
 	}
+	
 	
 	
 
