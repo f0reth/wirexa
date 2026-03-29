@@ -1,4 +1,4 @@
-import { createEffect } from "solid-js";
+import { createEffect, untrack } from "solid-js";
 import type { MqttMessage } from "../../domain/mqtt/types";
 import type { ConnectionStateExt } from "./connections";
 
@@ -20,7 +20,7 @@ export function createMessagesState(
     const follow = autoFollow();
     if (follow && msgs.length > 0) {
       const lastMsg = msgs[msgs.length - 1];
-      if (selectedMessage() !== lastMsg) {
+      if (untrack(selectedMessage) !== lastMsg) {
         const connId = activeConnection()?.connectionId;
         if (connId) {
           updateConnection(connId, (state) => ({

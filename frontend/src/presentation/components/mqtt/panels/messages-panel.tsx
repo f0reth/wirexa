@@ -59,6 +59,16 @@ export function MessagesPanel() {
     }
   });
 
+  // フィルター有効時は最後のフィルター済みメッセージを選択する
+  createEffect(() => {
+    const filter = topicFilter();
+    if (!filter || !autoFollow()) return;
+    const filtered = filteredMessages();
+    if (filtered.length > 0) {
+      setSelectedMessage(filtered[filtered.length - 1]);
+    }
+  });
+
   return (
     <div class={styles.messagesPanel}>
       <div class={styles.sectionHeader}>
