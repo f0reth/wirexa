@@ -16,14 +16,14 @@
     "@corvu/resizable": "^0.2.5",
     "@tanstack/solid-virtual": "^3.13.23",
     "clsx": "^2.1.1",
-    "lucide-solid": "^0.577.0",
-    "solid-js": "^1.9.11"
+    "lucide-solid": "^1.7.0",
+    "solid-js": "^1.9.12"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.7",
+    "@biomejs/biome": "^2.4.9",
     "@types/node": "^25.5.0",
-    "typescript": "~5.9.3",
-    "vite": "^8.0.0",
-    "vite-plugin-solid": "^2.11.10"
+    "typescript": "~6.0.2",
+    "vite": "^8.0.3",
+    "vite-plugin-solid": "^2.11.11"
   }
 }
