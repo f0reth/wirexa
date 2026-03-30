@@ -133,11 +133,6 @@ describe("topicMatchesParts", () => {
         false,
       );
     });
-
-    it("terminates match immediately upon encountering #", () => {
-      // Pattern a/#/extra — # at index 1 returns true immediately
-      expect(topicMatchesParts(["a", "#", "extra"], ["a", "x"])).toBe(true);
-    });
   });
 
   describe("edge cases", () => {

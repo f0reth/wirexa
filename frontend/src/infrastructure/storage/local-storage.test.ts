@@ -1,9 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   loadFromStorage,
   removeFromStorage,
   saveToStorage,
 } from "./local-storage";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("loadFromStorage", () => {
   beforeEach(() => {
@@ -22,6 +26,7 @@ describe("loadFromStorage", () => {
   });
 
   it("returns the fallback when stored value is corrupted JSON", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     localStorage.setItem("key", "not-valid-json{");
     expect(loadFromStorage("key", "fallback")).toBe("fallback");
   });
@@ -51,6 +56,7 @@ describe("loadFromStorage", () => {
   });
 
   it("returns the fallback for truncated JSON", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     localStorage.setItem("bad", '{"key": "val');
     expect(loadFromStorage("bad", "default")).toBe("default");
   });
@@ -90,6 +96,7 @@ describe("saveToStorage", () => {
   });
 
   it("returns false and does not throw when localStorage.setItem throws", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => {
       throw new Error("QuotaExceededError");
     });
@@ -119,6 +126,7 @@ describe("removeFromStorage", () => {
   });
 
   it("does not throw when localStorage.removeItem throws", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(Storage.prototype, "removeItem").mockImplementationOnce(() => {
       throw new Error("Storage error");
     });
