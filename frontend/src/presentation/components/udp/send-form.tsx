@@ -1,4 +1,4 @@
-import { createMemo, For, Match, Show, Switch } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
@@ -74,19 +74,6 @@ export function SendForm() {
             <span class={styles.formLabel}>Fields</span>
             <span class={styles.totalBytes}>Total: {totalBytes()} bytes</span>
           </div>
-
-          <Switch>
-            <Match when={fixedLengthFields.length === 0}>
-              <div class={styles.fieldsEmptyState}>
-                <span class={styles.fieldsEmptyStateText}>
-                  フィールドがありません
-                </span>
-                <span class={styles.fieldsEmptyStateHint}>
-                  下の「+ Add Field」でフィールドを追加してください
-                </span>
-              </div>
-            </Match>
-          </Switch>
 
           <For each={fixedLengthFields}>
             {(field, index) => {
