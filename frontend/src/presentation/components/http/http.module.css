@@ -129,9 +129,26 @@
 
 .editorContent {
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   padding: 0.625rem;
   background-color: var(--surface-1);
+}
+
+.scrollTabPanel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.bodyTabPanel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* ── Key-value editor ──────────────────────────────────── */
@@ -181,7 +198,8 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .bodyTypeRow {
@@ -194,7 +212,7 @@
 
 .bodyTextarea {
   flex: 1;
-  min-height: 8rem;
+  min-height: 0;
   resize: none;
   font-family: var(--font-mono);
   font-size: 0.8125rem;

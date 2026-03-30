@@ -12,10 +12,10 @@ export const METHOD_COLORS: Record<HttpMethod, string> = {
 
 export const BODY_TYPES: { value: BodyType; label: string }[] = [
   { value: "none", label: "None" },
-  { value: "json", label: "JSON" },
   { value: "text", label: "Text" },
-  { value: "form-urlencoded", label: "Form URL Encoded" },
+  { value: "json", label: "JSON" },
   { value: "form-data", label: "Form Data" },
+  { value: "form-urlencoded", label: "Form URL Encoded" },
 ];
 
 export const AUTH_TYPES: { value: AuthType; label: string }[] = [

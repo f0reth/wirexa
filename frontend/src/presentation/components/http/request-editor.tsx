@@ -52,6 +52,7 @@ export function RequestEditor() {
       <div class={styles.editorContent}>
         <Show when={requestTab() === "params"}>
           <div
+            class={styles.scrollTabPanel}
             role="tabpanel"
             id="tabpanel-params"
             aria-labelledby="tab-params"
@@ -67,6 +68,7 @@ export function RequestEditor() {
 
         <Show when={requestTab() === "headers"}>
           <div
+            class={styles.scrollTabPanel}
             role="tabpanel"
             id="tabpanel-headers"
             aria-labelledby="tab-headers"
@@ -81,7 +83,12 @@ export function RequestEditor() {
         </Show>
 
         <Show when={requestTab() === "body"}>
-          <div role="tabpanel" id="tabpanel-body" aria-labelledby="tab-body">
+          <div
+            class={styles.bodyTabPanel}
+            role="tabpanel"
+            id="tabpanel-body"
+            aria-labelledby="tab-body"
+          >
             <div class={styles.bodySection}>
               <div class={styles.bodyTypeRow}>
                 <Select
@@ -121,6 +128,20 @@ export function RequestEditor() {
                               content: e.currentTarget.value,
                             })
                           }
+                          onBlur={(e) => {
+                            if (body().type === "json") {
+                              try {
+                                const formatted = JSON.stringify(
+                                  JSON.parse(e.currentTarget.value),
+                                  null,
+                                  2,
+                                );
+                                setBody({ ...body(), content: formatted });
+                              } catch {
+                                // invalid JSON, keep as-is
+                              }
+                            }
+                          }}
                           placeholder={
                             body().type === "json"
                               ? '{ "key": "value" }'
@@ -148,7 +169,12 @@ export function RequestEditor() {
         </Show>
 
         <Show when={requestTab() === "auth"}>
-          <div role="tabpanel" id="tabpanel-auth" aria-labelledby="tab-auth">
+          <div
+            class={styles.scrollTabPanel}
+            role="tabpanel"
+            id="tabpanel-auth"
+            aria-labelledby="tab-auth"
+          >
             <div class={styles.authSection}>
               <div class={styles.authTypeRow}>
                 <Select
