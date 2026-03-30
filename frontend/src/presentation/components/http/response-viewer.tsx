@@ -1,4 +1,5 @@
 import { clsx } from "clsx";
+import { X } from "lucide-solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import { ScrollArea } from "../../../components/ui/scroll-area";
@@ -23,13 +24,28 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function ResponseViewer() {
+type ResponseViewerProps = {
+  onClose: () => void;
+};
+
+export function ResponseViewer(props: ResponseViewerProps) {
   const { response, loading } = useHttpRequest();
 
   const [responseTab, setResponseTab] = createSignal("body");
 
   return (
     <div class={styles.responsePanel}>
+      <div class={styles.responsePanelHeader}>
+        <span class={styles.responsePanelTitle}>Response</span>
+        <button
+          type="button"
+          class={styles.responsePanelCloseBtn}
+          onClick={props.onClose}
+          title="Close response panel"
+        >
+          <X size={14} />
+        </button>
+      </div>
       <Show
         when={response() || loading()}
         fallback={

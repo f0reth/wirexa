@@ -5,6 +5,16 @@
   flex-direction: column;
 }
 
+.mainContent {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editorFullHeight {
+  height: 100%;
+}
+
 /* ── Request bar ───────────────────────────────────────── */
 .requestBar {
   display: flex;
@@ -34,6 +44,34 @@
 
 .sendButton {
   flex-shrink: 0;
+}
+
+.responseToggleBtn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--color-muted-foreground);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.responseToggleBtn:hover {
+  color: var(--color-foreground);
+  background-color: var(--hover-overlay);
+}
+
+.responseToggleBtnActive {
+  color: var(--color-foreground);
+  background-color: var(--surface-3);
+  box-shadow: var(--shadow-sm), var(--inner-glow);
 }
 
 /* ── Editor panel (shared for request/response) ────────── */
@@ -189,6 +227,46 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+}
+
+.responsePanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.75rem;
+  height: 2rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.responsePanelTitle {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--color-muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.responsePanelCloseBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.25rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--color-muted-foreground);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.responsePanelCloseBtn:hover {
+  color: var(--color-foreground);
+  background-color: var(--hover-overlay);
 }
 
 .responseEmpty {

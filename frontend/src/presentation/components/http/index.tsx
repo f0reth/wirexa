@@ -1,4 +1,4 @@
-import { onCleanup, onMount } from "solid-js";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -12,6 +12,7 @@ import { ResponseViewer } from "./response-viewer";
 
 export function HttpClient() {
   const { dirty, saveCurrentRequest } = useHttpRequest();
+  const [showResponse, setShowResponse] = createSignal(true);
 
   onMount(() => {
     const handler = (e: KeyboardEvent) => {
@@ -28,16 +29,30 @@ export function HttpClient() {
 
   return (
     <div class={styles.container}>
-      <RequestBar />
-      <ResizablePanelGroup direction="vertical">
-        <ResizablePanel defaultSize={50} minSize={20}>
-          <RequestEditor />
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel defaultSize={50} minSize={20}>
-          <ResponseViewer />
-        </ResizablePanel>
-      </ResizablePanelGroup>
+      <RequestBar
+        showResponse={showResponse()}
+        onToggleResponse={() => setShowResponse((v) => !v)}
+      />
+      <div class={styles.mainContent}>
+        <Show
+          when={showResponse()}
+          fallback={
+            <div class={styles.editorFullHeight}>
+              <RequestEditor />
+            </div>
+          }
+        >
+          <ResizablePanelGroup direction="horizontal">
+            <ResizablePanel defaultSize={50} minSize={20}>
+              <RequestEditor />
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={50} minSize={20}>
+              <ResponseViewer onClose={() => setShowResponse(false)} />
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </Show>
+      </div>
     </div>
   );
 }

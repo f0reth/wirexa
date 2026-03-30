@@ -1,4 +1,5 @@
-import { Send } from "lucide-solid";
+import { clsx } from "clsx";
+import { PanelRight, Send } from "lucide-solid";
 import { createMemo } from "solid-js";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -22,7 +23,12 @@ function isValidHttpUrl(s: string): boolean {
   }
 }
 
-export function RequestBar() {
+type RequestBarProps = {
+  showResponse: boolean;
+  onToggleResponse: () => void;
+};
+
+export function RequestBar(props: RequestBarProps) {
   const { method, setMethod, url, setUrl, sendRequest, loading } =
     useHttpRequest();
 
@@ -77,6 +83,20 @@ export function RequestBar() {
         <Send size={14} />
         {loading() ? "Sending..." : "Send"}
       </Button>
+
+      <button
+        type="button"
+        class={clsx(
+          styles.responseToggleBtn,
+          props.showResponse && styles.responseToggleBtnActive,
+        )}
+        onClick={props.onToggleResponse}
+        title={
+          props.showResponse ? "Hide response panel" : "Show response panel"
+        }
+      >
+        <PanelRight size={15} />
+      </button>
     </div>
   );
 }
