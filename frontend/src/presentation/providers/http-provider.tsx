@@ -39,6 +39,7 @@ export interface RequestContextValue {
   activeRequestId: Accessor<string | null>;
   activeCollectionId: Accessor<string | null>;
   sendRequest: () => Promise<void>;
+  cancelRequest: () => Promise<void>;
   loadRequest: (req: HttpRequest, collectionId: string) => void;
   newRequest: () => void;
   saveCurrentRequest: () => Promise<void>;
@@ -84,6 +85,7 @@ export function HttpProvider(props: { children: JSX.Element }) {
   const collectionsState = createCollectionsState(httpClient);
   const requestState = createRequestState({
     sendRequest: httpClient.sendRequest,
+    cancelRequest: httpClient.cancelRequest,
     updateRequest: httpClient.updateRequest,
     afterSave: () => collectionsState.refreshCollections(),
   });

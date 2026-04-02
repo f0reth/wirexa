@@ -1,10 +1,12 @@
 // Package httpdomain は HTTP ドメイン層のポートインターフェースを定義する。
 package httpdomain
 
+import "context"
+
 // HttpTransport はHTTPリクエスト実行を担うポート。
 // Application層はこのインターフェースを通じてネットワークI/Oを行う。
 type HttpTransport interface {
-	Do(req HttpRequest) (HttpResponse, error)
+	Do(ctx context.Context, req HttpRequest) (HttpResponse, error)
 }
 
 // CollectionRepository はコレクションの永続化抽象。
@@ -17,6 +19,7 @@ type CollectionRepository interface {
 // RequestUseCase は HTTP リクエスト送信のユースケース入力ポート。
 type RequestUseCase interface {
 	SendRequest(req HttpRequest) (HttpResponse, error)
+	CancelRequest()
 }
 
 // CollectionUseCase はコレクション管理のユースケース入力ポート。

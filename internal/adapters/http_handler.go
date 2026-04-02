@@ -28,6 +28,11 @@ func (h *HttpHandler) SendRequest(req domain.HttpRequest) (domain.HttpResponse, 
 	return h.reqSvc.SendRequest(req)
 }
 
+// CancelRequest は実行中の HTTP リクエストをキャンセルする。
+func (h *HttpHandler) CancelRequest() {
+	h.reqSvc.CancelRequest()
+}
+
 // GetCollections は全コレクションを返す。
 func (h *HttpHandler) GetCollections() []domain.Collection {
 	return h.collSvc.GetCollections()

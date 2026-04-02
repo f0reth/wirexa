@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { PanelRight, Send } from "lucide-solid";
+import { PanelRight, Send, X } from "lucide-solid";
 import { createMemo } from "solid-js";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -29,8 +29,15 @@ type RequestBarProps = {
 };
 
 export function RequestBar(props: RequestBarProps) {
-  const { method, setMethod, url, setUrl, sendRequest, loading } =
-    useHttpRequest();
+  const {
+    method,
+    setMethod,
+    url,
+    setUrl,
+    sendRequest,
+    cancelRequest,
+    loading,
+  } = useHttpRequest();
 
   const urlValid = createMemo(() => isValidHttpUrl(url()));
   const methodColor = createMemo(() => METHOD_COLORS[method()]);
@@ -75,14 +82,25 @@ export function RequestBar(props: RequestBarProps) {
         }}
       />
 
-      <Button
-        onClick={handleSend}
-        disabled={loading() || !urlValid()}
-        class={styles.sendButton}
-      >
-        <Send size={14} />
-        {loading() ? "Sending..." : "Send"}
-      </Button>
+      {loading() ? (
+        <Button
+          onClick={cancelRequest}
+          variant="destructive"
+          class={styles.sendButton}
+        >
+          <X size={14} />
+          Cancel
+        </Button>
+      ) : (
+        <Button
+          onClick={handleSend}
+          disabled={!urlValid()}
+          class={styles.sendButton}
+        >
+          <Send size={14} />
+          Send
+        </Button>
+      )}
 
       <button
         type="button"

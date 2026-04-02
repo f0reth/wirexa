@@ -1,6 +1,7 @@
 import {
   AddFolder,
   AddRequest,
+  CancelRequest,
   CreateCollection,
   DeleteCollection,
   DeleteItem,
@@ -106,6 +107,10 @@ function fromWailsCollection(col: httpdomain.Collection): Collection {
 export async function sendRequest(req: HttpRequest): Promise<HttpResponse> {
   const result = await SendRequest(toWailsRequest(req));
   return fromWailsHttpResponse(result);
+}
+
+export async function cancelRequest(): Promise<void> {
+  return CancelRequest();
 }
 
 export async function getCollections(): Promise<Collection[]> {

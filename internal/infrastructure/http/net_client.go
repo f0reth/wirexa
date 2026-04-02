@@ -32,7 +32,7 @@ func NewNetClient() *NetClient {
 }
 
 // Do は HttpRequest を実行して HttpResponse を返す。
-func (c *NetClient) Do(req domain.HttpRequest) (domain.HttpResponse, error) {
+func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.HttpResponse, error) {
 	parsedURL, err := url.Parse(req.URL)
 	if err != nil {
 		return domain.HttpResponse{}, fmt.Errorf("invalid URL: %w", err)
@@ -62,7 +62,7 @@ func (c *NetClient) Do(req domain.HttpRequest) (domain.HttpResponse, error) {
 		bodyReader = strings.NewReader(req.Body.Content)
 	}
 
-	httpReq, err := http.NewRequestWithContext(context.Background(), req.Method, parsedURL.String(), bodyReader)
+	httpReq, err := http.NewRequestWithContext(ctx, req.Method, parsedURL.String(), bodyReader)
 	if err != nil {
 		return domain.HttpResponse{}, fmt.Errorf("failed to create request: %w", err)
 	}

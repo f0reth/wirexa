@@ -1,6 +1,7 @@
 package httpapp
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -12,7 +13,7 @@ type mockTransport struct {
 	doFn func(req domain.HttpRequest) (domain.HttpResponse, error)
 }
 
-func (m *mockTransport) Do(req domain.HttpRequest) (domain.HttpResponse, error) {
+func (m *mockTransport) Do(_ context.Context, req domain.HttpRequest) (domain.HttpResponse, error) {
 	if m.doFn != nil {
 		return m.doFn(req)
 	}
@@ -97,8 +98,8 @@ func TestHttpRequestService_SendRequest_TransportResponse(t *testing.T) {
 func TestHttpRequestService_SendRequest_PassesRequestToTransport(t *testing.T) {
 	var capturedReq domain.HttpRequest
 	transport := &mockTransport{
-		doFn: func(req domain.HttpRequest) (domain.HttpResponse, error) {
-			capturedReq = req
+		doFn: func(r domain.HttpRequest) (domain.HttpResponse, error) {
+			capturedReq = r
 			return domain.HttpResponse{StatusCode: 200}, nil
 		},
 	}

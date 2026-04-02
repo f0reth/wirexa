@@ -10,6 +10,7 @@ import type {
 
 export interface RequestApi {
   sendRequest(req: HttpRequest): Promise<HttpResponse>;
+  cancelRequest(): Promise<void>;
   updateRequest(collectionId: string, req: HttpRequest): Promise<void>;
   afterSave?: () => Promise<void>;
 }
@@ -57,6 +58,10 @@ export function createRequestState(api: RequestApi) {
       setLoading(false);
     }
     // エラーは呼び出し元 (Presentation 層) に伝播する
+  }
+
+  async function cancelRequest(): Promise<void> {
+    await api.cancelRequest();
   }
 
   function loadRequest(req: HttpRequest, collectionId: string): void {
@@ -117,6 +122,7 @@ export function createRequestState(api: RequestApi) {
     activeRequestId,
     activeCollectionId,
     sendRequest,
+    cancelRequest,
     loadRequest,
     newRequest,
     saveCurrentRequest,
