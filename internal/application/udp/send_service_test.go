@@ -32,7 +32,7 @@ func newSendSvc(socket domain.UdpSocket) *UdpSendService {
 	if socket == nil {
 		socket = &mockUDPSocket{}
 	}
-	return NewUdpSendService(socket)
+	return NewUdpSendService(socket, cmn.NoopLogger{})
 }
 
 func TestUdpSendService_Send_EmptyHost(t *testing.T) {

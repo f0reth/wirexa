@@ -23,15 +23,17 @@ type listenSession struct {
 type UdpListenerService struct {
 	socket   domain.UdpSocket
 	emitter  cmn.Emitter
+	logger   cmn.Logger
 	sessions map[string]*listenSession
 	mu       sync.Mutex
 }
 
 // NewUdpListenerService は UdpListenerService を生成する。
-func NewUdpListenerService(socket domain.UdpSocket, emitter cmn.Emitter) *UdpListenerService {
+func NewUdpListenerService(socket domain.UdpSocket, emitter cmn.Emitter, logger cmn.Logger) *UdpListenerService {
 	return &UdpListenerService{
 		socket:   socket,
 		emitter:  emitter,
+		logger:   logger,
 		sessions: make(map[string]*listenSession),
 	}
 }
@@ -68,6 +70,7 @@ func (s *UdpListenerService) StartListen(port int, encoding domain.PayloadEncodi
 	s.sessions[session.ID] = ls
 	s.mu.Unlock()
 
+	s.logger.Info("UDP listener started", "source", "udp", "port", port, "session_id", session.ID)
 	go s.receiveLoop(ls)
 
 	return session, nil
@@ -84,6 +87,7 @@ func (s *UdpListenerService) StopListen(sessionID string) error {
 	delete(s.sessions, sessionID)
 	s.mu.Unlock()
 
+	s.logger.Info("UDP listener stopped", "source", "udp", "port", ls.session.Port, "session_id", sessionID)
 	return ls.conn.Close()
 }
 
@@ -124,6 +128,7 @@ func (s *UdpListenerService) receiveLoop(ls *listenSession) {
 			return
 		}
 
+		s.logger.Info("UDP packet received", "source", "udp", "port", ls.session.Port, "remote", addr, "bytes", n)
 		payload := domain.EncodePayload(buf[:n], ls.session.Encoding)
 
 		msg := domain.UdpReceivedMessage{

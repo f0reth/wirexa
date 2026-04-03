@@ -83,7 +83,7 @@ func newListenerSvc(socket domain.UdpSocket, emitter cmn.Emitter) *UdpListenerSe
 	if emitter == nil {
 		emitter = newListenerEmitter()
 	}
-	return NewUdpListenerService(socket, emitter)
+	return NewUdpListenerService(socket, emitter, cmn.NoopLogger{})
 }
 
 // ------- StartListen -------
@@ -298,7 +298,7 @@ func TestUdpListenerService_ReceiveLoop_EmitsMessage(t *testing.T) {
 		listenFn: func(_ int) (domain.UdpConn, error) { return conn, nil },
 	}
 	emitter := newListenerEmitter()
-	svc := NewUdpListenerService(socket, emitter)
+	svc := NewUdpListenerService(socket, emitter, cmn.NoopLogger{})
 
 	session, err := svc.StartListen(9000, domain.EncodingText)
 	if err != nil {
@@ -342,7 +342,7 @@ func TestUdpListenerService_ReceiveLoop_HexEncoding(t *testing.T) {
 		listenFn: func(_ int) (domain.UdpConn, error) { return conn, nil },
 	}
 	emitter := newListenerEmitter()
-	svc := NewUdpListenerService(socket, emitter)
+	svc := NewUdpListenerService(socket, emitter, cmn.NoopLogger{})
 
 	svc.StartListen(9000, domain.EncodingHex)
 	defer svc.StopAll()
