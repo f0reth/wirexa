@@ -35,16 +35,18 @@ type connection struct {
 type MqttService struct {
 	emitter       cmn.Emitter
 	clientFactory domain.BrokerClientFactory
+	logger        cmn.Logger
 	mu            sync.RWMutex
 	conns         map[string]*connection
 	connWg        sync.WaitGroup
 }
 
 // NewMqttService は MqttService を生成する。
-func NewMqttService(emitter cmn.Emitter, clientFactory domain.BrokerClientFactory) *MqttService {
+func NewMqttService(emitter cmn.Emitter, clientFactory domain.BrokerClientFactory, logger cmn.Logger) *MqttService {
 	return &MqttService{
 		emitter:       emitter,
 		clientFactory: clientFactory,
+		logger:        logger,
 		conns:         make(map[string]*connection),
 	}
 }
@@ -62,14 +64,18 @@ func (s *MqttService) Connect(config domain.ConnectionConfig) (string, error) {
 		config.ClientID = "wirexa-" + connID[:8]
 	}
 
+	s.logger.Info("MQTT connecting", "source", "mqtt", "broker", config.Broker, "client_id", config.ClientID)
+
 	client := s.clientFactory(
 		config,
 		func() {
+			s.logger.Info("MQTT connected", "source", "mqtt", "connection_id", connID, "broker", config.Broker)
 			s.emitter.Emit(eventConnected, map[string]any{
 				"connectionId": connID,
 			})
 		},
 		func(err error) {
+			s.logger.Error("MQTT connection lost", "source", "mqtt", "connection_id", connID, "error", err)
 			s.emitter.Emit(eventConnectionLost, map[string]any{
 				"connectionId": connID,
 				"error":        err.Error(),
@@ -86,6 +92,7 @@ func (s *MqttService) Connect(config domain.ConnectionConfig) (string, error) {
 			s.mu.Lock()
 			delete(s.conns, connID)
 			s.mu.Unlock()
+			s.logger.Error("MQTT connection failed", "source", "mqtt", "connection_id", connID, "error", err)
 			s.emitter.Emit(eventConnectionFailed, map[string]any{
 				"connectionId": connID,
 				"error":        err.Error(),
@@ -109,6 +116,7 @@ func (s *MqttService) Disconnect(connectionID string) error {
 
 	conn.client.Disconnect(1000)
 
+	s.logger.Info("MQTT disconnected", "source", "mqtt", "connection_id", connectionID)
 	s.emitter.Emit(eventDisconnected, map[string]any{
 		"connectionId": connectionID,
 	})
@@ -154,6 +162,7 @@ func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
 	}
 
 	handler := func(msgTopic, msgPayload string, msgQoS byte, retained bool) {
+		s.logger.Info("MQTT message received", "source", "mqtt", "connection_id", connectionID, "topic", msgTopic, "payload_bytes", len(msgPayload))
 		s.emitter.Emit(eventMessage, domain.MqttMessage{
 			ConnectionID: connectionID,
 			Topic:        msgTopic,
