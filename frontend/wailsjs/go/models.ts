@@ -1,3 +1,26 @@
+export namespace adapters {
+	
+	export class LogEntry {
+	    level: string;
+	    source: string;
+	    message: string;
+	    attrs?: Record<string, any>;
+	
+	    static createFrom(source: any = {}) {
+	        return new LogEntry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.level = source["level"];
+	        this.source = source["source"];
+	        this.message = source["message"];
+	        this.attrs = source["attrs"];
+	    }
+	}
+
+}
+
 export namespace httpdomain {
 	
 	export class RequestAuth {
