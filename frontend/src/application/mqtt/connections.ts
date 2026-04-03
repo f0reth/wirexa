@@ -18,6 +18,7 @@ import type {
   OnlineConnectionState,
   Tab,
 } from "../../domain/mqtt/types";
+import { log } from "../../infrastructure/logger/client";
 import { onMqttEvent } from "../../infrastructure/mqtt/events";
 
 // Application層内部でのみ使うSet最適化を保持する拡張型。
@@ -324,6 +325,12 @@ export function createConnectionsState(
   const handleConnect = async (profileId: string) => {
     const profile = profiles().find((p) => p.id === profileId);
     if (!profile) return;
+    log({
+      level: "INFO",
+      source: "frontend:mqtt",
+      message: "MQTT connecting",
+      attrs: { broker: profile.broker, profile: profile.name },
+    });
     try {
       const connId = await api.connect(profile);
       const newState = makeOnlineState(connId, profile);
@@ -336,7 +343,19 @@ export function createConnectionsState(
         }),
       );
       setActiveConnectionId(connId);
+      log({
+        level: "INFO",
+        source: "frontend:mqtt",
+        message: "MQTT connect initiated",
+        attrs: { connection_id: connId, broker: profile.broker },
+      });
     } catch (err) {
+      log({
+        level: "ERROR",
+        source: "frontend:mqtt",
+        message: "MQTT connect failed",
+        attrs: { broker: profile.broker, error: String(err) },
+      });
       console.error("[MQTT] Connect failed:", err);
     }
   };
@@ -346,7 +365,19 @@ export function createConnectionsState(
     if (!connId) return;
     try {
       await api.disconnect(connId);
+      log({
+        level: "INFO",
+        source: "frontend:mqtt",
+        message: "MQTT disconnected",
+        attrs: { connection_id: connId },
+      });
     } catch (err) {
+      log({
+        level: "ERROR",
+        source: "frontend:mqtt",
+        message: "MQTT disconnect failed",
+        attrs: { connection_id: connId, error: String(err) },
+      });
       console.error("[MQTT] Disconnect failed:", err);
     }
     updateConnection(connId, (state) => {

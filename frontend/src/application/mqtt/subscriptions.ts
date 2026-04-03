@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import { compilePattern } from "../../domain/mqtt/topic";
 import type { ConnectionState, Subscription } from "../../domain/mqtt/types";
+import { log } from "../../infrastructure/logger/client";
 import * as client from "../../infrastructure/mqtt/client";
 import type { ConnectionStateExt } from "./connections";
 
@@ -32,7 +33,19 @@ export function createSubscriptionsState(
     if (connId) {
       try {
         await client.subscribe(connId, t, q);
+        log({
+          level: "INFO",
+          source: "frontend:mqtt",
+          message: "MQTT subscribed",
+          attrs: { connection_id: connId, topic: t, qos: q },
+        });
       } catch (err) {
+        log({
+          level: "ERROR",
+          source: "frontend:mqtt",
+          message: "MQTT subscribe failed",
+          attrs: { connection_id: connId, topic: t, error: String(err) },
+        });
         console.error(`[MQTT] Subscribe failed for ${t}:`, err);
         return;
       }
@@ -61,7 +74,23 @@ export function createSubscriptionsState(
     if (conn?.type === "online" && conn.connected) {
       try {
         await client.unsubscribe(connId, sub.topic);
+        log({
+          level: "INFO",
+          source: "frontend:mqtt",
+          message: "MQTT unsubscribed",
+          attrs: { connection_id: connId, topic: sub.topic },
+        });
       } catch (err) {
+        log({
+          level: "ERROR",
+          source: "frontend:mqtt",
+          message: "MQTT unsubscribe failed",
+          attrs: {
+            connection_id: connId,
+            topic: sub.topic,
+            error: String(err),
+          },
+        });
         console.error(`[MQTT] Unsubscribe failed for ${sub.topic}:`, err);
       }
     }

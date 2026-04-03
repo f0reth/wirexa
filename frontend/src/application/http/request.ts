@@ -7,6 +7,7 @@ import type {
   RequestAuth,
   RequestBody,
 } from "../../domain/http/types";
+import { log } from "../../infrastructure/logger/client";
 
 export interface RequestApi {
   sendRequest(req: HttpRequest): Promise<HttpResponse>;
@@ -42,18 +43,45 @@ export function createRequestState(api: RequestApi) {
 
   async function sendRequest(): Promise<void> {
     setLoading(true);
+    const m = method();
+    const u = url();
+    log({
+      level: "INFO",
+      source: "frontend:http",
+      message: "HTTP request sent",
+      attrs: { method: m, url: u },
+    });
     try {
       const res = await api.sendRequest({
         id: activeRequestId() ?? "",
         name: "",
-        method: method(),
-        url: url(),
+        method: m,
+        url: u,
         headers: headers(),
         params: params(),
         body: body(),
         auth: auth(),
       });
       setResponse(res);
+      log({
+        level: "INFO",
+        source: "frontend:http",
+        message: "HTTP response received",
+        attrs: {
+          method: m,
+          url: u,
+          status: res.statusCode,
+          latency_ms: res.timingMs,
+        },
+      });
+    } catch (err) {
+      log({
+        level: "ERROR",
+        source: "frontend:http",
+        message: "HTTP request failed",
+        attrs: { method: m, url: u, error: String(err) },
+      });
+      throw err;
     } finally {
       setLoading(false);
     }

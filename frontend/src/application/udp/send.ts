@@ -7,6 +7,7 @@ import type {
   UdpSendResult,
   UdpTarget,
 } from "../../domain/udp/types";
+import { log } from "../../infrastructure/logger/client";
 
 export interface UdpSendApi {
   send(req: UdpSendRequest): Promise<UdpSendResult>;
@@ -61,10 +62,18 @@ export function createUdpSendState(api: UdpSendApi) {
 
   async function send(): Promise<void> {
     setLoading(true);
+    const h = host();
+    const p = port();
+    log({
+      level: "INFO",
+      source: "frontend:udp",
+      message: "UDP packet sending",
+      attrs: { host: h, port: p, encoding: encoding() },
+    });
     try {
       const request: UdpSendRequest = {
-        host: host(),
-        port: port(),
+        host: h,
+        port: p,
         payload: payload(),
         encoding: encoding(),
         messageLength: messageLength(),
@@ -81,7 +90,21 @@ export function createUdpSendState(api: UdpSendApi) {
             : { fields: [] },
       };
 
-      await api.send(request);
+      const result = await api.send(request);
+      log({
+        level: "INFO",
+        source: "frontend:udp",
+        message: "UDP packet sent",
+        attrs: { host: h, port: p, bytes: result.bytesSent },
+      });
+    } catch (err) {
+      log({
+        level: "ERROR",
+        source: "frontend:udp",
+        message: "UDP send failed",
+        attrs: { host: h, port: p, error: String(err) },
+      });
+      throw err;
     } finally {
       setLoading(false);
     }
