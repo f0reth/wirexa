@@ -29,6 +29,7 @@ func main() {
 			app.mqttHandler,
 			app.httpHandler,
 			app.udpHandler,
+			app.logHandler,
 		},
 	})
 	if err != nil {
