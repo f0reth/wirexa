@@ -18,13 +18,14 @@ var validMethods = map[string]bool{
 // HttpRequestService は HTTP リクエスト送信ユースケースを提供する。
 type HttpRequestService struct {
 	transport domain.HttpTransport
+	logger    cmn.Logger
 	mu        sync.Mutex
 	cancel    context.CancelFunc
 }
 
 // NewHTTPRequestService は HttpRequestService を生成する。
-func NewHTTPRequestService(transport domain.HttpTransport) *HttpRequestService {
-	return &HttpRequestService{transport: transport}
+func NewHTTPRequestService(transport domain.HttpTransport, logger cmn.Logger) *HttpRequestService {
+	return &HttpRequestService{transport: transport, logger: logger}
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
@@ -33,6 +34,7 @@ func (s *HttpRequestService) SendRequest(req domain.HttpRequest) (domain.HttpRes
 	if !validMethods[req.Method] {
 		return domain.HttpResponse{}, &cmn.ValidationError{Field: "method", Message: req.Method}
 	}
+	s.logger.Info("HTTP request sent", "source", "http", "method", req.Method, "url", req.URL, "body_bytes", len(req.Body.Content))
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
 	s.cancel = cancel
@@ -43,7 +45,13 @@ func (s *HttpRequestService) SendRequest(req domain.HttpRequest) (domain.HttpRes
 		s.mu.Unlock()
 		cancel()
 	}()
-	return s.transport.Do(ctx, req)
+	resp, err := s.transport.Do(ctx, req)
+	if err != nil {
+		s.logger.Error("HTTP request failed", "source", "http", "method", req.Method, "url", req.URL, "error", err)
+		return resp, err
+	}
+	s.logger.Info("HTTP response received", "source", "http", "method", req.Method, "url", req.URL, "status", resp.StatusCode, "latency_ms", resp.TimingMs)
+	return resp, nil
 }
 
 // CancelRequest は実行中の HTTP リクエストをキャンセルする。
