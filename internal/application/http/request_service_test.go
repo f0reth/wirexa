@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
+	"github.com/f0reth/Wirexa/internal/testutil"
 )
 
 // mockTransport は HttpTransport のインメモリモック。
@@ -24,7 +24,7 @@ func (m *mockTransport) Do(_ context.Context, req domain.HttpRequest) (domain.Ht
 func TestHttpRequestService_SendRequest_ValidMethods(t *testing.T) {
 	validMethods := []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
 	transport := &mockTransport{}
-	svc := NewHTTPRequestService(transport, cmn.NoopLogger{})
+	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
 
 	for _, method := range validMethods {
 		t.Run(method, func(t *testing.T) {
@@ -42,7 +42,7 @@ func TestHttpRequestService_SendRequest_ValidMethods(t *testing.T) {
 func TestHttpRequestService_SendRequest_InvalidMethods(t *testing.T) {
 	invalidMethods := []string{"get", "post", "TRACE", "CONNECT", "", "INVALID", "get "}
 	transport := &mockTransport{}
-	svc := NewHTTPRequestService(transport, cmn.NoopLogger{})
+	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
 
 	for _, method := range invalidMethods {
 		t.Run("invalid_"+method, func(t *testing.T) {
@@ -61,7 +61,7 @@ func TestHttpRequestService_SendRequest_TransportError(t *testing.T) {
 			return domain.HttpResponse{}, wantErr
 		},
 	}
-	svc := NewHTTPRequestService(transport, cmn.NoopLogger{})
+	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
 
 	_, err := svc.SendRequest(domain.HttpRequest{Method: "GET", URL: "http://example.com"})
 	if !errors.Is(err, wantErr) {
@@ -82,7 +82,7 @@ func TestHttpRequestService_SendRequest_TransportResponse(t *testing.T) {
 			return wantResp, nil
 		},
 	}
-	svc := NewHTTPRequestService(transport, cmn.NoopLogger{})
+	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
 
 	got, err := svc.SendRequest(domain.HttpRequest{Method: "GET", URL: "http://example.com"})
 	if err != nil {
@@ -104,7 +104,7 @@ func TestHttpRequestService_SendRequest_PassesRequestToTransport(t *testing.T) {
 			return domain.HttpResponse{StatusCode: 200}, nil
 		},
 	}
-	svc := NewHTTPRequestService(transport, cmn.NoopLogger{})
+	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
 
 	input := domain.HttpRequest{
 		Method: "POST",

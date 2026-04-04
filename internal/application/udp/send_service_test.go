@@ -6,6 +6,7 @@ import (
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/udp"
+	"github.com/f0reth/Wirexa/internal/testutil"
 )
 
 // mockUDPSocket は domain.UdpSocket のインメモリモック。
@@ -32,7 +33,7 @@ func newSendSvc(socket domain.UdpSocket) *UdpSendService {
 	if socket == nil {
 		socket = &mockUDPSocket{}
 	}
-	return NewUdpSendService(socket, cmn.NoopLogger{})
+	return NewUdpSendService(socket, testutil.NoopLogger{})
 }
 
 func TestUdpSendService_Send_EmptyHost(t *testing.T) {

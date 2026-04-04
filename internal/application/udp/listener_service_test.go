@@ -8,6 +8,7 @@ import (
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/udp"
+	"github.com/f0reth/Wirexa/internal/testutil"
 )
 
 // mockUDPConn は domain.UdpConn のモック。
@@ -83,7 +84,7 @@ func newListenerSvc(socket domain.UdpSocket, emitter cmn.Emitter) *UdpListenerSe
 	if emitter == nil {
 		emitter = newListenerEmitter()
 	}
-	return NewUdpListenerService(socket, emitter, cmn.NoopLogger{})
+	return NewUdpListenerService(socket, emitter, testutil.NoopLogger{})
 }
 
 // ------- StartListen -------
@@ -298,7 +299,7 @@ func TestUdpListenerService_ReceiveLoop_EmitsMessage(t *testing.T) {
 		listenFn: func(_ int) (domain.UdpConn, error) { return conn, nil },
 	}
 	emitter := newListenerEmitter()
-	svc := NewUdpListenerService(socket, emitter, cmn.NoopLogger{})
+	svc := NewUdpListenerService(socket, emitter, testutil.NoopLogger{})
 
 	session, err := svc.StartListen(9000, domain.EncodingText)
 	if err != nil {
