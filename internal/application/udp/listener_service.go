@@ -11,6 +11,8 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/udp"
 )
 
+const eventMessage = "udp:message"
+
 var _ domain.ListenUseCase = (*UdpListenerService)(nil)
 
 // listenSession はアクティブなリスニングセッションの内部状態を保持する。
@@ -140,6 +142,6 @@ func (s *UdpListenerService) receiveLoop(ls *listenSession) {
 			Timestamp:  time.Now().UnixMilli(),
 		}
 
-		s.emitter.Emit("udp:message", msg)
+		s.emitter.Emit(eventMessage, msg)
 	}
 }
