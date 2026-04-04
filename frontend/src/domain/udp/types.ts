@@ -1,3 +1,7 @@
+// フロントエンド domain 層の型定義（正）。
+// Wails 自動生成型（wailsjs/go/models.ts）との変換は infrastructure/udp/client.ts で行う。
+// これらの型を変更した場合は internal/domain/udp/types.go も必ず合わせて更新すること。
+
 export type PayloadEncoding = "text" | "json" | "fixed";
 
 export const PAYLOAD_ENCODINGS: PayloadEncoding[] = ["text", "json", "fixed"];

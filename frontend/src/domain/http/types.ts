@@ -1,3 +1,7 @@
+// フロントエンド domain 層の型定義（正）。
+// Wails 自動生成型（wailsjs/go/models.ts）との変換は infrastructure/http/client.ts で行う。
+// これらの型を変更した場合は internal/domain/http/types.go も必ず合わせて更新すること。
+
 export interface KeyValuePair {
   key: string;
   value: string;

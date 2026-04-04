@@ -2,8 +2,8 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  on,
   onCleanup,
-  untrack,
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import {
@@ -286,29 +286,26 @@ export function createConnectionsState(
   });
 
   // 起動時に全プロファイルをオフラインタブとして復元し、最後に使ったプロファイルをアクティブにする
-  // profiles はバックエンドから非同期でロードされるため、createEffect で反応する
+  // profiles はバックエンドから非同期でロードされるため、on() で profiles のみを明示的に追跡する
   let profilesRestored = false;
-  createEffect(() => {
-    const ps = profiles();
-    if (ps.length === 0 || profilesRestored) return;
-    profilesRestored = true;
+  createEffect(
+    on(profiles, (ps) => {
+      if (ps.length === 0 || profilesRestored) return;
+      profilesRestored = true;
 
-    const savedProfileId = persistence.loadLastProfileId();
-
-    untrack(() => {
+      const savedProfileId = persistence.loadLastProfileId();
       for (const profile of ps) {
         const entry = makeOfflineState(profile);
         setConnections(entry.connectionId, entry);
       }
-
       if (savedProfileId) {
         const savedProfile = ps.find((p) => p.id === savedProfileId);
         if (savedProfile) {
           setActiveConnectionId(offlineId(savedProfile.id));
         }
       }
-    });
-  });
+    }),
+  );
 
   // アクティブプロファイルを永続化
   createEffect(() => {
