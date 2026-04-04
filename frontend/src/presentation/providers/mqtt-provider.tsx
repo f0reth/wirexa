@@ -20,6 +20,7 @@ import type {
   Tab,
 } from "../../domain/mqtt/types";
 import * as mqttClient from "../../infrastructure/mqtt/client";
+import { onMqttEvent } from "../../infrastructure/mqtt/events";
 import {
   loadFromStorage,
   removeFromStorage,
@@ -93,6 +94,7 @@ export function MqttProvider(props: { children: JSX.Element }) {
     createProfilesState();
   const connState = createConnectionsState(
     mqttClient,
+    onMqttEvent,
     {
       loadLastProfileId: () =>
         loadFromStorage<string | null>(LAST_ACTIVE_PROFILE_KEY, null),
@@ -109,6 +111,7 @@ export function MqttProvider(props: { children: JSX.Element }) {
   const subsState = createSubscriptionsState(
     connState.activeConnection,
     connState.updateConnection,
+    mqttClient,
   );
   const msgState = createMessagesState(
     connState.activeConnection,

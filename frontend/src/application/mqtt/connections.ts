@@ -16,20 +16,38 @@ import type {
   MqttMessage,
   OfflineConnectionState,
   OnlineConnectionState,
+  Subscription,
   Tab,
 } from "../../domain/mqtt/types";
 import { log } from "../../infrastructure/logger/client";
-import { onMqttEvent } from "../../infrastructure/mqtt/events";
 
-// Application層内部でのみ使うSet最適化を保持する拡張型。
-// Domain型 (ConnectionState) には実装詳細のSetは含まれない。
-export type OfflineStateExt = OfflineConnectionState & {
+// Application層が管理するランタイム状態。
+// Domain型 (ConnectionState) はブローカー接続の純粋なドメイン概念のみを持つ。
+interface ConnectionRuntimeState {
+  subscriptions: Subscription[];
+  messages: MqttMessage[];
+  selectedMessage: MqttMessage | null;
+  autoFollow: boolean;
+  brokerTopics: string[];
   readonly brokerTopicsSet: Set<string>;
-};
-export type OnlineStateExt = OnlineConnectionState & {
-  readonly brokerTopicsSet: Set<string>;
-};
+  isScanning: boolean;
+}
+
+export type OfflineStateExt = OfflineConnectionState & ConnectionRuntimeState;
+export type OnlineStateExt = OnlineConnectionState & ConnectionRuntimeState;
 export type ConnectionStateExt = OfflineStateExt | OnlineStateExt;
+
+export type MqttEventName =
+  | "mqtt:connected"
+  | "mqtt:disconnected"
+  | "mqtt:connection-lost"
+  | "mqtt:connection-failed"
+  | "mqtt:message";
+
+export type MqttEventListener = (
+  event: MqttEventName,
+  handler: (data: unknown) => void,
+) => () => void;
 
 export interface MqttConnectionApi {
   connect(profile: BrokerProfile): Promise<string>;
@@ -95,6 +113,7 @@ function makeOnlineState(
 
 export function createConnectionsState(
   api: MqttConnectionApi,
+  onEvent: MqttEventListener,
   persistence: ConnectionPersistence,
   profiles: () => BrokerProfile[],
   saveProfile: (p: BrokerProfile) => Promise<void>,
@@ -204,7 +223,7 @@ export function createConnectionsState(
   }
 
   // Wails イベントリスナー登録 → onCleanup で解除
-  const cancelMessage = onMqttEvent("mqtt:message", (data) => {
+  const cancelMessage = onEvent("mqtt:message", (data) => {
     messageBuffer.push(data as RawMessage);
     if (!flushScheduled) {
       flushScheduled = true;
@@ -212,7 +231,7 @@ export function createConnectionsState(
     }
   });
 
-  const cancelConnected = onMqttEvent("mqtt:connected", (data) => {
+  const cancelConnected = onEvent("mqtt:connected", (data) => {
     const { connectionId } = data as { connectionId: string };
     updateConnection(connectionId, (state) => {
       if (state.type !== "online") return state;
@@ -220,7 +239,7 @@ export function createConnectionsState(
     });
   });
 
-  const cancelDisconnected = onMqttEvent("mqtt:disconnected", (data) => {
+  const cancelDisconnected = onEvent("mqtt:disconnected", (data) => {
     const { connectionId } = data as { connectionId: string };
     updateConnection(connectionId, (state) => {
       if (state.type !== "online") return state;
@@ -228,7 +247,7 @@ export function createConnectionsState(
     });
   });
 
-  const cancelConnectionLost = onMqttEvent("mqtt:connection-lost", (data) => {
+  const cancelConnectionLost = onEvent("mqtt:connection-lost", (data) => {
     const { connectionId, error } = data as {
       connectionId: string;
       error: string;
@@ -240,20 +259,17 @@ export function createConnectionsState(
     });
   });
 
-  const cancelConnectionFailed = onMqttEvent(
-    "mqtt:connection-failed",
-    (data) => {
-      const { connectionId, error } = data as {
-        connectionId: string;
-        error: string;
-      };
-      console.error("[MQTT] Connection failed:", error);
-      updateConnection(connectionId, (state) => {
-        if (state.type !== "online") return state;
-        return { ...state, connected: false, isScanning: false };
-      });
-    },
-  );
+  const cancelConnectionFailed = onEvent("mqtt:connection-failed", (data) => {
+    const { connectionId, error } = data as {
+      connectionId: string;
+      error: string;
+    };
+    console.error("[MQTT] Connection failed:", error);
+    updateConnection(connectionId, (state) => {
+      if (state.type !== "online") return state;
+      return { ...state, connected: false, isScanning: false };
+    });
+  });
 
   onCleanup(() => {
     cancelMessage();

@@ -1,16 +1,21 @@
 import { createSignal } from "solid-js";
 import { compilePattern } from "../../domain/mqtt/topic";
-import type { ConnectionState, Subscription } from "../../domain/mqtt/types";
+import type { Subscription } from "../../domain/mqtt/types";
 import { log } from "../../infrastructure/logger/client";
-import * as client from "../../infrastructure/mqtt/client";
 import type { ConnectionStateExt } from "./connections";
 
+export interface SubscriptionApi {
+  subscribe(connectionId: string, topic: string, qos: number): Promise<void>;
+  unsubscribe(connectionId: string, topic: string): Promise<void>;
+}
+
 export function createSubscriptionsState(
-  activeConnection: () => ConnectionState | null,
+  activeConnection: () => ConnectionStateExt | null,
   updateConnection: (
     id: string,
     updater: (state: ConnectionStateExt) => ConnectionStateExt,
   ) => void,
+  api: SubscriptionApi,
 ) {
   const [newTopic, setNewTopic] = createSignal("");
   const [newQos, setNewQos] = createSignal<number>(0);
@@ -32,7 +37,7 @@ export function createSubscriptionsState(
     const q = qos ?? newQos();
     if (connId) {
       try {
-        await client.subscribe(connId, t, q);
+        await api.subscribe(connId, t, q);
         log({
           level: "INFO",
           source: "frontend:mqtt",
@@ -73,7 +78,7 @@ export function createSubscriptionsState(
     const conn = activeConnection();
     if (conn?.type === "online" && conn.connected) {
       try {
-        await client.unsubscribe(connId, sub.topic);
+        await api.unsubscribe(connId, sub.topic);
         log({
           level: "INFO",
           source: "frontend:mqtt",
@@ -116,14 +121,14 @@ export function createSubscriptionsState(
         brokerTopicsSet: new Set(),
       }));
       try {
-        await client.subscribe(connId, "#", 0);
+        await api.subscribe(connId, "#", 0);
       } catch (err) {
         console.error("[MQTT] Failed to subscribe to #:", err);
         updateConnection(connId, (state) => ({ ...state, isScanning: false }));
       }
     } else {
       try {
-        await client.unsubscribe(connId, "#");
+        await api.unsubscribe(connId, "#");
       } catch {}
       updateConnection(connId, (state) => ({ ...state, isScanning: false }));
     }

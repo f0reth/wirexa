@@ -43,12 +43,6 @@ export interface PublishPreset {
 interface BaseConnectionState {
   profileId: string;
   profile: BrokerProfile;
-  subscriptions: Subscription[];
-  messages: MqttMessage[];
-  selectedMessage: MqttMessage | null;
-  autoFollow: boolean;
-  brokerTopics: string[];
-  isScanning: boolean;
 }
 
 export interface OfflineConnectionState extends BaseConnectionState {
