@@ -1,22 +1,19 @@
 import { createSignal } from "solid-js";
 import type { PublishPreset } from "../../domain/mqtt/types";
-import {
-  loadFromStorage,
-  saveToStorage,
-} from "../../infrastructure/storage/local-storage";
 
-const STORAGE_KEY = "mqtt:presets";
+export interface PresetStorage {
+  load(): PublishPreset[];
+  save(presets: PublishPreset[]): void;
+}
 
-export function createPresetsState() {
-  const [presets, setPresets] = createSignal<PublishPreset[]>(
-    loadFromStorage<PublishPreset[]>(STORAGE_KEY, []),
-  );
+export function createPresetsState(storage: PresetStorage) {
+  const [presets, setPresets] = createSignal<PublishPreset[]>(storage.load());
 
   function savePreset(preset: Omit<PublishPreset, "id">) {
     const newPreset: PublishPreset = { ...preset, id: crypto.randomUUID() };
     setPresets((prev) => {
       const next = [...prev, newPreset];
-      saveToStorage(STORAGE_KEY, next);
+      storage.save(next);
       return next;
     });
   }
@@ -24,7 +21,7 @@ export function createPresetsState() {
   function removePreset(id: string) {
     setPresets((prev) => {
       const next = prev.filter((p) => p.id !== id);
-      saveToStorage(STORAGE_KEY, next);
+      storage.save(next);
       return next;
     });
   }

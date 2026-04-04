@@ -28,6 +28,7 @@ import {
 } from "../../infrastructure/storage/local-storage";
 
 const LAST_ACTIVE_PROFILE_KEY = "mqtt:lastActiveProfileId";
+const PRESETS_STORAGE_KEY = "mqtt:presets";
 
 // --- MqttConnectionContext ---
 export interface ConnectionContextValue {
@@ -91,7 +92,7 @@ const MqttContext = createContext<MqttContextValue>();
 
 export function MqttProvider(props: { children: JSX.Element }) {
   const { profiles, loadProfiles, saveProfile, deleteProfile } =
-    createProfilesState();
+    createProfilesState(mqttClient);
   const connState = createConnectionsState(
     mqttClient,
     onMqttEvent,
@@ -117,7 +118,10 @@ export function MqttProvider(props: { children: JSX.Element }) {
     connState.activeConnection,
     connState.updateConnection,
   );
-  const presetState = createPresetsState();
+  const presetState = createPresetsState({
+    load: () => loadFromStorage<PublishPreset[]>(PRESETS_STORAGE_KEY, []),
+    save: (presets) => saveToStorage(PRESETS_STORAGE_KEY, presets),
+  });
 
   return (
     <MqttContext.Provider
