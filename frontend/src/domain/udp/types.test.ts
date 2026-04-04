@@ -7,8 +7,6 @@ describe("isPayloadEncoding", () => {
   });
 
   it("returns false for unknown encodings", () => {
-    expect(isPayloadEncoding("hex")).toBe(false);
-    expect(isPayloadEncoding("base64")).toBe(false);
     expect(isPayloadEncoding("binary")).toBe(false);
     expect(isPayloadEncoding("")).toBe(false);
   });
