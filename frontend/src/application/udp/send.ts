@@ -9,6 +9,9 @@ import type {
 } from "../../domain/udp/types";
 import { log } from "../../infrastructure/logger/client";
 
+/** UI 管理用 id を付加したアプリケーション層のフィールド型。 */
+export type FixedLengthFieldState = FixedLengthField & { id: string };
+
 export interface UdpSendApi {
   send(req: UdpSendRequest): Promise<UdpSendResult>;
 }
@@ -30,12 +33,12 @@ export function createUdpSendState(api: UdpSendApi) {
   };
   const [messageLength, setMessageLength] = createSignal(0);
   const [fixedLengthFields, setFixedLengthFields] = createStore<
-    FixedLengthField[]
+    FixedLengthFieldState[]
   >([]);
   const [loading, setLoading] = createSignal(false);
 
-  const addField = (field?: Partial<FixedLengthField>) => {
-    const newField: FixedLengthField = {
+  const addField = (field?: Partial<FixedLengthFieldState>) => {
+    const newField: FixedLengthFieldState = {
       id: crypto.randomUUID(),
       name: field?.name ?? "",
       length: field?.length ?? 1,
@@ -44,7 +47,7 @@ export function createUdpSendState(api: UdpSendApi) {
     setFixedLengthFields(fixedLengthFields.length, newField);
   };
 
-  const updateField = (id: string, updates: Partial<FixedLengthField>) => {
+  const updateField = (id: string, updates: Partial<FixedLengthFieldState>) => {
     const index = fixedLengthFields.findIndex((f) => f.id === id);
     if (index !== -1) {
       setFixedLengthFields(index, updates);

@@ -10,7 +10,6 @@ export interface UdpTarget {
 }
 
 export interface FixedLengthField {
-  id: string;
   name: string;
   length: number;
   value: string;

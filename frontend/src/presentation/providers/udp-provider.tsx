@@ -1,9 +1,11 @@
 import { type Accessor, createContext, type JSX, useContext } from "solid-js";
 import { createUdpReceiveState } from "../../application/udp/receive";
-import { createUdpSendState } from "../../application/udp/send";
+import {
+  createUdpSendState,
+  type FixedLengthFieldState,
+} from "../../application/udp/send";
 import { createTargetsState } from "../../application/udp/targets";
 import type {
-  FixedLengthField,
   PayloadEncoding,
   UdpListenSession,
   UdpReceivedMessage,
@@ -23,9 +25,9 @@ export interface UdpSendContextValue {
   setEncoding: (v: PayloadEncoding) => void;
   messageLength: Accessor<number>;
   setMessageLength: (v: number) => void;
-  fixedLengthFields: FixedLengthField[];
-  addField: (field?: Partial<FixedLengthField>) => void;
-  updateField: (id: string, updates: Partial<FixedLengthField>) => void;
+  fixedLengthFields: FixedLengthFieldState[];
+  addField: (field?: Partial<FixedLengthFieldState>) => void;
+  updateField: (id: string, updates: Partial<FixedLengthFieldState>) => void;
   removeField: (id: string) => void;
   loading: Accessor<boolean>;
   send: () => Promise<void>;
