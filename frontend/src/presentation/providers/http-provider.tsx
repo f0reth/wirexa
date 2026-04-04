@@ -43,6 +43,7 @@ export interface RequestContextValue {
   loadRequest: (req: HttpRequest, collectionId: string) => void;
   newRequest: () => void;
   saveCurrentRequest: () => Promise<void>;
+  formatJsonBody: (content: string) => string;
 }
 
 export interface CollectionsContextValue {

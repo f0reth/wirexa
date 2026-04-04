@@ -132,6 +132,14 @@ export function createRequestState(api: RequestApi) {
     await api.afterSave?.();
   }
 
+  function formatJsonBody(content: string): string {
+    try {
+      return JSON.stringify(JSON.parse(content), null, 2);
+    } catch {
+      return content;
+    }
+  }
+
   return {
     method,
     setMethod,
@@ -154,5 +162,6 @@ export function createRequestState(api: RequestApi) {
     loadRequest,
     newRequest,
     saveCurrentRequest,
+    formatJsonBody,
   };
 }

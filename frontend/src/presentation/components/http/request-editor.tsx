@@ -36,6 +36,7 @@ export function RequestEditor() {
     setBody,
     auth,
     setAuth,
+    formatJsonBody,
   } = useHttpRequest();
 
   const [requestTab, setRequestTab] = createSignal("params");
@@ -130,16 +131,10 @@ export function RequestEditor() {
                           }
                           onBlur={(e) => {
                             if (body().type === "json") {
-                              try {
-                                const formatted = JSON.stringify(
-                                  JSON.parse(e.currentTarget.value),
-                                  null,
-                                  2,
-                                );
-                                setBody({ ...body(), content: formatted });
-                              } catch {
-                                // invalid JSON, keep as-is
-                              }
+                              setBody({
+                                ...body(),
+                                content: formatJsonBody(e.currentTarget.value),
+                              });
                             }
                           }}
                           placeholder={
