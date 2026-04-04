@@ -19,3 +19,14 @@ func freePort(t *testing.T) int {
 	defer l.Close()
 	return l.Addr().(*net.TCPAddr).Port
 }
+
+// freeUDPPort は UDP ポート 0 でバインドして空き UDP ポート番号を返す。
+func freeUDPPort(t *testing.T) int {
+	t.Helper()
+	conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("freeUDPPort: %v", err)
+	}
+	defer conn.Close()
+	return conn.LocalAddr().(*net.UDPAddr).Port
+}
