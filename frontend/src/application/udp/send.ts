@@ -8,6 +8,7 @@ import type {
   UdpTarget,
 } from "../../domain/udp/types";
 import { log } from "../../infrastructure/logger/client";
+import { withLoading } from "../common/async-op";
 
 /** UI 管理用 id を付加したアプリケーション層のフィールド型。 */
 export type FixedLengthFieldState = FixedLengthField & { id: string };
@@ -64,7 +65,6 @@ export function createUdpSendState(api: UdpSendApi) {
   };
 
   async function send(): Promise<void> {
-    setLoading(true);
     const h = host();
     const p = port();
     log({
@@ -74,26 +74,27 @@ export function createUdpSendState(api: UdpSendApi) {
       attrs: { host: h, port: p, encoding: encoding() },
     });
     try {
-      const request: UdpSendRequest = {
-        host: h,
-        port: p,
-        payload: payload(),
-        encoding: encoding(),
-        messageLength: messageLength(),
-        fixedLengthPayload:
-          encoding() === "fixed"
-            ? {
-                fields: fixedLengthFields.map((f) => ({
-                  id: f.id,
-                  name: f.name,
-                  length: f.length,
-                  value: f.value,
-                })),
-              }
-            : { fields: [] },
-      };
-
-      const result = await api.send(request);
+      const result = await withLoading(setLoading, () => {
+        const request: UdpSendRequest = {
+          host: h,
+          port: p,
+          payload: payload(),
+          encoding: encoding(),
+          messageLength: messageLength(),
+          fixedLengthPayload:
+            encoding() === "fixed"
+              ? {
+                  fields: fixedLengthFields.map((f) => ({
+                    id: f.id,
+                    name: f.name,
+                    length: f.length,
+                    value: f.value,
+                  })),
+                }
+              : { fields: [] },
+        };
+        return api.send(request);
+      });
       log({
         level: "INFO",
         source: "frontend:udp",
@@ -108,8 +109,6 @@ export function createUdpSendState(api: UdpSendApi) {
         attrs: { host: h, port: p, error: String(err) },
       });
       throw err;
-    } finally {
-      setLoading(false);
     }
   }
 

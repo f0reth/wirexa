@@ -8,6 +8,7 @@ import type {
   RequestBody,
 } from "../../domain/http/types";
 import { log } from "../../infrastructure/logger/client";
+import { withLoading } from "../common/async-op";
 
 export interface RequestApi {
   sendRequest(req: HttpRequest): Promise<HttpResponse>;
@@ -42,7 +43,6 @@ export function createRequestState(api: RequestApi) {
   >(null);
 
   async function sendRequest(): Promise<void> {
-    setLoading(true);
     const m = method();
     const u = url();
     log({
@@ -52,16 +52,18 @@ export function createRequestState(api: RequestApi) {
       attrs: { method: m, url: u },
     });
     try {
-      const res = await api.sendRequest({
-        id: activeRequestId() ?? "",
-        name: "",
-        method: m,
-        url: u,
-        headers: headers(),
-        params: params(),
-        body: body(),
-        auth: auth(),
-      });
+      const res = await withLoading(setLoading, () =>
+        api.sendRequest({
+          id: activeRequestId() ?? "",
+          name: "",
+          method: m,
+          url: u,
+          headers: headers(),
+          params: params(),
+          body: body(),
+          auth: auth(),
+        }),
+      );
       setResponse(res);
       log({
         level: "INFO",
@@ -82,8 +84,6 @@ export function createRequestState(api: RequestApi) {
         attrs: { method: m, url: u, error: String(err) },
       });
       throw err;
-    } finally {
-      setLoading(false);
     }
     // エラーは呼び出し元 (Presentation 層) に伝播する
   }
