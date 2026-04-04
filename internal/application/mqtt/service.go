@@ -3,7 +3,6 @@ package mqttapp
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -140,7 +139,7 @@ func (s *MqttService) Publish(connectionID, topic, payload string, qos byte, ret
 	}
 
 	if err := conn.client.Publish(topic, qos, retain, payload); err != nil {
-		return fmt.Errorf("failed to publish: %w", err)
+		return err
 	}
 	return nil
 }
@@ -174,7 +173,7 @@ func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
 	}
 
 	if err := conn.client.Subscribe(topic, qos, handler); err != nil {
-		return fmt.Errorf("failed to subscribe: %w", err)
+		return err
 	}
 	return nil
 }
@@ -193,7 +192,7 @@ func (s *MqttService) Unsubscribe(connectionID, topic string) error {
 	}
 
 	if err := conn.client.Unsubscribe(topic); err != nil {
-		return fmt.Errorf("failed to unsubscribe: %w", err)
+		return err
 	}
 	return nil
 }
