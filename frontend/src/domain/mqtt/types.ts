@@ -6,12 +6,10 @@ export interface ConnectionStatus {
 }
 
 export interface MqttMessage {
-  id: string; // フロントエンドで付与 (UUID)
   topic: string;
   payload: string;
   qos: 0 | 1 | 2;
   timestamp: Date;
-  direction: "incoming" | "outgoing";
 }
 
 export interface BrokerProfile {

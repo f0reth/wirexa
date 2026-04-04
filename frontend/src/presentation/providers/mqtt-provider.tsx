@@ -6,7 +6,10 @@ import {
   type Setter,
   useContext,
 } from "solid-js";
-import { createConnectionsState } from "../../application/mqtt/connections";
+import {
+  createConnectionsState,
+  type MqttMessageView,
+} from "../../application/mqtt/connections";
 import { createMessagesState } from "../../application/mqtt/messages";
 import { createPresetsState } from "../../application/mqtt/presets";
 import { createProfilesState } from "../../application/mqtt/profiles";
@@ -14,7 +17,6 @@ import { createSubscriptionsState } from "../../application/mqtt/subscriptions";
 import type {
   BrokerProfile,
   ConnectionState,
-  MqttMessage,
   PublishPreset,
   Subscription,
   Tab,
@@ -68,10 +70,10 @@ export interface SubscribeContextValue {
 
 // --- MqttMessagesContext ---
 export interface MessagesContextValue {
-  messages: Accessor<MqttMessage[]>;
-  selectedMessage: Accessor<MqttMessage | null>;
+  messages: Accessor<MqttMessageView[]>;
+  selectedMessage: Accessor<MqttMessageView | null>;
   autoFollow: Accessor<boolean>;
-  setSelectedMessage: (msg: MqttMessage | null) => void;
+  setSelectedMessage: (msg: MqttMessageView | null) => void;
   setAutoFollow: (value: boolean | ((prev: boolean) => boolean)) => void;
   clearMessages: () => void;
 }

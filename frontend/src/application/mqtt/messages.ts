@@ -1,6 +1,5 @@
 import { createEffect, untrack } from "solid-js";
-import type { MqttMessage } from "../../domain/mqtt/types";
-import type { ConnectionStateExt } from "./connections";
+import type { ConnectionStateExt, MqttMessageView } from "./connections";
 
 export function createMessagesState(
   activeConnection: () => ConnectionStateExt | null,
@@ -32,7 +31,7 @@ export function createMessagesState(
     }
   });
 
-  const setSelectedMessage = (msg: MqttMessage | null) => {
+  const setSelectedMessage = (msg: MqttMessageView | null) => {
     const connId = activeConnection()?.connectionId;
     if (!connId) return;
     updateConnection(connId, (state) => ({ ...state, selectedMessage: msg }));

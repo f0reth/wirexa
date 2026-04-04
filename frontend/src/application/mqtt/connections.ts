@@ -21,12 +21,18 @@ import type {
 } from "../../domain/mqtt/types";
 import { log } from "../../infrastructure/logger/client";
 
+/** UI 表示用に id・direction を付加したアプリケーション層のメッセージ型。 */
+export type MqttMessageView = MqttMessage & {
+  id: string;
+  direction: "incoming" | "outgoing";
+};
+
 // Application層が管理するランタイム状態。
 // Domain型 (ConnectionState) はブローカー接続の純粋なドメイン概念のみを持つ。
 interface ConnectionRuntimeState {
   subscriptions: Subscription[];
-  messages: MqttMessage[];
-  selectedMessage: MqttMessage | null;
+  messages: MqttMessageView[];
+  selectedMessage: MqttMessageView | null;
   autoFollow: boolean;
   brokerTopics: string[];
   readonly brokerTopicsSet: Set<string>;
@@ -163,7 +169,7 @@ export function createConnectionsState(
       updateConnection(connId, (state) => {
         let newBrokerTopics = state.brokerTopics;
         let newBrokerTopicsSet = state.brokerTopicsSet;
-        const pendingMessages: MqttMessage[] = [];
+        const pendingMessages: MqttMessageView[] = [];
 
         for (const data of batch) {
           if (state.isScanning && !newBrokerTopicsSet.has(data.topic)) {
