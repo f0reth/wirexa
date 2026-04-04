@@ -1,24 +1,19 @@
 import { createEffect, createSignal } from "solid-js";
-import {
-  loadFromStorage,
-  saveToStorage,
-} from "../../infrastructure/storage/local-storage";
 
-const THEME_KEY = "app:theme";
 type Theme = "light" | "dark";
 
-export function createThemeStore() {
-  const initial = loadFromStorage<Theme>(THEME_KEY, "light");
-  const [theme, setTheme] = createSignal<Theme>(initial);
+export type { Theme };
+
+export interface ThemeStorage {
+  load(): Theme;
+  save(theme: Theme): void;
+}
+
+export function createThemeStore(storage: ThemeStorage) {
+  const [theme, setTheme] = createSignal<Theme>(storage.load());
 
   createEffect(() => {
-    const current = theme();
-    saveToStorage(THEME_KEY, current);
-    if (current === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
+    storage.save(theme());
   });
 
   return {

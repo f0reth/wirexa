@@ -1,11 +1,16 @@
-import { createSignal } from "solid-js";
+import { createEffect, createSignal } from "solid-js";
 import styles from "./App.module.css";
+import type { Theme } from "./application/ui/theme";
 import { createThemeStore } from "./application/ui/theme";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "./components/ui/resizable";
+import {
+  loadFromStorage,
+  saveToStorage,
+} from "./infrastructure/storage/local-storage";
 import { HttpClient } from "./presentation/components/http";
 import { MqttClient } from "./presentation/components/mqtt";
 import { Sidebar } from "./presentation/components/sidebar";
@@ -18,9 +23,22 @@ import { HttpProvider } from "./presentation/providers/http-provider";
 import { MqttProvider } from "./presentation/providers/mqtt-provider";
 import { UdpProvider } from "./presentation/providers/udp-provider";
 
+const THEME_KEY = "app:theme";
+
 function App() {
   const [protocol, setProtocol] = createSignal<Protocol>("mqtt");
-  const { theme, toggleTheme } = createThemeStore();
+  const { theme, toggleTheme } = createThemeStore({
+    load: () => loadFromStorage<Theme>(THEME_KEY, "light"),
+    save: (t) => saveToStorage(THEME_KEY, t),
+  });
+
+  createEffect(() => {
+    if (theme() === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  });
 
   return (
     <div class={styles.app}>
