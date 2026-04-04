@@ -165,7 +165,7 @@ func TestUdpListenerService_StartListen_SessionHasCorrectFields(t *testing.T) {
 		listenFn: func(_ int) (domain.UdpConn, error) { return conn, nil },
 	}
 	svc := newListenerSvc(socket, nil)
-	session, err := svc.StartListen(5555, domain.EncodingHex)
+	session, err := svc.StartListen(5555, domain.EncodingText)
 	if err != nil {
 		t.Fatalf("StartListen: %v", err)
 	}
@@ -177,8 +177,8 @@ func TestUdpListenerService_StartListen_SessionHasCorrectFields(t *testing.T) {
 	if session.Port != 5555 {
 		t.Errorf("Port = %d, want 5555", session.Port)
 	}
-	if session.Encoding != domain.EncodingHex {
-		t.Errorf("Encoding = %q, want hex", session.Encoding)
+	if session.Encoding != domain.EncodingText {
+		t.Errorf("Encoding = %q, want text", session.Encoding)
 	}
 }
 
@@ -238,7 +238,7 @@ func TestUdpListenerService_GetListeners_WithSessions(t *testing.T) {
 	}
 	svc := newListenerSvc(socket, nil)
 	svc.StartListen(9001, domain.EncodingText)
-	svc.StartListen(9002, domain.EncodingBase64)
+	svc.StartListen(9002, domain.EncodingJSON)
 	defer conn1.Close()
 	defer conn2.Close()
 
@@ -264,7 +264,7 @@ func TestUdpListenerService_StopAll_ClosesAllConns(t *testing.T) {
 	}
 	svc := newListenerSvc(socket, nil)
 	svc.StartListen(9001, domain.EncodingText)
-	svc.StartListen(9002, domain.EncodingBase64)
+	svc.StartListen(9002, domain.EncodingJSON)
 
 	svc.StopAll()
 
@@ -328,32 +328,6 @@ func TestUdpListenerService_ReceiveLoop_EmitsMessage(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for udp:message event")
-	}
-}
-
-func TestUdpListenerService_ReceiveLoop_HexEncoding(t *testing.T) {
-	pkt := struct {
-		data []byte
-		addr string
-	}{data: []byte{0xDE, 0xAD}, addr: "10.0.0.1:5000"}
-	conn := newMockConn(pkt)
-
-	socket := &mockUDPSocket{
-		listenFn: func(_ int) (domain.UdpConn, error) { return conn, nil },
-	}
-	emitter := newListenerEmitter()
-	svc := NewUdpListenerService(socket, emitter, cmn.NoopLogger{})
-
-	svc.StartListen(9000, domain.EncodingHex)
-	defer svc.StopAll()
-
-	select {
-	case msg := <-emitter.msgCh:
-		if msg.Payload != "dead" {
-			t.Errorf("Payload = %q, want %q", msg.Payload, "dead")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for message")
 	}
 }
 

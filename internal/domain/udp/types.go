@@ -7,11 +7,9 @@ type PayloadEncoding string
 
 // エンコーディング種別定数。
 const (
-	EncodingText   PayloadEncoding = "text"
-	EncodingHex    PayloadEncoding = "hex"
-	EncodingBase64 PayloadEncoding = "base64"
-	EncodingJSON   PayloadEncoding = "json"
-	EncodingFixed  PayloadEncoding = "fixed"
+	EncodingText  PayloadEncoding = "text"
+	EncodingJSON  PayloadEncoding = "json"
+	EncodingFixed PayloadEncoding = "fixed"
 )
 
 // UdpTarget は保存可能な送信先プリセットを表す。

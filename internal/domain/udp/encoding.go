@@ -3,7 +3,6 @@ package udpdomain
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -15,10 +14,8 @@ import (
 // EncodePayload はバイト列を指定エンコーディングで文字列化する。
 func EncodePayload(data []byte, encoding PayloadEncoding) string {
 	switch encoding {
-	case EncodingHex, EncodingFixed:
+	case EncodingFixed:
 		return hex.EncodeToString(data)
-	case EncodingBase64:
-		return base64.StdEncoding.EncodeToString(data)
 	case EncodingJSON:
 		var buf bytes.Buffer
 		if err := json.Indent(&buf, data, "", "  "); err != nil {
@@ -36,19 +33,6 @@ func DecodePayload(payload string, encoding PayloadEncoding, messageLength int) 
 	switch encoding {
 	case EncodingText:
 		return []byte(payload), nil
-	case EncodingHex:
-		cleaned := strings.ReplaceAll(payload, " ", "")
-		data, err := hex.DecodeString(cleaned)
-		if err != nil {
-			return nil, &cmn.ValidationError{Field: "payload", Message: "invalid hex: " + err.Error()}
-		}
-		return data, nil
-	case EncodingBase64:
-		data, err := base64.StdEncoding.DecodeString(payload)
-		if err != nil {
-			return nil, &cmn.ValidationError{Field: "payload", Message: "invalid base64: " + err.Error()}
-		}
-		return data, nil
 	case EncodingJSON:
 		if !json.Valid([]byte(payload)) {
 			return nil, &cmn.ValidationError{Field: "payload", Message: "invalid JSON"}

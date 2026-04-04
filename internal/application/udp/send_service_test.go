@@ -57,32 +57,6 @@ func TestUdpSendService_Send_InvalidPort(t *testing.T) {
 	}
 }
 
-func TestUdpSendService_Send_InvalidHex(t *testing.T) {
-	svc := newSendSvc(nil)
-	_, err := svc.Send(domain.UdpSendRequest{
-		Host:     "localhost",
-		Port:     9000,
-		Encoding: domain.EncodingHex,
-		Payload:  "ZZZZ",
-	})
-	if err == nil {
-		t.Fatal("expected error for invalid hex, got nil")
-	}
-}
-
-func TestUdpSendService_Send_InvalidBase64(t *testing.T) {
-	svc := newSendSvc(nil)
-	_, err := svc.Send(domain.UdpSendRequest{
-		Host:     "localhost",
-		Port:     9000,
-		Encoding: domain.EncodingBase64,
-		Payload:  "!!!invalid!!!",
-	})
-	if err == nil {
-		t.Fatal("expected error for invalid base64, got nil")
-	}
-}
-
 func TestUdpSendService_Send_InvalidJSON(t *testing.T) {
 	svc := newSendSvc(nil)
 	_, err := svc.Send(domain.UdpSendRequest{
@@ -138,35 +112,6 @@ func TestUdpSendService_Send_TextEncoding(t *testing.T) {
 	}
 	if result.BytesSent != 11 {
 		t.Errorf("BytesSent = %d, want 11", result.BytesSent)
-	}
-}
-
-func TestUdpSendService_Send_HexEncoding(t *testing.T) {
-	var sentData []byte
-	socket := &mockUDPSocket{
-		sendFn: func(_ string, _ int, data []byte) (int, error) {
-			sentData = data
-			return len(data), nil
-		},
-	}
-	svc := newSendSvc(socket)
-	_, err := svc.Send(domain.UdpSendRequest{
-		Host:     "127.0.0.1",
-		Port:     9000,
-		Encoding: domain.EncodingHex,
-		Payload:  "deadbeef",
-	})
-	if err != nil {
-		t.Fatalf("Send: %v", err)
-	}
-	want := []byte{0xDE, 0xAD, 0xBE, 0xEF}
-	if len(sentData) != len(want) {
-		t.Fatalf("sentData length = %d, want %d", len(sentData), len(want))
-	}
-	for i := range want {
-		if sentData[i] != want[i] {
-			t.Errorf("sentData[%d] = %#x, want %#x", i, sentData[i], want[i])
-		}
 	}
 }
 

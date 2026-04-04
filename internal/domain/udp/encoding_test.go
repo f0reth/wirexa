@@ -206,18 +206,6 @@ func TestEncodePayload(t *testing.T) {
 			want:     "hello",
 		},
 		{
-			name:     "hex lowercase",
-			data:     []byte{0xDE, 0xAD, 0xBE, 0xEF},
-			encoding: EncodingHex,
-			want:     "deadbeef",
-		},
-		{
-			name:     "base64",
-			data:     []byte("hello"),
-			encoding: EncodingBase64,
-			want:     "aGVsbG8=",
-		},
-		{
 			name:     "json valid",
 			data:     []byte(`{"key":"val"}`),
 			encoding: EncodingJSON,
@@ -279,48 +267,6 @@ func TestDecodePayload(t *testing.T) {
 			payload:  "",
 			encoding: EncodingText,
 			want:     []byte(""),
-		},
-		{
-			name:     "hex valid",
-			payload:  "deadbeef",
-			encoding: EncodingHex,
-			want:     []byte{0xDE, 0xAD, 0xBE, 0xEF},
-		},
-		{
-			name:     "hex with spaces",
-			payload:  "DE AD BE EF",
-			encoding: EncodingHex,
-			want:     []byte{0xDE, 0xAD, 0xBE, 0xEF},
-		},
-		{
-			name:     "hex uppercase",
-			payload:  "DEADBEEF",
-			encoding: EncodingHex,
-			want:     []byte{0xDE, 0xAD, 0xBE, 0xEF},
-		},
-		{
-			name:     "hex invalid",
-			payload:  "zzzz",
-			encoding: EncodingHex,
-			wantErr:  true,
-		},
-		{
-			name:     "hex odd length",
-			payload:  "abc",
-			encoding: EncodingHex,
-			wantErr:  true,
-		},
-		{
-			name:     "base64 valid",
-			payload:  "aGVsbG8=",
-			encoding: EncodingBase64,
-			want:     []byte("hello"),
-		},
-		{
-			name:     "base64 invalid",
-			payload:  "!!!",
-			encoding: EncodingBase64,
-			wantErr:  true,
 		},
 		{
 			name:     "json valid object",
