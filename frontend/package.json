@@ -12,7 +12,9 @@
     "format": "bunx biome check --write",
     "ci": "bunx biome ci",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dev:e2e": "bunx --bun vite --config vite.e2e.config.ts",
+    "test:e2e": "bunx playwright test"
   },
   "dependencies": {
     "@corvu/resizable": "^0.2.5",
@@ -23,6 +25,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",
+    "@playwright/test": "^1.59.1",
     "@types/node": "^25.5.0",
     "jsdom": "^29.0.1",
     "typescript": "~6.0.2",
