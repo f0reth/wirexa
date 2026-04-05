@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 
-	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 )
 
@@ -67,8 +66,8 @@ func (s *ProfileService) DeleteProfile(id string) error {
 	for i, p := range s.profiles {
 		if p.ID == id {
 			s.profiles = append(s.profiles[:i], s.profiles[i+1:]...)
-			return nil
+			break
 		}
 	}
-	return &cmn.NotFoundError{Resource: "profile", ID: id}
+	return nil
 }
