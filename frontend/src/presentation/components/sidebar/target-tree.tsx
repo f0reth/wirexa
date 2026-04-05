@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { Plus, Settings, Trash2 } from "lucide-solid";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
@@ -100,8 +100,12 @@ function TargetDialog(props: TargetDialogProps) {
 }
 
 export function TargetTree() {
-  const { targets, saveTarget, deleteTarget } = useUdpTargets();
+  const { targets, saveTarget, deleteTarget, refreshTargets } = useUdpTargets();
   const { loadTarget } = useUdpSend();
+
+  onMount(() => {
+    refreshTargets();
+  });
 
   const [editingTarget, setEditingTarget] = createSignal<
     UdpTarget | "new" | null
