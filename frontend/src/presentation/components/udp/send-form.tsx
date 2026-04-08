@@ -7,6 +7,7 @@ import {
   FIELD_TYPE_SIZES,
   FIELD_TYPES,
   type FieldType,
+  isValidNumericFieldValue,
   PAYLOAD_ENCODINGS,
   type PayloadEncoding,
 } from "../../../domain/udp/types";
@@ -117,7 +118,7 @@ export function SendForm() {
               const isValueValid = () => {
                 if (ft() === "string") return isValidAscii(field.value);
                 if (ft() === "bytes") return isValidHex(field.value);
-                return true;
+                return isValidNumericFieldValue(field.value, ft());
               };
 
               const byteCount = () => {
@@ -141,6 +142,8 @@ export function SendForm() {
                   if (!isValidHex(field.value)) return "invalid hex";
                   return `${byteCount()}/${field.length}`;
                 }
+                if (field.value !== "" && !isValueValid())
+                  return "out of range";
                 return `${fixedSize()} bytes`;
               };
 

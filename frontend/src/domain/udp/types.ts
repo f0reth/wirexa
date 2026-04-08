@@ -53,6 +53,69 @@ export const FIELD_TYPE_SIZES: Partial<Record<FieldType, number>> = {
   float64: 8,
 };
 
+/**
+ * 数値型フィールドの値が型の有効範囲内かを検証する。
+ * 空文字列は true を返す（未入力扱い）。
+ * string / bytes 型には使用しないこと。
+ */
+export function isValidNumericFieldValue(
+  value: string,
+  fieldType: FieldType,
+): boolean {
+  if (value === "") return true;
+  switch (fieldType) {
+    case "uint8":
+      return /^\d+$/.test(value) && Number(value) <= 255;
+    case "uint16":
+      return /^\d+$/.test(value) && Number(value) <= 65535;
+    case "uint32":
+      return /^\d+$/.test(value) && Number(value) <= 4294967295;
+    case "uint64": {
+      if (!/^\d+$/.test(value)) return false;
+      try {
+        return BigInt(value) <= 18446744073709551615n;
+      } catch {
+        return false;
+      }
+    }
+    case "int8": {
+      if (!/^-?\d+$/.test(value)) return false;
+      const n = Number(value);
+      return n >= -128 && n <= 127;
+    }
+    case "int16": {
+      if (!/^-?\d+$/.test(value)) return false;
+      const n = Number(value);
+      return n >= -32768 && n <= 32767;
+    }
+    case "int32": {
+      if (!/^-?\d+$/.test(value)) return false;
+      const n = Number(value);
+      return n >= -2147483648 && n <= 2147483647;
+    }
+    case "int64": {
+      if (!/^-?\d+$/.test(value)) return false;
+      try {
+        const n = BigInt(value);
+        return n >= -9223372036854775808n && n <= 9223372036854775807n;
+      } catch {
+        return false;
+      }
+    }
+    case "float32": {
+      const n = Number(value);
+      if (Number.isNaN(n) || !Number.isFinite(n)) return false;
+      return Math.abs(n) <= 3.4028234663852886e38;
+    }
+    case "float64": {
+      const n = Number(value);
+      return !Number.isNaN(n) && Number.isFinite(n);
+    }
+    default:
+      return true;
+  }
+}
+
 export interface UdpTarget {
   id: string;
   name: string;
