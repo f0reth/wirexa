@@ -402,6 +402,21 @@
   word-break: break-all;
 }
 
+/* ── Image response ────────────────────────────────────── */
+.responseImageContainer {
+  padding: 0.75rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.responseImage {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.375rem;
+  border: 1px solid var(--border-subtle);
+}
+
 /* ── Timing info ───────────────────────────────────────── */
 .timingInfo {
   display: flex;

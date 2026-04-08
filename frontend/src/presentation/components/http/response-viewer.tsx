@@ -115,7 +115,22 @@ export function ResponseViewer(props: ResponseViewerProps) {
                   <div class={styles.responseContent}>
                     <Show when={responseTab() === "body"}>
                       <ScrollArea class={styles.responseScrollArea}>
-                        <pre class={styles.responseBody}>{formattedBody()}</pre>
+                        <Show
+                          when={isImageContentType(resp().contentType)}
+                          fallback={
+                            <pre class={styles.responseBody}>
+                              {formattedBody()}
+                            </pre>
+                          }
+                        >
+                          <div class={styles.responseImageContainer}>
+                            <img
+                              src={`data:${resp().contentType.split(";")[0]};base64,${resp().body}`}
+                              alt="Response"
+                              class={styles.responseImage}
+                            />
+                          </div>
+                        </Show>
                       </ScrollArea>
                     </Show>
 
@@ -174,4 +189,8 @@ function formatBody(body: string, contentType: string): string {
     }
   }
   return body;
+}
+
+function isImageContentType(contentType: string): boolean {
+  return contentType?.toLowerCase().startsWith("image/") ?? false;
 }

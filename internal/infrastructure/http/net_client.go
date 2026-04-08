@@ -2,6 +2,7 @@ package httpinfra
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -109,12 +110,18 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		}
 	}
 
+	respContentType := resp.Header.Get("Content-Type")
+	bodyStr := string(body)
+	if strings.HasPrefix(strings.ToLower(respContentType), "image/") {
+		bodyStr = base64.StdEncoding.EncodeToString(body)
+	}
+
 	result := domain.HttpResponse{
 		StatusCode:  resp.StatusCode,
 		StatusText:  resp.Status,
 		Headers:     headers,
-		Body:        string(body),
-		ContentType: resp.Header.Get("Content-Type"),
+		Body:        bodyStr,
+		ContentType: respContentType,
 		Size:        int64(len(body)),
 		TimingMs:    elapsed,
 	}
