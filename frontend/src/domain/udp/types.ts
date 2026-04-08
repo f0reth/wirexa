@@ -6,6 +6,53 @@ export type PayloadEncoding = "text" | "json" | "fixed";
 
 export const PAYLOAD_ENCODINGS: PayloadEncoding[] = ["text", "json", "fixed"];
 
+export type FieldType =
+  | "string"
+  | "bytes"
+  | "uint8"
+  | "uint16"
+  | "uint32"
+  | "uint64"
+  | "int8"
+  | "int16"
+  | "int32"
+  | "int64"
+  | "float32"
+  | "float64";
+
+export const FIELD_TYPES: FieldType[] = [
+  "string",
+  "bytes",
+  "uint8",
+  "uint16",
+  "uint32",
+  "uint64",
+  "int8",
+  "int16",
+  "int32",
+  "int64",
+  "float32",
+  "float64",
+];
+
+export type Endianness = "big" | "little";
+
+export const ENDIANNESSES: Endianness[] = ["big", "little"];
+
+/** 数値型の固定バイトサイズ。可変長型（string, bytes）は undefined。 */
+export const FIELD_TYPE_SIZES: Partial<Record<FieldType, number>> = {
+  uint8: 1,
+  int8: 1,
+  uint16: 2,
+  int16: 2,
+  uint32: 4,
+  int32: 4,
+  float32: 4,
+  uint64: 8,
+  int64: 8,
+  float64: 8,
+};
+
 export interface UdpTarget {
   id: string;
   name: string;
@@ -15,7 +62,8 @@ export interface UdpTarget {
 
 export interface FixedLengthField {
   name: string;
-  length: number;
+  fieldType: FieldType;
+  length: number; // FieldTypeString, FieldTypeBytes のみ使用
   value: string;
 }
 
@@ -30,6 +78,7 @@ export interface UdpSendRequest {
   payload: string;
   messageLength: number;
   fixedLengthPayload: FixedLengthPayload;
+  endianness: Endianness;
 }
 
 export interface UdpSendResult {

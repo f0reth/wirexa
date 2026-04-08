@@ -29,7 +29,7 @@ func (s *UdpSendService) Send(req domain.UdpSendRequest) (domain.UdpSendResult, 
 	var err error
 
 	if req.Encoding == domain.EncodingFixed {
-		data, err = domain.DecodeFixedLengthPayload(&req.FixedLengthPayload)
+		data, err = domain.DecodeFixedLengthPayload(&req.FixedLengthPayload, req.Endianness)
 	} else {
 		data, err = domain.DecodePayload(req.Payload, req.Encoding, req.MessageLength)
 	}

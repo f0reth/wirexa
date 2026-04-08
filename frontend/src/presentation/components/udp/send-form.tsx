@@ -3,6 +3,10 @@ import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
 import {
+  ENDIANNESSES,
+  FIELD_TYPE_SIZES,
+  FIELD_TYPES,
+  type FieldType,
   PAYLOAD_ENCODINGS,
   type PayloadEncoding,
 } from "../../../domain/udp/types";
@@ -13,6 +17,15 @@ function isValidAscii(value: string): boolean {
   return [...value].every((c) => (c.codePointAt(0) ?? 0) <= 0x7f);
 }
 
+function isValidHex(value: string): boolean {
+  const cleaned = value.replace(/\s/g, "");
+  return cleaned.length % 2 === 0 && /^[0-9a-fA-F]*$/.test(cleaned);
+}
+
+function hexByteCount(value: string): number {
+  return value.replace(/\s/g, "").length / 2;
+}
+
 export function SendForm() {
   const {
     port,
@@ -21,6 +34,8 @@ export function SendForm() {
     setPayload,
     encoding,
     setEncoding,
+    endianness,
+    setEndianness,
     fixedLengthFields,
     addField,
     updateField,
@@ -30,7 +45,10 @@ export function SendForm() {
   } = useUdpSend();
 
   const totalBytes = createMemo(() =>
-    fixedLengthFields.reduce((sum, field) => sum + field.length, 0),
+    fixedLengthFields.reduce((sum, field) => {
+      const fixedSize = FIELD_TYPE_SIZES[field.fieldType];
+      return sum + (fixedSize !== undefined ? fixedSize : field.length);
+    }, 0),
   );
 
   return (
@@ -72,21 +90,82 @@ export function SendForm() {
         <div class={styles.fieldsContainer}>
           <div class={styles.fieldsHeader}>
             <span class={styles.formLabel}>Fields</span>
-            <span class={styles.totalBytes}>Total: {totalBytes()} bytes</span>
+            <div class={styles.fieldsHeaderRight}>
+              <span class={styles.totalBytes}>Total: {totalBytes()} bytes</span>
+              <select
+                class={styles.endiannessSelect}
+                value={endianness()}
+                onChange={(e) =>
+                  setEndianness(
+                    e.currentTarget.value as (typeof ENDIANNESSES)[number],
+                  )
+                }
+              >
+                <For each={ENDIANNESSES}>
+                  {(e) => <option value={e}>{e}-endian</option>}
+                </For>
+              </select>
+            </div>
           </div>
 
           <For each={fixedLengthFields}>
             {(field, index) => {
-              const byteCount = () => field.value.length;
-              const isAsciiValid = () => isValidAscii(field.value);
+              const ft = () => field.fieldType;
+              const isVarLength = () => ft() === "string" || ft() === "bytes";
+              const fixedSize = () => FIELD_TYPE_SIZES[ft()];
+
+              const isValueValid = () => {
+                if (ft() === "string") return isValidAscii(field.value);
+                if (ft() === "bytes") return isValidHex(field.value);
+                return true;
+              };
+
+              const byteCount = () => {
+                if (ft() === "bytes") return hexByteCount(field.value);
+                return field.value.length;
+              };
+
               const byteCountClass = () => {
-                if (!isAsciiValid()) return styles.byteCountError;
-                if (byteCount() > field.length) return styles.byteCountWarn;
+                if (!isValueValid()) return styles.byteCountError;
+                if (isVarLength() && byteCount() > field.length)
+                  return styles.byteCountWarn;
                 return styles.byteCountOk;
               };
+
               const byteCountLabel = () => {
-                if (!isAsciiValid()) return "non-ASCII";
-                return `${byteCount()}/${field.length}`;
+                if (ft() === "string") {
+                  if (!isValidAscii(field.value)) return "non-ASCII";
+                  return `${byteCount()}/${field.length}`;
+                }
+                if (ft() === "bytes") {
+                  if (!isValidHex(field.value)) return "invalid hex";
+                  return `${byteCount()}/${field.length}`;
+                }
+                return `${fixedSize()} bytes`;
+              };
+
+              const valueLabel = () => {
+                if (ft() === "bytes") return "Value (hex)";
+                if (ft() === "string") return "Value (ASCII)";
+                return "Value";
+              };
+
+              const valuePlaceholder = () => {
+                if (ft() === "bytes") return "0a 1b 2c";
+                if (ft() === "string") return "hello";
+                if (ft() === "float32" || ft() === "float64") return "1.0";
+                return "0";
+              };
+
+              const valueInputType = () => {
+                if (
+                  ft() === "string" ||
+                  ft() === "bytes" ||
+                  ft() === "int64" ||
+                  ft() === "uint64"
+                )
+                  return "text";
+                return "number";
               };
 
               return (
@@ -102,26 +181,47 @@ export function SendForm() {
                         value={field.name}
                         aria-label="Field name"
                         onInput={(e) =>
-                          updateField(field.id, { name: e.currentTarget.value })
-                        }
-                      />
-                    </div>
-                    <div class={styles.fieldLengthGroup}>
-                      <span class={styles.fieldLabel}>Length</span>
-                      <Input
-                        class={styles.fieldLengthInput}
-                        type="number"
-                        min={1}
-                        placeholder="1"
-                        value={field.length}
-                        aria-label="Field length"
-                        onInput={(e) =>
                           updateField(field.id, {
-                            length: Number(e.currentTarget.value),
+                            name: e.currentTarget.value,
                           })
                         }
                       />
                     </div>
+                    <div class={styles.fieldTypeGroup}>
+                      <span class={styles.fieldLabel}>Type</span>
+                      <select
+                        class={styles.fieldTypeSelect}
+                        value={field.fieldType}
+                        aria-label="Field type"
+                        onChange={(e) =>
+                          updateField(field.id, {
+                            fieldType: e.currentTarget.value as FieldType,
+                          })
+                        }
+                      >
+                        <For each={FIELD_TYPES}>
+                          {(t) => <option value={t}>{t}</option>}
+                        </For>
+                      </select>
+                    </div>
+                    <Show when={isVarLength()}>
+                      <div class={styles.fieldLengthGroup}>
+                        <span class={styles.fieldLabel}>Length</span>
+                        <Input
+                          class={styles.fieldLengthInput}
+                          type="number"
+                          min={1}
+                          placeholder="1"
+                          value={field.length}
+                          aria-label="Field length"
+                          onInput={(e) =>
+                            updateField(field.id, {
+                              length: Number(e.currentTarget.value),
+                            })
+                          }
+                        />
+                      </div>
+                    </Show>
                     <Button
                       class={styles.deleteFieldButton}
                       variant="ghost"
@@ -135,20 +235,20 @@ export function SendForm() {
 
                   <div class={styles.fieldValueRow}>
                     <div class={styles.fieldGroup}>
-                      <span class={styles.fieldLabel}>Value (UTF-8)</span>
+                      <span class={styles.fieldLabel}>{valueLabel()}</span>
                       <Input
                         class={styles.fieldValueInput}
-                        type="text"
-                        placeholder="hello"
+                        type={valueInputType()}
+                        placeholder={valuePlaceholder()}
                         value={field.value}
-                        aria-label="Field value (UTF-8)"
+                        aria-label="Field value"
                         onInput={(e) =>
                           updateField(field.id, {
                             value: e.currentTarget.value,
                           })
                         }
                         style={{
-                          "border-color": !isAsciiValid()
+                          "border-color": !isValueValid()
                             ? "#ef4444"
                             : undefined,
                         }}

@@ -55,7 +55,7 @@ func TestDecodeFixedLengthPayload_SingleField(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := DecodeFixedLengthPayload(tt.payload)
+			got, err := DecodeFixedLengthPayload(tt.payload, EndiannessBig)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DecodeFixedLengthPayload() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -112,7 +112,7 @@ func TestDecodeFixedLengthPayload_MultipleFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := DecodeFixedLengthPayload(tt.payload)
+			got, err := DecodeFixedLengthPayload(tt.payload, EndiannessBig)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DecodeFixedLengthPayload() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -171,9 +171,82 @@ func TestDecodeFixedLengthPayload_ErrorCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := DecodeFixedLengthPayload(tt.payload)
+			_, err := DecodeFixedLengthPayload(tt.payload, EndiannessBig)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DecodeFixedLengthPayload() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestDecodeFixedLengthPayload_NumericTypes(t *testing.T) {
+	tests := []struct {
+		name       string
+		field      FixedLengthField
+		endianness Endianness
+		want       []byte
+		wantErr    bool
+	}{
+		{
+			name:       "uint8",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeUint8, Value: "255"},
+			endianness: EndiannessBig,
+			want:       []byte{0xFF},
+		},
+		{
+			name:       "uint16 big-endian",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeUint16, Value: "256"},
+			endianness: EndiannessBig,
+			want:       []byte{0x01, 0x00},
+		},
+		{
+			name:       "uint16 little-endian",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeUint16, Value: "256"},
+			endianness: EndiannessLittle,
+			want:       []byte{0x00, 0x01},
+		},
+		{
+			name:       "uint32 big-endian",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeUint32, Value: "1"},
+			endianness: EndiannessBig,
+			want:       []byte{0x00, 0x00, 0x00, 0x01},
+		},
+		{
+			name:       "int8 negative",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeInt8, Value: "-1"},
+			endianness: EndiannessBig,
+			want:       []byte{0xFF},
+		},
+		{
+			name:       "int16 big-endian negative",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeInt16, Value: "-1"},
+			endianness: EndiannessBig,
+			want:       []byte{0xFF, 0xFF},
+		},
+		{
+			name:       "bytes type",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeBytes, Length: 3, Value: "0a1b2c"},
+			endianness: EndiannessBig,
+			want:       []byte{0x0A, 0x1B, 0x2C},
+		},
+		{
+			name:       "uint8 overflow",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeUint8, Value: "256"},
+			endianness: EndiannessBig,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := &FixedLengthPayload{Fields: []FixedLengthField{tt.field}}
+			got, err := DecodeFixedLengthPayload(payload, tt.endianness)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && !bytesEqual(got, tt.want) {
+				t.Errorf("got = %v, want %v", got, tt.want)
 			}
 		})
 	}

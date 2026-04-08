@@ -6,6 +6,7 @@ import {
 } from "../../application/udp/send";
 import { createTargetsState } from "../../application/udp/targets";
 import type {
+  Endianness,
   PayloadEncoding,
   UdpListenSession,
   UdpReceivedMessage,
@@ -25,6 +26,8 @@ export interface UdpSendContextValue {
   setEncoding: (v: PayloadEncoding) => void;
   messageLength: Accessor<number>;
   setMessageLength: (v: number) => void;
+  endianness: Accessor<Endianness>;
+  setEndianness: (v: Endianness) => void;
   fixedLengthFields: FixedLengthFieldState[];
   addField: (field?: Partial<FixedLengthFieldState>) => void;
   updateField: (id: string, updates: Partial<FixedLengthFieldState>) => void;

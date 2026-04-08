@@ -293,6 +293,7 @@ export namespace udpdomain {
 	
 	export class FixedLengthField {
 	    name: string;
+	    fieldType: string;
 	    length: number;
 	    value: string;
 	
@@ -303,6 +304,7 @@ export namespace udpdomain {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
+	        this.fieldType = source["fieldType"];
 	        this.length = source["length"];
 	        this.value = source["value"];
 	    }
@@ -360,6 +362,7 @@ export namespace udpdomain {
 	    payload: string;
 	    messageLength: number;
 	    fixedLengthPayload: FixedLengthPayload;
+	    endianness: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new UdpSendRequest(source);
@@ -373,6 +376,7 @@ export namespace udpdomain {
 	        this.payload = source["payload"];
 	        this.messageLength = source["messageLength"];
 	        this.fixedLengthPayload = this.convertValues(source["fixedLengthPayload"], FixedLengthPayload);
+	        this.endianness = source["endianness"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

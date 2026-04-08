@@ -1,12 +1,14 @@
 import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import type {
+  Endianness,
   FixedLengthField,
   PayloadEncoding,
   UdpSendRequest,
   UdpSendResult,
   UdpTarget,
 } from "../../domain/udp/types";
+import { FIELD_TYPE_SIZES } from "../../domain/udp/types";
 import { log } from "../../infrastructure/logger/client";
 import { withLoading } from "../common/async-op";
 
@@ -33,16 +35,20 @@ export function createUdpSendState(api: UdpSendApi) {
     else setTextPayload(v);
   };
   const [messageLength, setMessageLength] = createSignal(0);
+  const [endianness, setEndianness] = createSignal<Endianness>("big");
   const [fixedLengthFields, setFixedLengthFields] = createStore<
     FixedLengthFieldState[]
   >([]);
   const [loading, setLoading] = createSignal(false);
 
   const addField = (field?: Partial<FixedLengthFieldState>) => {
+    const fieldType = field?.fieldType ?? "string";
+    const fixedSize = FIELD_TYPE_SIZES[fieldType];
     const newField: FixedLengthFieldState = {
       id: crypto.randomUUID(),
       name: field?.name ?? "",
-      length: field?.length ?? 1,
+      fieldType,
+      length: field?.length ?? (fixedSize !== undefined ? fixedSize : 1),
       value: field?.value ?? "",
     };
     setFixedLengthFields(fixedLengthFields.length, newField);
@@ -51,6 +57,13 @@ export function createUdpSendState(api: UdpSendApi) {
   const updateField = (id: string, updates: Partial<FixedLengthFieldState>) => {
     const index = fixedLengthFields.findIndex((f) => f.id === id);
     if (index !== -1) {
+      // 型が変わった場合は length を自動更新
+      if (updates.fieldType !== undefined) {
+        const fixedSize = FIELD_TYPE_SIZES[updates.fieldType];
+        if (fixedSize !== undefined) {
+          updates = { ...updates, length: fixedSize };
+        }
+      }
       setFixedLengthFields(index, updates);
     }
   };
@@ -81,12 +94,13 @@ export function createUdpSendState(api: UdpSendApi) {
           payload: payload(),
           encoding: encoding(),
           messageLength: messageLength(),
+          endianness: endianness(),
           fixedLengthPayload:
             encoding() === "fixed"
               ? {
                   fields: fixedLengthFields.map((f) => ({
-                    id: f.id,
                     name: f.name,
+                    fieldType: f.fieldType,
                     length: f.length,
                     value: f.value,
                   })),
@@ -130,6 +144,8 @@ export function createUdpSendState(api: UdpSendApi) {
     setEncoding,
     messageLength,
     setMessageLength,
+    endianness,
+    setEndianness,
     fixedLengthFields,
     addField,
     updateField,

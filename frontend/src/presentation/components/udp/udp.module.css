@@ -110,10 +110,32 @@
   margin-bottom: 0.25rem;
 }
 
+.fieldsHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .totalBytes {
   font-size: 0.75rem;
   color: var(--color-primary);
   font-weight: 500;
+}
+
+.endiannessSelect {
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--color-foreground);
+  background-color: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  cursor: pointer;
+  outline: none;
+}
+
+.endiannessSelect:focus {
+  border-color: var(--color-primary);
 }
 
 .fieldItem {
@@ -164,6 +186,30 @@
   flex-direction: column;
   gap: 0.2rem;
   flex: 1;
+}
+
+.fieldTypeGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+.fieldTypeSelect {
+  font-size: 0.8125rem;
+  font-family: var(--font-mono);
+  color: var(--color-foreground);
+  background-color: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  height: 2rem;
+  cursor: pointer;
+  outline: none;
+}
+
+.fieldTypeSelect:focus {
+  border-color: var(--color-primary);
 }
 
 .fieldLengthGroup {
