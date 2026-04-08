@@ -20,8 +20,8 @@ import styles from "./http.module.css";
 import { KeyValueEditor } from "./key-value-editor";
 
 const PROXY_MODES: { value: ProxyMode; label: string }[] = [
-  { value: "system", label: "System" },
   { value: "none", label: "None" },
+  { value: "system", label: "System" },
   { value: "custom", label: "Custom" },
 ];
 
