@@ -6,7 +6,9 @@ import type {
   KeyValuePair,
   RequestAuth,
   RequestBody,
+  RequestSettings,
 } from "../../domain/http/types";
+import { DEFAULT_SETTINGS } from "../../domain/http/types";
 import { log } from "../../infrastructure/logger/client";
 import { withLoading } from "../common/async-op";
 
@@ -32,6 +34,9 @@ export function createRequestState(api: RequestApi) {
     username: "",
     password: "",
     token: "",
+  });
+  const [settings, setSettings] = createSignal<RequestSettings>({
+    ...DEFAULT_SETTINGS,
   });
   const [response, setResponse] = createSignal<HttpResponse | null>(null);
   const [loading, setLoading] = createSignal(false);
@@ -62,6 +67,7 @@ export function createRequestState(api: RequestApi) {
           params: params(),
           body: body(),
           auth: auth(),
+          settings: settings(),
         }),
       );
       setResponse(res);
@@ -100,6 +106,7 @@ export function createRequestState(api: RequestApi) {
     setParams(req.params);
     setBody(req.body);
     setAuth(req.auth);
+    setSettings(req.settings ?? { ...DEFAULT_SETTINGS });
     setActiveRequestId(req.id);
     setActiveCollectionId(collectionId);
   }
@@ -111,6 +118,7 @@ export function createRequestState(api: RequestApi) {
     setParams([]);
     setBody({ type: "none", content: "" });
     setAuth({ type: "none", username: "", password: "", token: "" });
+    setSettings({ ...DEFAULT_SETTINGS });
     setActiveRequestId(null);
     setActiveCollectionId(null);
   }
@@ -128,6 +136,7 @@ export function createRequestState(api: RequestApi) {
       params: params(),
       body: body(),
       auth: auth(),
+      settings: settings(),
     });
     await api.afterSave?.();
   }
@@ -153,6 +162,8 @@ export function createRequestState(api: RequestApi) {
     setBody,
     auth,
     setAuth,
+    settings,
+    setSettings,
     response,
     loading,
     activeRequestId,

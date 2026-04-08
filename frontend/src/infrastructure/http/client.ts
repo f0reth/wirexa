@@ -14,6 +14,7 @@ import {
 import { httpdomain } from "../../../wailsjs/go/models";
 import {
   type Collection,
+  DEFAULT_SETTINGS,
   type HttpRequest,
   type HttpResponse,
   isAuthType,
@@ -22,6 +23,7 @@ import {
   type KeyValuePair,
   type RequestAuth,
   type RequestBody,
+  type RequestSettings,
   type TreeItem,
 } from "../../domain/http/types";
 
@@ -33,6 +35,23 @@ function toWailsRequest(req: HttpRequest): httpdomain.HttpRequest {
 // Wails → domain
 function fromWailsKeyValuePair(kv: httpdomain.KeyValuePair): KeyValuePair {
   return { key: kv.key, value: kv.value, enabled: kv.enabled };
+}
+
+function fromWailsRequestSettings(
+  settings: httpdomain.RequestSettings | undefined | null,
+): RequestSettings {
+  if (!settings) return { ...DEFAULT_SETTINGS };
+  return {
+    timeoutSec: settings.timeoutSec ?? 0,
+    proxyMode:
+      settings.proxyMode === "none" || settings.proxyMode === "custom"
+        ? settings.proxyMode
+        : "system",
+    proxyURL: settings.proxyURL ?? "",
+    insecureSkipVerify: settings.insecureSkipVerify ?? false,
+    disableRedirects: settings.disableRedirects ?? false,
+    maxResponseBodyMB: settings.maxResponseBodyMB ?? 0,
+  };
 }
 
 function fromWailsRequestAuth(auth: httpdomain.RequestAuth): RequestAuth {
@@ -67,6 +86,7 @@ function fromWailsHttpRequest(req: httpdomain.HttpRequest): HttpRequest {
     params: req.params.map(fromWailsKeyValuePair),
     body: fromWailsRequestBody(req.body),
     auth: fromWailsRequestAuth(req.auth),
+    settings: fromWailsRequestSettings(req.settings),
   };
 }
 

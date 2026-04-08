@@ -85,6 +85,14 @@ export function CollectionTree() {
         params: [],
         body: { type: "none", content: "" },
         auth: { type: "none", username: "", password: "", token: "" },
+        settings: {
+          timeoutSec: 0,
+          proxyMode: "system" as const,
+          proxyURL: "",
+          insecureSkipVerify: false,
+          disableRedirects: false,
+          maxResponseBodyMB: 0,
+        },
       });
       if (item?.id) {
         setRenamingItemId(item.id);

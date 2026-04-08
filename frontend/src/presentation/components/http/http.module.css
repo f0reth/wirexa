@@ -239,6 +239,61 @@
   gap: 0.375rem;
 }
 
+/* ── Settings section ─────────────────────────────────── */
+.settingsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settingsRow {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.settingsLabel {
+  font-size: 0.8125rem;
+  color: var(--color-muted-foreground);
+  width: 12rem;
+  flex-shrink: 0;
+}
+
+.settingsNumberInput {
+  width: 8rem;
+}
+
+.settingsSelectTrigger {
+  width: 12rem;
+}
+
+.settingsInput {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.settingsCheckRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.settingsCheckbox {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.settingsCheckLabel {
+  font-size: 0.8125rem;
+  color: var(--color-foreground);
+  cursor: pointer;
+  user-select: none;
+}
+
 /* ── Response panel ────────────────────────────────────── */
 .responsePanel {
   display: flex;

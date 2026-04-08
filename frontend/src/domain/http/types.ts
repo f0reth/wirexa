@@ -23,6 +23,26 @@ export interface RequestAuth {
   token: string;
 }
 
+export type ProxyMode = "system" | "none" | "custom";
+
+export interface RequestSettings {
+  timeoutSec: number; // 0 = default (30s)
+  proxyMode: ProxyMode; // default: "system"
+  proxyURL: string; // used when proxyMode == "custom"
+  insecureSkipVerify: boolean;
+  disableRedirects: boolean;
+  maxResponseBodyMB: number; // 0 = default (10MB)
+}
+
+export const DEFAULT_SETTINGS: RequestSettings = {
+  timeoutSec: 0,
+  proxyMode: "system",
+  proxyURL: "",
+  insecureSkipVerify: false,
+  disableRedirects: false,
+  maxResponseBodyMB: 0,
+};
+
 export interface HttpRequest {
   id: string;
   name: string;
@@ -32,6 +52,7 @@ export interface HttpRequest {
   params: KeyValuePair[];
   body: RequestBody;
   auth: RequestAuth;
+  settings: RequestSettings;
 }
 
 export interface HttpResponse {

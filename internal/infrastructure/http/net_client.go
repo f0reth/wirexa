@@ -2,6 +2,7 @@ package httpinfra
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -14,22 +15,18 @@ import (
 )
 
 const (
-	defaultTimeout  = 30 * time.Second
-	maxResponseBody = 10 * 1024 * 1024 // 10 MB
+	defaultTimeoutSec    = 30
+	defaultMaxResponseMB = 10
 )
 
 var _ domain.HttpTransport = (*NetClient)(nil)
 
 // NetClient は net/http を使った domain.HttpTransport の実装。
-type NetClient struct {
-	client *http.Client
-}
+type NetClient struct{}
 
 // NewNetClient は NetClient を生成する。
 func NewNetClient() *NetClient {
-	return &NetClient{
-		client: &http.Client{Timeout: defaultTimeout},
-	}
+	return &NetClient{}
 }
 
 // Do は HttpRequest を実行して HttpResponse を返す。
@@ -83,8 +80,11 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		httpReq.Header.Set("Content-Type", contentType)
 	}
 
+	client := buildHTTPClient(req.Settings)
+	maxBody := resolveMaxResponseBody(req.Settings)
+
 	start := time.Now()
-	resp, err := c.client.Do(httpReq)
+	resp, err := client.Do(httpReq)
 	elapsed := time.Since(start).Milliseconds()
 
 	if err != nil {
@@ -92,14 +92,14 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
 		return domain.HttpResponse{}, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	truncated := false
-	if int64(len(body)) > maxResponseBody {
-		body = body[:maxResponseBody]
+	if int64(len(body)) > maxBody {
+		body = body[:maxBody]
 		truncated = true
 	}
 
@@ -126,7 +126,62 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		TimingMs:    elapsed,
 	}
 	if truncated {
-		result.Error = fmt.Sprintf("response body truncated at %d bytes", maxResponseBody)
+		result.Error = fmt.Sprintf("response body truncated at %d bytes", maxBody)
 	}
 	return result, nil
+}
+
+func buildHTTPClient(s domain.RequestSettings) *http.Client {
+	timeout := time.Duration(defaultTimeoutSec) * time.Second
+	if s.TimeoutSec > 0 {
+		timeout = time.Duration(s.TimeoutSec) * time.Second
+	}
+
+	var tlsConfig *tls.Config
+	if s.InsecureSkipVerify {
+		tlsConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // ユーザーが明示的に設定した場合のみ有効
+	}
+
+	transport := &http.Transport{
+		Proxy:           resolveProxy(s),
+		TLSClientConfig: tlsConfig,
+	}
+
+	client := &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+	}
+
+	if s.DisableRedirects {
+		client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+	}
+
+	return client
+}
+
+func resolveProxy(s domain.RequestSettings) func(*http.Request) (*url.URL, error) {
+	switch s.ProxyMode {
+	case "none":
+		return nil
+	case "custom":
+		if s.ProxyURL == "" {
+			return nil
+		}
+		proxyURL, err := url.Parse(s.ProxyURL)
+		if err != nil {
+			return nil
+		}
+		return http.ProxyURL(proxyURL)
+	default: // "" | "system"
+		return http.ProxyFromEnvironment
+	}
+}
+
+func resolveMaxResponseBody(s domain.RequestSettings) int64 {
+	if s.MaxResponseBodyMB > 0 {
+		return int64(s.MaxResponseBodyMB) * 1024 * 1024
+	}
+	return int64(defaultMaxResponseMB) * 1024 * 1024
 }

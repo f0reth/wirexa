@@ -1,15 +1,15 @@
 export namespace adapters {
-	
+
 	export class LogEntry {
 	    level: string;
 	    source: string;
 	    message: string;
 	    attrs?: Record<string, any>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new LogEntry(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.level = source["level"];
@@ -22,17 +22,17 @@ export namespace adapters {
 }
 
 export namespace httpdomain {
-	
+
 	export class RequestAuth {
 	    type: string;
 	    username: string;
 	    password: string;
 	    token: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RequestAuth(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.type = source["type"];
@@ -44,11 +44,11 @@ export namespace httpdomain {
 	export class RequestBody {
 	    type: string;
 	    content: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new RequestBody(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.type = source["type"];
@@ -59,16 +59,38 @@ export namespace httpdomain {
 	    key: string;
 	    value: string;
 	    enabled: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new KeyValuePair(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.key = source["key"];
 	        this.value = source["value"];
 	        this.enabled = source["enabled"];
+	    }
+	}
+	export class RequestSettings {
+	    timeoutSec: number;
+	    proxyMode: string;
+	    proxyURL: string;
+	    insecureSkipVerify: boolean;
+	    disableRedirects: boolean;
+	    maxResponseBodyMB: number;
+
+	    static createFrom(source: any = {}) {
+	        return new RequestSettings(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.timeoutSec = source["timeoutSec"];
+	        this.proxyMode = source["proxyMode"];
+	        this.proxyURL = source["proxyURL"];
+	        this.insecureSkipVerify = source["insecureSkipVerify"];
+	        this.disableRedirects = source["disableRedirects"];
+	        this.maxResponseBodyMB = source["maxResponseBodyMB"];
 	    }
 	}
 	export class HttpRequest {
@@ -80,11 +102,12 @@ export namespace httpdomain {
 	    params: KeyValuePair[];
 	    body: RequestBody;
 	    auth: RequestAuth;
-	
+	    settings: RequestSettings;
+
 	    static createFrom(source: any = {}) {
 	        return new HttpRequest(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -95,8 +118,9 @@ export namespace httpdomain {
 	        this.params = this.convertValues(source["params"], KeyValuePair);
 	        this.body = this.convertValues(source["body"], RequestBody);
 	        this.auth = this.convertValues(source["auth"], RequestAuth);
+	        this.settings = this.convertValues(source["settings"], RequestSettings);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -121,11 +145,11 @@ export namespace httpdomain {
 	    name: string;
 	    children: TreeItem[];
 	    request?: HttpRequest;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TreeItem(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.type = source["type"];
@@ -134,7 +158,7 @@ export namespace httpdomain {
 	        this.children = this.convertValues(source["children"], TreeItem);
 	        this.request = this.convertValues(source["request"], HttpRequest);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -157,18 +181,18 @@ export namespace httpdomain {
 	    id: string;
 	    name: string;
 	    items: TreeItem[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Collection(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.items = this.convertValues(source["items"], TreeItem);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -187,7 +211,7 @@ export namespace httpdomain {
 		    return a;
 		}
 	}
-	
+
 	export class HttpResponse {
 	    statusCode: number;
 	    statusText: string;
@@ -197,11 +221,11 @@ export namespace httpdomain {
 	    size: number;
 	    timingMs: number;
 	    error: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new HttpResponse(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.statusCode = source["statusCode"];
@@ -214,14 +238,13 @@ export namespace httpdomain {
 	        this.error = source["error"];
 	    }
 	}
-	
-	
-	
+
+
 
 }
 
 export namespace mqttdomain {
-	
+
 	export class BrokerProfile {
 	    id: string;
 	    name: string;
@@ -230,11 +253,11 @@ export namespace mqttdomain {
 	    username: string;
 	    password: string;
 	    useTls: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new BrokerProfile(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -253,11 +276,11 @@ export namespace mqttdomain {
 	    username: string;
 	    password: string;
 	    useTls: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ConnectionConfig(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -273,11 +296,11 @@ export namespace mqttdomain {
 	    name: string;
 	    broker: string;
 	    connected: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ConnectionStatus(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -290,17 +313,17 @@ export namespace mqttdomain {
 }
 
 export namespace udpdomain {
-	
+
 	export class FixedLengthField {
 	    name: string;
 	    fieldType: string;
 	    length: number;
 	    value: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new FixedLengthField(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -311,16 +334,16 @@ export namespace udpdomain {
 	}
 	export class FixedLengthPayload {
 	    fields: FixedLengthField[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new FixedLengthPayload(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.fields = this.convertValues(source["fields"], FixedLengthField);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -343,11 +366,11 @@ export namespace udpdomain {
 	    id: string;
 	    port: number;
 	    encoding: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new UdpListenSession(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -363,11 +386,11 @@ export namespace udpdomain {
 	    messageLength: number;
 	    fixedLengthPayload: FixedLengthPayload;
 	    endianness: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new UdpSendRequest(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.host = source["host"];
@@ -378,7 +401,7 @@ export namespace udpdomain {
 	        this.fixedLengthPayload = this.convertValues(source["fixedLengthPayload"], FixedLengthPayload);
 	        this.endianness = source["endianness"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -399,11 +422,11 @@ export namespace udpdomain {
 	}
 	export class UdpSendResult {
 	    bytesSent: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new UdpSendResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.bytesSent = source["bytesSent"];
@@ -414,11 +437,11 @@ export namespace udpdomain {
 	    name: string;
 	    host: string;
 	    port: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new UdpTarget(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];

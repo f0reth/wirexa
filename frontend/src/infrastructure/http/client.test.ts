@@ -87,6 +87,14 @@ function makeDomainRequest() {
     params: [] as { key: string; value: string; enabled: boolean }[],
     body: { type: "none" as const, content: "" },
     auth: { type: "none" as const, username: "", password: "", token: "" },
+    settings: {
+      timeoutSec: 0,
+      proxyMode: "system" as const,
+      proxyURL: "",
+      insecureSkipVerify: false,
+      disableRedirects: false,
+      maxResponseBodyMB: 0,
+    },
   };
 }
 

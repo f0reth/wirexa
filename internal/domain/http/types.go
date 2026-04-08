@@ -8,16 +8,28 @@ type RequestAuth struct {
 	Token    string `json:"token"`    // Bearerトークン用
 }
 
+// RequestSettings はリクエストごとの HTTP クライアント設定を表す。
+// ゼロ値はすべてデフォルト動作を意味する。
+type RequestSettings struct {
+	TimeoutSec         int    `json:"timeoutSec"`         // 0 = デフォルト (30s)
+	ProxyMode          string `json:"proxyMode"`          // "" | "system" | "none" | "custom"
+	ProxyURL           string `json:"proxyURL"`           // ProxyMode == "custom" のときに使用
+	InsecureSkipVerify bool   `json:"insecureSkipVerify"` // TLS 証明書検証をスキップ
+	DisableRedirects   bool   `json:"disableRedirects"`   // リダイレクトを無効化
+	MaxResponseBodyMB  int    `json:"maxResponseBodyMB"`  // 0 = デフォルト (10MB)
+}
+
 // HttpRequest は HTTP リクエストを表す。
 type HttpRequest struct {
-	ID      string         `json:"id"`
-	Name    string         `json:"name"`
-	Method  string         `json:"method"`
-	URL     string         `json:"url"`
-	Headers []KeyValuePair `json:"headers"`
-	Params  []KeyValuePair `json:"params"`
-	Body    RequestBody    `json:"body"`
-	Auth    RequestAuth    `json:"auth"`
+	ID       string          `json:"id"`
+	Name     string          `json:"name"`
+	Method   string          `json:"method"`
+	URL      string          `json:"url"`
+	Headers  []KeyValuePair  `json:"headers"`
+	Params   []KeyValuePair  `json:"params"`
+	Body     RequestBody     `json:"body"`
+	Auth     RequestAuth     `json:"auth"`
+	Settings RequestSettings `json:"settings"`
 }
 
 // KeyValuePair はヘッダーやパラメータのキーバリューペアを表す。
