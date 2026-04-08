@@ -333,16 +333,16 @@ export function RequestEditor() {
                   type="checkbox"
                   id="setting-insecure"
                   class={styles.settingsCheckbox}
-                  checked={settings().insecureSkipVerify}
+                  checked={!settings().insecureSkipVerify}
                   onChange={(e) =>
                     setSettings({
                       ...settings(),
-                      insecureSkipVerify: e.currentTarget.checked,
+                      insecureSkipVerify: !e.currentTarget.checked,
                     })
                   }
                 />
                 <label for="setting-insecure" class={styles.settingsCheckLabel}>
-                  Skip TLS verification
+                  Verify TLS certificate
                 </label>
               </div>
 

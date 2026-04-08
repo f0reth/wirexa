@@ -38,7 +38,7 @@ export const DEFAULT_SETTINGS: RequestSettings = {
   timeoutSec: 0,
   proxyMode: "none",
   proxyURL: "",
-  insecureSkipVerify: false,
+  insecureSkipVerify: true,
   disableRedirects: false,
   maxResponseBodyMB: 50,
 };
