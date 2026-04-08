@@ -118,9 +118,19 @@ export function ResponseViewer(props: ResponseViewerProps) {
                         <Show
                           when={isImageContentType(resp().contentType)}
                           fallback={
-                            <pre class={styles.responseBody}>
-                              {formattedBody()}
-                            </pre>
+                            <Show
+                              when={isJsonContentType(resp().contentType)}
+                              fallback={
+                                <pre class={styles.responseBody}>
+                                  {formattedBody()}
+                                </pre>
+                              }
+                            >
+                              <pre
+                                class={styles.responseBody}
+                                innerHTML={highlightJson(resp().body)}
+                              />
+                            </Show>
                           }
                         >
                           <div class={styles.responseImageContainer}>
@@ -193,4 +203,47 @@ function formatBody(body: string, contentType: string): string {
 
 function isImageContentType(contentType: string): boolean {
   return contentType?.toLowerCase().startsWith("image/") ?? false;
+}
+
+function isJsonContentType(contentType: string): boolean {
+  return contentType?.includes("json") ?? false;
+}
+
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+const JSON_TOKEN_RE =
+  /("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(?:\s*:)?|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g;
+
+function getTokenClass(token: string): string {
+  if (token.startsWith('"')) {
+    return token.trimEnd().endsWith(":") ? "json-key" : "json-string";
+  }
+  if (token === "true" || token === "false") return "json-boolean";
+  if (token === "null") return "json-null";
+  return "json-number";
+}
+
+function highlightJson(body: string): string {
+  let formatted: string;
+  try {
+    formatted = JSON.stringify(JSON.parse(body), null, 2);
+  } catch {
+    return escapeHtml(body);
+  }
+
+  let result = "";
+  let lastIndex = 0;
+
+  for (const match of formatted.matchAll(JSON_TOKEN_RE)) {
+    const start = match.index;
+    result += escapeHtml(formatted.slice(lastIndex, start));
+    const token = match[0];
+    result += `<span class="${getTokenClass(token)}">${escapeHtml(token)}</span>`;
+    lastIndex = start + token.length;
+  }
+
+  result += escapeHtml(formatted.slice(lastIndex));
+  return result;
 }
