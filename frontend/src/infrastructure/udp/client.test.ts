@@ -60,6 +60,7 @@ function makeSendRequest(overrides: Record<string, unknown> = {}) {
     payload: "hello",
     messageLength: 0,
     fixedLengthPayload: { fields: [] },
+    endianness: "big" as const,
     ...overrides,
   };
 }
