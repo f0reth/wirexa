@@ -27,7 +27,7 @@ export type ProxyMode = "system" | "none" | "custom";
 
 export interface RequestSettings {
   timeoutSec: number; // 0 = default (30s)
-  proxyMode: ProxyMode; // default: "system"
+  proxyMode: ProxyMode; // default: "none"
   proxyURL: string; // used when proxyMode == "custom"
   insecureSkipVerify: boolean;
   disableRedirects: boolean;
@@ -36,11 +36,11 @@ export interface RequestSettings {
 
 export const DEFAULT_SETTINGS: RequestSettings = {
   timeoutSec: 0,
-  proxyMode: "system",
+  proxyMode: "none",
   proxyURL: "",
   insecureSkipVerify: false,
   disableRedirects: false,
-  maxResponseBodyMB: 0,
+  maxResponseBodyMB: 50,
 };
 
 export interface HttpRequest {
