@@ -20,7 +20,6 @@ export function CollectionNode(props: {
   onRenameItem: (collectionId: string, itemId: string, name: string) => void;
   onRenameCollection: (id: string, name: string) => void;
   activeRequestId: string | null;
-  dirtyRequestId: string | null;
   renamingItemId: string | null;
   setRenamingItemId: (id: string | null) => void;
   renamingCollectionId: string | null;
@@ -133,7 +132,6 @@ export function CollectionNode(props: {
                 onSelectRequest={props.onSelectRequest}
                 onRenameItem={props.onRenameItem}
                 activeRequestId={props.activeRequestId}
-                dirtyRequestId={props.dirtyRequestId}
                 renamingItemId={props.renamingItemId}
                 setRenamingItemId={props.setRenamingItemId}
               />

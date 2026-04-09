@@ -1,12 +1,5 @@
 import { clsx } from "clsx";
-import {
-  ChevronRight,
-  Circle,
-  Folder,
-  FolderPlus,
-  Plus,
-  Trash2,
-} from "lucide-solid";
+import { ChevronRight, Folder, FolderPlus, Plus, Trash2 } from "lucide-solid";
 import { createSignal, For, Show } from "solid-js";
 import type { HttpMethod, TreeItem } from "../../../domain/http/types";
 import { METHOD_COLORS } from "../../constants/http";
@@ -27,7 +20,6 @@ export function TreeItemNode(props: {
   onSelectRequest: (item: TreeItem) => void;
   onRenameItem: (collectionId: string, itemId: string, name: string) => void;
   activeRequestId: string | null;
-  dirtyRequestId: string | null;
   renamingItemId: string | null;
   setRenamingItemId: (id: string | null) => void;
 }) {
@@ -148,7 +140,6 @@ export function TreeItemNode(props: {
                   onSelectRequest={props.onSelectRequest}
                   onRenameItem={props.onRenameItem}
                   activeRequestId={props.activeRequestId}
-                  dirtyRequestId={props.dirtyRequestId}
                   renamingItemId={props.renamingItemId}
                   setRenamingItemId={props.setRenamingItemId}
                 />
@@ -163,7 +154,6 @@ export function TreeItemNode(props: {
   // Request item
   const method = () => (props.item.request?.method || "GET") as HttpMethod;
   const isActive = () => props.activeRequestId === props.item.id;
-  const isDirty = () => props.dirtyRequestId === props.item.id;
   const isRenaming = () => props.renamingItemId === props.item.id;
 
   const handleRenameCommit = (value: string) => {
@@ -210,9 +200,6 @@ export function TreeItemNode(props: {
               >
                 {props.item.name}
               </span>
-              <Show when={isDirty()}>
-                <Circle size={6} class={styles.dirtyDot} fill="currentColor" />
-              </Show>
             </>
           }
         >

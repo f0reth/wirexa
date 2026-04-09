@@ -294,11 +294,6 @@
   background-color: var(--selected-bg);
 }
 
-.dirtyDot {
-  flex-shrink: 0;
-  color: var(--color-muted-foreground);
-}
-
 .methodBadge {
   font-size: 0.625rem;
   font-weight: 700;

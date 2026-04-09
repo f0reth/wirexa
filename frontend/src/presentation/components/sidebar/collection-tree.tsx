@@ -160,9 +160,6 @@ export function CollectionTree() {
                 onRenameItem={handleRenameItem}
                 onRenameCollection={handleRenameCollection}
                 activeRequestId={requestCtx.activeRequestId()}
-                dirtyRequestId={
-                  requestCtx.dirty() ? requestCtx.activeRequestId() : null
-                }
                 renamingItemId={renamingItemId()}
                 setRenamingItemId={setRenamingItemId}
                 renamingCollectionId={renamingCollectionId()}
