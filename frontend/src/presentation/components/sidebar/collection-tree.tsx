@@ -4,6 +4,7 @@ import { Portal } from "solid-js/web";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { ScrollArea } from "../../../components/ui/scroll-area";
+import { DEFAULT_SETTINGS } from "../../../domain/http/types";
 import {
   useHttpCollections,
   useHttpRequest,
@@ -85,14 +86,7 @@ export function CollectionTree() {
         params: [],
         body: { type: "none", content: "" },
         auth: { type: "none", username: "", password: "", token: "" },
-        settings: {
-          timeoutSec: 0,
-          proxyMode: "system" as const,
-          proxyURL: "",
-          insecureSkipVerify: false,
-          disableRedirects: false,
-          maxResponseBodyMB: 0,
-        },
+        settings: { ...DEFAULT_SETTINGS },
       });
       if (item?.id) {
         setRenamingItemId(item.id);
