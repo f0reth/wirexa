@@ -14,6 +14,10 @@ export function CancelRequest() {
   return window['go']['adapters']['HttpHandler']['CancelRequest']();
 }
 
+export function OpenFilePicker() {
+  return window['go']['adapters']['HttpHandler']['OpenFilePicker']();
+}
+
 export function CreateCollection(arg1) {
   return window['go']['adapters']['HttpHandler']['CreateCollection'](arg1);
 }

@@ -8,6 +8,8 @@ export function AddRequest(arg1:string,arg2:string,arg3:httpdomain.HttpRequest):
 
 export function CancelRequest():Promise<void>;
 
+export function OpenFilePicker():Promise<string>;
+
 export function CreateCollection(arg1:string):Promise<httpdomain.Collection>;
 
 export function DeleteCollection(arg1:string):Promise<void>;

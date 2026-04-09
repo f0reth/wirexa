@@ -9,7 +9,7 @@ export interface KeyValuePair {
 }
 
 export interface RequestBody {
-  type: "none" | "json" | "text" | "form-urlencoded" | "form-data";
+  type: "none" | "json" | "text" | "form-urlencoded" | "form-data" | "file";
   content: string;
 }
 
@@ -105,6 +105,7 @@ export const BODY_TYPES: BodyType[] = [
   "text",
   "form-urlencoded",
   "form-data",
+  "file",
 ];
 
 export function isHttpMethod(v: string): v is HttpMethod {

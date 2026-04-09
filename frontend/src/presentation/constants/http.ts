@@ -16,6 +16,7 @@ export const BODY_TYPES: { value: BodyType; label: string }[] = [
   { value: "json", label: "JSON" },
   { value: "form-data", label: "Form Data" },
   { value: "form-urlencoded", label: "Form URL Encoded" },
+  { value: "file", label: "File" },
 ];
 
 export const AUTH_TYPES: { value: AuthType; label: string }[] = [

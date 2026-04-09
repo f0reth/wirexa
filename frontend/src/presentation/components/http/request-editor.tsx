@@ -1,4 +1,5 @@
-import { createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
+import { OpenFilePicker } from "../../../../wailsjs/go/adapters/HttpHandler";
 import {
   parseFormPairs,
   serializeFormPairs,
@@ -127,9 +128,41 @@ export function RequestEditor() {
                     isForm() ? parseFormPairs(body().content) : [],
                   );
                   return (
-                    <Show
-                      when={isForm()}
-                      fallback={
+                    <Switch>
+                      <Match when={body().type === "file"}>
+                        <div class={styles.filePickerRow}>
+                          <Input
+                            value={body().content}
+                            placeholder="No file selected"
+                            readOnly
+                            class={styles.filePathInput}
+                          />
+                          <button
+                            type="button"
+                            class={styles.fileBrowseButton}
+                            onClick={async () => {
+                              const path = await OpenFilePicker();
+                              if (path) {
+                                setBody({ ...body(), content: path });
+                              }
+                            }}
+                          >
+                            Browse...
+                          </button>
+                        </div>
+                      </Match>
+                      <Match when={isForm()}>
+                        <KeyValueEditor
+                          pairs={formPairs()}
+                          onChange={(pairs) =>
+                            setBody({
+                              ...body(),
+                              content: serializeFormPairs(pairs),
+                            })
+                          }
+                        />
+                      </Match>
+                      <Match when={true}>
                         <Textarea
                           value={body().content}
                           onInput={(e) =>
@@ -153,18 +186,8 @@ export function RequestEditor() {
                           }
                           class={styles.bodyTextarea}
                         />
-                      }
-                    >
-                      <KeyValueEditor
-                        pairs={formPairs()}
-                        onChange={(pairs) =>
-                          setBody({
-                            ...body(),
-                            content: serializeFormPairs(pairs),
-                          })
-                        }
-                      />
-                    </Show>
+                      </Match>
+                    </Switch>
                   );
                 })()}
               </Show>

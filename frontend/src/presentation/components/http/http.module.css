@@ -218,6 +218,37 @@
   font-size: 0.8125rem;
 }
 
+.filePickerRow {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.filePathInput {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.fileBrowseButton {
+  flex-shrink: 0;
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background-color: var(--secondary);
+  color: var(--secondary-foreground);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fileBrowseButton:hover {
+  background-color: var(
+    --secondary-hover,
+    color-mix(in srgb, var(--secondary) 85%, var(--foreground))
+  );
+}
+
 /* ── Auth section ──────────────────────────────────────── */
 .authSection {
   display: flex;
