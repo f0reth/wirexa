@@ -35,7 +35,7 @@ export interface RequestSettings {
 }
 
 export const DEFAULT_SETTINGS: RequestSettings = {
-  timeoutSec: 0,
+  timeoutSec: 120,
   proxyMode: "none",
   proxyURL: "",
   insecureSkipVerify: true,
