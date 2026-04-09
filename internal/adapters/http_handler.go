@@ -2,25 +2,33 @@
 package adapters
 
 import (
+	"context"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
 // HttpHandler は Wails RPC アダプターとして HTTP ユースケースを公開する。
 type HttpHandler struct {
+	ctx     context.Context
 	reqSvc  domain.RequestUseCase
 	collSvc domain.CollectionUseCase
 }
 
-// NewHTTPHandler は HttpHandler を生成する。
-func NewHTTPHandler(reqSvc domain.RequestUseCase, collSvc domain.CollectionUseCase) *HttpHandler {
-	return &HttpHandler{reqSvc: reqSvc, collSvc: collSvc}
-}
-
 // SetupHTTPHandler は既存の HttpHandler インスタンスにサービスを注入する。
 // Wails の Bind に渡す前に事前確保した空ハンドラーを startup() で初期化する際に使用する。
-func SetupHTTPHandler(h *HttpHandler, reqSvc domain.RequestUseCase, collSvc domain.CollectionUseCase) {
+func SetupHTTPHandler(ctx context.Context, h *HttpHandler, reqSvc domain.RequestUseCase, collSvc domain.CollectionUseCase) {
+	h.ctx = ctx
 	h.reqSvc = reqSvc
 	h.collSvc = collSvc
+}
+
+// OpenFilePicker はネイティブのファイル選択ダイアログを開き、選択されたファイルパスを返す。
+func (h *HttpHandler) OpenFilePicker() (string, error) {
+	return runtime.OpenFileDialog(h.ctx, runtime.OpenDialogOptions{
+		Title: "Select File",
+	})
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。

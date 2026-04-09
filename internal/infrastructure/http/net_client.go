@@ -1,13 +1,17 @@
 package httpinfra
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -58,6 +62,20 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		contentType = "application/x-www-form-urlencoded"
 	case "form-data":
 		bodyReader = strings.NewReader(req.Body.Content)
+	case "file":
+		if req.Body.Content != "" {
+			var fileData []byte
+			fileData, err = os.ReadFile(req.Body.Content)
+			if err != nil {
+				return domain.HttpResponse{}, fmt.Errorf("failed to read file: %w", err)
+			}
+			bodyReader = bytes.NewReader(fileData)
+			if ct := mime.TypeByExtension(filepath.Ext(req.Body.Content)); ct != "" {
+				contentType = ct
+			} else {
+				contentType = "application/octet-stream"
+			}
+		}
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, req.Method, parsedURL.String(), bodyReader)
