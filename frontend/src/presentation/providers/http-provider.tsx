@@ -1,4 +1,11 @@
-import { type Accessor, createContext, type JSX, useContext } from "solid-js";
+import {
+  type Accessor,
+  createContext,
+  createEffect,
+  type JSX,
+  onCleanup,
+  useContext,
+} from "solid-js";
 import { createCollectionsState } from "../../application/http/collections";
 import { createRequestState } from "../../application/http/request";
 import type {
@@ -75,6 +82,28 @@ export function HttpProvider(props: { children: JSX.Element }) {
     cancelRequest: httpClient.cancelRequest,
     updateRequest: httpClient.updateRequest,
     afterSave: () => collectionsState.refreshCollections(),
+  });
+
+  // 自動保存: 変更から 500ms 後にバックエンドへ保存
+  createEffect(() => {
+    requestState.method();
+    requestState.url();
+    requestState.headers();
+    requestState.params();
+    requestState.body();
+    requestState.auth();
+    requestState.settings();
+
+    const id = requestState.activeRequestId();
+    if (!id) return;
+
+    const timer = setTimeout(() => {
+      requestState.saveCurrentRequest().catch((err) => {
+        console.error("Auto-save failed:", err);
+      });
+    }, 500);
+
+    onCleanup(() => clearTimeout(timer));
   });
 
   const contextValue: RequestContextValue = {
