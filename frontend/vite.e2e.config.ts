@@ -13,8 +13,9 @@ export default defineConfig({
     solid(),
     {
       name: "mock-wailsjs",
+      enforce: "pre",
       resolveId(id: string) {
-        const match = id.match(/.*wailsjs\/(.*)/);
+        const match = id.replace(/\\/g, "/").match(/.*wailsjs\/(.*)/);
         if (match) {
           return resolve(mockWailsDir, match[1]);
         }

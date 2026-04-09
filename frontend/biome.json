@@ -5,7 +5,15 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!!**/dist", "!!**/node_modules", "!!**/wailsjs"]
+    "includes": [
+      "**",
+      "!!**/dist",
+      "!!**/node_modules",
+      "!!**/wailsjs",
+      "!!**/e2e",
+      "!!**/playwright-report",
+      "!!**/test-results"
+    ]
   },
   "formatter": {
     "enabled": true,

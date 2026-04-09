@@ -21,6 +21,7 @@ test.describe("HTTP Client UI", () => {
 
   test("コレクション作成 - create dialog → name input → confirmed → added to list", async ({
     page,
+    wailsMock: _wailsMock,
   }) => {
     await goToHttp(page);
     await page.getByTitle("New Collection").click();
@@ -130,7 +131,10 @@ test.describe("HTTP Client UI", () => {
     await expect(page.getByText("42 ms")).toBeVisible();
   });
 
-  test("ヘッダー追加 - add header row via KeyValueEditor", async ({ page }) => {
+  test("ヘッダー追加 - add header row via KeyValueEditor", async ({
+    page,
+    wailsMock: _wailsMock,
+  }) => {
     await goToHttp(page);
 
     // Switch to Headers tab in request editor

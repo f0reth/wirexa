@@ -21,6 +21,7 @@ test.describe("UDP Client UI", () => {
 
   test("ターゲット作成 - host/port input → save → target appears in list", async ({
     page,
+    wailsMock: _wailsMock,
   }) => {
     await goToUdp(page);
     await page.getByTitle("New Target").click();

@@ -14,10 +14,6 @@ export function CancelRequest() {
   return window['go']['adapters']['HttpHandler']['CancelRequest']();
 }
 
-export function OpenFilePicker() {
-  return window['go']['adapters']['HttpHandler']['OpenFilePicker']();
-}
-
 export function CreateCollection(arg1) {
   return window['go']['adapters']['HttpHandler']['CreateCollection'](arg1);
 }
@@ -32,6 +28,10 @@ export function DeleteItem(arg1, arg2) {
 
 export function GetCollections() {
   return window['go']['adapters']['HttpHandler']['GetCollections']();
+}
+
+export function OpenFilePicker() {
+  return window['go']['adapters']['HttpHandler']['OpenFilePicker']();
 }
 
 export function RenameCollection(arg1, arg2) {

@@ -47,15 +47,14 @@ linters:
     # ---------- セキュリティ ----------
     - gosec
 
-    # ---------- IO / DB ----------
+    # ---------- IO ----------
     - bodyclose
-    - sqlclosecheck
-    - rowserrcheck
 
     # ---------- コード品質 ----------
     - revive
     - gocritic
     - goconst
+    - misspell
 
     # ---------- モダンGo ----------
     - modernize
@@ -64,10 +63,6 @@ linters:
     # ---------- 最適化 ----------
     - perfsprint
     - unconvert
-
-    # ---------- テスト ----------
-    - testifylint
-    - tparallel
 
     # ---------- lint管理 ----------
     - nolintlint
@@ -96,14 +91,8 @@ linters:
       strconcat: false
 
     nolintlint:
-      allow-no-explanation:
-        - gofumpt
       require-explanation: true
       require-specific: true
-
-    rowserrcheck:
-      packages:
-        - github.com/jmoiron/sqlx
 
   # -----------------------------
   # Exclusions
@@ -116,19 +105,12 @@ linters:
       - common-false-positives
 
     rules:
-      - source: "TODO"
-        linters:
-          - revive
-
       - path: "_test\\.go"
         linters:
           - gosec
           - errcheck
 
-      - linters:
-          - revive
-        text: "stutters"
-
+      # Http/Udp は Go 慣習（HTTP/UDP）と異なるが Wails バインディングの都合で統一
       - linters:
           - revive
         text: "var-naming: type Http"
