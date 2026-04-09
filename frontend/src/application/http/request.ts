@@ -10,7 +10,7 @@ import type {
 } from "../../domain/http/types";
 import { DEFAULT_SETTINGS } from "../../domain/http/types";
 import { log } from "../../infrastructure/logger/client";
-import { withLoading } from "../common/async-op";
+import { withLoading } from "../../shared/async-op";
 
 export interface RequestApi {
   sendRequest(req: HttpRequest): Promise<HttpResponse>;

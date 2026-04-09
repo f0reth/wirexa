@@ -10,7 +10,7 @@ import type {
 } from "../../domain/udp/types";
 import { FIELD_TYPE_SIZES } from "../../domain/udp/types";
 import { log } from "../../infrastructure/logger/client";
-import { withLoading } from "../common/async-op";
+import { withLoading } from "../../shared/async-op";
 
 /** UI 管理用 id を付加したアプリケーション層のフィールド型。 */
 export type FixedLengthFieldState = FixedLengthField & { id: string };
