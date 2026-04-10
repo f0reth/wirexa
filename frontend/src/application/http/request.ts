@@ -21,7 +21,6 @@ export interface RequestApi {
 export function createRequestState(api: RequestApi) {
   const [method, setMethod] = createSignal<HttpMethod>("GET");
   const [url, setUrl] = createSignal("");
-  const [requestName, setRequestName] = createSignal("");
   const [headers, setHeaders] = createSignal<KeyValuePair[]>([]);
   const [params, setParams] = createSignal<KeyValuePair[]>([]);
   const [body, setBody] = createSignal<RequestBody>({
@@ -100,7 +99,6 @@ export function createRequestState(api: RequestApi) {
   function loadRequest(req: HttpRequest, collectionId: string): void {
     setMethod(req.method);
     setUrl(req.url);
-    setRequestName(req.name);
     setHeaders(req.headers);
     setParams(req.params);
     setBody(req.body);
@@ -128,7 +126,7 @@ export function createRequestState(api: RequestApi) {
     if (!id || !colId) return;
     await api.updateRequest(colId, {
       id,
-      name: requestName(),
+      name: "",
       method: method(),
       url: url(),
       headers: headers(),

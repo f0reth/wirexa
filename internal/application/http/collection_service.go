@@ -181,7 +181,8 @@ func (s *CollectionService) UpdateRequest(collectionID string, req domain.HttpRe
 		return &cmn.NotFoundError{Resource: "request", ID: req.ID}
 	}
 
-	node.Name = req.Name
+	// 名前の変更は RenameItem が担当するため、ここでは既存の名前を維持する
+	req.Name = node.Name
 	node.Request = &req
 
 	return s.repo.Save(c)
