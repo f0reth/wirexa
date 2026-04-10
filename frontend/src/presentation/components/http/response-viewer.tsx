@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { Check, Copy, X } from "lucide-solid";
+import { Check, Copy } from "lucide-solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import { ScrollArea } from "../../../components/ui/scroll-area";
@@ -24,11 +24,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-type ResponseViewerProps = {
-  onClose: () => void;
-};
-
-export function ResponseViewer(props: ResponseViewerProps) {
+export function ResponseViewer() {
   const { response, loading } = useHttpRequest();
 
   const [responseTab, setResponseTab] = createSignal("body");
@@ -46,30 +42,18 @@ export function ResponseViewer(props: ResponseViewerProps) {
     <div class={styles.responsePanel}>
       <div class={styles.responsePanelHeader}>
         <span class={styles.responsePanelTitle}>Response</span>
-        <div
-          style={{ display: "flex", "align-items": "center", gap: "0.25rem" }}
-        >
-          <Show when={response() && !response()?.error}>
-            <button
-              type="button"
-              class={styles.responsePanelCloseBtn}
-              onClick={handleCopy}
-              title="Copy body"
-            >
-              <Show when={copied()} fallback={<Copy size={14} />}>
-                <Check size={14} />
-              </Show>
-            </button>
-          </Show>
+        <Show when={response() && !response()?.error}>
           <button
             type="button"
             class={styles.responsePanelCloseBtn}
-            onClick={props.onClose}
-            title="Close response panel"
+            onClick={handleCopy}
+            title="Copy body"
           >
-            <X size={14} />
+            <Show when={copied()} fallback={<Copy size={14} />}>
+              <Check size={14} />
+            </Show>
           </button>
-        </div>
+        </Show>
       </div>
       <Show
         when={response() || loading()}

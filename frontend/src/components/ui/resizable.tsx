@@ -36,6 +36,7 @@ type ResizablePanelProps = {
   minSize?: number;
   class?: string;
   children: JSX.Element;
+  onResize?: (size: number) => void;
 };
 
 export function ResizablePanel(props: ResizablePanelProps) {
