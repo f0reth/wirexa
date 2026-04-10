@@ -16,7 +16,6 @@ export interface RequestApi {
   sendRequest(req: HttpRequest): Promise<HttpResponse>;
   cancelRequest(): Promise<void>;
   updateRequest(collectionId: string, req: HttpRequest): Promise<void>;
-  afterSave?: () => Promise<void>;
 }
 
 export function createRequestState(api: RequestApi) {
@@ -138,7 +137,6 @@ export function createRequestState(api: RequestApi) {
       auth: auth(),
       settings: settings(),
     });
-    await api.afterSave?.();
   }
 
   function formatJsonBody(content: string): string {

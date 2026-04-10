@@ -81,10 +81,12 @@ export function HttpProvider(props: { children: JSX.Element }) {
     sendRequest: httpClient.sendRequest,
     cancelRequest: httpClient.cancelRequest,
     updateRequest: httpClient.updateRequest,
-    afterSave: () => collectionsState.refreshCollections(),
   });
 
   // 自動保存: 変更から 500ms 後にバックエンドへ保存
+  // saveVersion で世代管理し、古い保存が実行されるのを防ぐ
+  let saveVersion = 0;
+
   createEffect(() => {
     requestState.method();
     requestState.url();
@@ -97,7 +99,10 @@ export function HttpProvider(props: { children: JSX.Element }) {
     const id = requestState.activeRequestId();
     if (!id) return;
 
+    const version = ++saveVersion;
+
     const timer = setTimeout(() => {
+      if (version !== saveVersion) return;
       requestState.saveCurrentRequest().catch((err) => {
         console.error("Auto-save failed:", err);
       });
