@@ -1,4 +1,5 @@
-import { createMemo, Show } from "solid-js";
+import { Check, Copy } from "lucide-solid";
+import { createMemo, createSignal, Show } from "solid-js";
 import { Badge } from "../../../../components/ui/badge";
 import { useMqttMessages } from "../../../providers/mqtt-provider";
 import styles from "../mqtt.module.css";
@@ -20,6 +21,13 @@ export function MessageDetail() {
             formatPayload(msg().payload),
           );
           const formattedTime = createMemo(() => formatTime(msg().timestamp));
+          const [copied, setCopied] = createSignal(false);
+
+          function handleCopy() {
+            navigator.clipboard.writeText(formattedPayload());
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }
 
           return (
             <>
@@ -37,6 +45,16 @@ export function MessageDetail() {
                   >
                     {msg().direction}
                   </Badge>
+                  <button
+                    type="button"
+                    class={styles.copyBtn}
+                    onClick={handleCopy}
+                    title="Copy payload"
+                  >
+                    <Show when={copied()} fallback={<Copy size={13} />}>
+                      <Check size={13} />
+                    </Show>
+                  </button>
                 </div>
               </div>
               <pre class={styles.messageDetailPayload}>

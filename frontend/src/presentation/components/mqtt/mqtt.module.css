@@ -535,6 +535,27 @@
   font-variant-numeric: tabular-nums;
 }
 
+.copyBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.25rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--color-muted-foreground);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.copyBtn:hover {
+  color: var(--color-foreground);
+  background-color: var(--hover-overlay);
+}
+
 .messageDetailPayload {
   flex: 1;
   overflow: auto;

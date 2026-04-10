@@ -1,4 +1,5 @@
-import { For, Show } from "solid-js";
+import { Check, Copy } from "lucide-solid";
+import { createSignal, For, Show } from "solid-js";
 import { Button } from "../../../components/ui/button";
 import { useUdpReceive } from "../../providers/udp-provider";
 import styles from "./udp.module.css";
@@ -14,6 +15,13 @@ function formatTime(timestamp: number): string {
 
 export function MessageLog() {
   const { messages, clearMessages } = useUdpReceive();
+  const [copiedTs, setCopiedTs] = createSignal<number | null>(null);
+
+  function copyPayload(payload: string, ts: number) {
+    navigator.clipboard.writeText(payload);
+    setCopiedTs(ts);
+    setTimeout(() => setCopiedTs(null), 1500);
+  }
 
   return (
     <div class={styles.messageLog}>
@@ -38,6 +46,19 @@ export function MessageLog() {
                 </span>
                 <span class={styles.messageAddr}>{msg.remoteAddr}</span>
                 <span class={styles.messageEncoding}>{msg.encoding}</span>
+                <button
+                  type="button"
+                  class={styles.copyBtn}
+                  onClick={() => copyPayload(msg.payload, msg.timestamp)}
+                  title="Copy payload"
+                >
+                  <Show
+                    when={copiedTs() === msg.timestamp}
+                    fallback={<Copy size={12} />}
+                  >
+                    <Check size={12} />
+                  </Show>
+                </button>
               </div>
               <pre class={styles.messagePayload}>{msg.payload}</pre>
             </div>

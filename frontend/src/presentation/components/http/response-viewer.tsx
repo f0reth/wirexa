@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { X } from "lucide-solid";
+import { Check, Copy, X } from "lucide-solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import { ScrollArea } from "../../../components/ui/scroll-area";
@@ -32,19 +32,44 @@ export function ResponseViewer(props: ResponseViewerProps) {
   const { response, loading } = useHttpRequest();
 
   const [responseTab, setResponseTab] = createSignal("body");
+  const [copied, setCopied] = createSignal(false);
+
+  function handleCopy() {
+    const resp = response();
+    if (!resp) return;
+    navigator.clipboard.writeText(formatBody(resp.body, resp.contentType));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
 
   return (
     <div class={styles.responsePanel}>
       <div class={styles.responsePanelHeader}>
         <span class={styles.responsePanelTitle}>Response</span>
-        <button
-          type="button"
-          class={styles.responsePanelCloseBtn}
-          onClick={props.onClose}
-          title="Close response panel"
+        <div
+          style={{ display: "flex", "align-items": "center", gap: "0.25rem" }}
         >
-          <X size={14} />
-        </button>
+          <Show when={response() && !response()?.error}>
+            <button
+              type="button"
+              class={styles.responsePanelCloseBtn}
+              onClick={handleCopy}
+              title="Copy body"
+            >
+              <Show when={copied()} fallback={<Copy size={14} />}>
+                <Check size={14} />
+              </Show>
+            </button>
+          </Show>
+          <button
+            type="button"
+            class={styles.responsePanelCloseBtn}
+            onClick={props.onClose}
+            title="Close response panel"
+          >
+            <X size={14} />
+          </button>
+        </div>
       </div>
       <Show
         when={response() || loading()}

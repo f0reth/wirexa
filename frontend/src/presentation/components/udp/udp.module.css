@@ -447,6 +447,27 @@
   border-radius: 0.25rem;
 }
 
+.copyBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.25rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--color-muted-foreground);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.copyBtn:hover {
+  color: var(--color-foreground);
+  background-color: var(--hover-overlay);
+}
+
 .messagePayload {
   margin: 0;
   font-size: 0.8125rem;
