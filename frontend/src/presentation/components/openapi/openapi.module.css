@@ -82,9 +82,8 @@
 }
 
 .codeMirrorWrap {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
+  height: 100%;
+  overflow: hidden;
 }
 
 .codeMirrorWrap :global(.cm-editor) {
@@ -95,6 +94,10 @@
 
 .codeMirrorWrap :global(.cm-scroller) {
   overflow: auto;
+}
+
+.codeMirrorWrap :global(.cm-content) {
+  min-height: 100%;
 }
 
 /* ── Preview panel ─────────────────────────────────────── */
