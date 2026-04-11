@@ -1,4 +1,4 @@
-import { createEffect, untrack } from "solid-js";
+import { createEffect, createSignal, untrack } from "solid-js";
 import type { ConnectionStateExt, MqttMessageView } from "./connections";
 
 export function createMessagesState(
@@ -9,8 +9,9 @@ export function createMessagesState(
   ) => void,
 ) {
   const messages = () => activeConnection()?.messages ?? [];
-  const selectedMessage = () => activeConnection()?.selectedMessage ?? null;
-  const autoFollow = () => activeConnection()?.autoFollow ?? false;
+  const [selectedMessage, setSelectedMessageSignal] =
+    createSignal<MqttMessageView | null>(null);
+  const [autoFollow, setAutoFollowSignal] = createSignal(false);
 
   // autoFollow が true のとき selectedMessage を末尾に追従させる
   // scrollTop は操作しない（Presentation 層の責務）
@@ -20,30 +21,17 @@ export function createMessagesState(
     if (follow && msgs.length > 0) {
       const lastMsg = msgs[msgs.length - 1];
       if (untrack(selectedMessage) !== lastMsg) {
-        const connId = activeConnection()?.connectionId;
-        if (connId) {
-          updateConnection(connId, (state) => ({
-            ...state,
-            selectedMessage: lastMsg,
-          }));
-        }
+        setSelectedMessageSignal(lastMsg);
       }
     }
   });
 
   const setSelectedMessage = (msg: MqttMessageView | null) => {
-    const connId = activeConnection()?.connectionId;
-    if (!connId) return;
-    updateConnection(connId, (state) => ({ ...state, selectedMessage: msg }));
+    setSelectedMessageSignal(msg);
   };
 
   const setAutoFollow = (value: boolean | ((prev: boolean) => boolean)) => {
-    const connId = activeConnection()?.connectionId;
-    if (!connId) return;
-    updateConnection(connId, (state) => ({
-      ...state,
-      autoFollow: typeof value === "function" ? value(state.autoFollow) : value,
-    }));
+    setAutoFollowSignal(value);
   };
 
   const clearMessages = () => {
@@ -52,8 +40,8 @@ export function createMessagesState(
     updateConnection(connId, (state) => ({
       ...state,
       messages: [],
-      selectedMessage: null,
     }));
+    setSelectedMessageSignal(null);
   };
 
   return {
