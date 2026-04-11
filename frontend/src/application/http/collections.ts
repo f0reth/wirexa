@@ -22,6 +22,11 @@ export interface CollectionsApi {
   ): Promise<TreeItem>;
   renameItem(collectionId: string, itemId: string, name: string): Promise<void>;
   deleteItem(collectionId: string, itemId: string): Promise<void>;
+  moveItem(
+    collectionId: string,
+    itemId: string,
+    targetParentId: string,
+  ): Promise<void>;
 }
 
 export function createCollectionsState(api: CollectionsApi) {
@@ -85,6 +90,15 @@ export function createCollectionsState(api: CollectionsApi) {
     await refreshCollections();
   }
 
+  async function moveItem(
+    collectionId: string,
+    itemId: string,
+    targetParentId: string,
+  ): Promise<void> {
+    await api.moveItem(collectionId, itemId, targetParentId);
+    await refreshCollections();
+  }
+
   return {
     collections,
     refreshCollections,
@@ -95,5 +109,6 @@ export function createCollectionsState(api: CollectionsApi) {
     addRequest,
     renameItem,
     deleteItem,
+    moveItem,
   };
 }

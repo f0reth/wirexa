@@ -6,6 +6,7 @@ import {
   DeleteCollection,
   DeleteItem,
   GetCollections,
+  MoveItem,
   RenameCollection,
   RenameItem,
   SendRequest,
@@ -192,4 +193,12 @@ export async function deleteItem(
   itemId: string,
 ): Promise<void> {
   return DeleteItem(collectionId, itemId);
+}
+
+export async function moveItem(
+  collectionId: string,
+  itemId: string,
+  targetParentId: string,
+): Promise<void> {
+  return MoveItem(collectionId, itemId, targetParentId);
 }

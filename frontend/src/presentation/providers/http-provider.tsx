@@ -70,6 +70,11 @@ export interface CollectionsContextValue {
     name: string,
   ) => Promise<void>;
   deleteItem: (collectionId: string, itemId: string) => Promise<void>;
+  moveItem: (
+    collectionId: string,
+    itemId: string,
+    targetParentId: string,
+  ) => Promise<void>;
 }
 
 const HttpRequestContext = createContext<RequestContextValue>();
