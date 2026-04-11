@@ -1,6 +1,7 @@
 import { Show } from "solid-js";
 import { BrokerTree } from "./broker-tree";
 import { CollectionTree } from "./collection-tree";
+import { OpenApiFileTree } from "./openapi-file-tree";
 import type { Protocol } from "./protocol-switcher";
 import styles from "./sidebar.module.css";
 import { TargetTree } from "./target-tree";
@@ -20,6 +21,9 @@ export function Sidebar(props: SidebarProps) {
       </Show>
       <Show when={props.protocol === "udp"}>
         <TargetTree />
+      </Show>
+      <Show when={props.protocol === "openapi"}>
+        <OpenApiFileTree />
       </Show>
     </div>
   );

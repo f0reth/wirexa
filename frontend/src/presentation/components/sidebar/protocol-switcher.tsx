@@ -1,9 +1,9 @@
 import { clsx } from "clsx";
-import { Globe, Moon, Radio, Sun, Wifi } from "lucide-solid";
+import { FileCode, Globe, Moon, Radio, Sun, Wifi } from "lucide-solid";
 import type { Component } from "solid-js";
 import styles from "./sidebar.module.css";
 
-export type Protocol = "mqtt" | "http" | "udp";
+export type Protocol = "mqtt" | "http" | "udp" | "openapi";
 
 const PROTOCOLS: {
   value: Protocol;
@@ -13,6 +13,7 @@ const PROTOCOLS: {
   { value: "mqtt", label: "MQTT", icon: Radio },
   { value: "http", label: "HTTP", icon: Globe },
   { value: "udp", label: "UDP", icon: Wifi },
+  { value: "openapi", label: "OpenAPI", icon: FileCode },
 ];
 
 interface ProtocolSwitcherProps {
