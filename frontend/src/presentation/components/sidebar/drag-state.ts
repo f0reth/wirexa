@@ -4,6 +4,8 @@ export type DragItem = {
   collectionId: string;
   itemId: string;
   name: string;
+  sourceParentId: string; // "" = コレクションルート
+  sourceIndex: number;
 };
 
 // parentId が空文字はコレクションルート、それ以外はフォルダID。

@@ -29,6 +29,23 @@ export function InsertionZone(props: {
     );
   };
 
+  // ドラッグ中のアイテムにとって no-op になるゾーン（元の位置の前後）は
+  // pointer-events: none にして elementFromPoint が透過するようにする。
+  // これにより、元フォルダ末尾の InsertionZone にカーソルが乗っても
+  // その下にある別フォルダのヘッダーが正しく検出される。
+  const isNoOp = () => {
+    const di = dragItem();
+    if (!di) return false;
+    if (
+      di.collectionId !== props.collectionId ||
+      di.sourceParentId !== props.parentId
+    )
+      return false;
+    return (
+      props.position === di.sourceIndex || props.position === di.sourceIndex + 1
+    );
+  };
+
   return (
     <div
       class={clsx(
@@ -36,6 +53,7 @@ export function InsertionZone(props: {
         dragItem() && styles.insertionZoneVisible,
         isActive() && styles.insertionZoneActive,
       )}
+      style={{ "pointer-events": isNoOp() ? "none" : undefined }}
       {...{
         [DROP_ZONE_ATTR]: "true",
         [DROP_COLLECTION_ID_ATTR]: props.collectionId,
@@ -51,6 +69,8 @@ function makeDragHandlers(
   collectionId: string,
   itemId: string,
   name: string,
+  sourceParentId: string,
+  sourceIndex: number,
   suppressRef: { suppress: boolean },
 ) {
   const handleMouseDown = (e: MouseEvent) => {
@@ -60,7 +80,7 @@ function makeDragHandlers(
 
     const activate = (x: number, y: number) => {
       suppressRef.suppress = true;
-      setDragItem({ collectionId, itemId, name });
+      setDragItem({ collectionId, itemId, name, sourceParentId, sourceIndex });
       setGhostPos({ x, y });
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
@@ -98,6 +118,8 @@ export function TreeItemNode(props: {
   item: TreeItem;
   collectionId: string;
   depth: number;
+  sourceParentId: string;
+  sourceIndex: number;
   onAddFolder: (collectionId: string, parentId: string) => void;
   onAddRequest: (collectionId: string, parentId: string) => void;
   onDeleteItem: (
@@ -127,6 +149,8 @@ export function TreeItemNode(props: {
       props.collectionId,
       props.item.id,
       props.item.name,
+      props.sourceParentId,
+      props.sourceIndex,
       suppressRef,
     );
 
@@ -273,6 +297,8 @@ export function TreeItemNode(props: {
                     item={child}
                     collectionId={props.collectionId}
                     depth={props.depth + 1}
+                    sourceParentId={props.item.id}
+                    sourceIndex={index()}
                     onAddFolder={props.onAddFolder}
                     onAddRequest={props.onAddRequest}
                     onDeleteItem={props.onDeleteItem}
@@ -306,6 +332,8 @@ export function TreeItemNode(props: {
     props.collectionId,
     props.item.id,
     props.item.name,
+    props.sourceParentId,
+    props.sourceIndex,
     suppressRef,
   );
 

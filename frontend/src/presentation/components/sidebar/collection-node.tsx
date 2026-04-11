@@ -168,6 +168,8 @@ export function CollectionNode(props: {
                   item={item}
                   collectionId={props.collection.id}
                   depth={1}
+                  sourceParentId=""
+                  sourceIndex={index()}
                   onAddFolder={props.onAddFolder}
                   onAddRequest={props.onAddRequest}
                   onDeleteItem={props.onDeleteItem}
