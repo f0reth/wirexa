@@ -19,6 +19,11 @@ export function CollectionNode(props: {
   onSelectRequest: (item: TreeItem) => void;
   onRenameItem: (collectionId: string, itemId: string, name: string) => void;
   onRenameCollection: (id: string, name: string) => void;
+  onMoveItem: (
+    collectionId: string,
+    itemId: string,
+    targetParentId: string,
+  ) => void;
   activeRequestId: string | null;
   renamingItemId: string | null;
   setRenamingItemId: (id: string | null) => void;
@@ -26,6 +31,7 @@ export function CollectionNode(props: {
   setRenamingCollectionId: (id: string | null) => void;
 }) {
   const [expanded, setExpanded] = createSignal(true);
+  const [isDragOver, setIsDragOver] = createSignal(false);
 
   const isRenaming = () => props.renamingCollectionId === props.collection.id;
 
@@ -35,6 +41,30 @@ export function CollectionNode(props: {
       props.onRenameCollection(props.collection.id, trimmed);
     }
     props.setRenamingCollectionId(null);
+  };
+
+  const handleDragOver = (e: DragEvent) => {
+    if (!e.dataTransfer?.types.includes("application/wirexa-item")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => setIsDragOver(false);
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    const raw = e.dataTransfer?.getData("application/wirexa-item");
+    if (!raw) return;
+    try {
+      const data = JSON.parse(raw) as { collectionId: string; itemId: string };
+      if (data.collectionId !== props.collection.id) return;
+      props.onMoveItem(data.collectionId, data.itemId, "");
+    } catch {
+      // ignore malformed data
+    }
   };
 
   return (
@@ -119,7 +149,13 @@ export function CollectionNode(props: {
         </div>
       </div>
       <Show when={expanded()}>
-        <div class={styles.treeChildren}>
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: drop target for moving items to collection root */}
+        <div
+          class={clsx(styles.treeChildren, isDragOver() && styles.dropTarget)}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           <For each={props.collection.items}>
             {(item) => (
               <TreeItemNode
@@ -131,6 +167,7 @@ export function CollectionNode(props: {
                 onDeleteItem={props.onDeleteItem}
                 onSelectRequest={props.onSelectRequest}
                 onRenameItem={props.onRenameItem}
+                onMoveItem={props.onMoveItem}
                 activeRequestId={props.activeRequestId}
                 renamingItemId={props.renamingItemId}
                 setRenamingItemId={props.setRenamingItemId}

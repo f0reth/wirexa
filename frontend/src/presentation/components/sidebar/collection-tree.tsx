@@ -118,6 +118,18 @@ export function CollectionTree() {
     }
   };
 
+  const handleMoveItem = async (
+    collectionId: string,
+    itemId: string,
+    targetParentId: string,
+  ) => {
+    try {
+      await collectionsCtx.moveItem(collectionId, itemId, targetParentId);
+    } catch (err) {
+      console.error("Failed to move item:", err);
+    }
+  };
+
   return (
     <div class={styles.collectionTree}>
       <div class={styles.collectionHeader}>
@@ -159,6 +171,7 @@ export function CollectionTree() {
                 }}
                 onRenameItem={handleRenameItem}
                 onRenameCollection={handleRenameCollection}
+                onMoveItem={handleMoveItem}
                 activeRequestId={requestCtx.activeRequestId()}
                 renamingItemId={renamingItemId()}
                 setRenamingItemId={setRenamingItemId}

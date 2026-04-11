@@ -5,6 +5,20 @@ import type { HttpMethod, TreeItem } from "../../../domain/http/types";
 import { METHOD_COLORS } from "../../constants/http";
 import styles from "./sidebar.module.css";
 
+function encodeDragData(collectionId: string, itemId: string): string {
+  return JSON.stringify({ collectionId, itemId });
+}
+
+function decodeDragData(
+  data: string,
+): { collectionId: string; itemId: string } | null {
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
 export function TreeItemNode(props: {
   item: TreeItem;
   collectionId: string;
@@ -19,11 +33,18 @@ export function TreeItemNode(props: {
   ) => void;
   onSelectRequest: (item: TreeItem) => void;
   onRenameItem: (collectionId: string, itemId: string, name: string) => void;
+  onMoveItem: (
+    collectionId: string,
+    itemId: string,
+    targetParentId: string,
+  ) => void;
   activeRequestId: string | null;
   renamingItemId: string | null;
   setRenamingItemId: (id: string | null) => void;
 }) {
   const [expanded, setExpanded] = createSignal(false);
+  const [isDragging, setIsDragging] = createSignal(false);
+  const [isDragOver, setIsDragOver] = createSignal(false);
 
   if (props.item.type === "folder") {
     const isRenaming = () => props.renamingItemId === props.item.id;
@@ -36,11 +57,54 @@ export function TreeItemNode(props: {
       props.setRenamingItemId(null);
     };
 
+    const handleDragStart = (e: DragEvent) => {
+      e.stopPropagation();
+      e.dataTransfer?.setData(
+        "application/wirexa-item",
+        encodeDragData(props.collectionId, props.item.id),
+      );
+      setIsDragging(true);
+    };
+
+    const handleDragEnd = () => setIsDragging(false);
+
+    const handleDragOver = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes("application/wirexa-item")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(true);
+    };
+
+    const handleDragLeave = () => setIsDragOver(false);
+
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      const raw = e.dataTransfer?.getData("application/wirexa-item");
+      if (!raw) return;
+      const data = decodeDragData(raw);
+      if (!data || data.collectionId !== props.collectionId) return;
+      if (data.itemId === props.item.id) return;
+      props.onMoveItem(data.collectionId, data.itemId, props.item.id);
+      setExpanded(true);
+    };
+
     return (
-      <div class={styles.treeNode}>
+      // biome-ignore lint/a11y/noStaticElementInteractions: drag source for tree item move
+      <div
+        class={clsx(styles.treeNode, isDragging() && styles.dragging)}
+        draggable
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: drop target for tree item move */}
         <div
-          class={styles.treeNodeHeader}
+          class={clsx(styles.treeNodeHeader, isDragOver() && styles.dropTarget)}
           style={{ "padding-left": `${props.depth * 0.75}rem` }}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
         >
           <button
             type="button"
@@ -139,6 +203,7 @@ export function TreeItemNode(props: {
                   onDeleteItem={props.onDeleteItem}
                   onSelectRequest={props.onSelectRequest}
                   onRenameItem={props.onRenameItem}
+                  onMoveItem={props.onMoveItem}
                   activeRequestId={props.activeRequestId}
                   renamingItemId={props.renamingItemId}
                   setRenamingItemId={props.setRenamingItemId}
@@ -164,10 +229,29 @@ export function TreeItemNode(props: {
     props.setRenamingItemId(null);
   };
 
+  const handleDragStart = (e: DragEvent) => {
+    e.stopPropagation();
+    e.dataTransfer?.setData(
+      "application/wirexa-item",
+      encodeDragData(props.collectionId, props.item.id),
+    );
+    setIsDragging(true);
+  };
+
+  const handleDragEnd = () => setIsDragging(false);
+
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag source for tree item move
     <div
-      class={clsx(styles.requestRow, isActive() && styles.requestItemActive)}
+      class={clsx(
+        styles.requestRow,
+        isActive() && styles.requestItemActive,
+        isDragging() && styles.dragging,
+      )}
       style={{ "padding-left": `${props.depth * 0.75 + 0.5}rem` }}
+      draggable
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
     >
       <button
         type="button"

@@ -424,6 +424,17 @@
   gap: 0.5rem;
 }
 
+/* ── Drag-and-drop ─────────────────────────────────────── */
+.dragging {
+  opacity: 0.4;
+}
+
+.dropTarget {
+  outline: 1px dashed var(--color-primary);
+  outline-offset: -1px;
+  background-color: color-mix(in oklch, var(--color-primary) 10%, transparent);
+}
+
 /* ── Inline rename input ──────────────────────────────── */
 .renameInput {
   font-size: 0.75rem;
