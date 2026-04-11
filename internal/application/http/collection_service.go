@@ -238,9 +238,15 @@ func (s *CollectionService) MoveItem(collectionID, itemID, targetParentID string
 		return &cmn.NotFoundError{Resource: "item", ID: itemID}
 	}
 
+	// ツリー変更前に移動先の検証を完了させる（RemoveNode より前に行う）。
+	var targetParent *domain.TreeItem
 	if targetParentID != "" {
 		if itemID == targetParentID || isDescendant(item, targetParentID) {
 			return &cmn.ValidationError{Message: "cannot move item into itself or its descendant"}
+		}
+		targetParent, _, ok = c.FindNode(targetParentID)
+		if !ok || targetParent.Type != domain.ItemTypeFolder {
+			return &cmn.NotFoundError{Resource: "parent", ID: targetParentID}
 		}
 	}
 
@@ -267,11 +273,7 @@ func (s *CollectionService) MoveItem(collectionID, itemID, targetParentID string
 	if targetParentID == "" {
 		c.Items = insertAt(c.Items, item, position)
 	} else {
-		parent, _, ok := c.FindNode(targetParentID)
-		if !ok || parent.Type != domain.ItemTypeFolder {
-			return &cmn.NotFoundError{Resource: "parent", ID: targetParentID}
-		}
-		parent.Children = insertAt(parent.Children, item, position)
+		targetParent.Children = insertAt(targetParent.Children, item, position)
 	}
 
 	return s.repo.Save(c)

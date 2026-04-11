@@ -12,7 +12,6 @@ import {
 import { CollectionNode } from "./collection-node";
 import {
   dragItem,
-  dropTarget,
   ghostPos,
   setDragItem,
   setDropTarget,
@@ -65,11 +64,21 @@ export function CollectionTree() {
       }
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
       const di = dragItem();
-      const dt = dropTarget();
-      if (di && dt) {
-        handleMoveItem(di.collectionId, di.itemId, dt.parentId, dt.position);
+      if (di) {
+        // mousemove のスロットリングで dropTarget が古くなる可能性があるため、
+        // mouseup 時の正確な座標からドロップゾーンを直接検出する。
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const zone = el?.closest(`[${DROP_ZONE_ATTR}]`) as HTMLElement | null;
+        if (zone) {
+          const parentId = zone.getAttribute(DROP_PARENT_ID_ATTR) ?? "";
+          const position = parseInt(
+            zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
+            10,
+          );
+          handleMoveItem(di.collectionId, di.itemId, parentId, position);
+        }
       }
       setDragItem(null);
       setDropTarget(null);
