@@ -1,7 +1,9 @@
-import type { ConnectionPersistence } from "../../application/mqtt/connections";
-import type { PresetStorage } from "../../application/mqtt/presets";
-import type { Theme, ThemeStorage } from "../../application/ui/theme";
+import type {
+  ConnectionPersistence,
+  PresetStorage,
+} from "../../domain/mqtt/ports";
 import type { PublishPreset } from "../../domain/mqtt/types";
+import type { Theme, ThemeStorage } from "../../domain/ui/ports";
 
 const MQTT_LAST_PROFILE_KEY = "mqtt:lastActiveProfileId";
 const MQTT_PRESETS_KEY = "mqtt:presets";

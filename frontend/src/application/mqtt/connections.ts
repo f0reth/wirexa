@@ -10,6 +10,7 @@ import {
   MQTT_MAX_MESSAGES as MAX_MESSAGES,
   MQTT_MAX_TOPICS as MAX_TOPICS,
 } from "../../config/limits";
+import type { ConnectionPersistence } from "../../domain/mqtt/ports";
 import { topicMatchesParts } from "../../domain/mqtt/topic";
 import type {
   BrokerProfile,
@@ -20,6 +21,8 @@ import type {
   Tab,
 } from "../../domain/mqtt/types";
 import { log } from "../../infrastructure/logger/client";
+
+export type { ConnectionPersistence };
 
 /** UI 表示用に id・direction を付加したアプリケーション層のメッセージ型。 */
 export type MqttMessageView = MqttMessage & {
@@ -60,12 +63,6 @@ export interface MqttConnectionApi {
   disconnect(connectionId: string): Promise<void>;
   subscribe(connectionId: string, topic: string, qos: number): Promise<void>;
   unsubscribe(connectionId: string, topic: string): Promise<void>;
-}
-
-export interface ConnectionPersistence {
-  loadLastProfileId(): string | null;
-  saveLastProfileId(id: string): void;
-  removeLastProfileId(): void;
 }
 
 interface RawMessage {

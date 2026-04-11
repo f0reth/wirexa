@@ -1,9 +1,8 @@
 import type { Diagnostic } from "@codemirror/lint";
 import { createSignal } from "solid-js";
+import type { ParseResult } from "./ports";
 
-export type ParseResult =
-  | { ok: true; spec: object }
-  | { ok: false; errors: Diagnostic[] };
+export type { ParseResult };
 
 export function createEditorState() {
   const [editorContent, setEditorContent] = createSignal("");

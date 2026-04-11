@@ -1,13 +1,7 @@
 import { createEffect, createSignal } from "solid-js";
+import type { Theme, ThemeStorage } from "../../domain/ui/ports";
 
-type Theme = "light" | "dark";
-
-export type { Theme };
-
-export interface ThemeStorage {
-  load(): Theme;
-  save(theme: Theme): void;
-}
+export type { Theme, ThemeStorage };
 
 export function createThemeStore(storage: ThemeStorage) {
   const [theme, setTheme] = createSignal<Theme>(storage.load());

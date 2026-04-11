@@ -1,10 +1,8 @@
 import { createSignal } from "solid-js";
+import type { PresetStorage } from "../../domain/mqtt/ports";
 import type { PublishPreset } from "../../domain/mqtt/types";
 
-export interface PresetStorage {
-  load(): PublishPreset[];
-  save(presets: PublishPreset[]): void;
-}
+export type { PresetStorage };
 
 export function createPresetsState(storage: PresetStorage) {
   const [presets, setPresets] = createSignal<PublishPreset[]>(storage.load());

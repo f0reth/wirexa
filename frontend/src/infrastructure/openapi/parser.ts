@@ -1,5 +1,5 @@
 import * as YAML from "yaml";
-import type { ParseResult } from "../../application/openapi/editor";
+import type { ParseResult } from "../../application/openapi/ports";
 
 export function parseSpec(text: string): ParseResult {
   if (!text.trim()) {
