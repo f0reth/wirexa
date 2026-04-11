@@ -50,10 +50,10 @@ export function InsertionZone(props: {
     <div
       class={clsx(
         styles.insertionZone,
-        dragItem() && styles.insertionZoneVisible,
+        dragItem() && !isNoOp() && styles.insertionZoneVisible,
         isActive() && styles.insertionZoneActive,
       )}
-      style={{ "pointer-events": isNoOp() ? "none" : undefined }}
+      style={{ display: isNoOp() ? "none" : undefined }}
       {...{
         [DROP_ZONE_ATTR]: "true",
         [DROP_COLLECTION_ID_ATTR]: props.collectionId,
