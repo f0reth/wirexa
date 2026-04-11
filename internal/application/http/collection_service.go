@@ -221,9 +221,10 @@ func isDescendant(item *domain.TreeItem, targetID string) bool {
 	return false
 }
 
-// MoveItem はアイテムを同じコレクション内の別の親へ移動する。
+// MoveItem はアイテムを同一コレクション内の別の親・位置へ移動する。
 // targetParentID が空の場合はコレクションルートへ移動する。
-func (s *CollectionService) MoveItem(collectionID, itemID, targetParentID string) error {
+// position は削除後の挿入先インデックス。-1 または範囲外の場合は末尾に追加する。
+func (s *CollectionService) MoveItem(collectionID, itemID, targetParentID string, position int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -232,7 +233,7 @@ func (s *CollectionService) MoveItem(collectionID, itemID, targetParentID string
 		return &cmn.NotFoundError{Resource: "collection", ID: collectionID}
 	}
 
-	item, _, ok := c.FindNode(itemID)
+	item, origParent, ok := c.FindNode(itemID)
 	if !ok {
 		return &cmn.NotFoundError{Resource: "item", ID: itemID}
 	}
@@ -243,19 +244,49 @@ func (s *CollectionService) MoveItem(collectionID, itemID, targetParentID string
 		}
 	}
 
+	// 同一親かつ元インデックスが挿入位置より前の場合、削除後にインデックスがずれるので補正する。
+	isSameParent := (targetParentID == "" && origParent == nil) ||
+		(origParent != nil && origParent.ID == targetParentID)
+	if isSameParent && position > 0 {
+		var origItems []*domain.TreeItem
+		if origParent == nil {
+			origItems = c.Items
+		} else {
+			origItems = origParent.Children
+		}
+		for i, n := range origItems {
+			if n.ID == itemID && i < position {
+				position--
+				break
+			}
+		}
+	}
+
 	c.RemoveNode(itemID)
 
 	if targetParentID == "" {
-		c.Items = append(c.Items, item)
+		c.Items = insertAt(c.Items, item, position)
 	} else {
 		parent, _, ok := c.FindNode(targetParentID)
 		if !ok || parent.Type != domain.ItemTypeFolder {
 			return &cmn.NotFoundError{Resource: "parent", ID: targetParentID}
 		}
-		parent.Children = append(parent.Children, item)
+		parent.Children = insertAt(parent.Children, item, position)
 	}
 
 	return s.repo.Save(c)
+}
+
+// insertAt はスライスの指定インデックスにアイテムを挿入する。
+// position が負または範囲外の場合は末尾に追加する。
+func insertAt(items []*domain.TreeItem, item *domain.TreeItem, position int) []*domain.TreeItem {
+	if position < 0 || position >= len(items) {
+		return append(items, item)
+	}
+	items = append(items, nil)
+	copy(items[position+1:], items[position:])
+	items[position] = item
+	return items
 }
 
 // DeleteItem はコレクションからアイテムをサブツリーごと削除する。

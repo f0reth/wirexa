@@ -34,5 +34,8 @@ type CollectionUseCase interface {
 	UpdateRequest(collectionID string, req HttpRequest) error
 	RenameItem(collectionID, itemID, name string) error
 	DeleteItem(collectionID, itemID string) error
-	MoveItem(collectionID, itemID, targetParentID string) error
+	// MoveItem はアイテムを同一コレクション内の別の親・位置へ移動する。
+	// targetParentID が空の場合はコレクションルートへ移動する。
+	// position は挿入先インデックス（削除後の配列に対する）。-1 の場合は末尾に追加。
+	MoveItem(collectionID, itemID, targetParentID string, position int) error
 }

@@ -86,8 +86,9 @@ func (h *HttpHandler) DeleteItem(collectionID, itemID string) error {
 	return h.collSvc.DeleteItem(collectionID, itemID)
 }
 
-// MoveItem はアイテムを同一コレクション内の別の親へ移動する。
+// MoveItem はアイテムを同一コレクション内の別の親・位置へ移動する。
 // targetParentID が空文字の場合はコレクションルートへ移動する。
-func (h *HttpHandler) MoveItem(collectionID, itemID, targetParentID string) error {
-	return h.collSvc.MoveItem(collectionID, itemID, targetParentID)
+// position は挿入先インデックス（削除後）。-1 の場合は末尾に追加する。
+func (h *HttpHandler) MoveItem(collectionID, itemID, targetParentID string, position int) error {
+	return h.collSvc.MoveItem(collectionID, itemID, targetParentID, position)
 }
