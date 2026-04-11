@@ -2,8 +2,51 @@ import { clsx } from "clsx";
 import { ChevronRight, Folder, FolderPlus, Plus, Trash2 } from "lucide-solid";
 import { createSignal, For, Show } from "solid-js";
 import type { Collection, TreeItem } from "../../../domain/http/types";
+import { dragItem, dropTarget, setDropTarget } from "./drag-state";
 import styles from "./sidebar.module.css";
 import { TreeItemNode } from "./tree-item-node";
+
+/** コレクションルートへのインサーションゾーン */
+function RootInsertionZone(props: { collectionId: string; position: number }) {
+  const isActive = () => {
+    const dt = dropTarget();
+    return (
+      dragItem() !== null &&
+      dt?.collectionId === props.collectionId &&
+      dt?.parentId === "" &&
+      dt?.position === props.position
+    );
+  };
+
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag insertion zone for collection root
+    <div
+      class={clsx(
+        styles.insertionZone,
+        dragItem() && styles.insertionZoneVisible,
+        isActive() && styles.insertionZoneActive,
+      )}
+      onMouseEnter={() => {
+        if (!dragItem()) return;
+        setDropTarget({
+          collectionId: props.collectionId,
+          parentId: "",
+          position: props.position,
+        });
+      }}
+      onMouseLeave={() => {
+        const dt = dropTarget();
+        if (
+          dt?.collectionId === props.collectionId &&
+          dt?.parentId === "" &&
+          dt?.position === props.position
+        ) {
+          setDropTarget(null);
+        }
+      }}
+    />
+  );
+}
 
 export function CollectionNode(props: {
   collection: Collection;
@@ -23,6 +66,7 @@ export function CollectionNode(props: {
     collectionId: string,
     itemId: string,
     targetParentId: string,
+    position: number,
   ) => void;
   activeRequestId: string | null;
   renamingItemId: string | null;
@@ -31,7 +75,6 @@ export function CollectionNode(props: {
   setRenamingCollectionId: (id: string | null) => void;
 }) {
   const [expanded, setExpanded] = createSignal(true);
-  const [isDragOver, setIsDragOver] = createSignal(false);
 
   const isRenaming = () => props.renamingCollectionId === props.collection.id;
 
@@ -41,37 +84,6 @@ export function CollectionNode(props: {
       props.onRenameCollection(props.collection.id, trimmed);
     }
     props.setRenamingCollectionId(null);
-  };
-
-  const handleDragOver = (e: DragEvent) => {
-    if (!e.dataTransfer?.types.includes("application/wirexa-item")) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(true);
-  };
-
-  const handleDragLeave = (e: DragEvent) => {
-    if (
-      e.currentTarget instanceof Element &&
-      e.currentTarget.contains(e.relatedTarget as Node)
-    )
-      return;
-    setIsDragOver(false);
-  };
-
-  const handleDrop = (e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-    const raw = e.dataTransfer?.getData("application/wirexa-item");
-    if (!raw) return;
-    try {
-      const data = JSON.parse(raw) as { collectionId: string; itemId: string };
-      if (data.collectionId !== props.collection.id) return;
-      props.onMoveItem(data.collectionId, data.itemId, "");
-    } catch {
-      // ignore malformed data
-    }
   };
 
   return (
@@ -156,31 +168,35 @@ export function CollectionNode(props: {
         </div>
       </div>
       <Show when={expanded()}>
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: drop target for moving items to collection root */}
-        <div
-          class={clsx(styles.treeChildren, isDragOver() && styles.dropTarget)}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
+        <div class={styles.treeChildren}>
           <For each={props.collection.items}>
-            {(item) => (
-              <TreeItemNode
-                item={item}
-                collectionId={props.collection.id}
-                depth={1}
-                onAddFolder={props.onAddFolder}
-                onAddRequest={props.onAddRequest}
-                onDeleteItem={props.onDeleteItem}
-                onSelectRequest={props.onSelectRequest}
-                onRenameItem={props.onRenameItem}
-                onMoveItem={props.onMoveItem}
-                activeRequestId={props.activeRequestId}
-                renamingItemId={props.renamingItemId}
-                setRenamingItemId={props.setRenamingItemId}
-              />
+            {(item, index) => (
+              <>
+                <RootInsertionZone
+                  collectionId={props.collection.id}
+                  position={index()}
+                />
+                <TreeItemNode
+                  item={item}
+                  collectionId={props.collection.id}
+                  depth={1}
+                  onAddFolder={props.onAddFolder}
+                  onAddRequest={props.onAddRequest}
+                  onDeleteItem={props.onDeleteItem}
+                  onSelectRequest={props.onSelectRequest}
+                  onRenameItem={props.onRenameItem}
+                  onMoveItem={props.onMoveItem}
+                  activeRequestId={props.activeRequestId}
+                  renamingItemId={props.renamingItemId}
+                  setRenamingItemId={props.setRenamingItemId}
+                />
+              </>
             )}
           </For>
+          <RootInsertionZone
+            collectionId={props.collection.id}
+            position={props.collection.items.length}
+          />
         </div>
       </Show>
     </div>

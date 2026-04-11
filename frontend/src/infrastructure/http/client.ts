@@ -199,6 +199,7 @@ export async function moveItem(
   collectionId: string,
   itemId: string,
   targetParentId: string,
+  position: number,
 ): Promise<void> {
-  return MoveItem(collectionId, itemId, targetParentId);
+  return MoveItem(collectionId, itemId, targetParentId, position);
 }

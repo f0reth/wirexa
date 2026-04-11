@@ -26,6 +26,7 @@ export interface CollectionsApi {
     collectionId: string,
     itemId: string,
     targetParentId: string,
+    position: number,
   ): Promise<void>;
 }
 
@@ -94,8 +95,9 @@ export function createCollectionsState(api: CollectionsApi) {
     collectionId: string,
     itemId: string,
     targetParentId: string,
+    position: number,
   ): Promise<void> {
-    await api.moveItem(collectionId, itemId, targetParentId);
+    await api.moveItem(collectionId, itemId, targetParentId, position);
     await refreshCollections();
   }
 

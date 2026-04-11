@@ -74,6 +74,7 @@ export interface CollectionsContextValue {
     collectionId: string,
     itemId: string,
     targetParentId: string,
+    position: number,
   ) => Promise<void>;
 }
 

@@ -3,20 +3,109 @@ import { ChevronRight, Folder, FolderPlus, Plus, Trash2 } from "lucide-solid";
 import { createSignal, For, Show } from "solid-js";
 import type { HttpMethod, TreeItem } from "../../../domain/http/types";
 import { METHOD_COLORS } from "../../constants/http";
+import {
+  dragItem,
+  dropTarget,
+  setDragItem,
+  setDropTarget,
+  setGhostPos,
+} from "./drag-state";
 import styles from "./sidebar.module.css";
 
-function encodeDragData(collectionId: string, itemId: string): string {
-  return JSON.stringify({ collectionId, itemId });
+const LONG_PRESS_MS = 250;
+
+/** アイテム間の挿入ゾーン。ドラッグ中にホバーすると挿入位置を示すラインを表示する。 */
+function InsertionZone(props: {
+  collectionId: string;
+  parentId: string;
+  position: number;
+}) {
+  const isActive = () => {
+    const dt = dropTarget();
+    return (
+      dragItem() !== null &&
+      dt?.collectionId === props.collectionId &&
+      dt?.parentId === props.parentId &&
+      dt?.position === props.position
+    );
+  };
+
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag insertion zone
+    <div
+      class={clsx(
+        styles.insertionZone,
+        dragItem() && styles.insertionZoneVisible,
+        isActive() && styles.insertionZoneActive,
+      )}
+      onMouseEnter={() => {
+        if (!dragItem()) return;
+        setDropTarget({
+          collectionId: props.collectionId,
+          parentId: props.parentId,
+          position: props.position,
+        });
+      }}
+      onMouseLeave={() => {
+        const dt = dropTarget();
+        if (
+          dt?.collectionId === props.collectionId &&
+          dt?.parentId === props.parentId &&
+          dt?.position === props.position
+        ) {
+          setDropTarget(null);
+        }
+      }}
+    />
+  );
 }
 
-function decodeDragData(
-  data: string,
-): { collectionId: string; itemId: string } | null {
-  try {
-    return JSON.parse(data);
-  } catch {
-    return null;
-  }
+/** ドラッグ開始ハンドラを生成する。長押し（LONG_PRESS_MS）でドラッグモードに移行する。 */
+function makeDragHandlers(
+  collectionId: string,
+  itemId: string,
+  name: string,
+  onSuppressRef: { suppress: boolean },
+) {
+  const handleMouseDown = (e: MouseEvent) => {
+    if (e.button !== 0) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    const activate = (x: number, y: number) => {
+      onSuppressRef.suppress = true;
+      setDragItem({ collectionId, itemId, name });
+      setGhostPos({ x, y });
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+
+    const handleMove = (me: MouseEvent) => {
+      const dx = me.clientX - startX;
+      const dy = me.clientY - startY;
+      if (Math.sqrt(dx * dx + dy * dy) > 5) {
+        clearTimeout(timer);
+        activate(me.clientX, me.clientY);
+      }
+    };
+
+    const handleUp = () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+
+    const timer = setTimeout(() => {
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+      activate(startX, startY);
+    }, LONG_PRESS_MS);
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
+
+  return { handleMouseDown };
 }
 
 export function TreeItemNode(props: {
@@ -37,18 +126,24 @@ export function TreeItemNode(props: {
     collectionId: string,
     itemId: string,
     targetParentId: string,
+    position: number,
   ) => void;
   activeRequestId: string | null;
   renamingItemId: string | null;
   setRenamingItemId: (id: string | null) => void;
 }) {
   const [expanded, setExpanded] = createSignal(false);
-  const [isDragging, setIsDragging] = createSignal(false);
-  const [isDragOver, setIsDragOver] = createSignal(false);
-  const [isDragOverChildren, setIsDragOverChildren] = createSignal(false);
+  const [isFolderDropTarget, setIsFolderDropTarget] = createSignal(false);
 
   if (props.item.type === "folder") {
     const isRenaming = () => props.renamingItemId === props.item.id;
+    const suppressRef = { suppress: false };
+    const { handleMouseDown } = makeDragHandlers(
+      props.collectionId,
+      props.item.id,
+      props.item.name,
+      suppressRef,
+    );
 
     const handleRenameCommit = (value: string) => {
       const trimmed = value.trim();
@@ -58,95 +153,48 @@ export function TreeItemNode(props: {
       props.setRenamingItemId(null);
     };
 
-    const handleDragStart = (e: DragEvent) => {
-      e.stopPropagation();
-      e.dataTransfer?.setData(
-        "application/wirexa-item",
-        encodeDragData(props.collectionId, props.item.id),
-      );
-      setIsDragging(true);
-    };
-
-    const handleDragEnd = () => setIsDragging(false);
-
-    const handleDragOver = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes("application/wirexa-item")) return;
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragOver(true);
-    };
-
-    const handleDragLeave = (e: DragEvent) => {
-      if (
-        e.currentTarget instanceof Element &&
-        e.currentTarget.contains(e.relatedTarget as Node)
-      )
-        return;
-      setIsDragOver(false);
-    };
-
-    const handleDrop = (e: DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragOver(false);
-      const raw = e.dataTransfer?.getData("application/wirexa-item");
-      if (!raw) return;
-      const data = decodeDragData(raw);
-      if (!data || data.collectionId !== props.collectionId) return;
-      if (data.itemId === props.item.id) return;
-      props.onMoveItem(data.collectionId, data.itemId, props.item.id);
-      setExpanded(true);
-    };
-
-    const handleDragOverChildren = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes("application/wirexa-item")) return;
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragOverChildren(true);
-    };
-
-    const handleDragLeaveChildren = (e: DragEvent) => {
-      if (
-        e.currentTarget instanceof Element &&
-        e.currentTarget.contains(e.relatedTarget as Node)
-      )
-        return;
-      setIsDragOverChildren(false);
-    };
-
-    const handleDropChildren = (e: DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragOverChildren(false);
-      const raw = e.dataTransfer?.getData("application/wirexa-item");
-      if (!raw) return;
-      const data = decodeDragData(raw);
-      if (!data || data.collectionId !== props.collectionId) return;
-      if (data.itemId === props.item.id) return;
-      props.onMoveItem(data.collectionId, data.itemId, props.item.id);
-      setExpanded(true);
-    };
-
     return (
-      // biome-ignore lint/a11y/noStaticElementInteractions: drag source for tree item move
-      <div
-        class={clsx(styles.treeNode, isDragging() && styles.dragging)}
-        draggable
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: drop target for tree item move */}
+      <div class={styles.treeNode}>
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: drop target and drag source for mouse-based drag */}
         <div
-          class={clsx(styles.treeNodeHeader, isDragOver() && styles.dropTarget)}
+          class={clsx(
+            styles.treeNodeHeader,
+            isFolderDropTarget() && styles.dropTarget,
+          )}
           style={{ "padding-left": `${props.depth * 0.75}rem` }}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          onMouseEnter={() => {
+            if (dragItem() && dragItem()?.itemId !== props.item.id) {
+              setIsFolderDropTarget(true);
+              setDropTarget({
+                collectionId: props.collectionId,
+                parentId: props.item.id,
+                position: -1,
+              });
+            }
+          }}
+          onMouseLeave={() => {
+            setIsFolderDropTarget(false);
+            const dt = dropTarget();
+            if (
+              dt?.collectionId === props.collectionId &&
+              dt?.parentId === props.item.id &&
+              dt?.position === -1
+            ) {
+              setDropTarget(null);
+            }
+          }}
+          onMouseDown={handleMouseDown}
         >
           <button
             type="button"
             class={styles.treeNodeToggle}
-            onClick={() => setExpanded(!expanded())}
+            onClick={() => {
+              if (suppressRef.suppress) {
+                suppressRef.suppress = false;
+                return;
+              }
+              setExpanded(!expanded());
+            }}
           >
             <ChevronRight
               size={12}
@@ -194,6 +242,7 @@ export function TreeItemNode(props: {
               type="button"
               class={styles.treeActionBtn}
               title="Add folder"
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={() =>
                 props.onAddFolder(props.collectionId, props.item.id)
               }
@@ -204,6 +253,7 @@ export function TreeItemNode(props: {
               type="button"
               class={styles.treeActionBtn}
               title="Add request"
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={() =>
                 props.onAddRequest(props.collectionId, props.item.id)
               }
@@ -214,6 +264,7 @@ export function TreeItemNode(props: {
               type="button"
               class={clsx(styles.treeActionBtn, styles.treeActionBtnDanger)}
               title="Delete"
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={() =>
                 props.onDeleteItem(
                   props.collectionId,
@@ -228,34 +279,37 @@ export function TreeItemNode(props: {
           </div>
         </div>
         <Show when={expanded()}>
-          {/* biome-ignore lint/a11y/noStaticElementInteractions: drop target for moving items into this folder */}
-          <div
-            class={clsx(
-              styles.treeChildren,
-              isDragOverChildren() && styles.dropTarget,
-            )}
-            onDragOver={handleDragOverChildren}
-            onDragLeave={handleDragLeaveChildren}
-            onDrop={handleDropChildren}
-          >
+          <div class={styles.treeChildren}>
             <For each={props.item.children}>
-              {(child) => (
-                <TreeItemNode
-                  item={child}
-                  collectionId={props.collectionId}
-                  depth={props.depth + 1}
-                  onAddFolder={props.onAddFolder}
-                  onAddRequest={props.onAddRequest}
-                  onDeleteItem={props.onDeleteItem}
-                  onSelectRequest={props.onSelectRequest}
-                  onRenameItem={props.onRenameItem}
-                  onMoveItem={props.onMoveItem}
-                  activeRequestId={props.activeRequestId}
-                  renamingItemId={props.renamingItemId}
-                  setRenamingItemId={props.setRenamingItemId}
-                />
+              {(child, index) => (
+                <>
+                  <InsertionZone
+                    collectionId={props.collectionId}
+                    parentId={props.item.id}
+                    position={index()}
+                  />
+                  <TreeItemNode
+                    item={child}
+                    collectionId={props.collectionId}
+                    depth={props.depth + 1}
+                    onAddFolder={props.onAddFolder}
+                    onAddRequest={props.onAddRequest}
+                    onDeleteItem={props.onDeleteItem}
+                    onSelectRequest={props.onSelectRequest}
+                    onRenameItem={props.onRenameItem}
+                    onMoveItem={props.onMoveItem}
+                    activeRequestId={props.activeRequestId}
+                    renamingItemId={props.renamingItemId}
+                    setRenamingItemId={props.setRenamingItemId}
+                  />
+                </>
               )}
             </For>
+            <InsertionZone
+              collectionId={props.collectionId}
+              parentId={props.item.id}
+              position={props.item.children.length}
+            />
           </div>
         </Show>
       </div>
@@ -266,6 +320,13 @@ export function TreeItemNode(props: {
   const method = () => (props.item.request?.method || "GET") as HttpMethod;
   const isActive = () => props.activeRequestId === props.item.id;
   const isRenaming = () => props.renamingItemId === props.item.id;
+  const suppressRef = { suppress: false };
+  const { handleMouseDown } = makeDragHandlers(
+    props.collectionId,
+    props.item.id,
+    props.item.name,
+    suppressRef,
+  );
 
   const handleRenameCommit = (value: string) => {
     const trimmed = value.trim();
@@ -275,34 +336,21 @@ export function TreeItemNode(props: {
     props.setRenamingItemId(null);
   };
 
-  const handleDragStart = (e: DragEvent) => {
-    e.stopPropagation();
-    e.dataTransfer?.setData(
-      "application/wirexa-item",
-      encodeDragData(props.collectionId, props.item.id),
-    );
-    setIsDragging(true);
-  };
-
-  const handleDragEnd = () => setIsDragging(false);
-
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: drag source for tree item move
     <div
-      class={clsx(
-        styles.requestRow,
-        isActive() && styles.requestItemActive,
-        isDragging() && styles.dragging,
-      )}
+      class={clsx(styles.requestRow, isActive() && styles.requestItemActive)}
       style={{ "padding-left": `${props.depth * 0.75 + 0.5}rem` }}
-      draggable
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
+      onMouseDown={handleMouseDown}
     >
       <button
         type="button"
         class={styles.requestSelectBtn}
         onClick={() => {
+          if (suppressRef.suppress) {
+            suppressRef.suppress = false;
+            return;
+          }
           if (!isRenaming()) props.onSelectRequest(props.item);
         }}
         onKeyDown={(e) => {
@@ -354,6 +402,7 @@ export function TreeItemNode(props: {
       <button
         type="button"
         class={clsx(styles.treeActionBtn, styles.treeActionBtnDanger)}
+        onMouseDown={(e) => e.stopPropagation()}
         onClick={() =>
           props.onDeleteItem(
             props.collectionId,

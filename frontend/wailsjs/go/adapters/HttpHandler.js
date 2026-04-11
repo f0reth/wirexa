@@ -30,6 +30,10 @@ export function GetCollections() {
   return window['go']['adapters']['HttpHandler']['GetCollections']();
 }
 
+export function MoveItem(arg1, arg2, arg3, arg4) {
+  return window['go']['adapters']['HttpHandler']['MoveItem'](arg1, arg2, arg3, arg4);
+}
+
 export function OpenFilePicker() {
   return window['go']['adapters']['HttpHandler']['OpenFilePicker']();
 }

@@ -1,5 +1,5 @@
 import { Plus } from "lucide-solid";
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
@@ -10,6 +10,14 @@ import {
   useHttpRequest,
 } from "../../providers/http-provider";
 import { CollectionNode } from "./collection-node";
+import {
+  dragItem,
+  dropTarget,
+  ghostPos,
+  setDragItem,
+  setDropTarget,
+  setGhostPos,
+} from "./drag-state";
 import styles from "./sidebar.module.css";
 
 export function CollectionTree() {
@@ -28,6 +36,30 @@ export function CollectionTree() {
 
   onMount(() => {
     collectionsCtx.refreshCollections();
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (dragItem()) {
+        setGhostPos({ x: e.clientX, y: e.clientY });
+      }
+    };
+
+    const handleMouseUp = () => {
+      const di = dragItem();
+      const dt = dropTarget();
+      if (di && dt) {
+        handleMoveItem(di.collectionId, di.itemId, dt.parentId, dt.position);
+      }
+      setDragItem(null);
+      setDropTarget(null);
+      setGhostPos(null);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    onCleanup(() => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    });
   });
 
   const handleCreateCollection = async () => {
@@ -122,9 +154,15 @@ export function CollectionTree() {
     collectionId: string,
     itemId: string,
     targetParentId: string,
+    position: number,
   ) => {
     try {
-      await collectionsCtx.moveItem(collectionId, itemId, targetParentId);
+      await collectionsCtx.moveItem(
+        collectionId,
+        itemId,
+        targetParentId,
+        position,
+      );
     } catch (err) {
       console.error("Failed to move item:", err);
     }
@@ -207,6 +245,21 @@ export function CollectionTree() {
           </Portal>
         )}
       </Show>
+
+      {/* ドラッグ中のゴースト要素 */}
+      <Portal>
+        <Show when={dragItem() && ghostPos()}>
+          <div
+            class={styles.dragGhost}
+            style={{
+              left: `${(ghostPos()?.x ?? 0) + 14}px`,
+              top: `${(ghostPos()?.y ?? 0) - 10}px`,
+            }}
+          >
+            {dragItem()?.name}
+          </div>
+        </Show>
+      </Portal>
     </div>
   );
 }

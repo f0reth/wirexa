@@ -16,6 +16,8 @@ export function DeleteItem(arg1:string,arg2:string):Promise<void>;
 
 export function GetCollections():Promise<Array<httpdomain.Collection>>;
 
+export function MoveItem(arg1:string,arg2:string,arg3:string,arg4:number):Promise<void>;
+
 export function OpenFilePicker():Promise<string>;
 
 export function RenameCollection(arg1:string,arg2:string):Promise<void>;
