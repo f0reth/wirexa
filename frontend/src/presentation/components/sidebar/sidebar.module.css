@@ -140,6 +140,7 @@
 .treeNode {
   display: flex;
   flex-direction: column;
+  user-select: none;
 }
 
 .treeNodeHeader {
@@ -263,6 +264,7 @@
   border-radius: 0.375rem;
   padding-right: 0.25rem;
   transition: background-color var(--transition-fast);
+  user-select: none;
 }
 
 .requestRow:hover {
