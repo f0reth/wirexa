@@ -34,4 +34,5 @@ type CollectionUseCase interface {
 	UpdateRequest(collectionID string, req HttpRequest) error
 	RenameItem(collectionID, itemID, name string) error
 	DeleteItem(collectionID, itemID string) error
+	MoveItem(collectionID, itemID, targetParentID string) error
 }

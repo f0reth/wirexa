@@ -211,6 +211,53 @@ func (s *CollectionService) RenameItem(collectionID, itemID, name string) error 
 	return s.repo.Save(c)
 }
 
+// isDescendant はアイテムのサブツリー内に targetID が含まれるか検査する。
+func isDescendant(item *domain.TreeItem, targetID string) bool {
+	for _, child := range item.Children {
+		if child.ID == targetID || isDescendant(child, targetID) {
+			return true
+		}
+	}
+	return false
+}
+
+// MoveItem はアイテムを同じコレクション内の別の親へ移動する。
+// targetParentID が空の場合はコレクションルートへ移動する。
+func (s *CollectionService) MoveItem(collectionID, itemID, targetParentID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	c, ok := s.cache[collectionID]
+	if !ok {
+		return &cmn.NotFoundError{Resource: "collection", ID: collectionID}
+	}
+
+	item, _, ok := c.FindNode(itemID)
+	if !ok {
+		return &cmn.NotFoundError{Resource: "item", ID: itemID}
+	}
+
+	if targetParentID != "" {
+		if itemID == targetParentID || isDescendant(item, targetParentID) {
+			return &cmn.ValidationError{Message: "cannot move item into itself or its descendant"}
+		}
+	}
+
+	c.RemoveNode(itemID)
+
+	if targetParentID == "" {
+		c.Items = append(c.Items, item)
+	} else {
+		parent, _, ok := c.FindNode(targetParentID)
+		if !ok || parent.Type != domain.ItemTypeFolder {
+			return &cmn.NotFoundError{Resource: "parent", ID: targetParentID}
+		}
+		parent.Children = append(parent.Children, item)
+	}
+
+	return s.repo.Save(c)
+}
+
 // DeleteItem はコレクションからアイテムをサブツリーごと削除する。
 func (s *CollectionService) DeleteItem(collectionID, itemID string) error {
 	s.mu.Lock()

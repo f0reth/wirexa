@@ -85,3 +85,9 @@ func (h *HttpHandler) RenameItem(collectionID, itemID, name string) error {
 func (h *HttpHandler) DeleteItem(collectionID, itemID string) error {
 	return h.collSvc.DeleteItem(collectionID, itemID)
 }
+
+// MoveItem はアイテムを同一コレクション内の別の親へ移動する。
+// targetParentID が空文字の場合はコレクションルートへ移動する。
+func (h *HttpHandler) MoveItem(collectionID, itemID, targetParentID string) error {
+	return h.collSvc.MoveItem(collectionID, itemID, targetParentID)
+}
