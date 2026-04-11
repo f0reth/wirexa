@@ -9,6 +9,7 @@ import {
 import { createThemeStorage } from "./infrastructure/storage/local-storage";
 import { HttpClient } from "./presentation/components/http";
 import { MqttClient } from "./presentation/components/mqtt";
+import { OpenApiClient } from "./presentation/components/openapi";
 import { Sidebar } from "./presentation/components/sidebar";
 import {
   type Protocol,
@@ -17,6 +18,7 @@ import {
 import { UdpClient } from "./presentation/components/udp";
 import { HttpProvider } from "./presentation/providers/http-provider";
 import { MqttProvider } from "./presentation/providers/mqtt-provider";
+import { OpenApiProvider } from "./presentation/providers/openapi-provider";
 import { UdpProvider } from "./presentation/providers/udp-provider";
 
 function App() {
@@ -36,46 +38,56 @@ function App() {
       <UdpProvider>
         <HttpProvider>
           <MqttProvider>
-            <ProtocolSwitcher
-              protocol={protocol()}
-              onProtocolChange={setProtocol}
-              theme={theme()}
-              onThemeToggle={toggleTheme}
-            />
-            <ResizablePanelGroup direction="horizontal">
-              <ResizablePanel defaultSize={15} minSize={10}>
-                <Sidebar protocol={protocol()} />
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel defaultSize={85}>
-                <main class={styles.main}>
-                  <div
-                    class={styles.panel}
-                    style={{
-                      display: protocol() === "mqtt" ? "flex" : "none",
-                    }}
-                  >
-                    <MqttClient />
-                  </div>
-                  <div
-                    class={styles.panel}
-                    style={{
-                      display: protocol() === "http" ? "flex" : "none",
-                    }}
-                  >
-                    <HttpClient />
-                  </div>
-                  <div
-                    class={styles.panel}
-                    style={{
-                      display: protocol() === "udp" ? "flex" : "none",
-                    }}
-                  >
-                    <UdpClient />
-                  </div>
-                </main>
-              </ResizablePanel>
-            </ResizablePanelGroup>
+            <OpenApiProvider>
+              <ProtocolSwitcher
+                protocol={protocol()}
+                onProtocolChange={setProtocol}
+                theme={theme()}
+                onThemeToggle={toggleTheme}
+              />
+              <ResizablePanelGroup direction="horizontal">
+                <ResizablePanel defaultSize={15} minSize={10}>
+                  <Sidebar protocol={protocol()} />
+                </ResizablePanel>
+                <ResizableHandle withHandle />
+                <ResizablePanel defaultSize={85}>
+                  <main class={styles.main}>
+                    <div
+                      class={styles.panel}
+                      style={{
+                        display: protocol() === "mqtt" ? "flex" : "none",
+                      }}
+                    >
+                      <MqttClient />
+                    </div>
+                    <div
+                      class={styles.panel}
+                      style={{
+                        display: protocol() === "http" ? "flex" : "none",
+                      }}
+                    >
+                      <HttpClient />
+                    </div>
+                    <div
+                      class={styles.panel}
+                      style={{
+                        display: protocol() === "udp" ? "flex" : "none",
+                      }}
+                    >
+                      <UdpClient />
+                    </div>
+                    <div
+                      class={styles.panel}
+                      style={{
+                        display: protocol() === "openapi" ? "flex" : "none",
+                      }}
+                    >
+                      <OpenApiClient />
+                    </div>
+                  </main>
+                </ResizablePanel>
+              </ResizablePanelGroup>
+            </OpenApiProvider>
           </MqttProvider>
         </HttpProvider>
       </UdpProvider>
