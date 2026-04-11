@@ -126,14 +126,6 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     });
   }
 
-  function formatJsonBody(content: string): string {
-    try {
-      return JSON.stringify(JSON.parse(content), null, 2);
-    } catch {
-      return content;
-    }
-  }
-
   return {
     method,
     setMethod,
@@ -158,6 +150,5 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     loadRequest,
     newRequest,
     saveCurrentRequest,
-    formatJsonBody,
   };
 }

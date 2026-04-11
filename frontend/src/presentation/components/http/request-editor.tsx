@@ -17,6 +17,7 @@ import { Textarea } from "../../../components/ui/textarea";
 import type { AuthType, BodyType, ProxyMode } from "../../../domain/http/types";
 import { AUTH_TYPES, BODY_TYPES } from "../../constants/http";
 import { useHttpRequest } from "../../providers/http-provider";
+import { formatJsonBody } from "../../utils/format";
 import styles from "./http.module.css";
 import { KeyValueEditor } from "./key-value-editor";
 
@@ -46,7 +47,6 @@ export function RequestEditor() {
     setAuth,
     settings,
     setSettings,
-    formatJsonBody,
   } = useHttpRequest();
 
   const [requestTab, setRequestTab] = createSignal("params");
