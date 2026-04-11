@@ -1,0 +1,128 @@
+/* ── Container ─────────────────────────────────────────── */
+.container {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+}
+
+.mainContent {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editorFullHeight {
+  height: 100%;
+}
+
+/* ── Top bar ───────────────────────────────────────────── */
+.topBar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: var(--surface-2);
+  padding: 0 1rem;
+  height: 2.75rem;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+  box-shadow: var(--shadow-bar);
+}
+
+.fileName {
+  flex: 1;
+  font-size: 0.8125rem;
+  font-family: var(--font-mono);
+  color: var(--color-muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileNameActive {
+  color: var(--color-foreground);
+}
+
+.toggleBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--color-muted-foreground);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.toggleBtn:hover {
+  color: var(--color-foreground);
+  background-color: var(--hover-overlay);
+}
+
+.toggleBtnActive {
+  color: var(--color-foreground);
+  background-color: var(--surface-3);
+  box-shadow: var(--shadow-sm), var(--inner-glow);
+}
+
+/* ── Editor panel ──────────────────────────────────────── */
+.editorPanel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--surface-1);
+}
+
+.codeMirrorWrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.codeMirrorWrap :global(.cm-editor) {
+  height: 100%;
+  font-size: 0.8125rem;
+  font-family: var(--font-mono);
+}
+
+.codeMirrorWrap :global(.cm-scroller) {
+  overflow: auto;
+}
+
+/* ── Preview panel ─────────────────────────────────────── */
+.previewPanel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--surface-1);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.previewEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  font-size: 0.8125rem;
+  color: var(--color-muted-foreground);
+}
+
+.rapiDocWrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.rapiDocWrap rapi-doc {
+  display: block;
+  height: 100%;
+}
