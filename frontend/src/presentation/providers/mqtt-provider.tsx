@@ -79,6 +79,7 @@ export interface PublishContextValue {
   presets: Accessor<PublishPreset[]>;
   savePreset: (preset: Omit<PublishPreset, "id">) => void;
   removePreset: (id: string) => void;
+  publish: (topic: string, payload: string, qos: number) => Promise<void>;
 }
 
 type MqttContextValue = ConnectionContextValue &
@@ -113,6 +114,16 @@ export function MqttProvider(props: { children: JSX.Element }) {
   );
   const presetState = createPresetsState(createPresetsStorage());
 
+  const publish = async (
+    topic: string,
+    payload: string,
+    qos: number,
+  ): Promise<void> => {
+    const connId = connState.activeConnectionId();
+    if (!connId) return;
+    await mqttClient.publish(connId, topic, payload, qos, false);
+  };
+
   return (
     <MqttContext.Provider
       value={{
@@ -134,6 +145,7 @@ export function MqttProvider(props: { children: JSX.Element }) {
         ...subsState,
         ...msgState,
         ...presetState,
+        publish,
       }}
     >
       {props.children}

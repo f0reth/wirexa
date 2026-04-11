@@ -11,7 +11,6 @@ import {
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Textarea } from "../../../components/ui/textarea";
 import type { PublishPreset } from "../../../domain/mqtt/types";
-import * as client from "../../../infrastructure/mqtt/client";
 import {
   useMqttConnection,
   useMqttPublish,
@@ -108,27 +107,20 @@ function PublishForm(props: {
   publishQos: () => number;
   setPublishQos: (v: number) => void;
 }) {
-  const { activeConnection, activeConnectionId } = useMqttConnection();
+  const { activeConnection } = useMqttConnection();
+  const { publish } = useMqttPublish();
   const isConnected = () => {
     const conn = activeConnection();
     return conn?.type === "online" && conn.connected;
   };
 
   const handlePublish = async () => {
-    const connId = activeConnectionId();
-    if (
-      !connId ||
-      !props.publishTopic().trim() ||
-      !props.publishPayload().trim()
-    )
-      return;
+    if (!props.publishTopic().trim() || !props.publishPayload().trim()) return;
     try {
-      await client.publish(
-        connId,
+      await publish(
         props.publishTopic(),
         props.publishPayload(),
         props.publishQos(),
-        false,
       );
     } catch (err) {
       console.error("[MQTT] Publish failed:", err);
