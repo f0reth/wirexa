@@ -20,6 +20,7 @@ import type {
   TreeItem,
 } from "../../domain/http/types";
 import * as httpClient from "../../infrastructure/http/client";
+import { createLogger } from "../../infrastructure/logger/client";
 
 export interface RequestContextValue {
   method: Accessor<HttpMethod>;
@@ -83,11 +84,14 @@ const HttpCollectionsContext = createContext<CollectionsContextValue>();
 
 export function HttpProvider(props: { children: JSX.Element }) {
   const collectionsState = createCollectionsState(httpClient);
-  const requestState = createRequestState({
-    sendRequest: httpClient.sendRequest,
-    cancelRequest: httpClient.cancelRequest,
-    updateRequest: httpClient.updateRequest,
-  });
+  const requestState = createRequestState(
+    {
+      sendRequest: httpClient.sendRequest,
+      cancelRequest: httpClient.cancelRequest,
+      updateRequest: httpClient.updateRequest,
+    },
+    createLogger("frontend:http"),
+  );
 
   // 自動保存: 変更から 500ms 後にバックエンドへ保存
   // saveVersion で世代管理し、古い保存が実行されるのを防ぐ

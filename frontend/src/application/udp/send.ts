@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
+import type { Logger } from "../../application/logger";
 import type {
   Endianness,
   FixedLengthField,
@@ -9,7 +10,6 @@ import type {
   UdpTarget,
 } from "../../domain/udp/types";
 import { FIELD_TYPE_SIZES } from "../../domain/udp/types";
-import { log } from "../../infrastructure/logger/client";
 import { withLoading } from "../../shared/async-op";
 
 /** UI 管理用 id を付加したアプリケーション層のフィールド型。 */
@@ -19,7 +19,7 @@ export interface UdpSendApi {
   send(req: UdpSendRequest): Promise<UdpSendResult>;
 }
 
-export function createUdpSendState(api: UdpSendApi) {
+export function createUdpSendState(api: UdpSendApi, logger: Logger) {
   const [selectedTarget, setSelectedTarget] = createSignal<UdpTarget | null>(
     null,
   );
@@ -80,11 +80,10 @@ export function createUdpSendState(api: UdpSendApi) {
   async function send(): Promise<void> {
     const h = host();
     const p = port();
-    log({
-      level: "INFO",
-      source: "frontend:udp",
-      message: "UDP packet sending",
-      attrs: { host: h, port: p, encoding: encoding() },
+    logger.info("UDP packet sending", {
+      host: h,
+      port: p,
+      encoding: encoding(),
     });
     try {
       const result = await withLoading(setLoading, () => {
@@ -109,19 +108,13 @@ export function createUdpSendState(api: UdpSendApi) {
         };
         return api.send(request);
       });
-      log({
-        level: "INFO",
-        source: "frontend:udp",
-        message: "UDP packet sent",
-        attrs: { host: h, port: p, bytes: result.bytesSent },
+      logger.info("UDP packet sent", {
+        host: h,
+        port: p,
+        bytes: result.bytesSent,
       });
     } catch (err) {
-      log({
-        level: "ERROR",
-        source: "frontend:udp",
-        message: "UDP send failed",
-        attrs: { host: h, port: p, error: String(err) },
-      });
+      logger.error("UDP send failed", { host: h, port: p, error: String(err) });
       throw err;
     }
   }

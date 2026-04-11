@@ -6,6 +6,7 @@ import {
   onCleanup,
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
+import type { Logger } from "../../application/logger";
 import {
   MQTT_MAX_MESSAGES as MAX_MESSAGES,
   MQTT_MAX_TOPICS as MAX_TOPICS,
@@ -20,7 +21,6 @@ import type {
   Subscription,
   Tab,
 } from "../../domain/mqtt/types";
-import { log } from "../../infrastructure/logger/client";
 
 export type { ConnectionPersistence };
 
@@ -114,6 +114,7 @@ export function createConnectionsState(
   persistence: ConnectionPersistence,
   profiles: () => BrokerProfile[],
   saveProfile: (p: BrokerProfile) => Promise<void>,
+  logger: Logger,
 ) {
   const [connections, setConnections] = createStore<
     Record<string, ConnectionStateExt>
@@ -335,11 +336,9 @@ export function createConnectionsState(
   const handleConnect = async (profileId: string) => {
     const profile = profiles().find((p) => p.id === profileId);
     if (!profile) return;
-    log({
-      level: "INFO",
-      source: "frontend:mqtt",
-      message: "MQTT connecting",
-      attrs: { broker: profile.broker, profile: profile.name },
+    logger.info("MQTT connecting", {
+      broker: profile.broker,
+      profile: profile.name,
     });
     try {
       const connId = await api.connect(profile);
@@ -353,18 +352,14 @@ export function createConnectionsState(
         }),
       );
       setActiveConnectionId(connId);
-      log({
-        level: "INFO",
-        source: "frontend:mqtt",
-        message: "MQTT connect initiated",
-        attrs: { connection_id: connId, broker: profile.broker },
+      logger.info("MQTT connect initiated", {
+        connection_id: connId,
+        broker: profile.broker,
       });
     } catch (err) {
-      log({
-        level: "ERROR",
-        source: "frontend:mqtt",
-        message: "MQTT connect failed",
-        attrs: { broker: profile.broker, error: String(err) },
+      logger.error("MQTT connect failed", {
+        broker: profile.broker,
+        error: String(err),
       });
       console.error("[MQTT] Connect failed:", err);
     }
@@ -375,18 +370,11 @@ export function createConnectionsState(
     if (!connId) return;
     try {
       await api.disconnect(connId);
-      log({
-        level: "INFO",
-        source: "frontend:mqtt",
-        message: "MQTT disconnected",
-        attrs: { connection_id: connId },
-      });
+      logger.info("MQTT disconnected", { connection_id: connId });
     } catch (err) {
-      log({
-        level: "ERROR",
-        source: "frontend:mqtt",
-        message: "MQTT disconnect failed",
-        attrs: { connection_id: connId, error: String(err) },
+      logger.error("MQTT disconnect failed", {
+        connection_id: connId,
+        error: String(err),
       });
       console.error("[MQTT] Disconnect failed:", err);
     }

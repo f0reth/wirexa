@@ -12,6 +12,7 @@ import type {
   UdpReceivedMessage,
   UdpTarget,
 } from "../../domain/udp/types";
+import { createLogger } from "../../infrastructure/logger/client";
 import * as udpClient from "../../infrastructure/udp/client";
 
 export interface UdpSendContextValue {
@@ -63,7 +64,7 @@ const UdpTargetsContext = createContext<UdpTargetsContextValue>();
 const UdpReceiveContext = createContext<UdpReceiveContextValue>();
 
 export function UdpProvider(props: { children: JSX.Element }) {
-  const sendState = createUdpSendState(udpClient);
+  const sendState = createUdpSendState(udpClient, createLogger("frontend:udp"));
   const targetsState = createTargetsState(udpClient);
   const receiveState = createUdpReceiveState(udpClient);
 

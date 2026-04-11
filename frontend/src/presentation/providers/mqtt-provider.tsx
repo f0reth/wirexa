@@ -21,6 +21,7 @@ import type {
   Subscription,
   Tab,
 } from "../../domain/mqtt/types";
+import { createLogger } from "../../infrastructure/logger/client";
 import * as mqttClient from "../../infrastructure/mqtt/client";
 import { onMqttEvent } from "../../infrastructure/mqtt/events";
 import {
@@ -92,12 +93,14 @@ const MqttContext = createContext<MqttContextValue>();
 export function MqttProvider(props: { children: JSX.Element }) {
   const { profiles, loadProfiles, saveProfile, deleteProfile } =
     createProfilesState(mqttClient);
+  const mqttLogger = createLogger("frontend:mqtt");
   const connState = createConnectionsState(
     mqttClient,
     onMqttEvent,
     createLastProfileStorage(),
     profiles,
     saveProfile,
+    mqttLogger,
   );
 
   onMount(() => {
@@ -107,6 +110,7 @@ export function MqttProvider(props: { children: JSX.Element }) {
     connState.activeConnection,
     connState.updateConnection,
     mqttClient,
+    mqttLogger,
   );
   const msgState = createMessagesState(
     connState.activeConnection,

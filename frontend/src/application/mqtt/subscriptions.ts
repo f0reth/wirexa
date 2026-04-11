@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
+import type { Logger } from "../../application/logger";
 import { compilePattern } from "../../domain/mqtt/topic";
 import type { Subscription } from "../../domain/mqtt/types";
-import { log } from "../../infrastructure/logger/client";
 import type { ConnectionStateExt } from "./connections";
 
 export interface SubscriptionApi {
@@ -16,6 +16,7 @@ export function createSubscriptionsState(
     updater: (state: ConnectionStateExt) => ConnectionStateExt,
   ) => void,
   api: SubscriptionApi,
+  logger: Logger,
 ) {
   const [newTopic, setNewTopic] = createSignal("");
   const [newQos, setNewQos] = createSignal<number>(0);
@@ -38,18 +39,16 @@ export function createSubscriptionsState(
     if (connId) {
       try {
         await api.subscribe(connId, t, q);
-        log({
-          level: "INFO",
-          source: "frontend:mqtt",
-          message: "MQTT subscribed",
-          attrs: { connection_id: connId, topic: t, qos: q },
+        logger.info("MQTT subscribed", {
+          connection_id: connId,
+          topic: t,
+          qos: q,
         });
       } catch (err) {
-        log({
-          level: "ERROR",
-          source: "frontend:mqtt",
-          message: "MQTT subscribe failed",
-          attrs: { connection_id: connId, topic: t, error: String(err) },
+        logger.error("MQTT subscribe failed", {
+          connection_id: connId,
+          topic: t,
+          error: String(err),
         });
         console.error(`[MQTT] Subscribe failed for ${t}:`, err);
         return;
@@ -79,22 +78,15 @@ export function createSubscriptionsState(
     if (conn?.type === "online" && conn.connected) {
       try {
         await api.unsubscribe(connId, sub.topic);
-        log({
-          level: "INFO",
-          source: "frontend:mqtt",
-          message: "MQTT unsubscribed",
-          attrs: { connection_id: connId, topic: sub.topic },
+        logger.info("MQTT unsubscribed", {
+          connection_id: connId,
+          topic: sub.topic,
         });
       } catch (err) {
-        log({
-          level: "ERROR",
-          source: "frontend:mqtt",
-          message: "MQTT unsubscribe failed",
-          attrs: {
-            connection_id: connId,
-            topic: sub.topic,
-            error: String(err),
-          },
+        logger.error("MQTT unsubscribe failed", {
+          connection_id: connId,
+          topic: sub.topic,
+          error: String(err),
         });
         console.error(`[MQTT] Unsubscribe failed for ${sub.topic}:`, err);
       }

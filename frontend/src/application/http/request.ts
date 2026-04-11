@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import type { Logger } from "../../application/logger";
 import type {
   HttpMethod,
   HttpRequest,
@@ -9,7 +10,6 @@ import type {
   RequestSettings,
 } from "../../domain/http/types";
 import { DEFAULT_SETTINGS } from "../../domain/http/types";
-import { log } from "../../infrastructure/logger/client";
 import { withLoading } from "../../shared/async-op";
 
 export interface RequestApi {
@@ -18,7 +18,7 @@ export interface RequestApi {
   updateRequest(collectionId: string, req: HttpRequest): Promise<void>;
 }
 
-export function createRequestState(api: RequestApi) {
+export function createRequestState(api: RequestApi, logger: Logger) {
   const [method, setMethod] = createSignal<HttpMethod>("GET");
   const [url, setUrl] = createSignal("");
   const [headers, setHeaders] = createSignal<KeyValuePair[]>([]);
@@ -48,12 +48,7 @@ export function createRequestState(api: RequestApi) {
   async function sendRequest(): Promise<void> {
     const m = method();
     const u = url();
-    log({
-      level: "INFO",
-      source: "frontend:http",
-      message: "HTTP request sent",
-      attrs: { method: m, url: u },
-    });
+    logger.info("HTTP request sent", { method: m, url: u });
     try {
       const res = await withLoading(setLoading, () =>
         api.sendRequest({
@@ -69,23 +64,17 @@ export function createRequestState(api: RequestApi) {
         }),
       );
       setResponse(res);
-      log({
-        level: "INFO",
-        source: "frontend:http",
-        message: "HTTP response received",
-        attrs: {
-          method: m,
-          url: u,
-          status: res.statusCode,
-          latency_ms: res.timingMs,
-        },
+      logger.info("HTTP response received", {
+        method: m,
+        url: u,
+        status: res.statusCode,
+        latency_ms: res.timingMs,
       });
     } catch (err) {
-      log({
-        level: "ERROR",
-        source: "frontend:http",
-        message: "HTTP request failed",
-        attrs: { method: m, url: u, error: String(err) },
+      logger.error("HTTP request failed", {
+        method: m,
+        url: u,
+        error: String(err),
       });
       throw err;
     }
