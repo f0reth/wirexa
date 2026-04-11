@@ -19,6 +19,12 @@ import {
   setGhostPos,
 } from "./drag-state";
 import styles from "./sidebar.module.css";
+import {
+  DROP_COLLECTION_ID_ATTR,
+  DROP_PARENT_ID_ATTR,
+  DROP_POSITION_ATTR,
+  DROP_ZONE_ATTR,
+} from "./tree-item-node";
 
 export function CollectionTree() {
   const requestCtx = useHttpRequest();
@@ -38,8 +44,24 @@ export function CollectionTree() {
     collectionsCtx.refreshCollections();
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (dragItem()) {
-        setGhostPos({ x: e.clientX, y: e.clientY });
+      if (!dragItem()) return;
+      setGhostPos({ x: e.clientX, y: e.clientY });
+
+      // elementFromPoint で現在マウス下にあるドロップゾーンを検出する。
+      // この方式は mouseenter/mouseleave より確実で、ドラッグ開始時に
+      // すでにゾーン上にある場合も正しく反応する。
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const zone = el?.closest(`[${DROP_ZONE_ATTR}]`) as HTMLElement | null;
+      if (zone) {
+        const collectionId = zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
+        const parentId = zone.getAttribute(DROP_PARENT_ID_ATTR) ?? "";
+        const position = parseInt(
+          zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
+          10,
+        );
+        setDropTarget({ collectionId, parentId, position });
+      } else {
+        setDropTarget(null);
       }
     };
 

@@ -2,51 +2,16 @@ import { clsx } from "clsx";
 import { ChevronRight, Folder, FolderPlus, Plus, Trash2 } from "lucide-solid";
 import { createSignal, For, Show } from "solid-js";
 import type { Collection, TreeItem } from "../../../domain/http/types";
-import { dragItem, dropTarget, setDropTarget } from "./drag-state";
+import { dragItem, dropTarget } from "./drag-state";
 import styles from "./sidebar.module.css";
-import { TreeItemNode } from "./tree-item-node";
-
-/** コレクションルートへのインサーションゾーン */
-function RootInsertionZone(props: { collectionId: string; position: number }) {
-  const isActive = () => {
-    const dt = dropTarget();
-    return (
-      dragItem() !== null &&
-      dt?.collectionId === props.collectionId &&
-      dt?.parentId === "" &&
-      dt?.position === props.position
-    );
-  };
-
-  return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: drag insertion zone for collection root
-    <div
-      class={clsx(
-        styles.insertionZone,
-        dragItem() && styles.insertionZoneVisible,
-        isActive() && styles.insertionZoneActive,
-      )}
-      onMouseEnter={() => {
-        if (!dragItem()) return;
-        setDropTarget({
-          collectionId: props.collectionId,
-          parentId: "",
-          position: props.position,
-        });
-      }}
-      onMouseLeave={() => {
-        const dt = dropTarget();
-        if (
-          dt?.collectionId === props.collectionId &&
-          dt?.parentId === "" &&
-          dt?.position === props.position
-        ) {
-          setDropTarget(null);
-        }
-      }}
-    />
-  );
-}
+import {
+  DROP_COLLECTION_ID_ATTR,
+  DROP_PARENT_ID_ATTR,
+  DROP_POSITION_ATTR,
+  DROP_ZONE_ATTR,
+  InsertionZone,
+  TreeItemNode,
+} from "./tree-item-node";
 
 export function CollectionNode(props: {
   collection: Collection;
@@ -86,9 +51,31 @@ export function CollectionNode(props: {
     props.setRenamingCollectionId(null);
   };
 
+  // コレクションルートへのドロップがアクティブかどうか（ヘッダーへのホバー）
+  const isCollectionDropTarget = () => {
+    const dt = dropTarget();
+    return (
+      dragItem() !== null &&
+      dt?.collectionId === props.collection.id &&
+      dt?.parentId === "" &&
+      dt?.position === -1
+    );
+  };
+
   return (
     <div class={styles.treeNode}>
-      <div class={styles.treeNodeHeader}>
+      <div
+        class={clsx(
+          styles.treeNodeHeader,
+          isCollectionDropTarget() && styles.dropTarget,
+        )}
+        {...{
+          [DROP_ZONE_ATTR]: "true",
+          [DROP_COLLECTION_ID_ATTR]: props.collection.id,
+          [DROP_PARENT_ID_ATTR]: "",
+          [DROP_POSITION_ATTR]: "-1",
+        }}
+      >
         <button
           type="button"
           class={styles.treeNodeToggle}
@@ -103,7 +90,7 @@ export function CollectionNode(props: {
             when={isRenaming()}
             fallback={
               <>
-                {/* biome-ignore lint/a11y/noStaticElementInteractions: double-click-to-rename is a progressive enhancement; primary rename path is accessible via keyboard */}
+                {/* biome-ignore lint/a11y/noStaticElementInteractions: double-click-to-rename */}
                 <span
                   class={styles.treeNodeName}
                   onDblClick={(e) => {
@@ -172,8 +159,9 @@ export function CollectionNode(props: {
           <For each={props.collection.items}>
             {(item, index) => (
               <>
-                <RootInsertionZone
+                <InsertionZone
                   collectionId={props.collection.id}
+                  parentId=""
                   position={index()}
                 />
                 <TreeItemNode
@@ -193,8 +181,9 @@ export function CollectionNode(props: {
               </>
             )}
           </For>
-          <RootInsertionZone
+          <InsertionZone
             collectionId={props.collection.id}
+            parentId=""
             position={props.collection.items.length}
           />
         </div>

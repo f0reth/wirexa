@@ -3,19 +3,18 @@ import { ChevronRight, Folder, FolderPlus, Plus, Trash2 } from "lucide-solid";
 import { createSignal, For, Show } from "solid-js";
 import type { HttpMethod, TreeItem } from "../../../domain/http/types";
 import { METHOD_COLORS } from "../../constants/http";
-import {
-  dragItem,
-  dropTarget,
-  setDragItem,
-  setDropTarget,
-  setGhostPos,
-} from "./drag-state";
+import { dragItem, dropTarget, setDragItem, setGhostPos } from "./drag-state";
 import styles from "./sidebar.module.css";
 
 const LONG_PRESS_MS = 250;
 
-/** アイテム間の挿入ゾーン。ドラッグ中にホバーすると挿入位置を示すラインを表示する。 */
-function InsertionZone(props: {
+export const DROP_ZONE_ATTR = "data-drop-zone";
+export const DROP_COLLECTION_ID_ATTR = "data-drop-collection-id";
+export const DROP_PARENT_ID_ATTR = "data-drop-parent-id";
+export const DROP_POSITION_ATTR = "data-drop-position";
+
+/** アイテム間の挿入ゾーン */
+export function InsertionZone(props: {
   collectionId: string;
   parentId: string;
   position: number;
@@ -31,41 +30,28 @@ function InsertionZone(props: {
   };
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: drag insertion zone
     <div
       class={clsx(
         styles.insertionZone,
         dragItem() && styles.insertionZoneVisible,
         isActive() && styles.insertionZoneActive,
       )}
-      onMouseEnter={() => {
-        if (!dragItem()) return;
-        setDropTarget({
-          collectionId: props.collectionId,
-          parentId: props.parentId,
-          position: props.position,
-        });
-      }}
-      onMouseLeave={() => {
-        const dt = dropTarget();
-        if (
-          dt?.collectionId === props.collectionId &&
-          dt?.parentId === props.parentId &&
-          dt?.position === props.position
-        ) {
-          setDropTarget(null);
-        }
+      {...{
+        [DROP_ZONE_ATTR]: "true",
+        [DROP_COLLECTION_ID_ATTR]: props.collectionId,
+        [DROP_PARENT_ID_ATTR]: props.parentId,
+        [DROP_POSITION_ATTR]: String(props.position),
       }}
     />
   );
 }
 
-/** ドラッグ開始ハンドラを生成する。長押し（LONG_PRESS_MS）でドラッグモードに移行する。 */
+/** 長押し（LONG_PRESS_MS）またはマウス移動5px超でドラッグ開始する */
 function makeDragHandlers(
   collectionId: string,
   itemId: string,
   name: string,
-  onSuppressRef: { suppress: boolean },
+  suppressRef: { suppress: boolean },
 ) {
   const handleMouseDown = (e: MouseEvent) => {
     if (e.button !== 0) return;
@@ -73,7 +59,7 @@ function makeDragHandlers(
     const startY = e.clientY;
 
     const activate = (x: number, y: number) => {
-      onSuppressRef.suppress = true;
+      suppressRef.suppress = true;
       setDragItem({ collectionId, itemId, name });
       setGhostPos({ x, y });
       document.removeEventListener("mousemove", handleMove);
@@ -133,7 +119,6 @@ export function TreeItemNode(props: {
   setRenamingItemId: (id: string | null) => void;
 }) {
   const [expanded, setExpanded] = createSignal(false);
-  const [isFolderDropTarget, setIsFolderDropTarget] = createSignal(false);
 
   if (props.item.type === "folder") {
     const isRenaming = () => props.renamingItemId === props.item.id;
@@ -144,6 +129,17 @@ export function TreeItemNode(props: {
       props.item.name,
       suppressRef,
     );
+
+    // dropTarget がこのフォルダを指しているとき（position=-1）にハイライト
+    const isFolderDropTarget = () => {
+      const dt = dropTarget();
+      return (
+        dragItem() !== null &&
+        dt?.collectionId === props.collectionId &&
+        dt?.parentId === props.item.id &&
+        dt?.position === -1
+      );
+    };
 
     const handleRenameCommit = (value: string) => {
       const trimmed = value.trim();
@@ -162,28 +158,13 @@ export function TreeItemNode(props: {
             isFolderDropTarget() && styles.dropTarget,
           )}
           style={{ "padding-left": `${props.depth * 0.75}rem` }}
-          onMouseEnter={() => {
-            if (dragItem() && dragItem()?.itemId !== props.item.id) {
-              setIsFolderDropTarget(true);
-              setDropTarget({
-                collectionId: props.collectionId,
-                parentId: props.item.id,
-                position: -1,
-              });
-            }
-          }}
-          onMouseLeave={() => {
-            setIsFolderDropTarget(false);
-            const dt = dropTarget();
-            if (
-              dt?.collectionId === props.collectionId &&
-              dt?.parentId === props.item.id &&
-              dt?.position === -1
-            ) {
-              setDropTarget(null);
-            }
-          }}
           onMouseDown={handleMouseDown}
+          {...{
+            [DROP_ZONE_ATTR]: "true",
+            [DROP_COLLECTION_ID_ATTR]: props.collectionId,
+            [DROP_PARENT_ID_ATTR]: props.item.id,
+            [DROP_POSITION_ATTR]: "-1",
+          }}
         >
           <button
             type="button"
@@ -205,7 +186,7 @@ export function TreeItemNode(props: {
               when={isRenaming()}
               fallback={
                 <>
-                  {/* biome-ignore lint/a11y/noStaticElementInteractions: double-click-to-rename is a progressive enhancement; primary rename path is accessible via keyboard */}
+                  {/* biome-ignore lint/a11y/noStaticElementInteractions: double-click-to-rename */}
                   <span
                     class={styles.treeNodeName}
                     onDblClick={(e) => {
@@ -368,7 +349,7 @@ export function TreeItemNode(props: {
           when={isRenaming()}
           fallback={
             <>
-              {/* biome-ignore lint/a11y/noStaticElementInteractions: double-click-to-rename is a progressive enhancement; primary rename is accessible via keyboard within the select button */}
+              {/* biome-ignore lint/a11y/noStaticElementInteractions: double-click-to-rename */}
               <span
                 class={styles.requestName}
                 onDblClick={(e) => {
