@@ -20,18 +20,20 @@ import (
 const wirexaConfigDir = "Wirexa"
 
 type App struct {
-	mqttHandler *adapters.MqttHandler
-	httpHandler *adapters.HttpHandler
-	udpHandler  *adapters.UdpHandler
-	logHandler  *adapters.LogHandler
+	mqttHandler    *adapters.MqttHandler
+	httpHandler    *adapters.HttpHandler
+	udpHandler     *adapters.UdpHandler
+	logHandler     *adapters.LogHandler
+	openAPIHandler *adapters.OpenAPIHandler
 }
 
 func NewApp() *App {
 	return &App{
-		mqttHandler: &adapters.MqttHandler{},
-		httpHandler: &adapters.HttpHandler{},
-		udpHandler:  &adapters.UdpHandler{},
-		logHandler:  &adapters.LogHandler{},
+		mqttHandler:    &adapters.MqttHandler{},
+		httpHandler:    &adapters.HttpHandler{},
+		udpHandler:     &adapters.UdpHandler{},
+		logHandler:     &adapters.LogHandler{},
+		openAPIHandler: &adapters.OpenAPIHandler{},
 	}
 }
 
@@ -86,6 +88,8 @@ func (a *App) startup(ctx context.Context) {
 	udpEmitter := infra.NewWailsEmitter(ctx)
 	listenSvc := udpapp.NewUdpListenerService(udpSocket, udpEmitter, logger)
 	adapters.SetupUdpHandler(a.udpHandler, sendSvc, targetSvc, listenSvc)
+
+	adapters.SetupOpenAPIHandler(ctx, a.openAPIHandler)
 }
 
 func (a *App) shutdown(_ context.Context) {

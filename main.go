@@ -30,6 +30,7 @@ func main() {
 			app.httpHandler,
 			app.udpHandler,
 			app.logHandler,
+			app.openAPIHandler,
 		},
 	})
 	if err != nil {
