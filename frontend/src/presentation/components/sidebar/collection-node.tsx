@@ -50,7 +50,14 @@ export function CollectionNode(props: {
     setIsDragOver(true);
   };
 
-  const handleDragLeave = () => setIsDragOver(false);
+  const handleDragLeave = (e: DragEvent) => {
+    if (
+      e.currentTarget instanceof Element &&
+      e.currentTarget.contains(e.relatedTarget as Node)
+    )
+      return;
+    setIsDragOver(false);
+  };
 
   const handleDrop = (e: DragEvent) => {
     e.preventDefault();

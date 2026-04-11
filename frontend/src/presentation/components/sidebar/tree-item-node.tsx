@@ -45,6 +45,7 @@ export function TreeItemNode(props: {
   const [expanded, setExpanded] = createSignal(false);
   const [isDragging, setIsDragging] = createSignal(false);
   const [isDragOver, setIsDragOver] = createSignal(false);
+  const [isDragOverChildren, setIsDragOverChildren] = createSignal(false);
 
   if (props.item.type === "folder") {
     const isRenaming = () => props.renamingItemId === props.item.id;
@@ -75,12 +76,48 @@ export function TreeItemNode(props: {
       setIsDragOver(true);
     };
 
-    const handleDragLeave = () => setIsDragOver(false);
+    const handleDragLeave = (e: DragEvent) => {
+      if (
+        e.currentTarget instanceof Element &&
+        e.currentTarget.contains(e.relatedTarget as Node)
+      )
+        return;
+      setIsDragOver(false);
+    };
 
     const handleDrop = (e: DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
       setIsDragOver(false);
+      const raw = e.dataTransfer?.getData("application/wirexa-item");
+      if (!raw) return;
+      const data = decodeDragData(raw);
+      if (!data || data.collectionId !== props.collectionId) return;
+      if (data.itemId === props.item.id) return;
+      props.onMoveItem(data.collectionId, data.itemId, props.item.id);
+      setExpanded(true);
+    };
+
+    const handleDragOverChildren = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes("application/wirexa-item")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOverChildren(true);
+    };
+
+    const handleDragLeaveChildren = (e: DragEvent) => {
+      if (
+        e.currentTarget instanceof Element &&
+        e.currentTarget.contains(e.relatedTarget as Node)
+      )
+        return;
+      setIsDragOverChildren(false);
+    };
+
+    const handleDropChildren = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOverChildren(false);
       const raw = e.dataTransfer?.getData("application/wirexa-item");
       if (!raw) return;
       const data = decodeDragData(raw);
@@ -191,7 +228,16 @@ export function TreeItemNode(props: {
           </div>
         </div>
         <Show when={expanded()}>
-          <div class={styles.treeChildren}>
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: drop target for moving items into this folder */}
+          <div
+            class={clsx(
+              styles.treeChildren,
+              isDragOverChildren() && styles.dropTarget,
+            )}
+            onDragOver={handleDragOverChildren}
+            onDragLeave={handleDragLeaveChildren}
+            onDrop={handleDropChildren}
+          >
             <For each={props.item.children}>
               {(child) => (
                 <TreeItemNode
