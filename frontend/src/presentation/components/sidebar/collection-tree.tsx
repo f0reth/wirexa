@@ -43,7 +43,8 @@ export function CollectionTree() {
     collectionsCtx.refreshCollections();
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!dragItem()) return;
+      const di = dragItem();
+      if (!di) return;
       setGhostPos({ x: e.clientX, y: e.clientY });
 
       // elementFromPoint で現在マウス下にあるドロップゾーンを検出する。
@@ -58,7 +59,18 @@ export function CollectionTree() {
           zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
           10,
         );
-        setDropTarget({ collectionId, parentId, position });
+        // ソースフォルダのヘッダー（position=-1）は no-op になるため除外する。
+        // これにより、上方向にドラッグした際にソースフォルダのヘッダーを
+        // 通過しても元フォルダ末尾への誤ドロップが発生しなくなる。
+        if (
+          collectionId === di.collectionId &&
+          parentId === di.sourceParentId &&
+          position === -1
+        ) {
+          setDropTarget(null);
+        } else {
+          setDropTarget({ collectionId, parentId, position });
+        }
       } else {
         setDropTarget(null);
       }
@@ -72,12 +84,22 @@ export function CollectionTree() {
         const el = document.elementFromPoint(e.clientX, e.clientY);
         const zone = el?.closest(`[${DROP_ZONE_ATTR}]`) as HTMLElement | null;
         if (zone) {
+          const collectionId = zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
           const parentId = zone.getAttribute(DROP_PARENT_ID_ATTR) ?? "";
           const position = parseInt(
             zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
             10,
           );
-          handleMoveItem(di.collectionId, di.itemId, parentId, position);
+          // ソースフォルダのヘッダーへのドロップは no-op なので除外する。
+          if (
+            !(
+              collectionId === di.collectionId &&
+              parentId === di.sourceParentId &&
+              position === -1
+            )
+          ) {
+            handleMoveItem(di.collectionId, di.itemId, parentId, position);
+          }
         }
       }
       setDragItem(null);
