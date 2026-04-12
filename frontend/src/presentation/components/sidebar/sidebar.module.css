@@ -94,7 +94,7 @@
 }
 
 .collectionTitle {
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--color-muted-foreground);
   text-transform: uppercase;
@@ -303,7 +303,7 @@
 }
 
 .methodBadge {
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   font-weight: 700;
   font-family: var(--font-mono);
   flex-shrink: 0;
@@ -347,8 +347,8 @@
 }
 
 .brokerDot {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -378,7 +378,7 @@
 }
 
 .brokerUrl {
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   color: var(--color-muted-foreground);
   overflow: hidden;
   text-overflow: ellipsis;

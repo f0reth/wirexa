@@ -84,6 +84,7 @@
   color: var(--color-foreground);
   background-color: var(--surface-3);
   box-shadow: var(--shadow-sm), var(--inner-glow);
+  border-bottom: 2px solid var(--color-primary);
 }
 
 .tabActive:hover {
@@ -135,7 +136,7 @@
   align-items: center;
   gap: 0.25rem;
   padding: 0.25rem 0.5rem;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 500;
   border-radius: 0.375rem;
   border: none;
@@ -369,7 +370,7 @@
 /* ── Topic filter select ─────────────────────────────────── */
 .topicFilterSelect {
   padding: 0.25rem 0.5rem;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 500;
   border-radius: 0.375rem;
   border: none;
@@ -481,7 +482,7 @@
 }
 
 .messageTime {
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   line-height: 1rem;
   color: var(--color-muted-foreground);
   font-variant-numeric: tabular-nums;
@@ -493,7 +494,7 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   line-height: 1rem;
   color: var(--color-muted-foreground);
 }
@@ -530,7 +531,7 @@
 }
 
 .messageDetailTime {
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   color: var(--color-muted-foreground);
   font-variant-numeric: tabular-nums;
 }
@@ -641,7 +642,7 @@
 
 .presetTopic {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   color: var(--color-muted-foreground);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -740,6 +741,7 @@
   background-color: var(--surface-3);
   border-color: var(--border-prominent);
   box-shadow: var(--shadow-sm), var(--inner-glow);
+  border-bottom: 2px solid var(--color-primary);
 }
 
 .brokerTabActive:hover {
