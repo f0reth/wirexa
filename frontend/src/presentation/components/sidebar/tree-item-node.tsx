@@ -70,7 +70,7 @@ function makeDragHandlers(
   itemId: string,
   name: string,
   sourceParentId: string,
-  sourceIndex: number,
+  getSourceIndex: () => number,
   suppressRef: { suppress: boolean },
 ) {
   const handleMouseDown = (e: MouseEvent) => {
@@ -80,7 +80,13 @@ function makeDragHandlers(
 
     const activate = (x: number, y: number) => {
       suppressRef.suppress = true;
-      setDragItem({ collectionId, itemId, name, sourceParentId, sourceIndex });
+      setDragItem({
+        collectionId,
+        itemId,
+        name,
+        sourceParentId,
+        sourceIndex: getSourceIndex(),
+      });
       setGhostPos({ x, y });
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
@@ -150,7 +156,7 @@ export function TreeItemNode(props: {
       props.item.id,
       props.item.name,
       props.sourceParentId,
-      props.sourceIndex,
+      () => props.sourceIndex,
       suppressRef,
     );
 
@@ -313,7 +319,7 @@ export function TreeItemNode(props: {
     props.item.id,
     props.item.name,
     props.sourceParentId,
-    props.sourceIndex,
+    () => props.sourceIndex,
     suppressRef,
   );
 
