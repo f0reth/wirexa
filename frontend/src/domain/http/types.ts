@@ -10,7 +10,12 @@ export interface KeyValuePair {
 
 export interface RequestBody {
   type: "none" | "json" | "text" | "form-urlencoded" | "form-data" | "file";
-  content: string;
+  contents: Partial<
+    Record<
+      "none" | "json" | "text" | "form-urlencoded" | "form-data" | "file",
+      string
+    >
+  >;
 }
 
 export type AuthType = "none" | "basic" | "bearer";

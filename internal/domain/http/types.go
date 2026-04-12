@@ -41,8 +41,8 @@ type KeyValuePair struct {
 
 // RequestBody はリクエストボディを表す。
 type RequestBody struct {
-	Type    string `json:"type"` // "none"|"json"|"text"|"form-urlencoded"|"form-data"|"file"
-	Content string `json:"content"`
+	Type     string            `json:"type"`     // "none"|"json"|"text"|"form-urlencoded"|"form-data"|"file"
+	Contents map[string]string `json:"contents"` // ボディタイプごとのコンテンツ
 }
 
 // HttpResponse は HTTP レスポンスを表す。

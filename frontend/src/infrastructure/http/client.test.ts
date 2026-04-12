@@ -60,7 +60,7 @@ function makeWailsRequest(overrides: Record<string, unknown> = {}) {
     url: "https://example.com",
     headers: [],
     params: [],
-    body: { type: "none", content: "" },
+    body: { type: "none", contents: {} },
     auth: { type: "none", username: "", password: "", token: "" },
     ...overrides,
   };
@@ -85,7 +85,7 @@ function makeDomainRequest() {
     url: "https://example.com",
     headers: [] as { key: string; value: string; enabled: boolean }[],
     params: [] as { key: string; value: string; enabled: boolean }[],
-    body: { type: "none" as const, content: "" },
+    body: { type: "none" as const, contents: {} },
     auth: { type: "none" as const, username: "", password: "", token: "" },
     settings: {
       timeoutSec: 0,

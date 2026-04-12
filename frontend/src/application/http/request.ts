@@ -25,7 +25,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
   const [params, setParams] = createSignal<KeyValuePair[]>([]);
   const [body, setBody] = createSignal<RequestBody>({
     type: "none",
-    content: "",
+    contents: {},
   });
   const [auth, setAuth] = createSignal<RequestAuth>({
     type: "none",
@@ -102,7 +102,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     setUrl("");
     setHeaders([]);
     setParams([]);
-    setBody({ type: "none", content: "" });
+    setBody({ type: "none", contents: {} });
     setAuth({ type: "none", username: "", password: "", token: "" });
     setSettings({ ...DEFAULT_SETTINGS });
     setActiveRequestId(null);

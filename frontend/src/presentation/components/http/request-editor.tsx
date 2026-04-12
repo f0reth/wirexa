@@ -49,6 +49,13 @@ export function RequestEditor() {
     setSettings,
   } = useHttpRequest();
 
+  const bodyContent = () => body().contents[body().type] ?? "";
+  const setBodyContent = (content: string) =>
+    setBody({
+      ...body(),
+      contents: { ...body().contents, [body().type]: content },
+    });
+
   const [requestTab, setRequestTab] = createSignal("params");
 
   return (
@@ -125,14 +132,14 @@ export function RequestEditor() {
                     body().type === "form-urlencoded" ||
                     body().type === "form-data";
                   const formPairs = createMemo(() =>
-                    isForm() ? parseFormPairs(body().content) : [],
+                    isForm() ? parseFormPairs(bodyContent()) : [],
                   );
                   return (
                     <Switch>
                       <Match when={body().type === "file"}>
                         <div class={styles.filePickerRow}>
                           <Input
-                            value={body().content}
+                            value={bodyContent()}
                             placeholder="No file selected"
                             readOnly
                             class={styles.filePathInput}
@@ -143,7 +150,7 @@ export function RequestEditor() {
                             onClick={async () => {
                               const path = await OpenFilePicker();
                               if (path) {
-                                setBody({ ...body(), content: path });
+                                setBodyContent(path);
                               }
                             }}
                           >
@@ -155,30 +162,20 @@ export function RequestEditor() {
                         <KeyValueEditor
                           pairs={formPairs()}
                           onChange={(pairs) =>
-                            setBody({
-                              ...body(),
-                              content: serializeFormPairs(pairs),
-                            })
+                            setBodyContent(serializeFormPairs(pairs))
                           }
                         />
                       </Match>
                       <Match when={body().type === "json"}>
                         <JsonBodyEditor
-                          value={body().content}
-                          onChange={(content) =>
-                            setBody({ ...body(), content })
-                          }
+                          value={bodyContent()}
+                          onChange={(content) => setBodyContent(content)}
                         />
                       </Match>
                       <Match when={true}>
                         <Textarea
-                          value={body().content}
-                          onInput={(e) =>
-                            setBody({
-                              ...body(),
-                              content: e.currentTarget.value,
-                            })
-                          }
+                          value={bodyContent()}
+                          onInput={(e) => setBodyContent(e.currentTarget.value)}
                           placeholder="Enter body content..."
                           class={styles.bodyTextarea}
                         />

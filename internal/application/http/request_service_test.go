@@ -112,7 +112,7 @@ func TestHttpRequestService_SendRequest_PassesRequestToTransport(t *testing.T) {
 		Headers: []domain.KeyValuePair{
 			{Key: "Content-Type", Value: "application/json", Enabled: true},
 		},
-		Body: domain.RequestBody{Type: "json", Content: `{"x":1}`},
+		Body: domain.RequestBody{Type: "json", Contents: map[string]string{"json": `{"x":1}`}},
 		Auth: domain.RequestAuth{Type: "bearer", Token: "tok123"},
 	}
 	svc.SendRequest(input)

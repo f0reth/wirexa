@@ -65,7 +65,7 @@ export namespace httpdomain {
 	}
 	export class RequestBody {
 	    type: string;
-	    content: string;
+	    contents: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
 	        return new RequestBody(source);
@@ -74,7 +74,7 @@ export namespace httpdomain {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.type = source["type"];
-	        this.content = source["content"];
+	        this.contents = source["contents"];
 	    }
 	}
 	export class KeyValuePair {

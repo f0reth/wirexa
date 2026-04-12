@@ -48,29 +48,30 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	}
 	parsedURL.RawQuery = q.Encode()
 
+	bodyContent := req.Body.Contents[req.Body.Type]
 	var bodyReader io.Reader
 	contentType := ""
 	switch req.Body.Type {
 	case "json":
-		bodyReader = strings.NewReader(req.Body.Content)
+		bodyReader = strings.NewReader(bodyContent)
 		contentType = "application/json"
 	case "text":
-		bodyReader = strings.NewReader(req.Body.Content)
+		bodyReader = strings.NewReader(bodyContent)
 		contentType = "text/plain"
 	case "form-urlencoded":
-		bodyReader = strings.NewReader(req.Body.Content)
+		bodyReader = strings.NewReader(bodyContent)
 		contentType = "application/x-www-form-urlencoded"
 	case "form-data":
-		bodyReader = strings.NewReader(req.Body.Content)
+		bodyReader = strings.NewReader(bodyContent)
 	case "file":
-		if req.Body.Content != "" {
+		if bodyContent != "" {
 			var fileData []byte
-			fileData, err = os.ReadFile(req.Body.Content)
+			fileData, err = os.ReadFile(bodyContent)
 			if err != nil {
 				return domain.HttpResponse{}, fmt.Errorf("failed to read file: %w", err)
 			}
 			bodyReader = bytes.NewReader(fileData)
-			if ct := mime.TypeByExtension(filepath.Ext(req.Body.Content)); ct != "" {
+			if ct := mime.TypeByExtension(filepath.Ext(bodyContent)); ct != "" {
 				contentType = ct
 			} else {
 				contentType = "application/octet-stream"

@@ -70,7 +70,7 @@ function fromWailsRequestBody(body: httpdomain.RequestBody): RequestBody {
   }
   return {
     type: body.type,
-    content: body.content,
+    contents: (body.contents ?? {}) as RequestBody["contents"],
   };
 }
 

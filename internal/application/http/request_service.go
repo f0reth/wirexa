@@ -34,7 +34,7 @@ func (s *HttpRequestService) SendRequest(req domain.HttpRequest) (domain.HttpRes
 	if !validMethods[req.Method] {
 		return domain.HttpResponse{}, &cmn.ValidationError{Field: "method", Message: req.Method}
 	}
-	s.logger.Info("HTTP request sent", "source", "http", "method", req.Method, "url", req.URL, "body_bytes", len(req.Body.Content))
+	s.logger.Info("HTTP request sent", "source", "http", "method", req.Method, "url", req.URL, "body_bytes", len(req.Body.Contents[req.Body.Type]))
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
 	s.cancel = cancel

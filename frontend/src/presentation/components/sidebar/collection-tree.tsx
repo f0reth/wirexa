@@ -166,7 +166,7 @@ export function CollectionTree() {
         url: "",
         headers: [],
         params: [],
-        body: { type: "none", content: "" },
+        body: { type: "none", contents: {} },
         auth: { type: "none", username: "", password: "", token: "" },
         settings: { ...DEFAULT_SETTINGS },
       });
