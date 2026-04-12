@@ -117,12 +117,13 @@
   --json-boolean: oklch(0.5 0.18 300);
   --json-null: oklch(0.52 0.22 25);
 
-  /* ── Typography — SF Pro stack ──────────────────────────── */
+  /* ── Typography ─────────────────────────────────────────── */
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
-    "Helvetica Neue", system-ui, sans-serif;
+    "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
   --font-mono:
-    "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    "SF Mono", "Cascadia Code", "Cascadia Mono", ui-monospace, SFMono-Regular,
+    Menlo, Monaco, Consolas, "Courier New", monospace;
 }
 
 /* ── Dark theme ───────────────────────────────────────────── */
