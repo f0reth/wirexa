@@ -34,9 +34,10 @@ export function ProtocolSwitcher(props: ProtocolSwitcherProps) {
             props.protocol === p.value && styles.activityIconActive,
           )}
           onClick={() => props.onProtocolChange(p.value)}
+          aria-label={p.label}
           title={p.label}
         >
-          <p.icon size={22} />
+          <p.icon size={22} aria-hidden="true" />
         </button>
       ))}
       <div style={{ flex: "1" }} />
@@ -44,13 +45,22 @@ export function ProtocolSwitcher(props: ProtocolSwitcherProps) {
         type="button"
         class={styles.activityIcon}
         onClick={props.onThemeToggle}
+        aria-label={
+          props.theme === "light"
+            ? "Switch to dark mode"
+            : "Switch to light mode"
+        }
         title={
           props.theme === "light"
             ? "Switch to dark mode"
             : "Switch to light mode"
         }
       >
-        {props.theme === "light" ? <Moon size={22} /> : <Sun size={22} />}
+        {props.theme === "light" ? (
+          <Moon size={22} aria-hidden="true" />
+        ) : (
+          <Sun size={22} aria-hidden="true" />
+        )}
       </button>
     </div>
   );

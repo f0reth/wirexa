@@ -96,22 +96,25 @@ export function CollectionNode(props: {
           <button
             type="button"
             class={styles.treeActionBtn}
+            aria-label="Add folder"
             title="Add folder"
             onClick={() => props.onAddFolder(props.collection.id, "")}
           >
-            <FolderPlus size={12} />
+            <FolderPlus size={12} aria-hidden="true" />
           </button>
           <button
             type="button"
             class={styles.treeActionBtn}
+            aria-label="Add request"
             title="Add request"
             onClick={() => props.onAddRequest(props.collection.id, "")}
           >
-            <Plus size={12} />
+            <Plus size={12} aria-hidden="true" />
           </button>
           <button
             type="button"
             class={clsx(styles.treeActionBtn, styles.treeActionBtnDanger)}
+            aria-label="Delete collection"
             title="Delete collection"
             onClick={() =>
               props.onDeleteCollection(
@@ -120,7 +123,7 @@ export function CollectionNode(props: {
               )
             }
           >
-            <Trash2 size={12} />
+            <Trash2 size={12} aria-hidden="true" />
           </button>
         </div>
       </div>

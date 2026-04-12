@@ -130,9 +130,10 @@ export function TargetTree() {
           size="icon"
           class={styles.collectionAction}
           onClick={() => setEditingTarget("new")}
+          aria-label="New Target"
           title="New Target"
         >
-          <Plus size={14} />
+          <Plus size={14} aria-hidden="true" />
         </Button>
       </div>
 
@@ -161,6 +162,7 @@ export function TargetTree() {
                     <button
                       type="button"
                       class={styles.treeActionBtn}
+                      aria-label="Move up"
                       title="Move up"
                       disabled={index() === 0}
                       onClick={(e) => {
@@ -168,11 +170,12 @@ export function TargetTree() {
                         reorderTargets(index(), index() - 1);
                       }}
                     >
-                      <ChevronUp size={12} />
+                      <ChevronUp size={12} aria-hidden="true" />
                     </button>
                     <button
                       type="button"
                       class={styles.treeActionBtn}
+                      aria-label="Move down"
                       title="Move down"
                       disabled={index() === targets.length - 1}
                       onClick={(e) => {
@@ -180,18 +183,19 @@ export function TargetTree() {
                         reorderTargets(index(), index() + 1);
                       }}
                     >
-                      <ChevronDown size={12} />
+                      <ChevronDown size={12} aria-hidden="true" />
                     </button>
                     <button
                       type="button"
                       class={styles.treeActionBtn}
+                      aria-label="Edit target"
                       title="Edit"
                       onClick={(e) => {
                         e.stopPropagation();
                         setEditingTarget(target);
                       }}
                     >
-                      <Settings size={12} />
+                      <Settings size={12} aria-hidden="true" />
                     </button>
                     <button
                       type="button"
@@ -199,13 +203,14 @@ export function TargetTree() {
                         styles.treeActionBtn,
                         styles.treeActionBtnDanger,
                       )}
+                      aria-label="Delete target"
                       title="Delete"
                       onClick={(e) => {
                         e.stopPropagation();
                         setDeletingTarget({ id: target.id, name: target.name });
                       }}
                     >
-                      <Trash2 size={12} />
+                      <Trash2 size={12} aria-hidden="true" />
                     </button>
                   </div>
                 </div>

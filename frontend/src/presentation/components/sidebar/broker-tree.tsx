@@ -105,9 +105,10 @@ export function BrokerTree() {
           size="icon"
           class={styles.collectionAction}
           onClick={() => setEditingProfile("new")}
+          aria-label="New Broker"
           title="New Broker"
         >
-          <Plus size={14} />
+          <Plus size={14} aria-hidden="true" />
         </Button>
       </div>
 
@@ -137,6 +138,12 @@ export function BrokerTree() {
                         ? styles.brokerDotConnected
                         : styles.brokerDotDisconnected,
                     )}
+                    title={
+                      isProfileConnected(profile.id)
+                        ? "Connected"
+                        : "Disconnected"
+                    }
+                    aria-hidden="true"
                   />
                   <div class={styles.brokerInfo}>
                     <span class={styles.brokerName}>{profile.name}</span>
@@ -146,6 +153,7 @@ export function BrokerTree() {
                     <button
                       type="button"
                       class={styles.treeActionBtn}
+                      aria-label="Move up"
                       title="Move up"
                       disabled={index() === 0}
                       onClick={(e) => {
@@ -153,11 +161,12 @@ export function BrokerTree() {
                         reorderProfiles(index(), index() - 1);
                       }}
                     >
-                      <ChevronUp size={12} />
+                      <ChevronUp size={12} aria-hidden="true" />
                     </button>
                     <button
                       type="button"
                       class={styles.treeActionBtn}
+                      aria-label="Move down"
                       title="Move down"
                       disabled={index() === profiles().length - 1}
                       onClick={(e) => {
@@ -165,18 +174,19 @@ export function BrokerTree() {
                         reorderProfiles(index(), index() + 1);
                       }}
                     >
-                      <ChevronDown size={12} />
+                      <ChevronDown size={12} aria-hidden="true" />
                     </button>
                     <button
                       type="button"
                       class={styles.treeActionBtn}
+                      aria-label="Edit broker"
                       title="Edit"
                       onClick={(e) => {
                         e.stopPropagation();
                         setEditingProfile(profile);
                       }}
                     >
-                      <Settings size={12} />
+                      <Settings size={12} aria-hidden="true" />
                     </button>
                     <button
                       type="button"
@@ -184,6 +194,7 @@ export function BrokerTree() {
                         styles.treeActionBtn,
                         styles.treeActionBtnDanger,
                       )}
+                      aria-label="Delete broker"
                       title="Delete"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -193,7 +204,7 @@ export function BrokerTree() {
                         });
                       }}
                     >
-                      <Trash2 size={12} />
+                      <Trash2 size={12} aria-hidden="true" />
                     </button>
                   </div>
                 </div>

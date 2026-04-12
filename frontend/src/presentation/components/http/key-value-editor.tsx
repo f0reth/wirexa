@@ -61,9 +61,10 @@ export function KeyValueEditor(props: KeyValueEditorProps) {
               variant="ghost"
               size="icon"
               class={styles.kvRemove}
+              aria-label="Remove row"
               onClick={() => remove(index)}
             >
-              <Minus size={14} />
+              <Minus size={14} aria-hidden="true" />
             </Button>
           </div>
         )}

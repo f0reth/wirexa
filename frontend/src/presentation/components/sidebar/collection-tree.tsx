@@ -227,9 +227,10 @@ export function CollectionTree() {
           size="icon"
           class={styles.collectionAction}
           onClick={() => handleCreateCollection()}
+          aria-label="New Collection"
           title="New Collection"
         >
-          <Plus size={14} />
+          <Plus size={14} aria-hidden="true" />
         </Button>
       </div>
 

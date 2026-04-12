@@ -47,10 +47,14 @@ export function ResponseViewer() {
             type="button"
             class={styles.responsePanelCloseBtn}
             onClick={handleCopy}
+            aria-label="Copy body"
             title="Copy body"
           >
-            <Show when={copied()} fallback={<Copy size={14} />}>
-              <Check size={14} />
+            <Show
+              when={copied()}
+              fallback={<Copy size={14} aria-hidden="true" />}
+            >
+              <Check size={14} aria-hidden="true" />
             </Show>
           </button>
         </Show>

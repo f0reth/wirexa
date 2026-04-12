@@ -232,28 +232,31 @@ export function TreeItemNode(props: {
             <button
               type="button"
               class={styles.treeActionBtn}
+              aria-label="Add folder"
               title="Add folder"
               onMouseDown={(e) => e.stopPropagation()}
               onClick={() =>
                 props.onAddFolder(props.collectionId, props.item.id)
               }
             >
-              <FolderPlus size={10} />
+              <FolderPlus size={10} aria-hidden="true" />
             </button>
             <button
               type="button"
               class={styles.treeActionBtn}
+              aria-label="Add request"
               title="Add request"
               onMouseDown={(e) => e.stopPropagation()}
               onClick={() =>
                 props.onAddRequest(props.collectionId, props.item.id)
               }
             >
-              <Plus size={10} />
+              <Plus size={10} aria-hidden="true" />
             </button>
             <button
               type="button"
               class={clsx(styles.treeActionBtn, styles.treeActionBtnDanger)}
+              aria-label="Delete folder"
               title="Delete"
               onMouseDown={(e) => e.stopPropagation()}
               onClick={() =>
@@ -265,7 +268,7 @@ export function TreeItemNode(props: {
                 )
               }
             >
-              <Trash2 size={10} />
+              <Trash2 size={10} aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -397,6 +400,8 @@ export function TreeItemNode(props: {
       <button
         type="button"
         class={clsx(styles.treeActionBtn, styles.treeActionBtnDanger)}
+        aria-label="Delete request"
+        title="Delete"
         onMouseDown={(e) => e.stopPropagation()}
         onClick={() =>
           props.onDeleteItem(
@@ -407,7 +412,7 @@ export function TreeItemNode(props: {
           )
         }
       >
-        <Trash2 size={10} />
+        <Trash2 size={10} aria-hidden="true" />
       </button>
     </div>
   );
