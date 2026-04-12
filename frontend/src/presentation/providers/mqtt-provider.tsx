@@ -46,6 +46,7 @@ export interface ConnectionContextValue {
   closeConnection: (connectionId: string) => void;
   switchConnection: (id: string) => void;
   updateConnectionBroker: (connectionId: string, broker: string) => void;
+  reorderProfiles: (fromIndex: number, toIndex: number) => void;
 }
 
 // --- MqttSubscribeContext ---
@@ -91,8 +92,13 @@ type MqttContextValue = ConnectionContextValue &
 const MqttContext = createContext<MqttContextValue>();
 
 export function MqttProvider(props: { children: JSX.Element }) {
-  const { profiles, loadProfiles, saveProfile, deleteProfile } =
-    createProfilesState(mqttClient);
+  const {
+    profiles,
+    loadProfiles,
+    saveProfile,
+    deleteProfile,
+    reorderProfiles,
+  } = createProfilesState(mqttClient);
   const mqttLogger = createLogger("frontend:mqtt");
   const connState = createConnectionsState(
     mqttClient,
@@ -146,6 +152,7 @@ export function MqttProvider(props: { children: JSX.Element }) {
         closeConnection: connState.closeConnection,
         switchConnection: connState.switchConnection,
         updateConnectionBroker: connState.updateConnectionBroker,
+        reorderProfiles,
         ...subsState,
         ...msgState,
         ...presetState,

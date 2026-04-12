@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { Plus, Settings, Trash2 } from "lucide-solid";
+import { ChevronDown, ChevronUp, Plus, Settings, Trash2 } from "lucide-solid";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Button } from "../../../components/ui/button";
@@ -100,7 +100,8 @@ function TargetDialog(props: TargetDialogProps) {
 }
 
 export function TargetTree() {
-  const { targets, saveTarget, deleteTarget, refreshTargets } = useUdpTargets();
+  const { targets, saveTarget, deleteTarget, refreshTargets, reorderTargets } =
+    useUdpTargets();
   const { loadTarget } = useUdpSend();
 
   onMount(() => {
@@ -138,7 +139,7 @@ export function TargetTree() {
       <ScrollArea class={styles.treeScroll}>
         <div class={styles.treeList}>
           <For each={targets}>
-            {(target) => (
+            {(target, index) => (
               <>
                 {/* biome-ignore lint/a11y/useSemanticElements: contains nested action buttons; cannot use <button> with nested interactive elements */}
                 <div
@@ -157,6 +158,30 @@ export function TargetTree() {
                     </span>
                   </div>
                   <div class={styles.treeNodeActions}>
+                    <button
+                      type="button"
+                      class={styles.treeActionBtn}
+                      title="Move up"
+                      disabled={index() === 0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        reorderTargets(index(), index() - 1);
+                      }}
+                    >
+                      <ChevronUp size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      class={styles.treeActionBtn}
+                      title="Move down"
+                      disabled={index() === targets.length - 1}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        reorderTargets(index(), index() + 1);
+                      }}
+                    >
+                      <ChevronDown size={12} />
+                    </button>
                     <button
                       type="button"
                       class={styles.treeActionBtn}

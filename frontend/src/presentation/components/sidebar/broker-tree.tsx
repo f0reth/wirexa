@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { Plus, Settings, Trash2 } from "lucide-solid";
+import { ChevronDown, ChevronUp, Plus, Settings, Trash2 } from "lucide-solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Button } from "../../../components/ui/button";
@@ -25,6 +25,7 @@ export function BrokerTree() {
     closeConnection,
     saveProfile,
     deleteProfile,
+    reorderProfiles,
   } = useMqttConnection();
 
   const [editingProfile, setEditingProfile] = createSignal<
@@ -113,7 +114,7 @@ export function BrokerTree() {
       <ScrollArea class={styles.treeScroll}>
         <div class={styles.treeList}>
           <For each={profiles()}>
-            {(profile) => (
+            {(profile, index) => (
               <>
                 {/* biome-ignore lint/a11y/useSemanticElements: contains nested action buttons; cannot use <button> with nested interactive elements */}
                 <div
@@ -142,6 +143,30 @@ export function BrokerTree() {
                     <span class={styles.brokerUrl}>{profile.broker}</span>
                   </div>
                   <div class={styles.treeNodeActions}>
+                    <button
+                      type="button"
+                      class={styles.treeActionBtn}
+                      title="Move up"
+                      disabled={index() === 0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        reorderProfiles(index(), index() - 1);
+                      }}
+                    >
+                      <ChevronUp size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      class={styles.treeActionBtn}
+                      title="Move down"
+                      disabled={index() === profiles().length - 1}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        reorderProfiles(index(), index() + 1);
+                      }}
+                    >
+                      <ChevronDown size={12} />
+                    </button>
                     <button
                       type="button"
                       class={styles.treeActionBtn}

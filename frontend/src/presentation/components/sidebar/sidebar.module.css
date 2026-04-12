@@ -212,6 +212,12 @@
   background-color: var(--color-accent);
 }
 
+.treeActionBtn:disabled {
+  opacity: 0.25;
+  cursor: default;
+  pointer-events: none;
+}
+
 .treeActionBtnDanger:hover {
   color: var(--color-destructive);
   background-color: color-mix(

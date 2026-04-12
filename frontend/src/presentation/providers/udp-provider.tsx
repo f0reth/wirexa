@@ -43,6 +43,7 @@ export interface UdpTargetsContextValue {
   refreshTargets: () => Promise<void>;
   saveTarget: (t: UdpTarget) => Promise<UdpTarget>;
   deleteTarget: (id: string) => Promise<void>;
+  reorderTargets: (fromIndex: number, toIndex: number) => void;
 }
 
 export interface UdpReceiveContextValue {
