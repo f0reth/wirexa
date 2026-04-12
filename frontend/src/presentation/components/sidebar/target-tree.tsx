@@ -33,6 +33,8 @@ interface TargetDialogProps {
 }
 
 function TargetDialog(props: TargetDialogProps) {
+  let dialogRef: HTMLDivElement | undefined;
+
   const [form, setForm] = createSignal<TargetFormState>(
     defaultForm(props.initial),
   );
@@ -50,9 +52,51 @@ function TargetDialog(props: TargetDialogProps) {
     });
   };
 
+  const getFocusable = () =>
+    Array.from(
+      dialogRef?.querySelectorAll<HTMLElement>(
+        "input:not([disabled]), button:not([disabled])",
+      ) ?? [],
+    );
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    e.stopPropagation();
+    if (e.key === "Escape") {
+      props.onClose();
+      return;
+    }
+    if (e.key === "Tab") {
+      const focusable = getFocusable();
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+  };
+
+  onMount(() => {
+    getFocusable()[0]?.focus();
+  });
+
   return (
     <div class={styles.dialogOverlay}>
-      <div class={styles.dialog}>
+      <div
+        ref={dialogRef}
+        class={styles.dialog}
+        role="dialog"
+        aria-modal="true"
+        onKeyDown={handleKeyDown}
+      >
         <h3 class={styles.dialogTitle}>
           {props.initial ? "Edit Target" : "New Target"}
         </h3>

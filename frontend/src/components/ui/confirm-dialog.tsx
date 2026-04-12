@@ -10,25 +10,53 @@ export function ConfirmDialog(props: {
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") props.onCancel();
+  let cardRef: HTMLDivElement | undefined;
+
+  const getFocusable = () =>
+    Array.from(
+      cardRef?.querySelectorAll<HTMLElement>("button:not([disabled])") ?? [],
+    );
+
+  const handleCardKeyDown = (e: KeyboardEvent) => {
+    e.stopPropagation();
+    if (e.key === "Escape") {
+      props.onCancel();
+      return;
+    }
+    if (e.key === "Tab") {
+      const focusable = getFocusable();
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
   };
 
   onMount(() => {
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    getFocusable()[0]?.focus();
   });
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape key handled via document listener
+    // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard handling (Escape, Tab) managed in dialog card
     // biome-ignore lint/a11y/noStaticElementInteractions: dialog overlay backdrop
     <div class={styles.overlay} onClick={() => props.onCancel()}>
       <div
+        ref={cardRef}
         class={styles.card}
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
+        onKeyDown={handleCardKeyDown}
       >
         <h3 class={styles.title}>{props.title}</h3>
         <p class={styles.message}>{props.message}</p>

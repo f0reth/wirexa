@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, onMount, Show } from "solid-js";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import type { BrokerProfile } from "../../../domain/mqtt/types";
@@ -24,6 +24,8 @@ export function BrokerSettingsDialog(props: {
   onSaveAndConnect?: (profile: BrokerProfile) => void;
   onClose: () => void;
 }) {
+  let cardRef: HTMLDivElement | undefined;
+
   const [draft, setDraft] = createSignal<BrokerProfile>(
     props.profile ? { ...props.profile } : createEmptyProfile(),
   );
@@ -50,6 +52,42 @@ export function BrokerSettingsDialog(props: {
     props.onSaveAndConnect?.(draft());
   };
 
+  const getFocusable = () =>
+    Array.from(
+      cardRef?.querySelectorAll<HTMLElement>(
+        "input:not([disabled]), button:not([disabled])",
+      ) ?? [],
+    );
+
+  const handleCardKeyDown = (e: KeyboardEvent) => {
+    e.stopPropagation();
+    if (e.key === "Escape") {
+      props.onClose();
+      return;
+    }
+    if (e.key === "Tab") {
+      const focusable = getFocusable();
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+  };
+
+  onMount(() => {
+    getFocusable()[0]?.focus();
+  });
+
   return (
     <>
       {/* biome-ignore lint/a11y/useSemanticElements: overlay backdrop requires block-level display; button element cannot serve as full-screen backdrop */}
@@ -62,12 +100,13 @@ export function BrokerSettingsDialog(props: {
         onKeyDown={(e) => e.key === "Escape" && props.onClose()}
       >
         <div
+          ref={cardRef}
           class={styles.dialogCard}
           role="dialog"
           aria-modal="true"
           aria-label={props.profile ? "Edit Profile" : "New Profile"}
           onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
+          onKeyDown={handleCardKeyDown}
         >
           <h3 class={styles.dialogTitle}>
             {props.profile ? "Edit Profile" : "New Profile"}
