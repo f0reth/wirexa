@@ -141,7 +141,9 @@ export function RequestEditor() {
                           <Input
                             value={bodyContent()}
                             placeholder="No file selected"
-                            readOnly
+                            onInput={(e) =>
+                              setBodyContent(e.currentTarget.value)
+                            }
                             class={styles.filePathInput}
                           />
                           <button
