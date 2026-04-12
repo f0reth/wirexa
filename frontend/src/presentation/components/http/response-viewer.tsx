@@ -1,8 +1,8 @@
-import { clsx } from "clsx";
 import { Check, Copy } from "lucide-solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import { ScrollArea } from "../../../components/ui/scroll-area";
+import { TabList } from "../../../components/ui/tabs";
 import { useHttpRequest } from "../../providers/http-provider";
 import styles from "./http.module.css";
 
@@ -110,20 +110,12 @@ export function ResponseViewer() {
                     </span>
                   </div>
 
-                  <div class={styles.editorTabBar}>
-                    {TABS.map((tab) => (
-                      <button
-                        type="button"
-                        class={clsx(
-                          styles.editorTab,
-                          responseTab() === tab.value && styles.editorTabActive,
-                        )}
-                        onClick={() => setResponseTab(tab.value)}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
+                  <TabList
+                    tabs={TABS}
+                    activeTab={responseTab()}
+                    onTabChange={setResponseTab}
+                    class={styles.editorTabBar}
+                  />
 
                   <div class={styles.responseContent}>
                     <Show when={responseTab() === "body"}>
