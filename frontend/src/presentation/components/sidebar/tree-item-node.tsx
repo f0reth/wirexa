@@ -154,17 +154,6 @@ export function TreeItemNode(props: {
       suppressRef,
     );
 
-    // dropTarget がこのフォルダを指しているとき（position=-1）にハイライト
-    const isFolderDropTarget = () => {
-      const dt = dropTarget();
-      return (
-        dragItem() !== null &&
-        dt?.collectionId === props.collectionId &&
-        dt?.parentId === props.item.id &&
-        dt?.position === -1
-      );
-    };
-
     const handleRenameCommit = (value: string) => {
       const trimmed = value.trim();
       if (trimmed && trimmed !== props.item.name) {
@@ -175,20 +164,11 @@ export function TreeItemNode(props: {
 
     return (
       <div class={styles.treeNode}>
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: drop target and drag source for mouse-based drag */}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: drag source for mouse-based drag */}
         <div
-          class={clsx(
-            styles.treeNodeHeader,
-            isFolderDropTarget() && styles.dropTarget,
-          )}
+          class={styles.treeNodeHeader}
           style={{ "padding-left": `${props.depth * 0.75}rem` }}
           onMouseDown={handleMouseDown}
-          {...{
-            [DROP_ZONE_ATTR]: "true",
-            [DROP_COLLECTION_ID_ATTR]: props.collectionId,
-            [DROP_PARENT_ID_ATTR]: props.item.id,
-            [DROP_POSITION_ATTR]: "-1",
-          }}
         >
           <button
             type="button"

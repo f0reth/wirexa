@@ -2,16 +2,8 @@ import { clsx } from "clsx";
 import { ChevronRight, Folder, FolderPlus, Plus, Trash2 } from "lucide-solid";
 import { createSignal, For, Show } from "solid-js";
 import type { Collection, TreeItem } from "../../../domain/http/types";
-import { dragItem, dropTarget } from "./drag-state";
 import styles from "./sidebar.module.css";
-import {
-  DROP_COLLECTION_ID_ATTR,
-  DROP_PARENT_ID_ATTR,
-  DROP_POSITION_ATTR,
-  DROP_ZONE_ATTR,
-  InsertionZone,
-  TreeItemNode,
-} from "./tree-item-node";
+import { InsertionZone, TreeItemNode } from "./tree-item-node";
 
 export function CollectionNode(props: {
   collection: Collection;
@@ -51,31 +43,9 @@ export function CollectionNode(props: {
     props.setRenamingCollectionId(null);
   };
 
-  // コレクションルートへのドロップがアクティブかどうか（ヘッダーへのホバー）
-  const isCollectionDropTarget = () => {
-    const dt = dropTarget();
-    return (
-      dragItem() !== null &&
-      dt?.collectionId === props.collection.id &&
-      dt?.parentId === "" &&
-      dt?.position === -1
-    );
-  };
-
   return (
     <div class={styles.treeNode}>
-      <div
-        class={clsx(
-          styles.treeNodeHeader,
-          isCollectionDropTarget() && styles.dropTarget,
-        )}
-        {...{
-          [DROP_ZONE_ATTR]: "true",
-          [DROP_COLLECTION_ID_ATTR]: props.collection.id,
-          [DROP_PARENT_ID_ATTR]: "",
-          [DROP_POSITION_ATTR]: "-1",
-        }}
-      >
+      <div class={styles.treeNodeHeader}>
         <button
           type="button"
           class={styles.treeNodeToggle}

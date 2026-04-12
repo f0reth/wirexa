@@ -211,18 +211,8 @@ func (s *CollectionService) RenameItem(collectionID, itemID, name string) error 
 	return s.repo.Save(c)
 }
 
-// isDescendant はアイテムのサブツリー内に targetID が含まれるか検査する。
-func isDescendant(item *domain.TreeItem, targetID string) bool {
-	for _, child := range item.Children {
-		if child.ID == targetID || isDescendant(child, targetID) {
-			return true
-		}
-	}
-	return false
-}
-
-// MoveItem はアイテムを同一コレクション内の別の親・位置へ移動する。
-// targetParentID が空の場合はコレクションルートへ移動する。
+// MoveItem はアイテムを同一親内で位置変更する。
+// targetParentID は現在の親 ID と一致している必要がある。
 // position は削除後の挿入先インデックス。-1 または範囲外の場合は末尾に追加する。
 func (s *CollectionService) MoveItem(collectionID, itemID, targetParentID string, position int) error {
 	s.mu.Lock()
@@ -238,22 +228,17 @@ func (s *CollectionService) MoveItem(collectionID, itemID, targetParentID string
 		return &cmn.NotFoundError{Resource: "item", ID: itemID}
 	}
 
-	// ツリー変更前に移動先の検証を完了させる（RemoveNode より前に行う）。
-	var targetParent *domain.TreeItem
-	if targetParentID != "" {
-		if itemID == targetParentID || isDescendant(item, targetParentID) {
-			return &cmn.ValidationError{Message: "cannot move item into itself or its descendant"}
-		}
-		targetParent, _, ok = c.FindNode(targetParentID)
-		if !ok || targetParent.Type != domain.ItemTypeFolder {
-			return &cmn.NotFoundError{Resource: "parent", ID: targetParentID}
-		}
+	// 同一親への移動のみ許可する。
+	origParentID := ""
+	if origParent != nil {
+		origParentID = origParent.ID
+	}
+	if origParentID != targetParentID {
+		return &cmn.ValidationError{Message: "cannot move item to a different folder"}
 	}
 
-	// 同一親かつ元インデックスが挿入位置より前の場合、削除後にインデックスがずれるので補正する。
-	isSameParent := (targetParentID == "" && origParent == nil) ||
-		(origParent != nil && origParent.ID == targetParentID)
-	if isSameParent && position > 0 {
+	// 元インデックスが挿入位置より前の場合、削除後にインデックスがずれるので補正する。
+	if position > 0 {
 		var origItems []*domain.TreeItem
 		if origParent == nil {
 			origItems = c.Items
@@ -273,7 +258,7 @@ func (s *CollectionService) MoveItem(collectionID, itemID, targetParentID string
 	if targetParentID == "" {
 		c.Items = insertAt(c.Items, item, position)
 	} else {
-		targetParent.Children = insertAt(targetParent.Children, item, position)
+		origParent.Children = insertAt(origParent.Children, item, position)
 	}
 
 	return s.repo.Save(c)

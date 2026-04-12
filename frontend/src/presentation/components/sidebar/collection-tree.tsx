@@ -59,17 +59,16 @@ export function CollectionTree() {
           zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
           10,
         );
+        // 同一親内の並び替えのみ許可する。
         // ソースフォルダのヘッダー（position=-1）は no-op になるため除外する。
-        // これにより、上方向にドラッグした際にソースフォルダのヘッダーを
-        // 通過しても元フォルダ末尾への誤ドロップが発生しなくなる。
         if (
           collectionId === di.collectionId &&
           parentId === di.sourceParentId &&
-          position === -1
+          position !== -1
         ) {
-          setDropTarget(null);
-        } else {
           setDropTarget({ collectionId, parentId, position });
+        } else {
+          setDropTarget(null);
         }
       } else {
         setDropTarget(null);
@@ -90,13 +89,11 @@ export function CollectionTree() {
             zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
             10,
           );
-          // ソースフォルダのヘッダーへのドロップは no-op なので除外する。
+          // 同一親内の並び替えのみ許可する。
           if (
-            !(
-              collectionId === di.collectionId &&
-              parentId === di.sourceParentId &&
-              position === -1
-            )
+            collectionId === di.collectionId &&
+            parentId === di.sourceParentId &&
+            position !== -1
           ) {
             handleMoveItem(di.collectionId, di.itemId, parentId, position);
           }
