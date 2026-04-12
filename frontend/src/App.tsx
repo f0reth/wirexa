@@ -1,4 +1,4 @@
-import { createEffect, createSignal } from "solid-js";
+import { createEffect, createSignal, Show } from "solid-js";
 import styles from "./App.module.css";
 import { createThemeStore } from "./application/ui/theme";
 import {
@@ -24,6 +24,15 @@ import { UdpProvider } from "./presentation/providers/udp-provider";
 function App() {
   const [protocol, setProtocol] = createSignal<Protocol>("mqtt");
   const { theme, toggleTheme } = createThemeStore(createThemeStorage());
+
+  // Track which protocols have been visited; mount on first visit, keep alive thereafter
+  const [visited, setVisited] = createSignal<Set<Protocol>>(
+    new Set<Protocol>(["mqtt"]),
+  );
+
+  createEffect(() => {
+    setVisited((prev) => new Set([...prev, protocol()]));
+  });
 
   createEffect(() => {
     if (theme() === "dark") {
@@ -52,38 +61,46 @@ function App() {
                 <ResizableHandle withHandle />
                 <ResizablePanel defaultSize={85}>
                   <main class={styles.main}>
-                    <div
-                      class={styles.panel}
-                      style={{
-                        display: protocol() === "mqtt" ? "flex" : "none",
-                      }}
-                    >
-                      <MqttClient />
-                    </div>
-                    <div
-                      class={styles.panel}
-                      style={{
-                        display: protocol() === "http" ? "flex" : "none",
-                      }}
-                    >
-                      <HttpClient />
-                    </div>
-                    <div
-                      class={styles.panel}
-                      style={{
-                        display: protocol() === "udp" ? "flex" : "none",
-                      }}
-                    >
-                      <UdpClient />
-                    </div>
-                    <div
-                      class={styles.panel}
-                      style={{
-                        display: protocol() === "openapi" ? "flex" : "none",
-                      }}
-                    >
-                      <OpenApiClient />
-                    </div>
+                    <Show when={visited().has("mqtt")}>
+                      <div
+                        class={styles.panel}
+                        style={{
+                          display: protocol() === "mqtt" ? "flex" : "none",
+                        }}
+                      >
+                        <MqttClient />
+                      </div>
+                    </Show>
+                    <Show when={visited().has("http")}>
+                      <div
+                        class={styles.panel}
+                        style={{
+                          display: protocol() === "http" ? "flex" : "none",
+                        }}
+                      >
+                        <HttpClient />
+                      </div>
+                    </Show>
+                    <Show when={visited().has("udp")}>
+                      <div
+                        class={styles.panel}
+                        style={{
+                          display: protocol() === "udp" ? "flex" : "none",
+                        }}
+                      >
+                        <UdpClient />
+                      </div>
+                    </Show>
+                    <Show when={visited().has("openapi")}>
+                      <div
+                        class={styles.panel}
+                        style={{
+                          display: protocol() === "openapi" ? "flex" : "none",
+                        }}
+                      >
+                        <OpenApiClient />
+                      </div>
+                    </Show>
                   </main>
                 </ResizablePanel>
               </ResizablePanelGroup>
