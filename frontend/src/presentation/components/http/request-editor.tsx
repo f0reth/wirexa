@@ -17,8 +17,8 @@ import { Textarea } from "../../../components/ui/textarea";
 import type { AuthType, BodyType, ProxyMode } from "../../../domain/http/types";
 import { AUTH_TYPES, BODY_TYPES } from "../../constants/http";
 import { useHttpRequest } from "../../providers/http-provider";
-import { formatJsonBody } from "../../utils/format";
 import styles from "./http.module.css";
+import { JsonBodyEditor } from "./json-body-editor";
 import { KeyValueEditor } from "./key-value-editor";
 
 const PROXY_MODES: { value: ProxyMode; label: string }[] = [
@@ -162,6 +162,14 @@ export function RequestEditor() {
                           }
                         />
                       </Match>
+                      <Match when={body().type === "json"}>
+                        <JsonBodyEditor
+                          value={body().content}
+                          onChange={(content) =>
+                            setBody({ ...body(), content })
+                          }
+                        />
+                      </Match>
                       <Match when={true}>
                         <Textarea
                           value={body().content}
@@ -171,19 +179,7 @@ export function RequestEditor() {
                               content: e.currentTarget.value,
                             })
                           }
-                          onBlur={(e) => {
-                            if (body().type === "json") {
-                              setBody({
-                                ...body(),
-                                content: formatJsonBody(e.currentTarget.value),
-                              });
-                            }
-                          }}
-                          placeholder={
-                            body().type === "json"
-                              ? '{ "key": "value" }'
-                              : "Enter body content..."
-                          }
+                          placeholder="Enter body content..."
                           class={styles.bodyTextarea}
                         />
                       </Match>

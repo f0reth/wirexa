@@ -218,6 +218,28 @@
   font-size: 0.8125rem;
 }
 
+.jsonBodyEditor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.jsonBodyEditor :global(.cm-editor) {
+  height: 100%;
+  font-size: 0.8125rem;
+  font-family: var(--font-mono);
+}
+
+.jsonBodyEditor :global(.cm-scroller) {
+  overflow: auto;
+}
+
+.jsonBodyEditor :global(.cm-content) {
+  min-height: 100%;
+}
+
 .filePickerRow {
   display: flex;
   gap: 0.5rem;
