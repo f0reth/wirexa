@@ -2,25 +2,25 @@
 package adapters
 
 import (
-	domain "github.com/f0reth/Wirexa/internal/domain/mqtt"
+	mqttdomain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 )
 
 // MqttHandler は Wails RPC アダプターとして MQTT ユースケースを公開する。
 type MqttHandler struct {
-	svc        domain.MqttUseCase
-	profileSvc domain.ProfileUseCase
+	svc        mqttdomain.MqttUseCase
+	profileSvc mqttdomain.ProfileUseCase
 }
 
 // SetupMqttHandler は既存の MqttHandler インスタンスにサービスを注入する。
 // Wails の Bind に渡す前に事前確保した空ハンドラーを startup() で初期化する際に使用する。
-func SetupMqttHandler(h *MqttHandler, svc domain.MqttUseCase, profileSvc domain.ProfileUseCase) {
+func SetupMqttHandler(h *MqttHandler, svc mqttdomain.MqttUseCase, profileSvc mqttdomain.ProfileUseCase) {
 	h.svc = svc
 	h.profileSvc = profileSvc
 }
 
 // Connect は MQTT ブローカーへ接続し、接続 ID を返す。
-func (h *MqttHandler) Connect(config domain.ConnectionConfig) (string, error) {
-	return h.svc.Connect(config)
+func (h *MqttHandler) Connect(config ConnectionConfig) (string, error) {
+	return h.svc.Connect(fromConnectionConfigDTO(config))
 }
 
 // Disconnect は指定した接続を切断する。
@@ -44,8 +44,13 @@ func (h *MqttHandler) Unsubscribe(connectionID, topic string) error {
 }
 
 // GetConnections は全接続の現在状態を返す。
-func (h *MqttHandler) GetConnections() []domain.ConnectionStatus {
-	return h.svc.GetConnections()
+func (h *MqttHandler) GetConnections() []ConnectionStatus {
+	statuses := h.svc.GetConnections()
+	result := make([]ConnectionStatus, len(statuses))
+	for i, s := range statuses {
+		result[i] = toConnectionStatusDTO(s)
+	}
+	return result
 }
 
 // Shutdown は全接続を切断してサービスを終了する。
@@ -54,13 +59,18 @@ func (h *MqttHandler) Shutdown() {
 }
 
 // GetProfiles は全 MQTT ブローカープロファイルを返す。
-func (h *MqttHandler) GetProfiles() []domain.BrokerProfile {
-	return h.profileSvc.GetProfiles()
+func (h *MqttHandler) GetProfiles() []BrokerProfile {
+	profiles := h.profileSvc.GetProfiles()
+	result := make([]BrokerProfile, len(profiles))
+	for i, p := range profiles {
+		result[i] = toBrokerProfileDTO(p)
+	}
+	return result
 }
 
 // SaveProfile は MQTT ブローカープロファイルを保存する。
-func (h *MqttHandler) SaveProfile(profile domain.BrokerProfile) error {
-	return h.profileSvc.SaveProfile(profile)
+func (h *MqttHandler) SaveProfile(profile BrokerProfile) error {
+	return h.profileSvc.SaveProfile(fromBrokerProfileDTO(profile))
 }
 
 // DeleteProfile は MQTT ブローカープロファイルを削除する。

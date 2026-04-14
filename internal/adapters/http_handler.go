@@ -6,20 +6,20 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	domain "github.com/f0reth/Wirexa/internal/domain/http"
+	httpdomain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
 // HttpHandler は Wails RPC アダプターとして HTTP ユースケースを公開する。
 type HttpHandler struct {
 	ctx     context.Context
-	reqSvc  domain.RequestUseCase
-	collSvc domain.CollectionUseCase
-	itemSvc domain.CollectionItemUseCase
+	reqSvc  httpdomain.RequestUseCase
+	collSvc httpdomain.CollectionUseCase
+	itemSvc httpdomain.CollectionItemUseCase
 }
 
 // SetupHTTPHandler は既存の HttpHandler インスタンスにサービスを注入する。
 // Wails の Bind に渡す前に事前確保した空ハンドラーを startup() で初期化する際に使用する。
-func SetupHTTPHandler(ctx context.Context, h *HttpHandler, reqSvc domain.RequestUseCase, collSvc domain.CollectionUseCase, itemSvc domain.CollectionItemUseCase) {
+func SetupHTTPHandler(ctx context.Context, h *HttpHandler, reqSvc httpdomain.RequestUseCase, collSvc httpdomain.CollectionUseCase, itemSvc httpdomain.CollectionItemUseCase) {
 	h.ctx = ctx
 	h.reqSvc = reqSvc
 	h.collSvc = collSvc
@@ -34,8 +34,12 @@ func (h *HttpHandler) OpenFilePicker() (string, error) {
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
-func (h *HttpHandler) SendRequest(req domain.HttpRequest) (domain.HttpResponse, error) {
-	return h.reqSvc.SendRequest(req)
+func (h *HttpHandler) SendRequest(req HttpRequest) (HttpResponse, error) {
+	res, err := h.reqSvc.SendRequest(fromHTTPRequestDTO(req))
+	if err != nil {
+		return HttpResponse{}, err
+	}
+	return toHTTPResponseDTO(res), nil
 }
 
 // CancelRequest は指定 ID の実行中 HTTP リクエストをキャンセルする。
@@ -44,13 +48,22 @@ func (h *HttpHandler) CancelRequest(id string) {
 }
 
 // GetCollections は全コレクションを返す。
-func (h *HttpHandler) GetCollections() []domain.Collection {
-	return h.collSvc.GetCollections()
+func (h *HttpHandler) GetCollections() []Collection {
+	cols := h.collSvc.GetCollections()
+	result := make([]Collection, len(cols))
+	for i, c := range cols {
+		result[i] = toCollectionDTO(c)
+	}
+	return result
 }
 
 // CreateCollection は新規コレクションを作成する。
-func (h *HttpHandler) CreateCollection(name string) (domain.Collection, error) {
-	return h.collSvc.CreateCollection(name)
+func (h *HttpHandler) CreateCollection(name string) (Collection, error) {
+	col, err := h.collSvc.CreateCollection(name)
+	if err != nil {
+		return Collection{}, err
+	}
+	return toCollectionDTO(col), nil
 }
 
 // DeleteCollection は ID でコレクションを削除する。
@@ -64,18 +77,26 @@ func (h *HttpHandler) RenameCollection(id, name string) error {
 }
 
 // AddFolder はコレクションにフォルダを追加する。
-func (h *HttpHandler) AddFolder(collectionID, parentID, name string) (*domain.TreeItem, error) {
-	return h.itemSvc.AddFolder(collectionID, parentID, name)
+func (h *HttpHandler) AddFolder(collectionID, parentID, name string) (*TreeItem, error) {
+	item, err := h.itemSvc.AddFolder(collectionID, parentID, name)
+	if err != nil {
+		return nil, err
+	}
+	return toTreeItemDTO(item), nil
 }
 
 // AddRequest はコレクションにリクエストを追加する。
-func (h *HttpHandler) AddRequest(collectionID, parentID string, req domain.HttpRequest) (*domain.TreeItem, error) {
-	return h.itemSvc.AddRequest(collectionID, parentID, req)
+func (h *HttpHandler) AddRequest(collectionID, parentID string, req HttpRequest) (*TreeItem, error) {
+	item, err := h.itemSvc.AddRequest(collectionID, parentID, fromHTTPRequestDTO(req))
+	if err != nil {
+		return nil, err
+	}
+	return toTreeItemDTO(item), nil
 }
 
 // UpdateRequest はコレクション内のリクエストを更新する。
-func (h *HttpHandler) UpdateRequest(collectionID string, req domain.HttpRequest) error {
-	return h.itemSvc.UpdateRequest(collectionID, req)
+func (h *HttpHandler) UpdateRequest(collectionID string, req HttpRequest) error {
+	return h.itemSvc.UpdateRequest(collectionID, fromHTTPRequestDTO(req))
 }
 
 // RenameItem はコレクション内のアイテム名を変更する。
