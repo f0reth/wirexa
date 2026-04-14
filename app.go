@@ -73,7 +73,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	netClient := httpinfra.NewNetClient()
 	reqSvc := httpapp.NewHTTPRequestService(netClient, logger)
-	adapters.SetupHTTPHandler(ctx, a.httpHandler, reqSvc, collSvc)
+	adapters.SetupHTTPHandler(ctx, a.httpHandler, reqSvc, collSvc, collSvc)
 
 	targetRepo, err := udpinfra.NewJSONTargetRepository(filepath.Join(configDir, wirexaConfigDir, "udp-targets"))
 	if err != nil {

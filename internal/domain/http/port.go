@@ -22,13 +22,16 @@ type RequestUseCase interface {
 	CancelRequest(id string)
 }
 
-// CollectionUseCase はコレクション管理のユースケース入力ポート。
-// Wails RPC アダプター (ports 層) はこのインターフェースのみに依存する。
+// CollectionUseCase はコレクション自体のCRUDユースケース入力ポート。
 type CollectionUseCase interface {
 	GetCollections() []Collection
 	CreateCollection(name string) (Collection, error)
 	DeleteCollection(id string) error
 	RenameCollection(id, name string) error
+}
+
+// CollectionItemUseCase はコレクション内ツリーアイテム管理のユースケース入力ポート。
+type CollectionItemUseCase interface {
 	AddFolder(collectionID, parentID, name string) (*TreeItem, error)
 	AddRequest(collectionID, parentID string, req HttpRequest) (*TreeItem, error)
 	UpdateRequest(collectionID string, req HttpRequest) error

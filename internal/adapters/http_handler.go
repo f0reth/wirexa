@@ -14,14 +14,16 @@ type HttpHandler struct {
 	ctx     context.Context
 	reqSvc  domain.RequestUseCase
 	collSvc domain.CollectionUseCase
+	itemSvc domain.CollectionItemUseCase
 }
 
 // SetupHTTPHandler は既存の HttpHandler インスタンスにサービスを注入する。
 // Wails の Bind に渡す前に事前確保した空ハンドラーを startup() で初期化する際に使用する。
-func SetupHTTPHandler(ctx context.Context, h *HttpHandler, reqSvc domain.RequestUseCase, collSvc domain.CollectionUseCase) {
+func SetupHTTPHandler(ctx context.Context, h *HttpHandler, reqSvc domain.RequestUseCase, collSvc domain.CollectionUseCase, itemSvc domain.CollectionItemUseCase) {
 	h.ctx = ctx
 	h.reqSvc = reqSvc
 	h.collSvc = collSvc
+	h.itemSvc = itemSvc
 }
 
 // OpenFilePicker はネイティブのファイル選択ダイアログを開き、選択されたファイルパスを返す。
@@ -63,32 +65,32 @@ func (h *HttpHandler) RenameCollection(id, name string) error {
 
 // AddFolder はコレクションにフォルダを追加する。
 func (h *HttpHandler) AddFolder(collectionID, parentID, name string) (*domain.TreeItem, error) {
-	return h.collSvc.AddFolder(collectionID, parentID, name)
+	return h.itemSvc.AddFolder(collectionID, parentID, name)
 }
 
 // AddRequest はコレクションにリクエストを追加する。
 func (h *HttpHandler) AddRequest(collectionID, parentID string, req domain.HttpRequest) (*domain.TreeItem, error) {
-	return h.collSvc.AddRequest(collectionID, parentID, req)
+	return h.itemSvc.AddRequest(collectionID, parentID, req)
 }
 
 // UpdateRequest はコレクション内のリクエストを更新する。
 func (h *HttpHandler) UpdateRequest(collectionID string, req domain.HttpRequest) error {
-	return h.collSvc.UpdateRequest(collectionID, req)
+	return h.itemSvc.UpdateRequest(collectionID, req)
 }
 
 // RenameItem はコレクション内のアイテム名を変更する。
 func (h *HttpHandler) RenameItem(collectionID, itemID, name string) error {
-	return h.collSvc.RenameItem(collectionID, itemID, name)
+	return h.itemSvc.RenameItem(collectionID, itemID, name)
 }
 
 // DeleteItem はコレクションからアイテムを削除する。
 func (h *HttpHandler) DeleteItem(collectionID, itemID string) error {
-	return h.collSvc.DeleteItem(collectionID, itemID)
+	return h.itemSvc.DeleteItem(collectionID, itemID)
 }
 
 // MoveItem はアイテムを同一コレクション内の別の親・位置へ移動する。
 // targetParentID が空文字の場合はコレクションルートへ移動する。
 // position は挿入先インデックス（削除後）。-1 の場合は末尾に追加する。
 func (h *HttpHandler) MoveItem(collectionID, itemID, targetParentID string, position int) error {
-	return h.collSvc.MoveItem(collectionID, itemID, targetParentID, position)
+	return h.itemSvc.MoveItem(collectionID, itemID, targetParentID, position)
 }
