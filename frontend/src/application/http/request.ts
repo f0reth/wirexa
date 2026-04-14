@@ -48,6 +48,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
   async function sendRequest(): Promise<void> {
     const m = method();
     const u = url();
+    setResponse(null);
     logger.info("HTTP request sent", { method: m, url: u });
     try {
       const res = await withLoading(setLoading, () =>
@@ -71,14 +72,23 @@ export function createRequestState(api: RequestApi, logger: Logger) {
         latency_ms: res.timingMs,
       });
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      setResponse({
+        statusCode: 0,
+        statusText: "",
+        headers: {},
+        body: "",
+        contentType: "",
+        size: 0,
+        timingMs: 0,
+        error: errorMsg,
+      });
       logger.error("HTTP request failed", {
         method: m,
         url: u,
-        error: String(err),
+        error: errorMsg,
       });
-      throw err;
     }
-    // エラーは呼び出し元 (Presentation 層) に伝播する
   }
 
   async function cancelRequest(): Promise<void> {
