@@ -107,7 +107,7 @@ func newMQTTHandler(t *testing.T, emitter cmndomain.Emitter) *adapters.MqttHandl
 	if err != nil {
 		t.Fatalf("NewProfileService: %v", err)
 	}
-	mqttSvc := mqttapp.NewMqttService(emitter, mqttinfra.NewPahoClientFactory(), testutil.NoopLogger{})
+	mqttSvc := mqttapp.NewMqttService(emitter, mqttinfra.NewPahoClientFactory(mqttinfra.MqttClientConfig{}), testutil.NoopLogger{})
 	h := &adapters.MqttHandler{}
 	adapters.SetupMqttHandler(h, mqttSvc, profileSvc)
 	return h

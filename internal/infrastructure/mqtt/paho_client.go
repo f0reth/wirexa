@@ -12,17 +12,38 @@ import (
 )
 
 const (
-	pahoConnectTimeout = 10 * time.Second
-	pahoTokenTimeout   = 30 * time.Second
+	defaultConnectTimeout = 10 * time.Second
+	defaultTokenTimeout   = 30 * time.Second
 )
+
+// MqttClientConfig は Paho MQTT クライアントの設定。
+type MqttClientConfig struct {
+	ConnectTimeout time.Duration
+	TokenTimeout   time.Duration
+}
+
+func (c MqttClientConfig) connectTimeout() time.Duration {
+	if c.ConnectTimeout > 0 {
+		return c.ConnectTimeout
+	}
+	return defaultConnectTimeout
+}
+
+func (c MqttClientConfig) tokenTimeout() time.Duration {
+	if c.TokenTimeout > 0 {
+		return c.TokenTimeout
+	}
+	return defaultTokenTimeout
+}
 
 // pahoClient は domain.BrokerClient の Paho MQTT 実装。
 type pahoClient struct {
-	client pahomqtt.Client
+	client       pahomqtt.Client
+	tokenTimeout time.Duration
 }
 
 // NewPahoClientFactory は Paho MQTT を用いた domain.BrokerClientFactory を返す。
-func NewPahoClientFactory() domain.BrokerClientFactory {
+func NewPahoClientFactory(cfg MqttClientConfig) domain.BrokerClientFactory {
 	return func(
 		config domain.ConnectionConfig,
 		onConnected func(),
@@ -43,7 +64,7 @@ func NewPahoClientFactory() domain.BrokerClientFactory {
 
 		opts.SetAutoReconnect(true)
 		opts.SetResumeSubs(true)
-		opts.SetConnectTimeout(pahoConnectTimeout)
+		opts.SetConnectTimeout(cfg.connectTimeout())
 
 		opts.SetOnConnectHandler(func(_ pahomqtt.Client) {
 			onConnected()
@@ -52,13 +73,13 @@ func NewPahoClientFactory() domain.BrokerClientFactory {
 			onConnectionLost(err)
 		})
 
-		return &pahoClient{client: pahomqtt.NewClient(opts)}
+		return &pahoClient{client: pahomqtt.NewClient(opts), tokenTimeout: cfg.tokenTimeout()}
 	}
 }
 
 func (p *pahoClient) Connect() error {
 	token := p.client.Connect()
-	if !token.WaitTimeout(pahoTokenTimeout) {
+	if !token.WaitTimeout(p.tokenTimeout) {
 		return errors.New("connection timed out")
 	}
 	return token.Error()
@@ -70,7 +91,7 @@ func (p *pahoClient) Disconnect(quiesce uint) {
 
 func (p *pahoClient) Publish(topic string, qos byte, retained bool, payload string) error {
 	token := p.client.Publish(topic, qos, retained, payload)
-	if !token.WaitTimeout(pahoTokenTimeout) {
+	if !token.WaitTimeout(p.tokenTimeout) {
 		return errors.New("publish timed out")
 	}
 	return token.Error()
@@ -81,7 +102,7 @@ func (p *pahoClient) Subscribe(topic string, qos byte, handler domain.MessageHan
 		handler(msg.Topic(), string(msg.Payload()), msg.Qos(), msg.Retained())
 	}
 	token := p.client.Subscribe(topic, qos, pahoHandler)
-	if !token.WaitTimeout(pahoTokenTimeout) {
+	if !token.WaitTimeout(p.tokenTimeout) {
 		return errors.New("subscribe timed out")
 	}
 	return token.Error()
@@ -89,7 +110,7 @@ func (p *pahoClient) Subscribe(topic string, qos byte, handler domain.MessageHan
 
 func (p *pahoClient) Unsubscribe(topics ...string) error {
 	token := p.client.Unsubscribe(topics...)
-	if !token.WaitTimeout(pahoTokenTimeout) {
+	if !token.WaitTimeout(p.tokenTimeout) {
 		return errors.New("unsubscribe timed out")
 	}
 	return token.Error()

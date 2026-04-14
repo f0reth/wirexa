@@ -50,7 +50,7 @@ func (a *App) startup(ctx context.Context) {
 	adapters.SetupLogHandler(a.logHandler, logger)
 
 	emitter := infra.NewWailsEmitter(ctx)
-	clientFactory := mqttinfra.NewPahoClientFactory()
+	clientFactory := mqttinfra.NewPahoClientFactory(mqttinfra.MqttClientConfig{})
 	mqttSvc := mqttapp.NewMqttService(emitter, clientFactory, logger)
 
 	profileRepo, err := mqttinfra.NewJSONProfileRepository(filepath.Join(configDir, wirexaConfigDir, "mqtt-profiles"))
