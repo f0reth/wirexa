@@ -16,7 +16,7 @@ var _ domain.TargetUseCase = (*TargetService)(nil)
 type TargetService struct {
 	repo    domain.TargetRepository
 	mu      sync.RWMutex
-	targets []domain.UdpTarget
+	targets map[string]domain.UdpTarget
 }
 
 // NewTargetService は TargetService を生成する。
@@ -25,18 +25,21 @@ func NewTargetService(repo domain.TargetRepository) (*TargetService, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load targets: %w", err)
 	}
-	if loaded == nil {
-		loaded = []domain.UdpTarget{}
+	targets := make(map[string]domain.UdpTarget, len(loaded))
+	for _, t := range loaded {
+		targets[t.ID] = t
 	}
-	return &TargetService{repo: repo, targets: loaded}, nil
+	return &TargetService{repo: repo, targets: targets}, nil
 }
 
 // GetTargets は全ターゲットのコピーを返す。
 func (s *TargetService) GetTargets() []domain.UdpTarget {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	result := make([]domain.UdpTarget, len(s.targets))
-	copy(result, s.targets)
+	result := make([]domain.UdpTarget, 0, len(s.targets))
+	for _, t := range s.targets {
+		result = append(result, t)
+	}
 	return result
 }
 
@@ -53,13 +56,7 @@ func (s *TargetService) SaveTarget(target domain.UdpTarget) (domain.UdpTarget, e
 		return domain.UdpTarget{}, err
 	}
 
-	for i, t := range s.targets {
-		if t.ID == target.ID {
-			s.targets[i] = target
-			return target, nil
-		}
-	}
-	s.targets = append(s.targets, target)
+	s.targets[target.ID] = target
 	return target, nil
 }
 
@@ -68,11 +65,12 @@ func (s *TargetService) DeleteTarget(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for i, t := range s.targets {
-		if t.ID == id {
-			s.targets = append(s.targets[:i], s.targets[i+1:]...)
-			return s.repo.Delete(id)
-		}
+	if _, ok := s.targets[id]; !ok {
+		return &cmn.NotFoundError{Resource: "target", ID: id}
 	}
-	return &cmn.NotFoundError{Resource: "target", ID: id}
+	if err := s.repo.Delete(id); err != nil {
+		return err
+	}
+	delete(s.targets, id)
+	return nil
 }

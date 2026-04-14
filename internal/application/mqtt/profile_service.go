@@ -15,7 +15,7 @@ var _ domain.ProfileUseCase = (*ProfileService)(nil)
 type ProfileService struct {
 	repo     domain.ProfileRepository
 	mu       sync.RWMutex
-	profiles []domain.BrokerProfile
+	profiles map[string]domain.BrokerProfile
 }
 
 // NewProfileService はリポジトリからプロファイルをロードして ProfileService を生成する。
@@ -24,18 +24,21 @@ func NewProfileService(repo domain.ProfileRepository) (*ProfileService, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load profiles: %w", err)
 	}
-	if loaded == nil {
-		loaded = []domain.BrokerProfile{}
+	profiles := make(map[string]domain.BrokerProfile, len(loaded))
+	for _, p := range loaded {
+		profiles[p.ID] = p
 	}
-	return &ProfileService{repo: repo, profiles: loaded}, nil
+	return &ProfileService{repo: repo, profiles: profiles}, nil
 }
 
 // GetProfiles は全プロファイルのコピーを返す。
 func (s *ProfileService) GetProfiles() []domain.BrokerProfile {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	result := make([]domain.BrokerProfile, len(s.profiles))
-	copy(result, s.profiles)
+	result := make([]domain.BrokerProfile, 0, len(s.profiles))
+	for _, p := range s.profiles {
+		result = append(result, p)
+	}
 	return result
 }
 
@@ -46,13 +49,7 @@ func (s *ProfileService) SaveProfile(profile domain.BrokerProfile) error {
 	if err := s.repo.Save(&profile); err != nil {
 		return err
 	}
-	for i, p := range s.profiles {
-		if p.ID == profile.ID {
-			s.profiles[i] = profile
-			return nil
-		}
-	}
-	s.profiles = append(s.profiles, profile)
+	s.profiles[profile.ID] = profile
 	return nil
 }
 
@@ -63,11 +60,6 @@ func (s *ProfileService) DeleteProfile(id string) error {
 	if err := s.repo.Delete(id); err != nil {
 		return err
 	}
-	for i, p := range s.profiles {
-		if p.ID == id {
-			s.profiles = append(s.profiles[:i], s.profiles[i+1:]...)
-			break
-		}
-	}
+	delete(s.profiles, id)
 	return nil
 }
