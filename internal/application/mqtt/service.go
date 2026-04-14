@@ -122,6 +122,18 @@ func (s *MqttService) Disconnect(connectionID string) error {
 	return nil
 }
 
+// withConn はロックを保持したまま接続を取得し、fn を呼び出す。
+// ロック解放後に接続が削除される TOCTOU 競合を防ぐ。
+func (s *MqttService) withConn(id string, fn func(conn *connection) error) error {
+	s.mu.RLock()
+	conn, ok := s.conns[id]
+	s.mu.RUnlock()
+	if !ok {
+		return &cmn.NotFoundError{Resource: "connection", ID: id}
+	}
+	return fn(conn)
+}
+
 // Publish は指定トピックへメッセージを送信する。
 func (s *MqttService) Publish(connectionID, topic, payload string, qos byte, retain bool) error {
 	if topic == "" {
@@ -130,18 +142,9 @@ func (s *MqttService) Publish(connectionID, topic, payload string, qos byte, ret
 	if qos > 2 {
 		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
 	}
-
-	s.mu.RLock()
-	conn, ok := s.conns[connectionID]
-	s.mu.RUnlock()
-	if !ok {
-		return &cmn.NotFoundError{Resource: "connection", ID: connectionID}
-	}
-
-	if err := conn.client.Publish(topic, qos, retain, payload); err != nil {
-		return err
-	}
-	return nil
+	return s.withConn(connectionID, func(conn *connection) error {
+		return conn.client.Publish(topic, qos, retain, payload)
+	})
 }
 
 // Subscribe は指定トピックの購読を開始する。
@@ -152,30 +155,20 @@ func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
 	if qos > 2 {
 		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
 	}
-
-	s.mu.RLock()
-	conn, ok := s.conns[connectionID]
-	s.mu.RUnlock()
-	if !ok {
-		return &cmn.NotFoundError{Resource: "connection", ID: connectionID}
-	}
-
-	handler := func(msgTopic, msgPayload string, msgQoS byte, retained bool) {
-		s.logger.Info("MQTT message received", "source", "mqtt", "connection_id", connectionID, "topic", msgTopic, "payload_bytes", len(msgPayload))
-		s.emitter.Emit(eventMessage, domain.MqttMessage{
-			ConnectionID: connectionID,
-			Topic:        msgTopic,
-			Payload:      msgPayload,
-			QoS:          msgQoS,
-			Retained:     retained,
-			Timestamp:    time.Now().UnixMilli(),
-		})
-	}
-
-	if err := conn.client.Subscribe(topic, qos, handler); err != nil {
-		return err
-	}
-	return nil
+	return s.withConn(connectionID, func(conn *connection) error {
+		handler := func(msgTopic, msgPayload string, msgQoS byte, retained bool) {
+			s.logger.Info("MQTT message received", "source", "mqtt", "connection_id", connectionID, "topic", msgTopic, "payload_bytes", len(msgPayload))
+			s.emitter.Emit(eventMessage, domain.MqttMessage{
+				ConnectionID: connectionID,
+				Topic:        msgTopic,
+				Payload:      msgPayload,
+				QoS:          msgQoS,
+				Retained:     retained,
+				Timestamp:    time.Now().UnixMilli(),
+			})
+		}
+		return conn.client.Subscribe(topic, qos, handler)
+	})
 }
 
 // Unsubscribe は指定トピックの購読を解除する。
@@ -183,18 +176,9 @@ func (s *MqttService) Unsubscribe(connectionID, topic string) error {
 	if topic == "" {
 		return &cmn.ValidationError{Field: "topic", Message: "is required"}
 	}
-
-	s.mu.RLock()
-	conn, ok := s.conns[connectionID]
-	s.mu.RUnlock()
-	if !ok {
-		return &cmn.NotFoundError{Resource: "connection", ID: connectionID}
-	}
-
-	if err := conn.client.Unsubscribe(topic); err != nil {
-		return err
-	}
-	return nil
+	return s.withConn(connectionID, func(conn *connection) error {
+		return conn.client.Unsubscribe(topic)
+	})
 }
 
 // GetConnections は全接続の現在状態を返す。

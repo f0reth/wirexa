@@ -46,6 +46,7 @@ func (s *UdpListenerService) StartListen(port int, encoding domain.PayloadEncodi
 		return domain.UdpListenSession{}, &cmn.ValidationError{Field: "port", Message: "must be 1-65535"}
 	}
 
+	// ポート衝突チェックと登録をロック保持のままアトミックに行い TOCTOU 競合を防ぐ。
 	s.mu.Lock()
 	for _, ls := range s.sessions {
 		if ls.session.Port == port {
@@ -53,10 +54,10 @@ func (s *UdpListenerService) StartListen(port int, encoding domain.PayloadEncodi
 			return domain.UdpListenSession{}, &cmn.ValidationError{Field: "port", Message: fmt.Sprintf("port %d is already listening", port)}
 		}
 	}
-	s.mu.Unlock()
 
 	conn, err := s.socket.Listen(port)
 	if err != nil {
+		s.mu.Unlock()
 		return domain.UdpListenSession{}, fmt.Errorf("failed to listen on port %d: %w", port, err)
 	}
 
@@ -65,10 +66,7 @@ func (s *UdpListenerService) StartListen(port int, encoding domain.PayloadEncodi
 		Port:     port,
 		Encoding: encoding,
 	}
-
 	ls := &listenSession{session: session, conn: conn}
-
-	s.mu.Lock()
 	s.sessions[session.ID] = ls
 	s.mu.Unlock()
 
