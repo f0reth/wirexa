@@ -36,9 +36,9 @@ func (h *HttpHandler) SendRequest(req domain.HttpRequest) (domain.HttpResponse, 
 	return h.reqSvc.SendRequest(req)
 }
 
-// CancelRequest は実行中の HTTP リクエストをキャンセルする。
-func (h *HttpHandler) CancelRequest() {
-	h.reqSvc.CancelRequest()
+// CancelRequest は指定 ID の実行中 HTTP リクエストをキャンセルする。
+func (h *HttpHandler) CancelRequest(id string) {
+	h.reqSvc.CancelRequest(id)
 }
 
 // GetCollections は全コレクションを返す。

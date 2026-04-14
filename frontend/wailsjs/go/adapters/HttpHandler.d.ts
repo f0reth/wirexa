@@ -6,7 +6,7 @@ export function AddFolder(arg1:string,arg2:string,arg3:string):Promise<httpdomai
 
 export function AddRequest(arg1:string,arg2:string,arg3:httpdomain.HttpRequest):Promise<httpdomain.TreeItem>;
 
-export function CancelRequest():Promise<void>;
+export function CancelRequest(arg1:string):Promise<void>;
 
 export function CreateCollection(arg1:string):Promise<httpdomain.Collection>;
 

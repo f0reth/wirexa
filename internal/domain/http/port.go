@@ -19,7 +19,7 @@ type CollectionRepository interface {
 // RequestUseCase は HTTP リクエスト送信のユースケース入力ポート。
 type RequestUseCase interface {
 	SendRequest(req HttpRequest) (HttpResponse, error)
-	CancelRequest()
+	CancelRequest(id string)
 }
 
 // CollectionUseCase はコレクション管理のユースケース入力ポート。

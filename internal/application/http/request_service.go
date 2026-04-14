@@ -20,12 +20,12 @@ type HttpRequestService struct {
 	transport domain.HttpTransport
 	logger    cmn.Logger
 	mu        sync.Mutex
-	cancel    context.CancelFunc
+	cancels   map[string]context.CancelFunc
 }
 
 // NewHTTPRequestService は HttpRequestService を生成する。
 func NewHTTPRequestService(transport domain.HttpTransport, logger cmn.Logger) *HttpRequestService {
-	return &HttpRequestService{transport: transport, logger: logger}
+	return &HttpRequestService{transport: transport, logger: logger, cancels: make(map[string]context.CancelFunc)}
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
@@ -37,11 +37,11 @@ func (s *HttpRequestService) SendRequest(req domain.HttpRequest) (domain.HttpRes
 	s.logger.Info("HTTP request sent", "source", "http", "method", req.Method, "url", req.URL, "body_bytes", len(req.Body.Contents[req.Body.Type]))
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
-	s.cancel = cancel
+	s.cancels[req.ID] = cancel
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
-		s.cancel = nil
+		delete(s.cancels, req.ID)
 		s.mu.Unlock()
 		cancel()
 	}()
@@ -54,12 +54,12 @@ func (s *HttpRequestService) SendRequest(req domain.HttpRequest) (domain.HttpRes
 	return resp, nil
 }
 
-// CancelRequest は実行中の HTTP リクエストをキャンセルする。
-func (s *HttpRequestService) CancelRequest() {
+// CancelRequest は指定 ID の実行中 HTTP リクエストをキャンセルする。
+func (s *HttpRequestService) CancelRequest(id string) {
 	s.mu.Lock()
-	cancel := s.cancel
+	cancel, ok := s.cancels[id]
 	s.mu.Unlock()
-	if cancel != nil {
+	if ok {
 		cancel()
 	}
 }

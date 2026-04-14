@@ -14,7 +14,7 @@ import { withLoading } from "../../shared/async-op";
 
 export interface RequestApi {
   sendRequest(req: HttpRequest): Promise<HttpResponse>;
-  cancelRequest(): Promise<void>;
+  cancelRequest(id: string): Promise<void>;
   updateRequest(collectionId: string, req: HttpRequest): Promise<void>;
 }
 
@@ -92,7 +92,9 @@ export function createRequestState(api: RequestApi, logger: Logger) {
   }
 
   async function cancelRequest(): Promise<void> {
-    await api.cancelRequest();
+    const id = activeRequestId();
+    if (!id) return;
+    await api.cancelRequest(id);
   }
 
   function loadRequest(req: HttpRequest, collectionId: string): void {

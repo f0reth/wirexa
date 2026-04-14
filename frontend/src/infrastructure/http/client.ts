@@ -130,8 +130,8 @@ export async function sendRequest(req: HttpRequest): Promise<HttpResponse> {
   return fromWailsHttpResponse(result);
 }
 
-export async function cancelRequest(): Promise<void> {
-  return CancelRequest();
+export async function cancelRequest(id: string): Promise<void> {
+  return CancelRequest(id);
 }
 
 export async function getCollections(): Promise<Collection[]> {

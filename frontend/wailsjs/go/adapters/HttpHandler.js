@@ -10,8 +10,8 @@ export function AddRequest(arg1, arg2, arg3) {
   return window['go']['adapters']['HttpHandler']['AddRequest'](arg1, arg2, arg3);
 }
 
-export function CancelRequest() {
-  return window['go']['adapters']['HttpHandler']['CancelRequest']();
+export function CancelRequest(arg1) {
+  return window['go']['adapters']['HttpHandler']['CancelRequest'](arg1);
 }
 
 export function CreateCollection(arg1) {
