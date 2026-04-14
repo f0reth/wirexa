@@ -53,7 +53,7 @@ func (s *TargetService) SaveTarget(target domain.UdpTarget) (domain.UdpTarget, e
 	}
 
 	if err := s.repo.Save(&target); err != nil {
-		return domain.UdpTarget{}, err
+		return domain.UdpTarget{}, fmt.Errorf("failed to save target: %w", err)
 	}
 
 	s.targets[target.ID] = target
@@ -69,7 +69,7 @@ func (s *TargetService) DeleteTarget(id string) error {
 		return &cmn.NotFoundError{Resource: "target", ID: id}
 	}
 	if err := s.repo.Delete(id); err != nil {
-		return err
+		return fmt.Errorf("failed to delete target: %w", err)
 	}
 	delete(s.targets, id)
 	return nil

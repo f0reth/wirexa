@@ -2,6 +2,7 @@
 package httpapp
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 
@@ -27,7 +28,7 @@ func NewCollectionService(repo domain.CollectionRepository) (*CollectionService,
 	}
 	cols, err := repo.Load()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load collections: %w", err)
 	}
 	for i := range cols {
 		c := cols[i]
@@ -58,7 +59,7 @@ func (s *CollectionService) CreateCollection(name string) (domain.Collection, er
 		Items: []*domain.TreeItem{},
 	}
 	if err := s.repo.Save(&c); err != nil {
-		return domain.Collection{}, err
+		return domain.Collection{}, fmt.Errorf("failed to save collection: %w", err)
 	}
 	s.mu.Lock()
 	s.cache[c.ID] = &c
@@ -76,7 +77,7 @@ func (s *CollectionService) DeleteCollection(id string) error {
 	s.mu.RUnlock()
 
 	if err := s.repo.Delete(id); err != nil {
-		return err
+		return fmt.Errorf("failed to delete collection: %w", err)
 	}
 	s.mu.Lock()
 	delete(s.cache, id)
@@ -93,7 +94,10 @@ func (s *CollectionService) RenameCollection(id, name string) error {
 		return &cmn.NotFoundError{Resource: "collection", ID: id}
 	}
 	c.Name = name
-	return s.repo.Save(c)
+	if err := s.repo.Save(c); err != nil {
+		return fmt.Errorf("failed to save collection: %w", err)
+	}
+	return nil
 }
 
 // AddFolder はコレクションにフォルダを追加する。
@@ -124,7 +128,7 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 	}
 
 	if err := s.repo.Save(c); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to save collection: %w", err)
 	}
 	return item, nil
 }
@@ -161,7 +165,7 @@ func (s *CollectionService) AddRequest(collectionID, parentID string, req domain
 	}
 
 	if err := s.repo.Save(c); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to save collection: %w", err)
 	}
 	return item, nil
 }
@@ -185,7 +189,10 @@ func (s *CollectionService) UpdateRequest(collectionID string, req domain.HttpRe
 	req.Name = node.Name
 	node.Request = &req
 
-	return s.repo.Save(c)
+	if err := s.repo.Save(c); err != nil {
+		return fmt.Errorf("failed to save collection: %w", err)
+	}
+	return nil
 }
 
 // RenameItem はコレクション内のアイテム名を変更する。
@@ -208,7 +215,10 @@ func (s *CollectionService) RenameItem(collectionID, itemID, name string) error 
 		node.Request.Name = name
 	}
 
-	return s.repo.Save(c)
+	if err := s.repo.Save(c); err != nil {
+		return fmt.Errorf("failed to save collection: %w", err)
+	}
+	return nil
 }
 
 // MoveItem はアイテムを同一親内で位置変更する。
@@ -261,7 +271,10 @@ func (s *CollectionService) MoveItem(collectionID, itemID, targetParentID string
 		origParent.Children = insertAt(origParent.Children, item, position)
 	}
 
-	return s.repo.Save(c)
+	if err := s.repo.Save(c); err != nil {
+		return fmt.Errorf("failed to save collection: %w", err)
+	}
+	return nil
 }
 
 // insertAt はスライスの指定インデックスにアイテムを挿入する。
@@ -290,5 +303,8 @@ func (s *CollectionService) DeleteItem(collectionID, itemID string) error {
 		return &cmn.NotFoundError{Resource: "item", ID: itemID}
 	}
 
-	return s.repo.Save(c)
+	if err := s.repo.Save(c); err != nil {
+		return fmt.Errorf("failed to save collection: %w", err)
+	}
+	return nil
 }

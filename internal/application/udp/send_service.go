@@ -2,6 +2,8 @@
 package udpapp
 
 import (
+	"fmt"
+
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/udp"
 )
@@ -41,7 +43,7 @@ func (s *UdpSendService) Send(req domain.UdpSendRequest) (domain.UdpSendResult, 
 	n, err := s.socket.Send(req.Host, req.Port, data)
 	if err != nil {
 		s.logger.Error("UDP send failed", "source", "udp", "host", req.Host, "port", req.Port, "error", err)
-		return domain.UdpSendResult{}, err
+		return domain.UdpSendResult{}, fmt.Errorf("failed to send UDP packet: %w", err)
 	}
 
 	s.logger.Info("UDP packet sent", "source", "udp", "host", req.Host, "port", req.Port, "bytes", n)

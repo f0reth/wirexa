@@ -47,7 +47,7 @@ func (s *ProfileService) SaveProfile(profile domain.BrokerProfile) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.repo.Save(&profile); err != nil {
-		return err
+		return fmt.Errorf("failed to save profile: %w", err)
 	}
 	s.profiles[profile.ID] = profile
 	return nil
@@ -58,7 +58,7 @@ func (s *ProfileService) DeleteProfile(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.repo.Delete(id); err != nil {
-		return err
+		return fmt.Errorf("failed to delete profile: %w", err)
 	}
 	delete(s.profiles, id)
 	return nil
