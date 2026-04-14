@@ -4,6 +4,7 @@ import {
   loadFromStorage,
   saveToStorage,
 } from "../../infrastructure/storage/local-storage";
+import { applyOrder } from "../shared/order";
 
 const PROFILE_ORDER_KEY = "mqtt:profileOrder";
 
@@ -11,18 +12,6 @@ export interface ProfileApi {
   getProfiles(): Promise<BrokerProfile[]>;
   saveProfile(profile: BrokerProfile): Promise<void>;
   deleteProfile(id: string): Promise<void>;
-}
-
-function applyOrder(
-  profiles: BrokerProfile[],
-  order: string[],
-): BrokerProfile[] {
-  const orderMap = new Map(order.map((id, i) => [id, i]));
-  return [...profiles].sort((a, b) => {
-    const ai = orderMap.get(a.id) ?? Number.POSITIVE_INFINITY;
-    const bi = orderMap.get(b.id) ?? Number.POSITIVE_INFINITY;
-    return ai - bi;
-  });
 }
 
 export function createProfilesState(api: ProfileApi) {

@@ -4,6 +4,7 @@ import {
   loadFromStorage,
   saveToStorage,
 } from "../../infrastructure/storage/local-storage";
+import { applyOrder } from "../shared/order";
 
 const TARGET_ORDER_KEY = "udp:targetOrder";
 
@@ -11,15 +12,6 @@ export interface UdpTargetApi {
   getTargets(): Promise<UdpTarget[]>;
   saveTarget(target: UdpTarget): Promise<UdpTarget>;
   deleteTarget(id: string): Promise<void>;
-}
-
-function applyOrder(targets: UdpTarget[], order: string[]): UdpTarget[] {
-  const orderMap = new Map(order.map((id, i) => [id, i]));
-  return [...targets].sort((a, b) => {
-    const ai = orderMap.get(a.id) ?? Number.POSITIVE_INFINITY;
-    const bi = orderMap.get(b.id) ?? Number.POSITIVE_INFINITY;
-    return ai - bi;
-  });
 }
 
 export function createTargetsState(api: UdpTargetApi) {
