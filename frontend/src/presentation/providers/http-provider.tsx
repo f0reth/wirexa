@@ -88,6 +88,7 @@ export function HttpProvider(props: { children: JSX.Element }) {
       sendRequest: httpClient.sendRequest,
       cancelRequest: httpClient.cancelRequest,
       updateRequest: httpClient.updateRequest,
+      afterSave: (colId, req) => collectionsState.patchRequest(colId, req),
     },
     createLogger("frontend:http"),
   );

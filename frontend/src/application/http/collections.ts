@@ -1,4 +1,4 @@
-import { createStore, reconcile } from "solid-js/store";
+import { createStore, produce, reconcile } from "solid-js/store";
 import type {
   Collection,
   HttpRequest,
@@ -101,6 +101,26 @@ export function createCollectionsState(api: CollectionsApi) {
     await refreshCollections();
   }
 
+  function patchRequest(collectionId: string, req: HttpRequest): void {
+    setCollections(
+      (col) => col.id === collectionId,
+      produce((col) => {
+        const patch = (items: TreeItem[]): boolean => {
+          for (const item of items) {
+            if (item.type === "request" && item.id === req.id && item.request) {
+              // name は backend が管理するため保持する
+              item.request = { ...req, name: item.request.name };
+              return true;
+            }
+            if (patch(item.children)) return true;
+          }
+          return false;
+        };
+        patch(col.items);
+      }),
+    );
+  }
+
   return {
     collections,
     refreshCollections,
@@ -112,5 +132,6 @@ export function createCollectionsState(api: CollectionsApi) {
     renameItem,
     deleteItem,
     moveItem,
+    patchRequest,
   };
 }

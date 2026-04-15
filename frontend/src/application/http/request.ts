@@ -16,6 +16,7 @@ export interface RequestApi {
   sendRequest(req: HttpRequest): Promise<HttpResponse>;
   cancelRequest(id: string): Promise<void>;
   updateRequest(collectionId: string, req: HttpRequest): Promise<void>;
+  afterSave?: (collectionId: string, req: HttpRequest) => void;
 }
 
 export function createRequestState(api: RequestApi, logger: Logger) {
@@ -131,7 +132,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     const id = activeRequestId();
     const colId = activeCollectionId();
     if (!id || !colId) return;
-    await api.updateRequest(colId, {
+    const req = {
       id,
       name: "",
       method: method(),
@@ -141,7 +142,9 @@ export function createRequestState(api: RequestApi, logger: Logger) {
       body: body(),
       auth: auth(),
       settings: settings(),
-    });
+    };
+    await api.updateRequest(colId, req);
+    api.afterSave?.(colId, req);
   }
 
   return {
