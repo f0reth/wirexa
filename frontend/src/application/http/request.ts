@@ -98,6 +98,9 @@ export function createRequestState(api: RequestApi, logger: Logger) {
   }
 
   function loadRequest(req: HttpRequest, collectionId: string): void {
+    saveCurrentRequest().catch((err) =>
+      console.error("Failed to save current request", err),
+    );
     setMethod(req.method);
     setUrl(req.url);
     setHeaders(req.headers);
@@ -110,6 +113,9 @@ export function createRequestState(api: RequestApi, logger: Logger) {
   }
 
   function newRequest(): void {
+    saveCurrentRequest().catch((err) =>
+      console.error("Failed to save current request", err),
+    );
     setMethod("GET");
     setUrl("");
     setHeaders([]);
