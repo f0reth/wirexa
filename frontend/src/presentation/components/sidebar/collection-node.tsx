@@ -1,7 +1,8 @@
 import { clsx } from "clsx";
 import { ChevronRight, Folder, FolderPlus, Plus, Trash2 } from "lucide-solid";
-import { createSignal, For, Show } from "solid-js";
+import { For, Show } from "solid-js";
 import type { Collection, TreeItem } from "../../../domain/http/types";
+import { useHttpCollections } from "../../providers/http-provider";
 import styles from "./sidebar.module.css";
 import { InsertionZone, TreeItemNode } from "./tree-item-node";
 
@@ -31,7 +32,10 @@ export function CollectionNode(props: {
   renamingCollectionId: string | null;
   setRenamingCollectionId: (id: string | null) => void;
 }) {
-  const [expanded, setExpanded] = createSignal(true);
+  const collectionsCtx = useHttpCollections();
+  const expanded = () => collectionsCtx.isExpanded(props.collection.id, true);
+  const toggleExpanded = () =>
+    collectionsCtx.setExpanded(props.collection.id, !expanded());
 
   const isRenaming = () => props.renamingCollectionId === props.collection.id;
 
@@ -49,7 +53,7 @@ export function CollectionNode(props: {
         <button
           type="button"
           class={styles.treeNodeToggle}
-          onClick={() => setExpanded(!expanded())}
+          onClick={() => toggleExpanded()}
         >
           <ChevronRight
             size={12}

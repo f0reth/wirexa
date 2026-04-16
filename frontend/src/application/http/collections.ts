@@ -32,6 +32,17 @@ export interface CollectionsApi {
 
 export function createCollectionsState(api: CollectionsApi) {
   const [collections, setCollections] = createStore<Collection[]>([]);
+  const [expandedIds, setExpandedIds] = createStore<Record<string, boolean>>(
+    {},
+  );
+
+  function isExpanded(id: string, defaultValue: boolean): boolean {
+    return expandedIds[id] ?? defaultValue;
+  }
+
+  function setExpanded(id: string, val: boolean): void {
+    setExpandedIds(id, val);
+  }
 
   async function refreshCollections(): Promise<void> {
     const cols = await api.getCollections();
@@ -133,5 +144,7 @@ export function createCollectionsState(api: CollectionsApi) {
     deleteItem,
     moveItem,
     patchRequest,
+    isExpanded,
+    setExpanded,
   };
 }

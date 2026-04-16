@@ -76,6 +76,8 @@ export interface CollectionsContextValue {
     targetParentId: string,
     position: number,
   ) => Promise<void>;
+  isExpanded: (id: string, defaultValue: boolean) => boolean;
+  setExpanded: (id: string, val: boolean) => void;
 }
 
 const HttpRequestContext = createContext<RequestContextValue>();

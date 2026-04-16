@@ -1,8 +1,9 @@
 import { clsx } from "clsx";
 import { ChevronRight, Folder, FolderPlus, Plus, Trash2 } from "lucide-solid";
-import { createSignal, For, Show } from "solid-js";
+import { For, Show } from "solid-js";
 import type { HttpMethod, TreeItem } from "../../../domain/http/types";
 import { METHOD_COLORS } from "../../constants/http";
+import { useHttpCollections } from "../../providers/http-provider";
 import { dragItem, dropTarget, setDragItem, setGhostPos } from "./drag-state";
 import styles from "./sidebar.module.css";
 
@@ -146,7 +147,10 @@ export function TreeItemNode(props: {
   renamingItemId: string | null;
   setRenamingItemId: (id: string | null) => void;
 }) {
-  const [expanded, setExpanded] = createSignal(false);
+  const collectionsCtx = useHttpCollections();
+  const expanded = () => collectionsCtx.isExpanded(props.item.id, false);
+  const toggleExpanded = () =>
+    collectionsCtx.setExpanded(props.item.id, !expanded());
 
   if (props.item.type === "folder") {
     const isRenaming = () => props.renamingItemId === props.item.id;
@@ -184,7 +188,7 @@ export function TreeItemNode(props: {
                 suppressRef.suppress = false;
                 return;
               }
-              setExpanded(!expanded());
+              toggleExpanded();
             }}
           >
             <ChevronRight
