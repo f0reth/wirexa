@@ -74,6 +74,7 @@ export function createCollectionsState(api: CollectionsApi) {
       }
     };
     for (const col of cols) {
+      validIds.add(col.id);
       walk(col.items);
     }
     const staleIds = Object.keys(expandedIds).filter((id) => !validIds.has(id));
