@@ -5,6 +5,26 @@ import type {
   TreeItem,
 } from "../../domain/http/types";
 
+const STORAGE_KEY = "wirexa:http:expandedFolders";
+
+function loadExpandedIds(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+function saveExpandedIds(ids: Record<string, boolean>): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+  } catch {
+    // ignore
+  }
+}
+
 export interface CollectionsApi {
   getCollections(): Promise<Collection[]>;
   createCollection(name: string): Promise<Collection>;
@@ -33,7 +53,7 @@ export interface CollectionsApi {
 export function createCollectionsState(api: CollectionsApi) {
   const [collections, setCollections] = createStore<Collection[]>([]);
   const [expandedIds, setExpandedIds] = createStore<Record<string, boolean>>(
-    {},
+    loadExpandedIds(),
   );
 
   function isExpanded(id: string, defaultValue: boolean): boolean {
@@ -42,11 +62,34 @@ export function createCollectionsState(api: CollectionsApi) {
 
   function setExpanded(id: string, val: boolean): void {
     setExpandedIds(id, val);
+    saveExpandedIds({ ...expandedIds, [id]: val });
+  }
+
+  function pruneExpandedIds(cols: Collection[]): void {
+    const validIds = new Set<string>();
+    const walk = (items: TreeItem[]) => {
+      for (const item of items) {
+        validIds.add(item.id);
+        if (item.children) walk(item.children);
+      }
+    };
+    for (const col of cols) {
+      walk(col.items);
+    }
+    const staleIds = Object.keys(expandedIds).filter((id) => !validIds.has(id));
+    if (staleIds.length === 0) return;
+    setExpandedIds(
+      produce((draft) => {
+        for (const id of staleIds) delete draft[id];
+      }),
+    );
+    saveExpandedIds({ ...expandedIds });
   }
 
   async function refreshCollections(): Promise<void> {
     const cols = await api.getCollections();
     setCollections(reconcile(cols, { key: "id" }));
+    pruneExpandedIds(cols);
   }
 
   async function createCollection(name: string): Promise<Collection> {
