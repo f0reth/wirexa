@@ -25,6 +25,7 @@ type RequestUseCase interface {
 // CollectionUseCase はコレクション自体のCRUDユースケース入力ポート。
 type CollectionUseCase interface {
 	GetCollections() []Collection
+	GetRootItems() []*TreeItem
 	CreateCollection(name string) (Collection, error)
 	DeleteCollection(id string) error
 	RenameCollection(id, name string) error

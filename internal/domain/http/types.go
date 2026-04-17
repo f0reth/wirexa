@@ -79,6 +79,9 @@ const (
 	ItemTypeRequest = "request"
 )
 
+// RootCollectionID はルートリクエスト置き場として使用する予約済みコレクション ID。
+const RootCollectionID = "__root__"
+
 // findNode はツリーを再帰的に走査してIDに一致するノードとその親を返す。
 func findNode(id string, items []*TreeItem, parent *TreeItem) (*TreeItem, *TreeItem, bool) {
 	for _, item := range items {

@@ -47,6 +47,16 @@ func (h *HttpHandler) CancelRequest(id string) {
 	h.reqSvc.CancelRequest(id)
 }
 
+// GetRootItems はルートコレクションのアイテム一覧を返す。
+func (h *HttpHandler) GetRootItems() []*TreeItem {
+	items := h.collSvc.GetRootItems()
+	result := make([]*TreeItem, len(items))
+	for i, item := range items {
+		result[i] = toTreeItemDTO(item)
+	}
+	return result
+}
+
 // GetCollections は全コレクションを返す。
 func (h *HttpHandler) GetCollections() []Collection {
 	cols := h.collSvc.GetCollections()

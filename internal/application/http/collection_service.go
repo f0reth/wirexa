@@ -34,21 +34,46 @@ func NewCollectionService(repo domain.CollectionRepository) (*CollectionService,
 		c := cols[i]
 		svc.cache[c.ID] = &c
 	}
+	if _, ok := svc.cache[domain.RootCollectionID]; !ok {
+		root := &domain.Collection{
+			ID:    domain.RootCollectionID,
+			Name:  domain.RootCollectionID,
+			Items: []*domain.TreeItem{},
+		}
+		if err := repo.Save(root); err != nil {
+			return nil, fmt.Errorf("failed to create root collection: %w", err)
+		}
+		svc.cache[root.ID] = root
+	}
 	return svc, nil
 }
 
-// GetCollections は全コレクションを名前順で返す。
+// GetCollections は全コレクションを名前順で返す（__root__ を除く）。
 func (s *CollectionService) GetCollections() []domain.Collection {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	result := make([]domain.Collection, 0, len(s.cache))
 	for _, c := range s.cache {
+		if c.ID == domain.RootCollectionID {
+			continue
+		}
 		result = append(result, *c)
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Name < result[j].Name
 	})
 	return result
+}
+
+// GetRootItems はルートコレクション（__root__）のアイテム一覧を返す。
+func (s *CollectionService) GetRootItems() []*domain.TreeItem {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	root, ok := s.cache[domain.RootCollectionID]
+	if !ok {
+		return []*domain.TreeItem{}
+	}
+	return root.Items
 }
 
 // CreateCollection は新規コレクションを作成する。
