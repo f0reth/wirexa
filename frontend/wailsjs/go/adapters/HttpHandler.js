@@ -34,8 +34,12 @@ export function GetRootItems() {
   return window['go']['adapters']['HttpHandler']['GetRootItems']();
 }
 
-export function MoveItem(arg1, arg2, arg3, arg4) {
-  return window['go']['adapters']['HttpHandler']['MoveItem'](arg1, arg2, arg3, arg4);
+export function MoveCollection(arg1, arg2) {
+  return window['go']['adapters']['HttpHandler']['MoveCollection'](arg1, arg2);
+}
+
+export function MoveItem(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['adapters']['HttpHandler']['MoveItem'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function OpenFilePicker() {

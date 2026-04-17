@@ -182,16 +182,18 @@ export namespace adapters {
 	    id: string;
 	    name: string;
 	    items: TreeItem[];
-	
+	    order: number;
+
 	    static createFrom(source: any = {}) {
 	        return new Collection(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.items = this.convertValues(source["items"], TreeItem);
+	        this.order = source["order"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

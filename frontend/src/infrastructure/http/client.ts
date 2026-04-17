@@ -7,6 +7,7 @@ import {
   DeleteItem,
   GetCollections,
   GetRootItems,
+  MoveCollection,
   MoveItem,
   RenameCollection,
   RenameItem,
@@ -123,6 +124,7 @@ function fromWailsCollection(col: adapters.Collection): Collection {
     id: col.id,
     name: col.name,
     items: col.items.map(fromWailsTreeItem),
+    order: col.order ?? 0,
   };
 }
 
@@ -201,11 +203,25 @@ export async function deleteItem(
   return DeleteItem(collectionId, itemId);
 }
 
-export async function moveItem(
+export async function moveCollection(
   collectionId: string,
+  position: number,
+): Promise<void> {
+  return MoveCollection(collectionId, position);
+}
+
+export async function moveItem(
+  sourceCollectionId: string,
   itemId: string,
+  targetCollectionId: string,
   targetParentId: string,
   position: number,
 ): Promise<void> {
-  return MoveItem(collectionId, itemId, targetParentId, position);
+  return MoveItem(
+    sourceCollectionId,
+    itemId,
+    targetCollectionId,
+    targetParentId,
+    position,
+  );
 }
