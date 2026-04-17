@@ -111,6 +111,39 @@
   color: var(--color-foreground);
 }
 
+.addMenuWrapper {
+  position: relative;
+}
+
+.addMenu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 100;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  min-width: 140px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+}
+
+.addMenuItem {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-foreground);
+}
+
+.addMenuItem:hover {
+  background: var(--color-accent);
+}
+
 .createForm {
   padding: 0.375rem 0.5rem;
   border-bottom: 1px solid var(--border-subtle);

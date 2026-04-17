@@ -4,7 +4,10 @@ import { Portal } from "solid-js/web";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { ScrollArea } from "../../../components/ui/scroll-area";
-import { DEFAULT_SETTINGS } from "../../../domain/http/types";
+import {
+  DEFAULT_SETTINGS,
+  ROOT_COLLECTION_ID,
+} from "../../../domain/http/types";
 import {
   useHttpCollections,
   useHttpRequest,
@@ -23,11 +26,14 @@ import {
   DROP_PARENT_ID_ATTR,
   DROP_POSITION_ATTR,
   DROP_ZONE_ATTR,
+  InsertionZone,
+  TreeItemNode,
 } from "./tree-item-node";
 
 export function CollectionTree() {
   const requestCtx = useHttpRequest();
   const collectionsCtx = useHttpCollections();
+  const [addMenuOpen, setAddMenuOpen] = createSignal(false);
   const [renamingItemId, setRenamingItemId] = createSignal<string | null>(null);
   const [renamingCollectionId, setRenamingCollectionId] = createSignal<
     string | null
@@ -111,6 +117,26 @@ export function CollectionTree() {
       document.removeEventListener("mouseup", handleMouseUp);
     });
   });
+
+  const handleAddRootRequest = async () => {
+    setAddMenuOpen(false);
+    try {
+      const item = await collectionsCtx.addRequest(ROOT_COLLECTION_ID, "", {
+        id: "",
+        name: "New Request",
+        method: "GET",
+        url: "",
+        headers: [],
+        params: [],
+        body: { type: "none", contents: {} },
+        auth: { type: "none", username: "", password: "", token: "" },
+        settings: { ...DEFAULT_SETTINGS },
+      });
+      if (item?.id) setRenamingItemId(item.id);
+    } catch (err) {
+      console.error("Failed to add root request:", err);
+    }
+  };
 
   const handleCreateCollection = async () => {
     try {
@@ -222,20 +248,88 @@ export function CollectionTree() {
     <div class={styles.collectionTree}>
       <div class={styles.collectionHeader}>
         <span class={styles.collectionTitle}>Collections</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          class={styles.collectionAction}
-          onClick={() => handleCreateCollection()}
-          aria-label="New Collection"
-          title="New Collection"
-        >
-          <Plus size={14} aria-hidden="true" />
-        </Button>
+        <div class={styles.addMenuWrapper}>
+          <Button
+            variant="ghost"
+            size="icon"
+            class={styles.collectionAction}
+            onClick={() => setAddMenuOpen((v) => !v)}
+            aria-label="Add"
+            title="Add"
+          >
+            <Plus size={14} aria-hidden="true" />
+          </Button>
+          <Show when={addMenuOpen()}>
+            <div class={styles.addMenu}>
+              <button
+                type="button"
+                class={styles.addMenuItem}
+                onClick={handleAddRootRequest}
+              >
+                New Request
+              </button>
+              <button
+                type="button"
+                class={styles.addMenuItem}
+                onClick={() => {
+                  setAddMenuOpen(false);
+                  handleCreateCollection();
+                }}
+              >
+                New Collection
+              </button>
+            </div>
+          </Show>
+        </div>
       </div>
 
       <ScrollArea class={styles.treeScroll}>
         <div class={styles.treeList}>
+          <For each={collectionsCtx.rootItems}>
+            {(item, index) => (
+              <>
+                <InsertionZone
+                  collectionId={ROOT_COLLECTION_ID}
+                  parentId=""
+                  position={index()}
+                />
+                <TreeItemNode
+                  item={item}
+                  collectionId={ROOT_COLLECTION_ID}
+                  depth={0}
+                  sourceParentId=""
+                  sourceIndex={index()}
+                  onAddFolder={handleAddFolder}
+                  onAddRequest={handleAddRequest}
+                  onDeleteItem={(cId, iId, name, type) =>
+                    setDeletingItem({
+                      collectionId: cId,
+                      itemId: iId,
+                      name,
+                      type,
+                    })
+                  }
+                  onSelectRequest={(item) => {
+                    if (item.request)
+                      requestCtx.loadRequest(item.request, ROOT_COLLECTION_ID);
+                  }}
+                  onRenameItem={handleRenameItem}
+                  onMoveItem={handleMoveItem}
+                  activeRequestId={requestCtx.activeRequestId()}
+                  renamingItemId={renamingItemId()}
+                  setRenamingItemId={setRenamingItemId}
+                />
+              </>
+            )}
+          </For>
+          <Show when={collectionsCtx.rootItems.length > 0}>
+            <InsertionZone
+              collectionId={ROOT_COLLECTION_ID}
+              parentId=""
+              position={collectionsCtx.rootItems.length}
+            />
+          </Show>
+
           <For each={collectionsCtx.collections}>
             {(collection) => (
               <CollectionNode
@@ -270,7 +364,12 @@ export function CollectionTree() {
             )}
           </For>
 
-          <Show when={collectionsCtx.collections.length === 0}>
+          <Show
+            when={
+              collectionsCtx.collections.length === 0 &&
+              collectionsCtx.rootItems.length === 0
+            }
+          >
             <p class={styles.emptyTree}>No collections yet</p>
           </Show>
         </div>
