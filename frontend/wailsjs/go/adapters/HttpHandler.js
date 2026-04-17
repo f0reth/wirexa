@@ -30,6 +30,10 @@ export function GetCollections() {
   return window['go']['adapters']['HttpHandler']['GetCollections']();
 }
 
+export function GetRootItems() {
+  return window['go']['adapters']['HttpHandler']['GetRootItems']();
+}
+
 export function MoveItem(arg1, arg2, arg3, arg4) {
   return window['go']['adapters']['HttpHandler']['MoveItem'](arg1, arg2, arg3, arg4);
 }

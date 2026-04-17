@@ -6,6 +6,7 @@ import {
   DeleteCollection,
   DeleteItem,
   GetCollections,
+  GetRootItems,
   MoveItem,
   RenameCollection,
   RenameItem,
@@ -137,6 +138,11 @@ export async function cancelRequest(id: string): Promise<void> {
 export async function getCollections(): Promise<Collection[]> {
   const result = await GetCollections();
   return result.map(fromWailsCollection);
+}
+
+export async function getRootItems(): Promise<TreeItem[]> {
+  const result = await GetRootItems();
+  return result.map(fromWailsTreeItem);
 }
 
 export async function createCollection(name: string): Promise<Collection> {

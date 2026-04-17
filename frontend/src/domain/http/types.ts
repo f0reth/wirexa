@@ -85,6 +85,9 @@ export interface TreeItem {
   request?: HttpRequest;
 }
 
+// ルートリクエスト置き場として使用する予約済みコレクション ID。
+export const ROOT_COLLECTION_ID = "__root__";
+
 export type HttpMethod =
   | "GET"
   | "POST"

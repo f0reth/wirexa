@@ -4,6 +4,7 @@ import type {
   HttpRequest,
   TreeItem,
 } from "../../domain/http/types";
+import { ROOT_COLLECTION_ID } from "../../domain/http/types";
 
 const STORAGE_KEY = "wirexa:http:expandedFolders";
 
@@ -27,6 +28,7 @@ function saveExpandedIds(ids: Record<string, boolean>): void {
 
 export interface CollectionsApi {
   getCollections(): Promise<Collection[]>;
+  getRootItems(): Promise<TreeItem[]>;
   createCollection(name: string): Promise<Collection>;
   deleteCollection(id: string): Promise<void>;
   renameCollection(id: string, name: string): Promise<void>;
@@ -52,6 +54,7 @@ export interface CollectionsApi {
 
 export function createCollectionsState(api: CollectionsApi) {
   const [collections, setCollections] = createStore<Collection[]>([]);
+  const [rootItems, setRootItems] = createStore<TreeItem[]>([]);
   const [expandedIds, setExpandedIds] = createStore<Record<string, boolean>>(
     loadExpandedIds(),
   );
@@ -87,10 +90,16 @@ export function createCollectionsState(api: CollectionsApi) {
     saveExpandedIds({ ...expandedIds });
   }
 
+  async function refreshRootItems(): Promise<void> {
+    const items = await api.getRootItems();
+    setRootItems(reconcile(items, { key: "id" }));
+  }
+
   async function refreshCollections(): Promise<void> {
     const cols = await api.getCollections();
     setCollections(reconcile(cols, { key: "id" }));
     pruneExpandedIds(cols);
+    await refreshRootItems();
   }
 
   async function createCollection(name: string): Promise<Collection> {
@@ -157,6 +166,18 @@ export function createCollectionsState(api: CollectionsApi) {
   }
 
   function patchRequest(collectionId: string, req: HttpRequest): void {
+    if (collectionId === ROOT_COLLECTION_ID) {
+      setRootItems(
+        produce((items) => {
+          for (const item of items) {
+            if (item.type === "request" && item.id === req.id && item.request) {
+              item.request = { ...req, name: item.request.name };
+            }
+          }
+        }),
+      );
+      return;
+    }
     setCollections(
       (col) => col.id === collectionId,
       produce((col) => {
@@ -178,6 +199,7 @@ export function createCollectionsState(api: CollectionsApi) {
 
   return {
     collections,
+    rootItems,
     refreshCollections,
     createCollection,
     deleteCollection,

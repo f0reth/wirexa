@@ -50,6 +50,7 @@ export interface RequestContextValue {
 
 export interface CollectionsContextValue {
   collections: Collection[];
+  rootItems: TreeItem[];
   refreshCollections: () => Promise<void>;
   createCollection: (name: string) => Promise<Collection>;
   deleteCollection: (id: string) => Promise<void>;
