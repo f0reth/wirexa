@@ -23,6 +23,7 @@ import {
 import styles from "./sidebar.module.css";
 import {
   DROP_COLLECTION_ID_ATTR,
+  DROP_KIND_ATTR,
   DROP_PARENT_ID_ATTR,
   DROP_POSITION_ATTR,
   DROP_ZONE_ATTR,
@@ -54,25 +55,24 @@ export function CollectionTree() {
       setGhostPos({ x: e.clientX, y: e.clientY });
 
       // elementFromPoint で現在マウス下にあるドロップゾーンを検出する。
-      // この方式は mouseenter/mouseleave より確実で、ドラッグ開始時に
-      // すでにゾーン上にある場合も正しく反応する。
       const el = document.elementFromPoint(e.clientX, e.clientY);
       const zone = el?.closest(`[${DROP_ZONE_ATTR}]`) as HTMLElement | null;
       if (zone) {
-        const collectionId = zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
-        const parentId = zone.getAttribute(DROP_PARENT_ID_ATTR) ?? "";
+        const zoneKind = zone.getAttribute(DROP_KIND_ATTR) ?? "item";
         const position = parseInt(
           zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
           10,
         );
-        // 同一親内の並び替えのみ許可する。
-        // ソースフォルダのヘッダー（position=-1）は no-op になるため除外する。
-        if (
-          collectionId === di.collectionId &&
-          parentId === di.sourceParentId &&
-          position !== -1
-        ) {
-          setDropTarget({ collectionId, parentId, position });
+        if (position === -1) {
+          setDropTarget(null);
+          return;
+        }
+        if (zoneKind === "collection" && di.kind === "collection") {
+          setDropTarget({ kind: "collection", position });
+        } else if (zoneKind === "item" && di.kind === "item") {
+          const collectionId = zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
+          const parentId = zone.getAttribute(DROP_PARENT_ID_ATTR) ?? "";
+          setDropTarget({ kind: "item", collectionId, parentId, position });
         } else {
           setDropTarget(null);
         }
@@ -89,19 +89,26 @@ export function CollectionTree() {
         const el = document.elementFromPoint(e.clientX, e.clientY);
         const zone = el?.closest(`[${DROP_ZONE_ATTR}]`) as HTMLElement | null;
         if (zone) {
-          const collectionId = zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
-          const parentId = zone.getAttribute(DROP_PARENT_ID_ATTR) ?? "";
+          const zoneKind = zone.getAttribute(DROP_KIND_ATTR) ?? "item";
           const position = parseInt(
             zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
             10,
           );
-          // 同一親内の並び替えのみ許可する。
-          if (
-            collectionId === di.collectionId &&
-            parentId === di.sourceParentId &&
-            position !== -1
-          ) {
-            handleMoveItem(di.collectionId, di.itemId, parentId, position);
+          if (position !== -1) {
+            if (zoneKind === "collection" && di.kind === "collection") {
+              handleMoveCollection(di.collectionId, position);
+            } else if (zoneKind === "item" && di.kind === "item") {
+              const collectionId =
+                zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
+              const parentId = zone.getAttribute(DROP_PARENT_ID_ATTR) ?? "";
+              handleMoveItem(
+                di.collectionId,
+                di.itemId,
+                collectionId,
+                parentId,
+                position,
+              );
+            }
           }
         }
       }
@@ -226,16 +233,29 @@ export function CollectionTree() {
     }
   };
 
-  const handleMoveItem = async (
+  const handleMoveCollection = async (
     collectionId: string,
+    position: number,
+  ) => {
+    try {
+      await collectionsCtx.moveCollection(collectionId, position);
+    } catch (err) {
+      console.error("Failed to move collection:", err);
+    }
+  };
+
+  const handleMoveItem = async (
+    sourceCollectionId: string,
     itemId: string,
+    targetCollectionId: string,
     targetParentId: string,
     position: number,
   ) => {
     try {
       await collectionsCtx.moveItem(
-        collectionId,
+        sourceCollectionId,
         itemId,
+        targetCollectionId,
         targetParentId,
         position,
       );
@@ -331,38 +351,46 @@ export function CollectionTree() {
           </Show>
 
           <For each={collectionsCtx.collections}>
-            {(collection) => (
-              <CollectionNode
-                collection={collection}
-                onDeleteCollection={(id, name) =>
-                  setDeletingItem({
-                    collectionId: id,
-                    itemId: "",
-                    name,
-                    type: "collection",
-                  })
-                }
-                onAddFolder={handleAddFolder}
-                onAddRequest={handleAddRequest}
-                onDeleteItem={(collectionId, itemId, name, type) =>
-                  setDeletingItem({ collectionId, itemId, name, type })
-                }
-                onSelectRequest={(item) => {
-                  if (item.request) {
-                    requestCtx.loadRequest(item.request, collection.id);
+            {(collection, index) => (
+              <>
+                <InsertionZone kind="collection" position={index()} />
+                <CollectionNode
+                  collection={collection}
+                  sourceIndex={index()}
+                  onDeleteCollection={(id, name) =>
+                    setDeletingItem({
+                      collectionId: id,
+                      itemId: "",
+                      name,
+                      type: "collection",
+                    })
                   }
-                }}
-                onRenameItem={handleRenameItem}
-                onRenameCollection={handleRenameCollection}
-                onMoveItem={handleMoveItem}
-                activeRequestId={requestCtx.activeRequestId()}
-                renamingItemId={renamingItemId()}
-                setRenamingItemId={setRenamingItemId}
-                renamingCollectionId={renamingCollectionId()}
-                setRenamingCollectionId={setRenamingCollectionId}
-              />
+                  onAddFolder={handleAddFolder}
+                  onAddRequest={handleAddRequest}
+                  onDeleteItem={(collectionId, itemId, name, type) =>
+                    setDeletingItem({ collectionId, itemId, name, type })
+                  }
+                  onSelectRequest={(item) => {
+                    if (item.request) {
+                      requestCtx.loadRequest(item.request, collection.id);
+                    }
+                  }}
+                  onRenameItem={handleRenameItem}
+                  onRenameCollection={handleRenameCollection}
+                  onMoveItem={handleMoveItem}
+                  activeRequestId={requestCtx.activeRequestId()}
+                  renamingItemId={renamingItemId()}
+                  setRenamingItemId={setRenamingItemId}
+                  renamingCollectionId={renamingCollectionId()}
+                  setRenamingCollectionId={setRenamingCollectionId}
+                />
+              </>
             )}
           </For>
+          <InsertionZone
+            kind="collection"
+            position={collectionsCtx.collections.length}
+          />
 
           <Show
             when={

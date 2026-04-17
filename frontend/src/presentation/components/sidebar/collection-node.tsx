@@ -3,11 +3,67 @@ import { ChevronRight, Folder, FolderPlus, Plus, Trash2 } from "lucide-solid";
 import { For, Show } from "solid-js";
 import type { Collection, TreeItem } from "../../../domain/http/types";
 import { useHttpCollections } from "../../providers/http-provider";
+import { setDragItem, setGhostPos } from "./drag-state";
 import styles from "./sidebar.module.css";
 import { InsertionZone, TreeItemNode } from "./tree-item-node";
 
+const LONG_PRESS_MS = 250;
+
+function makeCollectionDragHandlers(
+  collectionId: string,
+  name: string,
+  getSourceIndex: () => number,
+  suppressRef: { suppress: boolean },
+) {
+  const handleMouseDown = (e: MouseEvent) => {
+    if (e.button !== 0) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    const activate = (x: number, y: number) => {
+      suppressRef.suppress = true;
+      setDragItem({
+        kind: "collection",
+        collectionId,
+        name,
+        sourceIndex: getSourceIndex(),
+      });
+      setGhostPos({ x, y });
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+
+    const handleMove = (me: MouseEvent) => {
+      const dx = me.clientX - startX;
+      const dy = me.clientY - startY;
+      if (Math.sqrt(dx * dx + dy * dy) > 5) {
+        clearTimeout(timer);
+        activate(me.clientX, me.clientY);
+      }
+    };
+
+    const handleUp = () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+
+    const timer = setTimeout(() => {
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+      activate(startX, startY);
+    }, LONG_PRESS_MS);
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
+
+  return { handleMouseDown };
+}
+
 export function CollectionNode(props: {
   collection: Collection;
+  sourceIndex: number;
   onDeleteCollection: (id: string, name: string) => void;
   onAddFolder: (collectionId: string, parentId: string) => void;
   onAddRequest: (collectionId: string, parentId: string) => void;
@@ -21,8 +77,9 @@ export function CollectionNode(props: {
   onRenameItem: (collectionId: string, itemId: string, name: string) => void;
   onRenameCollection: (id: string, name: string) => void;
   onMoveItem: (
-    collectionId: string,
+    sourceCollectionId: string,
     itemId: string,
+    targetCollectionId: string,
     targetParentId: string,
     position: number,
   ) => void;
@@ -39,6 +96,15 @@ export function CollectionNode(props: {
 
   const isRenaming = () => props.renamingCollectionId === props.collection.id;
 
+  const suppressRef = { suppress: false };
+  const { handleMouseDown: handleCollectionMouseDown } =
+    makeCollectionDragHandlers(
+      props.collection.id,
+      props.collection.name,
+      () => props.sourceIndex,
+      suppressRef,
+    );
+
   const handleRenameCommit = (value: string) => {
     const trimmed = value.trim();
     if (trimmed && trimmed !== props.collection.name) {
@@ -49,11 +115,21 @@ export function CollectionNode(props: {
 
   return (
     <div class={styles.treeNode}>
-      <div class={styles.treeNodeHeader}>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: drag source for collection reorder */}
+      <div
+        class={styles.treeNodeHeader}
+        onMouseDown={handleCollectionMouseDown}
+      >
         <button
           type="button"
           class={styles.treeNodeToggle}
-          onClick={() => toggleExpanded()}
+          onClick={() => {
+            if (suppressRef.suppress) {
+              suppressRef.suppress = false;
+              return;
+            }
+            toggleExpanded();
+          }}
         >
           <ChevronRight
             size={12}
@@ -102,6 +178,7 @@ export function CollectionNode(props: {
             class={styles.treeActionBtn}
             aria-label="Add folder"
             title="Add folder"
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={() => props.onAddFolder(props.collection.id, "")}
           >
             <FolderPlus size={12} aria-hidden="true" />
@@ -111,6 +188,7 @@ export function CollectionNode(props: {
             class={styles.treeActionBtn}
             aria-label="Add request"
             title="Add request"
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={() => props.onAddRequest(props.collection.id, "")}
           >
             <Plus size={12} aria-hidden="true" />
@@ -120,6 +198,7 @@ export function CollectionNode(props: {
             class={clsx(styles.treeActionBtn, styles.treeActionBtnDanger)}
             aria-label="Delete collection"
             title="Delete collection"
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={() =>
               props.onDeleteCollection(
                 props.collection.id,

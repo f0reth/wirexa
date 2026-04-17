@@ -13,30 +13,46 @@ export const DROP_ZONE_ATTR = "data-drop-zone";
 export const DROP_COLLECTION_ID_ATTR = "data-drop-collection-id";
 export const DROP_PARENT_ID_ATTR = "data-drop-parent-id";
 export const DROP_POSITION_ATTR = "data-drop-position";
+export const DROP_KIND_ATTR = "data-drop-kind";
 
-/** アイテム間の挿入ゾーン */
+/** アイテム間またはコレクション間の挿入ゾーン */
 export function InsertionZone(props: {
-  collectionId: string;
-  parentId: string;
+  collectionId?: string;
+  parentId?: string;
   position: number;
+  kind?: "item" | "collection";
 }) {
+  const kind = () => props.kind ?? "item";
+
   const isActive = () => {
     const dt = dropTarget();
+    if (!dt) return false;
+    if (kind() === "collection") {
+      return dt.kind === "collection" && dt.position === props.position;
+    }
     return (
-      dragItem() !== null &&
-      dt?.collectionId === props.collectionId &&
-      dt?.parentId === props.parentId &&
-      dt?.position === props.position
+      dt.kind === "item" &&
+      dt.collectionId === props.collectionId &&
+      dt.parentId === props.parentId &&
+      dt.position === props.position
     );
   };
 
-  // ドラッグ中のアイテムにとって no-op になるゾーン（元の位置の前後）は
+  // ドラッグ中のアイテムにとって no-op になるゾーンは
   // pointer-events: none にして elementFromPoint が透過するようにする。
-  // これにより、元フォルダ末尾の InsertionZone にカーソルが乗っても
-  // その下にある別フォルダのヘッダーが正しく検出される。
   const isNoOp = () => {
     const di = dragItem();
     if (!di) return false;
+    if (kind() === "collection") {
+      // コレクションゾーンはコレクションドラッグ時のみ有効
+      if (di.kind !== "collection") return true;
+      return (
+        props.position === di.sourceIndex ||
+        props.position === di.sourceIndex + 1
+      );
+    }
+    // アイテムゾーンはアイテムドラッグ時のみ有効
+    if (di.kind !== "item") return true;
     if (
       di.collectionId !== props.collectionId ||
       di.sourceParentId !== props.parentId
@@ -57,8 +73,9 @@ export function InsertionZone(props: {
       style={{ display: isNoOp() ? "none" : undefined }}
       {...{
         [DROP_ZONE_ATTR]: "true",
-        [DROP_COLLECTION_ID_ATTR]: props.collectionId,
-        [DROP_PARENT_ID_ATTR]: props.parentId,
+        [DROP_KIND_ATTR]: kind(),
+        [DROP_COLLECTION_ID_ATTR]: props.collectionId ?? "",
+        [DROP_PARENT_ID_ATTR]: props.parentId ?? "",
         [DROP_POSITION_ATTR]: String(props.position),
       }}
     />
@@ -66,7 +83,7 @@ export function InsertionZone(props: {
 }
 
 /** 長押し（LONG_PRESS_MS）またはマウス移動5px超でドラッグ開始する */
-function makeDragHandlers(
+export function makeDragHandlers(
   collectionId: string,
   itemId: string,
   name: string,
@@ -82,6 +99,7 @@ function makeDragHandlers(
     const activate = (x: number, y: number) => {
       suppressRef.suppress = true;
       setDragItem({
+        kind: "item",
         collectionId,
         itemId,
         name,
@@ -138,8 +156,9 @@ export function TreeItemNode(props: {
   onSelectRequest: (item: TreeItem) => void;
   onRenameItem: (collectionId: string, itemId: string, name: string) => void;
   onMoveItem: (
-    collectionId: string,
+    sourceCollectionId: string,
     itemId: string,
+    targetCollectionId: string,
     targetParentId: string,
     position: number,
   ) => void;
