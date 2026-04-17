@@ -62,6 +62,7 @@ type Collection struct {
 	ID    string      `json:"id"`
 	Name  string      `json:"name"`
 	Items []*TreeItem `json:"items"`
+	Order int         `json:"order"`
 }
 
 // TreeItem はコレクション内のフォルダまたはリクエストアイテムを表す。

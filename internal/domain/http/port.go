@@ -29,6 +29,7 @@ type CollectionUseCase interface {
 	CreateCollection(name string) (Collection, error)
 	DeleteCollection(id string) error
 	RenameCollection(id, name string) error
+	MoveCollection(collectionID string, position int) error
 }
 
 // CollectionItemUseCase はコレクション内ツリーアイテム管理のユースケース入力ポート。
@@ -38,8 +39,8 @@ type CollectionItemUseCase interface {
 	UpdateRequest(collectionID string, req HttpRequest) error
 	RenameItem(collectionID, itemID, name string) error
 	DeleteItem(collectionID, itemID string) error
-	// MoveItem はアイテムを同一コレクション内の別の親・位置へ移動する。
-	// targetParentID が空の場合はコレクションルートへ移動する。
+	// MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。
+	// targetParentID が空の場合はターゲットコレクションルートへ移動する。
 	// position は挿入先インデックス（削除後の配列に対する）。-1 の場合は末尾に追加。
-	MoveItem(collectionID, itemID, targetParentID string, position int) error
+	MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error
 }

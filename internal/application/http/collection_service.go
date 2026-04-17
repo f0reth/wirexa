@@ -45,10 +45,35 @@ func NewCollectionService(repo domain.CollectionRepository) (*CollectionService,
 		}
 		svc.cache[root.ID] = root
 	}
+
+	// 既存データに Order がない場合（ゼロ値が集中する）は名前順で振り直す。
+	nonRoot := make([]*domain.Collection, 0)
+	for _, c := range svc.cache {
+		if c.ID != domain.RootCollectionID {
+			nonRoot = append(nonRoot, c)
+		}
+	}
+	allZero := true
+	for _, c := range nonRoot {
+		if c.Order != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero && len(nonRoot) > 0 {
+		sort.Slice(nonRoot, func(i, j int) bool { return nonRoot[i].Name < nonRoot[j].Name })
+		for i, c := range nonRoot {
+			c.Order = i
+			if err := repo.Save(c); err != nil {
+				return nil, fmt.Errorf("failed to initialize collection order: %w", err)
+			}
+		}
+	}
+
 	return svc, nil
 }
 
-// GetCollections は全コレクションを名前順で返す（__root__ を除く）。
+// GetCollections は全コレクションを Order 順で返す（__root__ を除く）。
 func (s *CollectionService) GetCollections() []domain.Collection {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -60,6 +85,9 @@ func (s *CollectionService) GetCollections() []domain.Collection {
 		result = append(result, *c)
 	}
 	sort.Slice(result, func(i, j int) bool {
+		if result[i].Order != result[j].Order {
+			return result[i].Order < result[j].Order
+		}
 		return result[i].Name < result[j].Name
 	})
 	return result
@@ -78,10 +106,20 @@ func (s *CollectionService) GetRootItems() []*domain.TreeItem {
 
 // CreateCollection は新規コレクションを作成する。
 func (s *CollectionService) CreateCollection(name string) (domain.Collection, error) {
+	s.mu.RLock()
+	maxOrder := 0
+	for _, c := range s.cache {
+		if c.ID != domain.RootCollectionID && c.Order >= maxOrder {
+			maxOrder = c.Order + 1
+		}
+	}
+	s.mu.RUnlock()
+
 	c := domain.Collection{
 		ID:    uuid.New().String(),
 		Name:  name,
 		Items: []*domain.TreeItem{},
+		Order: maxOrder,
 	}
 	if err := s.repo.Save(&c); err != nil {
 		return domain.Collection{}, fmt.Errorf("failed to save collection: %w", err)
@@ -121,6 +159,60 @@ func (s *CollectionService) RenameCollection(id, name string) error {
 	c.Name = name
 	if err := s.repo.Save(c); err != nil {
 		return fmt.Errorf("failed to save collection: %w", err)
+	}
+	return nil
+}
+
+// MoveCollection はコレクションを指定の位置に並び替える。
+// position は 0 始まりの挿入先インデックス。
+func (s *CollectionService) MoveCollection(collectionID string, position int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.cache[collectionID]; !ok {
+		return &cmn.NotFoundError{Resource: "collection", ID: collectionID}
+	}
+
+	// Order 順で並べたスライスを作る。
+	cols := make([]*domain.Collection, 0, len(s.cache))
+	for _, c := range s.cache {
+		if c.ID != domain.RootCollectionID {
+			cols = append(cols, c)
+		}
+	}
+	sort.Slice(cols, func(i, j int) bool {
+		if cols[i].Order != cols[j].Order {
+			return cols[i].Order < cols[j].Order
+		}
+		return cols[i].Name < cols[j].Name
+	})
+
+	// 対象を現在位置から削除。
+	srcIdx := -1
+	for i, c := range cols {
+		if c.ID == collectionID {
+			srcIdx = i
+			break
+		}
+	}
+	item := cols[srcIdx]
+	cols = append(cols[:srcIdx], cols[srcIdx+1:]...)
+
+	// 指定位置に挿入。
+	if position < 0 || position >= len(cols) {
+		cols = append(cols, item)
+	} else {
+		cols = append(cols, nil)
+		copy(cols[position+1:], cols[position:])
+		cols[position] = item
+	}
+
+	// Order を振り直して保存。
+	for i, c := range cols {
+		c.Order = i
+		if err := s.repo.Save(c); err != nil {
+			return fmt.Errorf("failed to save collection order: %w", err)
+		}
 	}
 	return nil
 }
@@ -246,41 +338,39 @@ func (s *CollectionService) RenameItem(collectionID, itemID, name string) error 
 	return nil
 }
 
-// MoveItem はアイテムを同一親内で位置変更する。
-// targetParentID は現在の親 ID と一致している必要がある。
+// MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。
+// sourceCollectionID と targetCollectionID が同一の場合は同一コレクション内移動。
 // position は削除後の挿入先インデックス。-1 または範囲外の場合は末尾に追加する。
-func (s *CollectionService) MoveItem(collectionID, itemID, targetParentID string, position int) error {
+func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	c, ok := s.cache[collectionID]
+	src, ok := s.cache[sourceCollectionID]
 	if !ok {
-		return &cmn.NotFoundError{Resource: "collection", ID: collectionID}
+		return &cmn.NotFoundError{Resource: "collection", ID: sourceCollectionID}
+	}
+	dst, ok := s.cache[targetCollectionID]
+	if !ok {
+		return &cmn.NotFoundError{Resource: "collection", ID: targetCollectionID}
 	}
 
-	item, origParent, ok := c.FindNode(itemID)
+	item, _, ok := src.FindNode(itemID)
 	if !ok {
 		return &cmn.NotFoundError{Resource: "item", ID: itemID}
 	}
 
-	// 同一親への移動のみ許可する。
-	origParentID := ""
-	if origParent != nil {
-		origParentID = origParent.ID
-	}
-	if origParentID != targetParentID {
-		return &cmn.ValidationError{Message: "cannot move item to a different folder"}
-	}
-
-	// 元インデックスが挿入位置より前の場合、削除後にインデックスがずれるので補正する。
-	if position > 0 {
-		var origItems []*domain.TreeItem
-		if origParent == nil {
-			origItems = c.Items
+	// 同一コレクション内移動の場合、削除前に挿入先インデックスを補正する。
+	if sourceCollectionID == targetCollectionID && position > 0 {
+		var targetItems []*domain.TreeItem
+		if targetParentID == "" {
+			targetItems = dst.Items
 		} else {
-			origItems = origParent.Children
+			targetNode, _, ok := dst.FindNode(targetParentID)
+			if ok {
+				targetItems = targetNode.Children
+			}
 		}
-		for i, n := range origItems {
+		for i, n := range targetItems {
 			if n.ID == itemID && i < position {
 				position--
 				break
@@ -288,16 +378,25 @@ func (s *CollectionService) MoveItem(collectionID, itemID, targetParentID string
 		}
 	}
 
-	c.RemoveNode(itemID)
+	src.RemoveNode(itemID)
 
 	if targetParentID == "" {
-		c.Items = insertAt(c.Items, item, position)
+		dst.Items = insertAt(dst.Items, item, position)
 	} else {
-		origParent.Children = insertAt(origParent.Children, item, position)
+		targetNode, _, ok := dst.FindNode(targetParentID)
+		if !ok || targetNode.Type != domain.ItemTypeFolder {
+			return &cmn.NotFoundError{Resource: "parent", ID: targetParentID}
+		}
+		targetNode.Children = insertAt(targetNode.Children, item, position)
 	}
 
-	if err := s.repo.Save(c); err != nil {
-		return fmt.Errorf("failed to save collection: %w", err)
+	if sourceCollectionID != targetCollectionID {
+		if err := s.repo.Save(src); err != nil {
+			return fmt.Errorf("failed to save source collection: %w", err)
+		}
+	}
+	if err := s.repo.Save(dst); err != nil {
+		return fmt.Errorf("failed to save target collection: %w", err)
 	}
 	return nil
 }

@@ -72,6 +72,7 @@ type Collection struct {
 	ID    string      `json:"id"`
 	Name  string      `json:"name"`
 	Items []*TreeItem `json:"items"`
+	Order int         `json:"order"`
 }
 
 func fromKeyValuePairDTO(kv KeyValuePair) httpdomain.KeyValuePair {
@@ -190,5 +191,5 @@ func toCollectionDTO(col httpdomain.Collection) Collection {
 	for i, item := range col.Items {
 		items[i] = toTreeItemDTO(item)
 	}
-	return Collection{ID: col.ID, Name: col.Name, Items: items}
+	return Collection{ID: col.ID, Name: col.Name, Items: items, Order: col.Order}
 }
