@@ -2,6 +2,7 @@ import { createStore, produce, reconcile } from "solid-js/store";
 import type {
   Collection,
   HttpRequest,
+  SidebarEntry,
   TreeItem,
 } from "../../domain/http/types";
 import { ROOT_COLLECTION_ID } from "../../domain/http/types";
@@ -52,11 +53,19 @@ export interface CollectionsApi {
     targetParentId: string,
     position: number,
   ): Promise<void>;
+  getSidebarLayout(): Promise<SidebarEntry[]>;
+  moveSidebarEntry(kind: string, id: string, position: number): Promise<void>;
+  moveItemToSidebar(
+    sourceCollectionId: string,
+    itemId: string,
+    sidebarPosition: number,
+  ): Promise<void>;
 }
 
 export function createCollectionsState(api: CollectionsApi) {
   const [collections, setCollections] = createStore<Collection[]>([]);
   const [rootItems, setRootItems] = createStore<TreeItem[]>([]);
+  const [sidebarLayout, setSidebarLayout] = createStore<SidebarEntry[]>([]);
   const [expandedIds, setExpandedIds] = createStore<Record<string, boolean>>(
     loadExpandedIds(),
   );
@@ -97,11 +106,17 @@ export function createCollectionsState(api: CollectionsApi) {
     setRootItems(reconcile(items, { key: "id" }));
   }
 
+  async function refreshSidebarLayout(): Promise<void> {
+    const layout = await api.getSidebarLayout();
+    setSidebarLayout(reconcile(layout));
+  }
+
   async function refreshCollections(): Promise<void> {
     const cols = await api.getCollections();
     setCollections(reconcile(cols, { key: "id" }));
     pruneExpandedIds(cols);
     await refreshRootItems();
+    await refreshSidebarLayout();
   }
 
   async function createCollection(name: string): Promise<Collection> {
@@ -182,6 +197,24 @@ export function createCollectionsState(api: CollectionsApi) {
     await refreshCollections();
   }
 
+  async function moveSidebarEntry(
+    kind: string,
+    id: string,
+    position: number,
+  ): Promise<void> {
+    await api.moveSidebarEntry(kind, id, position);
+    await refreshSidebarLayout();
+  }
+
+  async function moveItemToSidebar(
+    sourceCollectionId: string,
+    itemId: string,
+    sidebarPosition: number,
+  ): Promise<void> {
+    await api.moveItemToSidebar(sourceCollectionId, itemId, sidebarPosition);
+    await refreshCollections();
+  }
+
   function patchRequest(collectionId: string, req: HttpRequest): void {
     if (collectionId === ROOT_COLLECTION_ID) {
       setRootItems(
@@ -217,6 +250,7 @@ export function createCollectionsState(api: CollectionsApi) {
   return {
     collections,
     rootItems,
+    sidebarLayout,
     refreshCollections,
     createCollection,
     deleteCollection,
@@ -227,6 +261,8 @@ export function createCollectionsState(api: CollectionsApi) {
     deleteItem,
     moveCollection,
     moveItem,
+    moveSidebarEntry,
+    moveItemToSidebar,
     patchRequest,
     isExpanded,
     setExpanded,

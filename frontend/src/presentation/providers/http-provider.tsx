@@ -17,6 +17,7 @@ import type {
   RequestAuth,
   RequestBody,
   RequestSettings,
+  SidebarEntry,
   TreeItem,
 } from "../../domain/http/types";
 import * as httpClient from "../../infrastructure/http/client";
@@ -51,6 +52,7 @@ export interface RequestContextValue {
 export interface CollectionsContextValue {
   collections: Collection[];
   rootItems: TreeItem[];
+  sidebarLayout: SidebarEntry[];
   refreshCollections: () => Promise<void>;
   createCollection: (name: string) => Promise<Collection>;
   deleteCollection: (id: string) => Promise<void>;
@@ -78,6 +80,16 @@ export interface CollectionsContextValue {
     targetCollectionId: string,
     targetParentId: string,
     position: number,
+  ) => Promise<void>;
+  moveSidebarEntry: (
+    kind: string,
+    id: string,
+    position: number,
+  ) => Promise<void>;
+  moveItemToSidebar: (
+    sourceCollectionId: string,
+    itemId: string,
+    sidebarPosition: number,
   ) => Promise<void>;
   isExpanded: (id: string, defaultValue: boolean) => boolean;
   setExpanded: (id: string, val: boolean) => void;

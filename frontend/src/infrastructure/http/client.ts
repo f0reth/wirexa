@@ -7,8 +7,11 @@ import {
   DeleteItem,
   GetCollections,
   GetRootItems,
+  GetSidebarLayout,
   MoveCollection,
   MoveItem,
+  MoveItemToSidebar,
+  MoveSidebarEntry,
   RenameCollection,
   RenameItem,
   SendRequest,
@@ -27,6 +30,7 @@ import {
   type RequestAuth,
   type RequestBody,
   type RequestSettings,
+  type SidebarEntry,
   type TreeItem,
 } from "../../domain/http/types";
 
@@ -224,4 +228,28 @@ export async function moveItem(
     targetParentId,
     position,
   );
+}
+
+export async function getSidebarLayout(): Promise<SidebarEntry[]> {
+  const result = await GetSidebarLayout();
+  return result.map((e) => ({
+    kind: e.kind as SidebarEntry["kind"],
+    id: e.id,
+  }));
+}
+
+export async function moveSidebarEntry(
+  kind: string,
+  id: string,
+  position: number,
+): Promise<void> {
+  return MoveSidebarEntry(kind, id, position);
+}
+
+export async function moveItemToSidebar(
+  sourceCollectionId: string,
+  itemId: string,
+  sidebarPosition: number,
+): Promise<void> {
+  return MoveItemToSidebar(sourceCollectionId, itemId, sidebarPosition);
 }
