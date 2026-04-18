@@ -16,6 +16,12 @@ type CollectionRepository interface {
 	Delete(id string) error
 }
 
+// SidebarLayoutRepository はサイドバーレイアウトの永続化抽象。
+type SidebarLayoutRepository interface {
+	Load() ([]SidebarEntry, error)
+	Save(layout []SidebarEntry) error
+}
+
 // RequestUseCase は HTTP リクエスト送信のユースケース入力ポート。
 type RequestUseCase interface {
 	SendRequest(req HttpRequest) (HttpResponse, error)
@@ -30,6 +36,9 @@ type CollectionUseCase interface {
 	DeleteCollection(id string) error
 	RenameCollection(id, name string) error
 	MoveCollection(collectionID string, position int) error
+	GetSidebarLayout() ([]SidebarEntry, error)
+	MoveSidebarEntry(kind, id string, position int) error
+	MoveItemToSidebar(sourceCollectionID, itemID string, sidebarPosition int) error
 }
 
 // CollectionItemUseCase はコレクション内ツリーアイテム管理のユースケース入力ポート。
