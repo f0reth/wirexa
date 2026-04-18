@@ -34,12 +34,24 @@ export function GetRootItems() {
   return window['go']['adapters']['HttpHandler']['GetRootItems']();
 }
 
+export function GetSidebarLayout() {
+  return window['go']['adapters']['HttpHandler']['GetSidebarLayout']();
+}
+
 export function MoveCollection(arg1, arg2) {
   return window['go']['adapters']['HttpHandler']['MoveCollection'](arg1, arg2);
 }
 
 export function MoveItem(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['adapters']['HttpHandler']['MoveItem'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function MoveItemToSidebar(arg1, arg2, arg3) {
+  return window['go']['adapters']['HttpHandler']['MoveItemToSidebar'](arg1, arg2, arg3);
+}
+
+export function MoveSidebarEntry(arg1, arg2, arg3) {
+  return window['go']['adapters']['HttpHandler']['MoveSidebarEntry'](arg1, arg2, arg3);
 }
 
 export function OpenFilePicker() {

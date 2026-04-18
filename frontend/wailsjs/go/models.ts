@@ -351,6 +351,20 @@ export namespace adapters {
 	
 	
 	
+	export class SidebarEntryDTO {
+	    kind: string;
+	    id: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SidebarEntryDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.id = source["id"];
+	    }
+	}
 	
 	export class UdpListenSession {
 	    id: string;

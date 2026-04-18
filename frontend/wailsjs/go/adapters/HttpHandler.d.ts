@@ -18,9 +18,15 @@ export function GetCollections():Promise<Array<adapters.Collection>>;
 
 export function GetRootItems():Promise<Array<adapters.TreeItem>>;
 
+export function GetSidebarLayout():Promise<Array<adapters.SidebarEntryDTO>>;
+
 export function MoveCollection(arg1:string,arg2:number):Promise<void>;
 
 export function MoveItem(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number):Promise<void>;
+
+export function MoveItemToSidebar(arg1:string,arg2:string,arg3:number):Promise<void>;
+
+export function MoveSidebarEntry(arg1:string,arg2:string,arg3:number):Promise<void>;
 
 export function OpenFilePicker():Promise<string>;
 
