@@ -12,6 +12,19 @@ type inMemoryRepo struct {
 	collections map[string]*domain.Collection
 }
 
+type inMemoryLayoutRepo struct {
+	layout []domain.SidebarEntry
+}
+
+func (r *inMemoryLayoutRepo) Load() ([]domain.SidebarEntry, error) {
+	return append([]domain.SidebarEntry{}, r.layout...), nil
+}
+
+func (r *inMemoryLayoutRepo) Save(layout []domain.SidebarEntry) error {
+	r.layout = append([]domain.SidebarEntry{}, layout...)
+	return nil
+}
+
 func (r *inMemoryRepo) Load() ([]domain.Collection, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -38,7 +51,7 @@ func (r *inMemoryRepo) Delete(id string) error {
 }
 
 func TestCollectionService_Create(t *testing.T) {
-	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}})
+	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, &inMemoryLayoutRepo{})
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -55,7 +68,7 @@ func TestCollectionService_Create(t *testing.T) {
 }
 
 func TestCollectionService_DeleteNotFound(t *testing.T) {
-	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}})
+	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, &inMemoryLayoutRepo{})
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -66,7 +79,7 @@ func TestCollectionService_DeleteNotFound(t *testing.T) {
 
 func newSvc(t *testing.T) *CollectionService {
 	t.Helper()
-	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}})
+	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, &inMemoryLayoutRepo{})
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -391,7 +404,7 @@ func TestCollectionService_DeleteItem_ItemNotFound(t *testing.T) {
 func TestCollectionService_NewCollectionService_LoadsExisting(t *testing.T) {
 	existing := &domain.Collection{ID: "c1", Name: "Existing", Items: []*domain.TreeItem{}}
 	repo := &inMemoryRepo{collections: map[string]*domain.Collection{"c1": existing}}
-	svc, err := NewCollectionService(repo)
+	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}

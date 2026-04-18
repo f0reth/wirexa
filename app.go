@@ -67,7 +67,8 @@ func (a *App) startup(ctx context.Context) {
 	if err != nil {
 		log.Fatalf("startup: failed to create collection repository: %v", err)
 	}
-	collSvc, err := httpapp.NewCollectionService(collRepo)
+	layoutRepo := httpinfra.NewSidebarLayoutRepository(filepath.Join(configDir, wirexaConfigDir, "sidebar_layout.json"))
+	collSvc, err := httpapp.NewCollectionService(collRepo, layoutRepo)
 	if err != nil {
 		log.Fatalf("startup: failed to initialize collections: %v", err)
 	}
