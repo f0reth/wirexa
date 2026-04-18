@@ -193,3 +193,13 @@ func toCollectionDTO(col httpdomain.Collection) Collection {
 	}
 	return Collection{ID: col.ID, Name: col.Name, Items: items, Order: col.Order}
 }
+
+// SidebarEntryDTO はサイドバーエントリの RPC 転送型。
+type SidebarEntryDTO struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+}
+
+func toSidebarEntryDTO(e httpdomain.SidebarEntry) SidebarEntryDTO {
+	return SidebarEntryDTO{Kind: e.Kind, ID: e.ID}
+}

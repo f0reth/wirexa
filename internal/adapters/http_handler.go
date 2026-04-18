@@ -130,3 +130,27 @@ func (h *HttpHandler) MoveCollection(collectionID string, position int) error {
 func (h *HttpHandler) MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error {
 	return h.itemSvc.MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID, position)
 }
+
+// GetSidebarLayout はサイドバーレイアウトを返す。
+func (h *HttpHandler) GetSidebarLayout() ([]SidebarEntryDTO, error) {
+	layout, err := h.collSvc.GetSidebarLayout()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]SidebarEntryDTO, len(layout))
+	for i, e := range layout {
+		result[i] = toSidebarEntryDTO(e)
+	}
+	return result, nil
+}
+
+// MoveSidebarEntry はサイドバー上のエントリを指定位置に移動する。
+func (h *HttpHandler) MoveSidebarEntry(kind, id string, position int) error {
+	return h.collSvc.MoveSidebarEntry(kind, id, position)
+}
+
+// MoveItemToSidebar はアイテムを指定コレクションから __root__ へ移動し、
+// サイドバーレイアウトの指定位置に挿入する。
+func (h *HttpHandler) MoveItemToSidebar(sourceCollectionID, itemID string, sidebarPosition int) error {
+	return h.collSvc.MoveItemToSidebar(sourceCollectionID, itemID, sidebarPosition)
+}
