@@ -28,6 +28,10 @@ import {
   DROP_POSITION_ATTR,
   DROP_ZONE_ATTR,
   InsertionZone,
+  TREE_ITEM_COLLECTION_ID_ATTR,
+  TREE_ITEM_ID_ATTR,
+  TREE_ITEM_INDEX_ATTR,
+  TREE_ITEM_PARENT_ID_ATTR,
   TreeItemNode,
 } from "./tree-item-node";
 
@@ -59,6 +63,16 @@ export function CollectionTree() {
       const zone = el?.closest(`[${DROP_ZONE_ATTR}]`) as HTMLElement | null;
       if (zone) {
         const zoneKind = zone.getAttribute(DROP_KIND_ATTR) ?? "item";
+        if (zoneKind === "collection-header" && di.kind === "item") {
+          const collectionId = zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
+          setDropTarget({
+            kind: "item",
+            collectionId,
+            parentId: "",
+            position: -1,
+          });
+          return;
+        }
         const position = parseInt(
           zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
           10,
@@ -77,7 +91,25 @@ export function CollectionTree() {
           setDropTarget(null);
         }
       } else {
-        setDropTarget(null);
+        // InsertionZone が見つからない場合、アイテム行上か確認する
+        const itemEl = el?.closest(
+          `[${TREE_ITEM_ID_ATTR}]`,
+        ) as HTMLElement | null;
+        if (itemEl && di.kind === "item") {
+          const rect = itemEl.getBoundingClientRect();
+          const isUpperHalf = e.clientY < rect.top + rect.height / 2;
+          const itemIndex = parseInt(
+            itemEl.getAttribute(TREE_ITEM_INDEX_ATTR) ?? "-1",
+            10,
+          );
+          const collectionId =
+            itemEl.getAttribute(TREE_ITEM_COLLECTION_ID_ATTR) ?? "";
+          const parentId = itemEl.getAttribute(TREE_ITEM_PARENT_ID_ATTR) ?? "";
+          const position = isUpperHalf ? itemIndex : itemIndex + 1;
+          setDropTarget({ kind: "item", collectionId, parentId, position });
+        } else {
+          setDropTarget(null);
+        }
       }
     };
 
@@ -90,25 +122,56 @@ export function CollectionTree() {
         const zone = el?.closest(`[${DROP_ZONE_ATTR}]`) as HTMLElement | null;
         if (zone) {
           const zoneKind = zone.getAttribute(DROP_KIND_ATTR) ?? "item";
-          const position = parseInt(
-            zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
-            10,
-          );
-          if (position !== -1) {
-            if (zoneKind === "collection" && di.kind === "collection") {
-              handleMoveCollection(di.collectionId, position);
-            } else if (zoneKind === "item" && di.kind === "item") {
-              const collectionId =
-                zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
-              const parentId = zone.getAttribute(DROP_PARENT_ID_ATTR) ?? "";
-              handleMoveItem(
-                di.collectionId,
-                di.itemId,
-                collectionId,
-                parentId,
-                position,
-              );
+          if (zoneKind === "collection-header" && di.kind === "item") {
+            const collectionId =
+              zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
+            handleMoveItem(di.collectionId, di.itemId, collectionId, "", -1);
+          } else {
+            const position = parseInt(
+              zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
+              10,
+            );
+            if (position !== -1) {
+              if (zoneKind === "collection" && di.kind === "collection") {
+                handleMoveCollection(di.collectionId, position);
+              } else if (zoneKind === "item" && di.kind === "item") {
+                const collectionId =
+                  zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
+                const parentId = zone.getAttribute(DROP_PARENT_ID_ATTR) ?? "";
+                handleMoveItem(
+                  di.collectionId,
+                  di.itemId,
+                  collectionId,
+                  parentId,
+                  position,
+                );
+              }
             }
+          }
+        } else {
+          // InsertionZone が見つからない場合、アイテム行上か確認する
+          const itemEl = el?.closest(
+            `[${TREE_ITEM_ID_ATTR}]`,
+          ) as HTMLElement | null;
+          if (itemEl && di.kind === "item") {
+            const rect = itemEl.getBoundingClientRect();
+            const isUpperHalf = e.clientY < rect.top + rect.height / 2;
+            const itemIndex = parseInt(
+              itemEl.getAttribute(TREE_ITEM_INDEX_ATTR) ?? "-1",
+              10,
+            );
+            const collectionId =
+              itemEl.getAttribute(TREE_ITEM_COLLECTION_ID_ATTR) ?? "";
+            const parentId =
+              itemEl.getAttribute(TREE_ITEM_PARENT_ID_ATTR) ?? "";
+            const position = isUpperHalf ? itemIndex : itemIndex + 1;
+            handleMoveItem(
+              di.collectionId,
+              di.itemId,
+              collectionId,
+              parentId,
+              position,
+            );
           }
         }
       }

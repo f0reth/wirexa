@@ -472,6 +472,14 @@
   background-color: color-mix(in oklch, var(--color-primary) 10%, transparent);
 }
 
+/* コレクションヘッダーへのドロップターゲットハイライト */
+.collectionHeaderDropTarget {
+  background-color: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--color-primary) 40%, transparent);
+  outline-offset: -1px;
+  border-radius: 0.25rem;
+}
+
 /* インサーションゾーン: アイテム間の挿入位置を示す */
 .insertionZone {
   height: 4px;

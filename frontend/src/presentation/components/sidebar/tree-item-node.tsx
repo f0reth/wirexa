@@ -15,6 +15,11 @@ export const DROP_PARENT_ID_ATTR = "data-drop-parent-id";
 export const DROP_POSITION_ATTR = "data-drop-position";
 export const DROP_KIND_ATTR = "data-drop-kind";
 
+export const TREE_ITEM_ID_ATTR = "data-tree-item-id";
+export const TREE_ITEM_COLLECTION_ID_ATTR = "data-tree-item-collection-id";
+export const TREE_ITEM_PARENT_ID_ATTR = "data-tree-item-parent-id";
+export const TREE_ITEM_INDEX_ATTR = "data-tree-item-index";
+
 /** アイテム間またはコレクション間の挿入ゾーン */
 export function InsertionZone(props: {
   collectionId?: string;
@@ -198,6 +203,12 @@ export function TreeItemNode(props: {
           class={styles.treeNodeHeader}
           style={{ "padding-left": `${props.depth * 0.75}rem` }}
           onMouseDown={handleMouseDown}
+          {...{
+            [TREE_ITEM_ID_ATTR]: props.item.id,
+            [TREE_ITEM_COLLECTION_ID_ATTR]: props.collectionId,
+            [TREE_ITEM_PARENT_ID_ATTR]: props.sourceParentId,
+            [TREE_ITEM_INDEX_ATTR]: String(props.sourceIndex),
+          }}
         >
           <button
             type="button"
@@ -363,6 +374,12 @@ export function TreeItemNode(props: {
       class={clsx(styles.requestRow, isActive() && styles.requestItemActive)}
       style={{ "padding-left": `${props.depth * 0.75 + 0.5}rem` }}
       onMouseDown={handleMouseDown}
+      {...{
+        [TREE_ITEM_ID_ATTR]: props.item.id,
+        [TREE_ITEM_COLLECTION_ID_ATTR]: props.collectionId,
+        [TREE_ITEM_PARENT_ID_ATTR]: props.sourceParentId,
+        [TREE_ITEM_INDEX_ATTR]: String(props.sourceIndex),
+      }}
     >
       <button
         type="button"

@@ -3,9 +3,15 @@ import { ChevronRight, Folder, FolderPlus, Plus, Trash2 } from "lucide-solid";
 import { For, Show } from "solid-js";
 import type { Collection, TreeItem } from "../../../domain/http/types";
 import { useHttpCollections } from "../../providers/http-provider";
-import { setDragItem, setGhostPos } from "./drag-state";
+import { dragItem, dropTarget, setDragItem, setGhostPos } from "./drag-state";
 import styles from "./sidebar.module.css";
-import { InsertionZone, TreeItemNode } from "./tree-item-node";
+import {
+  DROP_COLLECTION_ID_ATTR,
+  DROP_KIND_ATTR,
+  DROP_ZONE_ATTR,
+  InsertionZone,
+  TreeItemNode,
+} from "./tree-item-node";
 
 const LONG_PRESS_MS = 250;
 
@@ -117,8 +123,27 @@ export function CollectionNode(props: {
     <div class={styles.treeNode}>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: drag source for collection reorder */}
       <div
-        class={styles.treeNodeHeader}
+        class={clsx(
+          styles.treeNodeHeader,
+          (() => {
+            const dt = dropTarget();
+            return (
+              dt?.kind === "item" &&
+              dt.collectionId === props.collection.id &&
+              dt.position === -1
+            );
+          })() && styles.collectionHeaderDropTarget,
+        )}
+        style={{
+          "pointer-events":
+            dragItem()?.kind === "collection" ? "none" : undefined,
+        }}
         onMouseDown={handleCollectionMouseDown}
+        {...{
+          [DROP_ZONE_ATTR]: "true",
+          [DROP_KIND_ATTR]: "collection-header",
+          [DROP_COLLECTION_ID_ATTR]: props.collection.id,
+        }}
       >
         <button
           type="button"
