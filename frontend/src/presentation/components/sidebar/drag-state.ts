@@ -18,10 +18,10 @@ export type DragItem =
 
 // item ゾーン: parentId が空文字はコレクションルート、それ以外はフォルダID。
 // position が -1 はそのフォルダへ移動（末尾追加）、>=0 は挿入先インデックス。
-// collection ゾーン: position はコレクションリスト内の挿入先インデックス。
+// sidebar ゾーン: position はサイドバーレイアウト内の挿入先インデックス。
 export type DropTarget =
   | { kind: "item"; collectionId: string; parentId: string; position: number }
-  | { kind: "collection"; position: number }
+  | { kind: "sidebar"; position: number }
   | null;
 
 export const [dragItem, setDragItem] = createSignal<DragItem | null>(null);

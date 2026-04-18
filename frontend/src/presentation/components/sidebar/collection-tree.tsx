@@ -21,6 +21,7 @@ import {
 } from "../../providers/http-provider";
 import { CollectionNode } from "./collection-node";
 import {
+  type DragItem,
   dragItem,
   ghostPos,
   setDragItem,
@@ -100,8 +101,8 @@ export function CollectionTree() {
           setDropTarget(null);
           return;
         }
-        if (zoneKind === "collection" && di.kind === "collection") {
-          setDropTarget({ kind: "collection", position });
+        if (zoneKind === "sidebar") {
+          setDropTarget({ kind: "sidebar", position });
         } else if (zoneKind === "item" && di.kind === "item") {
           const collectionId = zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
           const parentId = zone.getAttribute(DROP_PARENT_ID_ATTR) ?? "";
@@ -151,8 +152,8 @@ export function CollectionTree() {
               10,
             );
             if (position !== -1) {
-              if (zoneKind === "collection" && di.kind === "collection") {
-                handleMoveCollection(di.collectionId, position);
+              if (zoneKind === "sidebar") {
+                handleDropToSidebar(di, position);
               } else if (zoneKind === "item" && di.kind === "item") {
                 const collectionId =
                   zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
@@ -315,14 +316,30 @@ export function CollectionTree() {
     }
   };
 
-  const handleMoveCollection = async (
-    collectionId: string,
-    position: number,
-  ) => {
+  const handleDropToSidebar = async (di: DragItem, position: number) => {
     try {
-      await collectionsCtx.moveCollection(collectionId, position);
+      if (di.kind === "collection") {
+        await collectionsCtx.moveSidebarEntry(
+          "collection",
+          di.collectionId,
+          position,
+        );
+      } else {
+        // アイテムドラッグ
+        if (di.collectionId === ROOT_COLLECTION_ID) {
+          // __root__ 内のアイテムをサイドバーゾーン間で並び替える
+          await collectionsCtx.moveSidebarEntry("item", di.itemId, position);
+        } else {
+          // 通常コレクションから sidebar ゾーンへ（__root__ への移動）
+          await collectionsCtx.moveItemToSidebar(
+            di.collectionId,
+            di.itemId,
+            position,
+          );
+        }
+      }
     } catch (err) {
-      console.error("Failed to move collection:", err);
+      console.error("Failed to drop to sidebar:", err);
     }
   };
 
@@ -387,99 +404,105 @@ export function CollectionTree() {
 
       <ScrollArea class={styles.treeScroll}>
         <div class={styles.treeList}>
-          <For each={collectionsCtx.rootItems}>
-            {(item, index) => (
-              <>
-                <InsertionZone
-                  collectionId={ROOT_COLLECTION_ID}
-                  parentId=""
-                  position={index()}
-                />
-                <TreeItemNode
-                  item={item}
-                  collectionId={ROOT_COLLECTION_ID}
-                  depth={0}
-                  sourceParentId=""
-                  sourceIndex={index()}
-                  onAddFolder={handleAddFolder}
-                  onAddRequest={handleAddRequest}
-                  onDeleteItem={(cId, iId, name, type) =>
-                    setDeletingItem({
-                      collectionId: cId,
-                      itemId: iId,
-                      name,
-                      type,
-                    })
-                  }
-                  onSelectRequest={(item) => {
-                    if (item.request)
-                      requestCtx.loadRequest(item.request, ROOT_COLLECTION_ID);
-                  }}
-                  onRenameItem={handleRenameItem}
-                  onMoveItem={handleMoveItem}
-                  activeRequestId={requestCtx.activeRequestId()}
-                  renamingItemId={renamingItemId()}
-                  setRenamingItemId={setRenamingItemId}
-                />
-              </>
-            )}
-          </For>
-          <Show when={collectionsCtx.rootItems.length > 0}>
-            <InsertionZone
-              collectionId={ROOT_COLLECTION_ID}
-              parentId=""
-              position={collectionsCtx.rootItems.length}
-            />
-          </Show>
-
-          <For each={collectionsCtx.collections}>
-            {(collection, index) => (
-              <>
-                <InsertionZone kind="collection" position={index()} />
-                <CollectionNode
-                  collection={collection}
-                  sourceIndex={index()}
-                  onDeleteCollection={(id, name) =>
-                    setDeletingItem({
-                      collectionId: id,
-                      itemId: "",
-                      name,
-                      type: "collection",
-                    })
-                  }
-                  onAddFolder={handleAddFolder}
-                  onAddRequest={handleAddRequest}
-                  onDeleteItem={(collectionId, itemId, name, type) =>
-                    setDeletingItem({ collectionId, itemId, name, type })
-                  }
-                  onSelectRequest={(item) => {
-                    if (item.request) {
-                      requestCtx.loadRequest(item.request, collection.id);
-                    }
-                  }}
-                  onRenameItem={handleRenameItem}
-                  onRenameCollection={handleRenameCollection}
-                  onMoveItem={handleMoveItem}
-                  activeRequestId={requestCtx.activeRequestId()}
-                  renamingItemId={renamingItemId()}
-                  setRenamingItemId={setRenamingItemId}
-                  renamingCollectionId={renamingCollectionId()}
-                  setRenamingCollectionId={setRenamingCollectionId}
-                />
-              </>
-            )}
+          <For each={collectionsCtx.sidebarLayout}>
+            {(entry, index) => {
+              if (entry.kind === "collection") {
+                const collection = () =>
+                  collectionsCtx.collections.find((c) => c.id === entry.id);
+                return (
+                  <Show when={collection()}>
+                    {(col) => (
+                      <>
+                        <InsertionZone kind="sidebar" position={index()} />
+                        <CollectionNode
+                          collection={col()}
+                          sourceIndex={index()}
+                          onDeleteCollection={(id, name) =>
+                            setDeletingItem({
+                              collectionId: id,
+                              itemId: "",
+                              name,
+                              type: "collection",
+                            })
+                          }
+                          onAddFolder={handleAddFolder}
+                          onAddRequest={handleAddRequest}
+                          onDeleteItem={(collectionId, itemId, name, type) =>
+                            setDeletingItem({
+                              collectionId,
+                              itemId,
+                              name,
+                              type,
+                            })
+                          }
+                          onSelectRequest={(item) => {
+                            if (item.request) {
+                              requestCtx.loadRequest(item.request, col().id);
+                            }
+                          }}
+                          onRenameItem={handleRenameItem}
+                          onRenameCollection={handleRenameCollection}
+                          onMoveItem={handleMoveItem}
+                          activeRequestId={requestCtx.activeRequestId()}
+                          renamingItemId={renamingItemId()}
+                          setRenamingItemId={setRenamingItemId}
+                          renamingCollectionId={renamingCollectionId()}
+                          setRenamingCollectionId={setRenamingCollectionId}
+                        />
+                      </>
+                    )}
+                  </Show>
+                );
+              }
+              // kind === "item"
+              const item = () =>
+                collectionsCtx.rootItems.find((i) => i.id === entry.id);
+              return (
+                <Show when={item()}>
+                  {(it) => (
+                    <>
+                      <InsertionZone kind="sidebar" position={index()} />
+                      <TreeItemNode
+                        item={it()}
+                        collectionId={ROOT_COLLECTION_ID}
+                        depth={0}
+                        sourceParentId=""
+                        sourceIndex={index()}
+                        onAddFolder={handleAddFolder}
+                        onAddRequest={handleAddRequest}
+                        onDeleteItem={(cId, iId, name, type) =>
+                          setDeletingItem({
+                            collectionId: cId,
+                            itemId: iId,
+                            name,
+                            type,
+                          })
+                        }
+                        onSelectRequest={(item) => {
+                          if (item.request)
+                            requestCtx.loadRequest(
+                              item.request,
+                              ROOT_COLLECTION_ID,
+                            );
+                        }}
+                        onRenameItem={handleRenameItem}
+                        onMoveItem={handleMoveItem}
+                        activeRequestId={requestCtx.activeRequestId()}
+                        renamingItemId={renamingItemId()}
+                        setRenamingItemId={setRenamingItemId}
+                      />
+                    </>
+                  )}
+                </Show>
+              );
+            }}
           </For>
           <InsertionZone
-            kind="collection"
-            position={collectionsCtx.collections.length}
+            kind="sidebar"
+            position={collectionsCtx.sidebarLayout.length}
           />
 
-          <Show
-            when={
-              collectionsCtx.collections.length === 0 &&
-              collectionsCtx.rootItems.length === 0
-            }
-          >
+          <Show when={collectionsCtx.sidebarLayout.length === 0}>
             <p class={styles.emptyTree}>No collections yet</p>
           </Show>
         </div>

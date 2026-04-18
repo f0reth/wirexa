@@ -25,15 +25,15 @@ export function InsertionZone(props: {
   collectionId?: string;
   parentId?: string;
   position: number;
-  kind?: "item" | "collection";
+  kind?: "item" | "collection" | "sidebar";
 }) {
   const kind = () => props.kind ?? "item";
 
   const isActive = () => {
     const dt = dropTarget();
     if (!dt) return false;
-    if (kind() === "collection") {
-      return dt.kind === "collection" && dt.position === props.position;
+    if (kind() === "sidebar") {
+      return dt.kind === "sidebar" && dt.position === props.position;
     }
     return (
       dt.kind === "item" &&
@@ -48,9 +48,8 @@ export function InsertionZone(props: {
   const isNoOp = () => {
     const di = dragItem();
     if (!di) return false;
-    if (kind() === "collection") {
-      // コレクションゾーンはコレクションドラッグ時のみ有効
-      if (di.kind !== "collection") return true;
+    if (kind() === "sidebar") {
+      // sidebar ゾーンはコレクション・アイテム両方のドラッグを受け付ける
       return (
         props.position === di.sourceIndex ||
         props.position === di.sourceIndex + 1
