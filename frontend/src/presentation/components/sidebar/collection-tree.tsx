@@ -1,5 +1,12 @@
 import { Plus } from "lucide-solid";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
 import { Portal } from "solid-js/web";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
@@ -39,6 +46,18 @@ export function CollectionTree() {
   const requestCtx = useHttpRequest();
   const collectionsCtx = useHttpCollections();
   const [addMenuOpen, setAddMenuOpen] = createSignal(false);
+  let addMenuWrapperRef: HTMLDivElement | undefined;
+
+  createEffect(() => {
+    if (!addMenuOpen()) return;
+    const handler = (e: MouseEvent) => {
+      if (addMenuWrapperRef && !addMenuWrapperRef.contains(e.target as Node)) {
+        setAddMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    onCleanup(() => document.removeEventListener("mousedown", handler));
+  });
   const [renamingItemId, setRenamingItemId] = createSignal<string | null>(null);
   const [renamingCollectionId, setRenamingCollectionId] = createSignal<
     string | null
@@ -331,7 +350,7 @@ export function CollectionTree() {
     <div class={styles.collectionTree}>
       <div class={styles.collectionHeader}>
         <span class={styles.collectionTitle}>Collections</span>
-        <div class={styles.addMenuWrapper}>
+        <div class={styles.addMenuWrapper} ref={addMenuWrapperRef}>
           <Button
             variant="ghost"
             size="icon"
