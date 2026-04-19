@@ -45,7 +45,7 @@ export const DEFAULT_SETTINGS: RequestSettings = {
   proxyURL: "",
   insecureSkipVerify: true,
   disableRedirects: false,
-  maxResponseBodyMB: 50,
+  maxResponseBodyMB: 10,
 };
 
 export interface HttpRequest {
