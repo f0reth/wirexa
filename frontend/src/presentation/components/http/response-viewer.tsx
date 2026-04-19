@@ -125,7 +125,7 @@ export function ResponseViewer() {
                           fallback={
                             <div class={styles.responseEmpty}>
                               <p class={styles.responseEmptyText}>
-                                レスポンスボディがありません
+                                No response body
                               </p>
                             </div>
                           }
