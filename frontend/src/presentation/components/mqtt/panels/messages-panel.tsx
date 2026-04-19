@@ -44,11 +44,11 @@ export function MessagesPanel() {
       return filteredMessages().length;
     },
     getScrollElement: () => scrollRef,
-    estimateSize: () => 62,
+    estimateSize: () => 80,
     overscan: 5,
     paddingStart: 10,
     paddingEnd: 10,
-    measureElement: (el) => el?.getBoundingClientRect().height ?? 74,
+    measureElement: (el) => el?.getBoundingClientRect().height ?? 80,
   });
 
   createEffect(() => {
