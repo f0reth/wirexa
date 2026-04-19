@@ -10,7 +10,7 @@ function createEmptyProfile(): BrokerProfile {
   return {
     id: Date.now().toString(),
     name: "",
-    broker: "tcp://localhost:1883",
+    broker: "mqtt://localhost:1883",
     clientId: "",
     username: "",
     password: "",
@@ -129,7 +129,7 @@ export function BrokerSettingsDialog(props: {
                 id="broker-url"
                 value={draft().broker}
                 onInput={(e) => update("broker", e.currentTarget.value)}
-                placeholder="tcp://localhost:1883"
+                placeholder="mqtt://localhost:1883"
               />
             </label>
 
