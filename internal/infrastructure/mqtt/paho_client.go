@@ -4,6 +4,7 @@ package mqttinfra
 import (
 	"crypto/tls"
 	"errors"
+	"strings"
 	"time"
 
 	pahomqtt "github.com/eclipse/paho.mqtt.golang"
@@ -42,6 +43,19 @@ type pahoClient struct {
 	tokenTimeout time.Duration
 }
 
+// applyTLSScheme は UseTLS=true の場合、Broker URL のスキームを TLS 対応のものに変換する。
+func applyTLSScheme(broker string) string {
+	switch {
+	case strings.HasPrefix(broker, "tcp://"):
+		return "ssl://" + broker[len("tcp://"):]
+	case strings.HasPrefix(broker, "mqtt://"):
+		return "mqtts://" + broker[len("mqtt://"):]
+	case strings.HasPrefix(broker, "ws://"):
+		return "wss://" + broker[len("ws://"):]
+	}
+	return broker // ssl://, mqtts://, wss:// はそのまま
+}
+
 // NewPahoClientFactory は Paho MQTT を用いた domain.BrokerClientFactory を返す。
 func NewPahoClientFactory(cfg MqttClientConfig) domain.BrokerClientFactory {
 	return func(
@@ -50,7 +64,6 @@ func NewPahoClientFactory(cfg MqttClientConfig) domain.BrokerClientFactory {
 		onConnectionLost func(error),
 	) domain.BrokerClient {
 		opts := pahomqtt.NewClientOptions()
-		opts.AddBroker(config.Broker)
 		opts.SetClientID(config.ClientID) // 呼び出し元が事前に解決済み
 
 		if config.Username != "" {
@@ -58,9 +71,12 @@ func NewPahoClientFactory(cfg MqttClientConfig) domain.BrokerClientFactory {
 			opts.SetPassword(config.Password)
 		}
 
+		broker := config.Broker
 		if config.UseTLS {
+			broker = applyTLSScheme(broker)
 			opts.SetTLSConfig(&tls.Config{MinVersion: tls.VersionTLS12})
 		}
+		opts.AddBroker(broker)
 
 		opts.SetAutoReconnect(true)
 		opts.SetResumeSubs(true)
