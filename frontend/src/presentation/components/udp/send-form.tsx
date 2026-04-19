@@ -63,9 +63,7 @@ export function SendForm() {
           value={host()}
           onInput={(e) => setHost(e.currentTarget.value)}
         />
-      </div>
-      <div class={styles.formRow}>
-        <span class={styles.formLabel}>Port</span>
+        <span class={styles.formLabelInline}>Port</span>
         <Input
           class={styles.portInput}
           type="number"
