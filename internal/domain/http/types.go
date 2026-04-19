@@ -47,14 +47,15 @@ type RequestBody struct {
 
 // HttpResponse は HTTP レスポンスを表す。
 type HttpResponse struct {
-	StatusCode  int               `json:"statusCode"`
-	StatusText  string            `json:"statusText"`
-	Headers     map[string]string `json:"headers"`
-	Body        string            `json:"body"`
-	ContentType string            `json:"contentType"`
-	Size        int64             `json:"size"`
-	TimingMs    int64             `json:"timingMs"`
-	Error       string            `json:"error"`
+	StatusCode    int               `json:"statusCode"`
+	StatusText    string            `json:"statusText"`
+	Headers       map[string]string `json:"headers"`
+	Body          string            `json:"body"`
+	ContentType   string            `json:"contentType"`
+	Size          int64             `json:"size"`
+	TimingMs      int64             `json:"timingMs"`
+	Error         string            `json:"error"`
+	BodyTruncated bool              `json:"bodyTruncated"` // ボディが上限で切り捨てられた場合 true
 }
 
 // Collection はリクエストコレクションを表す。

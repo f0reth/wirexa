@@ -48,14 +48,16 @@ type HttpRequest struct {
 
 // HttpResponse は HTTP レスポンスの RPC 転送型。
 type HttpResponse struct {
-	StatusCode  int               `json:"statusCode"`
-	StatusText  string            `json:"statusText"`
-	Headers     map[string]string `json:"headers"`
-	Body        string            `json:"body"`
-	ContentType string            `json:"contentType"`
-	Size        int64             `json:"size"`
-	TimingMs    int64             `json:"timingMs"`
-	Error       string            `json:"error"`
+	StatusCode    int               `json:"statusCode"`
+	StatusText    string            `json:"statusText"`
+	Headers       map[string]string `json:"headers"`
+	Body          string            `json:"body"`
+	ContentType   string            `json:"contentType"`
+	Size          int64             `json:"size"`
+	TimingMs      int64             `json:"timingMs"`
+	Error         string            `json:"error"`
+	BodyTruncated bool              `json:"bodyTruncated"`
+	TempFilePath  string            `json:"tempFilePath"` // インフラ詳細: 上限超過時のみ非空
 }
 
 // TreeItem はコレクション内アイテムの RPC 転送型。
@@ -151,16 +153,18 @@ func toHTTPRequestDTO(req httpdomain.HttpRequest) HttpRequest {
 	}
 }
 
-func toHTTPResponseDTO(res httpdomain.HttpResponse) HttpResponse {
+func toHTTPResponseDTO(res httpdomain.HttpResponse, tempFilePath string) HttpResponse {
 	return HttpResponse{
-		StatusCode:  res.StatusCode,
-		StatusText:  res.StatusText,
-		Headers:     res.Headers,
-		Body:        res.Body,
-		ContentType: res.ContentType,
-		Size:        res.Size,
-		TimingMs:    res.TimingMs,
-		Error:       res.Error,
+		StatusCode:    res.StatusCode,
+		StatusText:    res.StatusText,
+		Headers:       res.Headers,
+		Body:          res.Body,
+		ContentType:   res.ContentType,
+		Size:          res.Size,
+		TimingMs:      res.TimingMs,
+		Error:         res.Error,
+		BodyTruncated: res.BodyTruncated,
+		TempFilePath:  tempFilePath,
 	}
 }
 
