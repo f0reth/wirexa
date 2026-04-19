@@ -66,6 +66,10 @@ export function RenameItem(arg1, arg2, arg3) {
   return window['go']['adapters']['HttpHandler']['RenameItem'](arg1, arg2, arg3);
 }
 
+export function SaveResponseBody(arg1, arg2) {
+  return window['go']['adapters']['HttpHandler']['SaveResponseBody'](arg1, arg2);
+}
+
 export function SendRequest(arg1) {
   return window['go']['adapters']['HttpHandler']['SendRequest'](arg1);
 }

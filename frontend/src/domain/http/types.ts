@@ -69,6 +69,8 @@ export interface HttpResponse {
   size: number;
   timingMs: number;
   error: string;
+  bodyTruncated: boolean;
+  tempFilePath: string;
 }
 
 export interface Collection {

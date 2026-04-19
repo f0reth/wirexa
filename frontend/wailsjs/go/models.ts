@@ -312,11 +312,13 @@ export namespace adapters {
 	    size: number;
 	    timingMs: number;
 	    error: string;
-	
+	    bodyTruncated: boolean;
+	    tempFilePath: string;
+
 	    static createFrom(source: any = {}) {
 	        return new HttpResponse(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.statusCode = source["statusCode"];
@@ -327,6 +329,8 @@ export namespace adapters {
 	        this.size = source["size"];
 	        this.timingMs = source["timingMs"];
 	        this.error = source["error"];
+	        this.bodyTruncated = source["bodyTruncated"];
+	        this.tempFilePath = source["tempFilePath"];
 	    }
 	}
 	

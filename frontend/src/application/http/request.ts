@@ -83,6 +83,8 @@ export function createRequestState(api: RequestApi, logger: Logger) {
         size: 0,
         timingMs: 0,
         error: errorMsg,
+        bodyTruncated: false,
+        tempFilePath: "",
       });
       logger.error("HTTP request failed", {
         method: m,

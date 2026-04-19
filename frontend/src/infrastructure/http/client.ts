@@ -14,6 +14,7 @@ import {
   MoveSidebarEntry,
   RenameCollection,
   RenameItem,
+  SaveResponseBody,
   SendRequest,
   UpdateRequest,
 } from "../../../wailsjs/go/adapters/HttpHandler";
@@ -107,6 +108,8 @@ function fromWailsHttpResponse(res: adapters.HttpResponse): HttpResponse {
     size: res.size,
     timingMs: res.timingMs,
     error: res.error,
+    bodyTruncated: res.bodyTruncated ?? false,
+    tempFilePath: res.tempFilePath ?? "",
   };
 }
 
@@ -252,4 +255,11 @@ export async function moveItemToSidebar(
   sidebarPosition: number,
 ): Promise<void> {
   return MoveItemToSidebar(sourceCollectionId, itemId, sidebarPosition);
+}
+
+export async function saveResponseBody(
+  tempFilePath: string,
+  contentType: string,
+): Promise<void> {
+  return SaveResponseBody(tempFilePath, contentType);
 }
