@@ -29,6 +29,8 @@ function hexByteCount(value: string): number {
 
 export function SendForm() {
   const {
+    host,
+    setHost,
     port,
     setPort,
     payload,
@@ -54,6 +56,14 @@ export function SendForm() {
 
   return (
     <div class={styles.sendForm}>
+      <div class={styles.formRow}>
+        <span class={styles.formLabel}>Host</span>
+        <Input
+          placeholder="127.0.0.1"
+          value={host()}
+          onInput={(e) => setHost(e.currentTarget.value)}
+        />
+      </div>
       <div class={styles.formRow}>
         <span class={styles.formLabel}>Port</span>
         <Input
