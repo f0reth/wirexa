@@ -4,7 +4,34 @@ import { Input } from "../../../components/ui/input";
 import type { BrokerProfile } from "../../../domain/mqtt/types";
 import styles from "./mqtt.module.css";
 
-const BROKER_PATTERN = /^(mqtt|mqtts|tcp|ws|wss):\/\/.+/;
+function defaultPort(scheme: string): string {
+  const map: Record<string, string> = {
+    mqtt: "1883",
+    mqtts: "8883",
+    tcp: "1883",
+    ws: "9001",
+    wss: "8884",
+  };
+  return map[scheme] ?? "1883";
+}
+
+function parseBrokerUrl(url: string): {
+  scheme: string;
+  host: string;
+  port: string;
+} {
+  const match = url.match(/^(mqtt|mqtts|tcp|ws|wss):\/\/([^:]+)(?::(\d+))?$/);
+  if (!match) return { scheme: "mqtt", host: "localhost", port: "1883" };
+  return {
+    scheme: match[1],
+    host: match[2],
+    port: match[3] ?? defaultPort(match[1]),
+  };
+}
+
+function composeBrokerUrl(scheme: string, host: string, port: string): string {
+  return `${scheme}://${host}:${port}`;
+}
 
 function createEmptyProfile(): BrokerProfile {
   return {
@@ -30,6 +57,13 @@ export function BrokerSettingsDialog(props: {
     props.profile ? { ...props.profile } : createEmptyProfile(),
   );
 
+  const initialParts = parseBrokerUrl(
+    props.profile?.broker ?? "mqtt://localhost:1883",
+  );
+  const [scheme, setScheme] = createSignal(initialParts.scheme);
+  const [host, setHost] = createSignal(initialParts.host);
+  const [port, setPort] = createSignal(initialParts.port);
+
   const update = <K extends keyof BrokerProfile>(
     key: K,
     value: BrokerProfile[K],
@@ -37,25 +71,42 @@ export function BrokerSettingsDialog(props: {
     setDraft((prev) => ({ ...prev, [key]: value }));
   };
 
+  const handleSchemeChange = (s: string) => {
+    setScheme(s);
+    setPort(defaultPort(s));
+  };
+
   const isValid = createMemo(() => {
-    const d = draft();
-    return d.name.trim().length > 0 && BROKER_PATTERN.test(d.broker.trim());
+    const portNum = Number(port());
+    return (
+      draft().name.trim().length > 0 &&
+      host().trim().length > 0 &&
+      Number.isInteger(portNum) &&
+      portNum >= 1 &&
+      portNum <= 65535
+    );
   });
 
   const handleSave = () => {
     if (!isValid()) return;
-    props.onSave(draft());
+    props.onSave({
+      ...draft(),
+      broker: composeBrokerUrl(scheme(), host(), port()),
+    });
   };
 
   const handleSaveAndConnect = () => {
     if (!isValid()) return;
-    props.onSaveAndConnect?.(draft());
+    props.onSaveAndConnect?.({
+      ...draft(),
+      broker: composeBrokerUrl(scheme(), host(), port()),
+    });
   };
 
   const getFocusable = () =>
     Array.from(
       cardRef?.querySelectorAll<HTMLElement>(
-        "input:not([disabled]), button:not([disabled])",
+        "input:not([disabled]), select:not([disabled]), button:not([disabled])",
       ) ?? [],
     );
 
@@ -123,15 +174,40 @@ export function BrokerSettingsDialog(props: {
               />
             </label>
 
-            <label class={styles.dialogLabel} for="broker-url">
+            <div class={styles.dialogLabel}>
               Broker URL
-              <Input
-                id="broker-url"
-                value={draft().broker}
-                onInput={(e) => update("broker", e.currentTarget.value)}
-                placeholder="mqtt://localhost:1883"
-              />
-            </label>
+              <div class={styles.brokerInputRow}>
+                <select
+                  id="broker-scheme"
+                  class={styles.brokerSchemeSelect}
+                  value={scheme()}
+                  onChange={(e) => handleSchemeChange(e.currentTarget.value)}
+                >
+                  <option value="mqtt">mqtt</option>
+                  <option value="mqtts">mqtts</option>
+                  <option value="tcp">tcp</option>
+                  <option value="ws">ws</option>
+                  <option value="wss">wss</option>
+                </select>
+                <Input
+                  id="broker-host"
+                  class={styles.brokerHostInput}
+                  value={host()}
+                  onInput={(e) => setHost(e.currentTarget.value)}
+                  placeholder="localhost"
+                />
+                <Input
+                  id="broker-port"
+                  class={styles.brokerPortInput}
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={port()}
+                  onInput={(e) => setPort(e.currentTarget.value)}
+                  placeholder="1883"
+                />
+              </div>
+            </div>
 
             <label class={styles.dialogLabel} for="broker-client-id">
               Client ID
