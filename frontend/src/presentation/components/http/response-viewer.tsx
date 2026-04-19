@@ -121,30 +121,41 @@ export function ResponseViewer() {
                     <Show when={responseTab() === "body"}>
                       <ScrollArea class={styles.responseScrollArea}>
                         <Show
-                          when={isImageContentType(resp().contentType)}
+                          when={resp().body !== ""}
                           fallback={
-                            <Show
-                              when={isJsonContentType(resp().contentType)}
-                              fallback={
-                                <pre class={styles.responseBody}>
-                                  {formattedBody()}
-                                </pre>
-                              }
-                            >
-                              <pre
-                                class={styles.responseBody}
-                                innerHTML={highlightJson(resp().body)}
-                              />
-                            </Show>
+                            <div class={styles.responseEmpty}>
+                              <p class={styles.responseEmptyText}>
+                                レスポンスボディがありません
+                              </p>
+                            </div>
                           }
                         >
-                          <div class={styles.responseImageContainer}>
-                            <img
-                              src={`data:${resp().contentType.split(";")[0]};base64,${resp().body}`}
-                              alt="Response"
-                              class={styles.responseImage}
-                            />
-                          </div>
+                          <Show
+                            when={isImageContentType(resp().contentType)}
+                            fallback={
+                              <Show
+                                when={isJsonContentType(resp().contentType)}
+                                fallback={
+                                  <pre class={styles.responseBody}>
+                                    {formattedBody()}
+                                  </pre>
+                                }
+                              >
+                                <pre
+                                  class={styles.responseBody}
+                                  innerHTML={highlightJson(resp().body)}
+                                />
+                              </Show>
+                            }
+                          >
+                            <div class={styles.responseImageContainer}>
+                              <img
+                                src={`data:${resp().contentType.split(";")[0]};base64,${resp().body}`}
+                                alt="Response"
+                                class={styles.responseImage}
+                              />
+                            </div>
+                          </Show>
                         </Show>
                       </ScrollArea>
                     </Show>
