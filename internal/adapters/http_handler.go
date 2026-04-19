@@ -3,27 +3,38 @@ package adapters
 
 import (
 	"context"
+	"io"
+	"os"
+	"strings"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	httpdomain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
+// TempFileProvider はテンポラリファイルパスを取得・消費するインターフェース。
+// インフラ詳細を adapter 層に伝達するために使用する。
+type TempFileProvider interface {
+	ConsumeTempFilePath(requestID string) string
+}
+
 // HttpHandler は Wails RPC アダプターとして HTTP ユースケースを公開する。
 type HttpHandler struct {
-	ctx     context.Context
-	reqSvc  httpdomain.RequestUseCase
-	collSvc httpdomain.CollectionUseCase
-	itemSvc httpdomain.CollectionItemUseCase
+	ctx       context.Context
+	reqSvc    httpdomain.RequestUseCase
+	collSvc   httpdomain.CollectionUseCase
+	itemSvc   httpdomain.CollectionItemUseCase
+	tempFiles TempFileProvider
 }
 
 // SetupHTTPHandler は既存の HttpHandler インスタンスにサービスを注入する。
 // Wails の Bind に渡す前に事前確保した空ハンドラーを startup() で初期化する際に使用する。
-func SetupHTTPHandler(ctx context.Context, h *HttpHandler, reqSvc httpdomain.RequestUseCase, collSvc httpdomain.CollectionUseCase, itemSvc httpdomain.CollectionItemUseCase) {
+func SetupHTTPHandler(ctx context.Context, h *HttpHandler, reqSvc httpdomain.RequestUseCase, collSvc httpdomain.CollectionUseCase, itemSvc httpdomain.CollectionItemUseCase, tempFiles TempFileProvider) {
 	h.ctx = ctx
 	h.reqSvc = reqSvc
 	h.collSvc = collSvc
 	h.itemSvc = itemSvc
+	h.tempFiles = tempFiles
 }
 
 // OpenFilePicker はネイティブのファイル選択ダイアログを開き、選択されたファイルパスを返す。
@@ -35,16 +46,41 @@ func (h *HttpHandler) OpenFilePicker() (string, error) {
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
 func (h *HttpHandler) SendRequest(req HttpRequest) (HttpResponse, error) {
-	res, err := h.reqSvc.SendRequest(fromHTTPRequestDTO(req))
+	domainReq := fromHTTPRequestDTO(req)
+	res, err := h.reqSvc.SendRequest(domainReq)
 	if err != nil {
 		return HttpResponse{}, err
 	}
-	return toHTTPResponseDTO(res), nil
+	var tempFilePath string
+	if res.BodyTruncated && h.tempFiles != nil {
+		tempFilePath = h.tempFiles.ConsumeTempFilePath(domainReq.ID)
+	}
+	return toHTTPResponseDTO(res, tempFilePath), nil
 }
 
 // CancelRequest は指定 ID の実行中 HTTP リクエストをキャンセルする。
 func (h *HttpHandler) CancelRequest(id string) {
 	h.reqSvc.CancelRequest(id)
+}
+
+// SaveResponseBody はテンポラリファイルをOSのファイル保存ダイアログで指定先に保存する。
+// 保存後にテンポラリファイルを削除する。キャンセル時は何もしない。
+func (h *HttpHandler) SaveResponseBody(tempFilePath, contentType string) error {
+	ext := contentTypeToExtension(contentType)
+	savePath, err := runtime.SaveFileDialog(h.ctx, runtime.SaveDialogOptions{
+		DefaultFilename: "response" + ext,
+		Filters: []runtime.FileFilter{{
+			DisplayName: contentType,
+			Pattern:     "*" + ext,
+		}},
+	})
+	if err != nil || savePath == "" {
+		return err
+	}
+	if err := copyFile(tempFilePath, savePath); err != nil {
+		return err
+	}
+	return os.Remove(tempFilePath)
 }
 
 // GetRootItems はルートコレクションのアイテム一覧を返す。
@@ -153,4 +189,39 @@ func (h *HttpHandler) MoveSidebarEntry(kind, id string, position int) error {
 // サイドバーレイアウトの指定位置に挿入する。
 func (h *HttpHandler) MoveItemToSidebar(sourceCollectionID, itemID string, sidebarPosition int) error {
 	return h.collSvc.MoveItemToSidebar(sourceCollectionID, itemID, sidebarPosition)
+}
+
+func contentTypeToExtension(contentType string) string {
+	ct := strings.TrimSpace(strings.ToLower(strings.Split(contentType, ";")[0]))
+	switch ct {
+	case "application/json":
+		return ".json"
+	case "text/html":
+		return ".html"
+	case "text/plain":
+		return ".txt"
+	case "text/xml", "application/xml":
+		return ".xml"
+	case "text/csv":
+		return ".csv"
+	case "application/pdf":
+		return ".pdf"
+	default:
+		return ".bin"
+	}
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
 }
