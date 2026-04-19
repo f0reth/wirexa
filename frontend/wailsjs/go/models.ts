@@ -314,11 +314,11 @@ export namespace adapters {
 	    error: string;
 	    bodyTruncated: boolean;
 	    tempFilePath: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new HttpResponse(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.statusCode = source["statusCode"];
