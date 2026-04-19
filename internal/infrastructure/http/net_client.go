@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
@@ -26,11 +27,23 @@ const (
 var _ domain.HttpTransport = (*NetClient)(nil)
 
 // NetClient は net/http を使った domain.HttpTransport の実装。
-type NetClient struct{}
+type NetClient struct {
+	tempFiles sync.Map // requestID → tempFilePath (string)
+}
 
 // NewNetClient は NetClient を生成する。
 func NewNetClient() *NetClient {
 	return &NetClient{}
+}
+
+// ConsumeTempFilePath は指定リクエストIDのテンポラリファイルパスを返し、マップから削除する。
+// 上限超過がなかった場合は空文字列を返す。
+func (c *NetClient) ConsumeTempFilePath(requestID string) string {
+	if v, ok := c.tempFiles.LoadAndDelete(requestID); ok {
+		s, _ := v.(string)
+		return s
+	}
+	return ""
 }
 
 // Do は HttpRequest を実行して HttpResponse を返す。
@@ -111,15 +124,51 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+	// ボディをテンポラリファイルへストリーミング（メモリを圧迫しない）
+	tmpFile, err := os.CreateTemp("", "wirexa-response-*")
 	if err != nil {
+		return domain.HttpResponse{}, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpName := tmpFile.Name()
+
+	if _, err = io.Copy(tmpFile, resp.Body); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpName)
 		return domain.HttpResponse{}, fmt.Errorf("failed to read response: %w", err)
 	}
+	_ = tmpFile.Close()
 
-	truncated := false
-	if int64(len(body)) > maxBody {
-		body = body[:maxBody]
-		truncated = true
+	info, err := os.Stat(tmpName)
+	if err != nil {
+		_ = os.Remove(tmpName)
+		return domain.HttpResponse{}, fmt.Errorf("failed to stat temp file: %w", err)
+	}
+
+	var body []byte
+	bodyTruncated := false
+	if info.Size() <= maxBody {
+		// 上限以内: メモリへ読み込み、テンポラリファイルを削除
+		body, err = os.ReadFile(tmpName)
+		_ = os.Remove(tmpName)
+		if err != nil {
+			return domain.HttpResponse{}, fmt.Errorf("failed to read temp file: %w", err)
+		}
+	} else {
+		// 上限超過: 先頭 maxBody バイトのみ読み込み、テンポラリファイルは保持
+		f, err := os.Open(tmpName)
+		if err != nil {
+			_ = os.Remove(tmpName)
+			return domain.HttpResponse{}, fmt.Errorf("failed to open temp file: %w", err)
+		}
+		body = make([]byte, maxBody)
+		if _, err = io.ReadFull(f, body); err != nil {
+			_ = f.Close()
+			_ = os.Remove(tmpName)
+			return domain.HttpResponse{}, fmt.Errorf("failed to read temp file: %w", err)
+		}
+		_ = f.Close()
+		bodyTruncated = true
+		c.tempFiles.Store(req.ID, tmpName)
 	}
 
 	headers := make(map[string]string, len(resp.Header))
@@ -135,19 +184,16 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		bodyStr = base64.StdEncoding.EncodeToString(body)
 	}
 
-	result := domain.HttpResponse{
-		StatusCode:  resp.StatusCode,
-		StatusText:  resp.Status,
-		Headers:     headers,
-		Body:        bodyStr,
-		ContentType: respContentType,
-		Size:        int64(len(body)),
-		TimingMs:    elapsed,
-	}
-	if truncated {
-		result.Error = fmt.Sprintf("response body truncated at %d bytes", maxBody)
-	}
-	return result, nil
+	return domain.HttpResponse{
+		StatusCode:    resp.StatusCode,
+		StatusText:    resp.Status,
+		Headers:       headers,
+		Body:          bodyStr,
+		ContentType:   respContentType,
+		Size:          info.Size(),
+		TimingMs:      elapsed,
+		BodyTruncated: bodyTruncated,
+	}, nil
 }
 
 func buildHTTPClient(s domain.RequestSettings) *http.Client {
