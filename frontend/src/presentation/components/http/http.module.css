@@ -490,6 +490,64 @@
   border: 1px solid var(--border-subtle);
 }
 
+/* ── Response body banners ─────────────────────────────── */
+.responseBodyLimitBanner {
+  padding: 1rem;
+  background-color: color-mix(
+    in oklch,
+    var(--color-warning, orange) 10%,
+    var(--surface-2)
+  );
+  border-bottom: 1px solid
+    color-mix(in oklch, var(--color-warning, orange) 30%, var(--border-subtle));
+  font-size: 0.8125rem;
+  color: var(--color-foreground);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.responseBodyLimitActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.responseBodyLimitBtn {
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background-color: var(--surface-3);
+  color: var(--color-foreground);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.responseBodyLimitBtn:hover {
+  background-color: var(--hover-overlay);
+}
+
+.responseBodyTruncatedBanner {
+  padding: 0.5rem 0.75rem;
+  background-color: color-mix(
+    in oklch,
+    var(--color-warning, orange) 10%,
+    var(--surface-2)
+  );
+  border-bottom: 1px solid
+    color-mix(in oklch, var(--color-warning, orange) 30%, var(--border-subtle));
+  font-size: 0.75rem;
+  color: var(--color-foreground);
+}
+
+.responseHighlightBanner {
+  padding: 0.375rem 0.75rem;
+  background-color: var(--surface-2);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  color: var(--color-muted-foreground);
+}
+
 /* ── Timing info ───────────────────────────────────────── */
 .timingInfo {
   display: flex;
