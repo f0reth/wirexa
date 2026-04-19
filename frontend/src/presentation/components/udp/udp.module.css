@@ -36,6 +36,13 @@
   flex-shrink: 0;
 }
 
+.formLabelInline {
+  font-size: 0.75rem;
+  color: var(--color-muted-foreground);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
 .hostInput {
   flex: 1;
   font-family: var(--font-mono);
