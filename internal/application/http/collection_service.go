@@ -108,20 +108,11 @@ func (s *CollectionService) GetRootItems() []*domain.TreeItem {
 
 // CreateCollection は新規コレクションを作成する。
 func (s *CollectionService) CreateCollection(name string) (domain.Collection, error) {
-	s.mu.RLock()
-	maxOrder := 0
-	for _, c := range s.cache {
-		if c.ID != domain.RootCollectionID && c.Order >= maxOrder {
-			maxOrder = c.Order + 1
-		}
-	}
-	s.mu.RUnlock()
-
 	c := domain.Collection{
 		ID:    uuid.New().String(),
 		Name:  name,
 		Items: []*domain.TreeItem{},
-		Order: maxOrder,
+		Order: 0,
 	}
 	if err := s.repo.Save(&c); err != nil {
 		return domain.Collection{}, fmt.Errorf("failed to save collection: %w", err)
@@ -355,8 +346,7 @@ func (s *CollectionService) UpdateRequest(collectionID string, req domain.HttpRe
 		return &cmn.NotFoundError{Resource: "request", ID: req.ID}
 	}
 
-	// 名前の変更は RenameItem が担当するため、ここでは既存の名前を維持する
-	req.Name = node.Name
+	node.Name = req.Name
 	node.Request = &req
 
 	if err := s.repo.Save(c); err != nil {
