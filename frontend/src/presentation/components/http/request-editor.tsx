@@ -27,6 +27,8 @@ const PROXY_MODES: { value: ProxyMode; label: string }[] = [
   { value: "custom", label: "Custom" },
 ];
 
+const JSON_BODY_DEFAULT = '{\n  "": ""\n}';
+
 const TABS = [
   { value: "params", label: "Params" },
   { value: "headers", label: "Headers" },
@@ -49,7 +51,13 @@ export function RequestEditor() {
     setSettings,
   } = useHttpRequest();
 
-  const bodyContent = () => body().contents[body().type] ?? "";
+  const bodyContent = () => {
+    const content = body().contents[body().type];
+    if (content === undefined && body().type === "json") {
+      return JSON_BODY_DEFAULT;
+    }
+    return content ?? "";
+  };
   const setBodyContent = (content: string) =>
     setBody({
       ...body(),
