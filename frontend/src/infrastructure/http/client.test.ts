@@ -121,6 +121,8 @@ describe("sendRequest", () => {
       size: 11,
       timingMs: 42,
       error: "",
+      bodyTruncated: false,
+      tempFilePath: "",
     });
   });
 
@@ -189,7 +191,9 @@ describe("getCollections", () => {
       makeWailsCollection() as never,
     ]);
     const result = await getCollections();
-    expect(result).toEqual([{ id: "col-1", name: "My Collection", items: [] }]);
+    expect(result).toEqual([
+      { id: "col-1", name: "My Collection", items: [], order: 0 },
+    ]);
   });
 
   it("maps multiple collections", async () => {
