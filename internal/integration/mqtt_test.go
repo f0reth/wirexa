@@ -116,7 +116,7 @@ func newMQTTHandler(t *testing.T, emitter cmndomain.Emitter) *adapters.MqttHandl
 // connectBroker は brokerAddr へ接続して connectionID を返すヘルパー。
 func connectBroker(t *testing.T, h *adapters.MqttHandler, name string) string {
 	t.Helper()
-	id, err := h.Connect(mqttdomain.ConnectionConfig{
+	id, err := h.Connect(adapters.ConnectionConfig{
 		Name:   name,
 		Broker: brokerAddr,
 	})
@@ -311,7 +311,7 @@ func TestMQTT_ProfileCRUD(t *testing.T) {
 		t.Fatalf("expected 0 profiles initially, got %d", len(profiles))
 	}
 
-	profile := mqttdomain.BrokerProfile{
+	profile := adapters.BrokerProfile{
 		ID:     uuid.New().String(),
 		Name:   "LocalBroker",
 		Broker: brokerAddr,

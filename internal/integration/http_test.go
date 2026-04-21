@@ -3,9 +3,11 @@
 package integration
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,16 +22,20 @@ import (
 // newHTTPHandler は統合テスト用に HttpHandler を DI で組み立てる。
 func newHTTPHandler(t *testing.T) *adapters.HttpHandler {
 	t.Helper()
-	repo, err := httpinfra.NewJSONFileRepository(t.TempDir())
+	dir := t.TempDir()
+	repo, err := httpinfra.NewJSONFileRepository(dir)
 	if err != nil {
 		t.Fatalf("NewJSONFileRepository: %v", err)
 	}
-	collSvc, err := httpapp.NewCollectionService(repo)
+	layoutRepo := httpinfra.NewSidebarLayoutRepository(filepath.Join(dir, "sidebar_layout.json"))
+	collSvc, err := httpapp.NewCollectionService(repo, layoutRepo)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
 	reqSvc := httpapp.NewHTTPRequestService(httpinfra.NewNetClient(), testutil.NoopLogger{})
-	return adapters.NewHTTPHandler(reqSvc, collSvc)
+	h := &adapters.HttpHandler{}
+	adapters.SetupHTTPHandler(context.Background(), h, reqSvc, collSvc, collSvc, nil)
+	return h
 }
 
 // TestHTTP_CollectionCRUD はコレクションの作成・取得・名前変更・削除を通しでテストする。
@@ -82,7 +88,7 @@ func TestHTTP_FolderAndRequestTree(t *testing.T) {
 	}
 
 	// フォルダ内にリクエストを追加
-	req := domain.HttpRequest{Name: "GET example", Method: "GET", URL: "http://example.com"}
+	req := adapters.HttpRequest{Name: "GET example", Method: "GET", URL: "http://example.com"}
 	item, err := h.AddRequest(col.ID, folder.ID, req)
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
@@ -123,7 +129,7 @@ func TestHTTP_SendRequest_2xx(t *testing.T) {
 
 	for _, method := range []string{"GET", "POST"} {
 		t.Run(method, func(t *testing.T) {
-			resp, err := h.SendRequest(domain.HttpRequest{
+			resp, err := h.SendRequest(adapters.HttpRequest{
 				Method: method,
 				URL:    srv.URL,
 			})
@@ -157,7 +163,7 @@ func TestHTTP_SendRequest_4xx5xx(t *testing.T) {
 			defer srv.Close()
 
 			h := newHTTPHandler(t)
-			resp, err := h.SendRequest(domain.HttpRequest{
+			resp, err := h.SendRequest(adapters.HttpRequest{
 				Method: "GET",
 				URL:    srv.URL,
 			})
@@ -182,13 +188,13 @@ func TestHTTP_SendRequest_HeadersAndParams(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(domain.HttpRequest{
+	_, err := h.SendRequest(adapters.HttpRequest{
 		Method: "GET",
 		URL:    srv.URL,
-		Headers: []domain.KeyValuePair{
+		Headers: []adapters.KeyValuePair{
 			{Key: "X-Test", Value: "hello", Enabled: true},
 		},
-		Params: []domain.KeyValuePair{
+		Params: []adapters.KeyValuePair{
 			{Key: "q", Value: "world", Enabled: true},
 		},
 	})
@@ -216,7 +222,7 @@ func TestHTTP_CancelRequest(t *testing.T) {
 	h := newHTTPHandler(t)
 	done := make(chan error, 1)
 	go func() {
-		_, err := h.SendRequest(domain.HttpRequest{
+		_, err := h.SendRequest(adapters.HttpRequest{
 			Method: "GET",
 			URL:    srv.URL,
 		})
@@ -229,7 +235,7 @@ func TestHTTP_CancelRequest(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("server did not receive request in time")
 	}
-	h.CancelRequest()
+	h.CancelRequest("")
 
 	select {
 	case err := <-done:

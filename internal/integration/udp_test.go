@@ -75,10 +75,10 @@ func TestUDP_SendRaw(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = h.StopListen(sess.ID) })
 
-	result, err := h.Send(udpdomain.UdpSendRequest{
+	result, err := h.Send(adapters.UdpSendRequest{
 		Host:     "127.0.0.1",
 		Port:     port,
-		Encoding: udpdomain.EncodingText,
+		Encoding: string(udpdomain.EncodingText),
 		Payload:  "hello",
 	})
 	if err != nil {
@@ -113,12 +113,12 @@ func TestUDP_SendFixed(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = h.StopListen(sess.ID) })
 
-	result, err := h.Send(udpdomain.UdpSendRequest{
+	result, err := h.Send(adapters.UdpSendRequest{
 		Host:     "127.0.0.1",
 		Port:     port,
-		Encoding: udpdomain.EncodingFixed,
-		FixedLengthPayload: udpdomain.FixedLengthPayload{
-			Fields: []udpdomain.FixedLengthField{
+		Encoding: string(udpdomain.EncodingFixed),
+		FixedLengthPayload: adapters.FixedLengthPayload{
+			Fields: []adapters.FixedLengthField{
 				{Name: "data", Length: 4, Value: "ABCD"},
 			},
 		},
@@ -208,7 +208,7 @@ func TestUDP_TargetCRUD(t *testing.T) {
 	}
 
 	// 新規保存
-	target, err := h.SaveTarget(udpdomain.UdpTarget{
+	target, err := h.SaveTarget(adapters.UdpTarget{
 		Name: "TestTarget",
 		Host: "192.168.1.1",
 		Port: 5000,
