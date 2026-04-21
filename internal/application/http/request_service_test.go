@@ -124,3 +124,80 @@ func TestHttpRequestService_SendRequest_PassesRequestToTransport(t *testing.T) {
 		t.Errorf("Auth.Token = %q, want %q", capturedReq.Auth.Token, "tok123")
 	}
 }
+
+// mockTransportCtx はコンテキストを受け取る doFn を持つ transport モック。
+type mockTransportCtx struct {
+	doFn func(ctx context.Context, req domain.HttpRequest) (domain.HttpResponse, error)
+}
+
+func (m *mockTransportCtx) Do(ctx context.Context, req domain.HttpRequest) (domain.HttpResponse, error) {
+	if m.doFn != nil {
+		return m.doFn(ctx, req)
+	}
+	return domain.HttpResponse{StatusCode: 200}, nil
+}
+
+func TestHttpRequestService_CancelRequest_NonExistentID(_ *testing.T) {
+	svc := NewHTTPRequestService(&mockTransport{}, testutil.NoopLogger{})
+	svc.CancelRequest("no-such-id")
+}
+
+func TestHttpRequestService_CancelRequest_ValidID(t *testing.T) {
+	started := make(chan struct{})
+	transport := &mockTransportCtx{
+		doFn: func(ctx context.Context, _ domain.HttpRequest) (domain.HttpResponse, error) {
+			close(started)
+			<-ctx.Done()
+			return domain.HttpResponse{}, ctx.Err()
+		},
+	}
+	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+
+	const reqID = "req-cancel-test"
+	done := make(chan error, 1)
+	go func() {
+		_, err := svc.SendRequest(domain.HttpRequest{ID: reqID, Method: "GET", URL: "http://example.com"})
+		done <- err
+	}()
+
+	<-started
+	svc.CancelRequest(reqID)
+	if err := <-done; err == nil {
+		t.Error("expected context cancellation error, got nil")
+	}
+}
+
+func TestHttpRequestService_ConcurrentSendAndCancel(_ *testing.T) {
+	// go test -race でデータ競合が検出されないことを確認する。
+	// transport に入った時点でキャンセル登録済みなので、started 受信後に CancelRequest する。
+	const n = 10
+	started := make(chan struct{}, n)
+	transport := &mockTransportCtx{
+		doFn: func(ctx context.Context, _ domain.HttpRequest) (domain.HttpResponse, error) {
+			started <- struct{}{}
+			<-ctx.Done()
+			return domain.HttpResponse{}, ctx.Err()
+		},
+	}
+	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+
+	done := make(chan struct{}, n)
+	ids := make([]string, n)
+	for i := range n {
+		ids[i] = "req-" + string(rune('a'+i))
+		go func(id string) {
+			svc.SendRequest(domain.HttpRequest{ID: id, Method: "GET", URL: "http://example.com"})
+			done <- struct{}{}
+		}(ids[i])
+	}
+
+	for range n {
+		<-started
+	}
+	for _, id := range ids {
+		svc.CancelRequest(id)
+	}
+	for range n {
+		<-done
+	}
+}

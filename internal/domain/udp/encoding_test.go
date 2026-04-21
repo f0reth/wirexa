@@ -252,6 +252,114 @@ func TestDecodeFixedLengthPayload_NumericTypes(t *testing.T) {
 	}
 }
 
+func TestDecodeFixedLengthPayload_NumericTypes_Int32_Int64_Float(t *testing.T) {
+	tests := []struct {
+		name       string
+		field      FixedLengthField
+		endianness Endianness
+		wantLen    int
+		wantErr    bool
+	}{
+		{
+			name:       "int32 big-endian",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeInt32, Value: "-1"},
+			endianness: EndiannessBig,
+			wantLen:    4,
+		},
+		{
+			name:       "int64 big-endian",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeInt64, Value: "1"},
+			endianness: EndiannessBig,
+			wantLen:    8,
+		},
+		{
+			name:       "float32 big-endian",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeFloat32, Value: "1.5"},
+			endianness: EndiannessBig,
+			wantLen:    4,
+		},
+		{
+			name:       "float64 big-endian",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeFloat64, Value: "3.14"},
+			endianness: EndiannessBig,
+			wantLen:    8,
+		},
+		{
+			name:       "uint64 big-endian",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeUint64, Value: "1000"},
+			endianness: EndiannessBig,
+			wantLen:    8,
+		},
+		{
+			name:       "int32 invalid",
+			field:      FixedLengthField{Name: "f", FieldType: FieldTypeInt32, Value: "not-a-number"},
+			endianness: EndiannessBig,
+			wantErr:    true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := &FixedLengthPayload{Fields: []FixedLengthField{tt.field}}
+			got, err := DecodeFixedLengthPayload(payload, tt.endianness)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && len(got) != tt.wantLen {
+				t.Errorf("len(got) = %d, want %d", len(got), tt.wantLen)
+			}
+		})
+	}
+}
+
+func TestDecodeFixedLengthPayload_BytesType_InvalidHex(t *testing.T) {
+	payload := &FixedLengthPayload{
+		Fields: []FixedLengthField{
+			{Name: "f", FieldType: FieldTypeBytes, Length: 4, Value: "ZZZZ"},
+		},
+	}
+	_, err := DecodeFixedLengthPayload(payload, EndiannessBig)
+	if err == nil {
+		t.Error("expected error for invalid hex, got nil")
+	}
+}
+
+func TestDecodeFixedLengthPayload_BytesType_ExceedsLength(t *testing.T) {
+	payload := &FixedLengthPayload{
+		Fields: []FixedLengthField{
+			{Name: "f", FieldType: FieldTypeBytes, Length: 2, Value: "aabbccdd"},
+		},
+	}
+	_, err := DecodeFixedLengthPayload(payload, EndiannessBig)
+	if err == nil {
+		t.Error("expected error for bytes exceeding length, got nil")
+	}
+}
+
+func TestDecodeFixedLengthPayload_UnknownFieldType(t *testing.T) {
+	payload := &FixedLengthPayload{
+		Fields: []FixedLengthField{
+			{Name: "f", FieldType: "unknown_type", Value: "123"},
+		},
+	}
+	_, err := DecodeFixedLengthPayload(payload, EndiannessBig)
+	if err == nil {
+		t.Error("expected error for unknown field type, got nil")
+	}
+}
+
+func TestDecodePayload_Fixed_SpaceSeparated(t *testing.T) {
+	// スペース区切りの hex 文字列が正しく処理されることを確認する。
+	got, err := DecodePayload("AA BB CC", EncodingFixed, 3)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []byte{0xAA, 0xBB, 0xCC}
+	if !bytesEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
 // bytesEqual は2つのバイト列が等しいことを確認する
 func bytesEqual(a, b []byte) bool {
 	if len(a) != len(b) {

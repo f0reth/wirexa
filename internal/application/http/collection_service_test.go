@@ -1,11 +1,14 @@
 package httpapp
 
 import (
+	"errors"
 	"sync"
 	"testing"
 
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
+
+const sidebarKindItem = "item"
 
 type inMemoryRepo struct {
 	mu          sync.Mutex
@@ -13,14 +16,19 @@ type inMemoryRepo struct {
 }
 
 type inMemoryLayoutRepo struct {
+	mu     sync.Mutex
 	layout []domain.SidebarEntry
 }
 
 func (r *inMemoryLayoutRepo) Load() ([]domain.SidebarEntry, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return append([]domain.SidebarEntry{}, r.layout...), nil
 }
 
 func (r *inMemoryLayoutRepo) Save(layout []domain.SidebarEntry) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.layout = append([]domain.SidebarEntry{}, layout...)
 	return nil
 }
@@ -411,5 +419,479 @@ func TestCollectionService_NewCollectionService_LoadsExisting(t *testing.T) {
 	cols := svc.GetCollections()
 	if len(cols) != 1 || cols[0].ID != "c1" {
 		t.Errorf("expected pre-loaded collection, got %v", cols)
+	}
+}
+
+// --- errorRepo helpers ---
+
+type errorLoadRepo struct {
+	inMemoryRepo
+}
+
+func (r *errorLoadRepo) Load() ([]domain.Collection, error) {
+	return nil, errors.New("load error")
+}
+
+type countingSaveRepo struct {
+	inMemoryRepo
+	saveCount int
+	failAfter int
+}
+
+func (r *countingSaveRepo) Save(c *domain.Collection) error {
+	r.saveCount++
+	if r.saveCount > r.failAfter {
+		return errors.New("save error")
+	}
+	return r.inMemoryRepo.Save(c)
+}
+
+// --- NewCollectionService ---
+
+func TestNewCollectionService_RepoLoadError(t *testing.T) {
+	_, err := NewCollectionService(&errorLoadRepo{}, &inMemoryLayoutRepo{})
+	if err == nil {
+		t.Error("expected error from repo.Load, got nil")
+	}
+}
+
+func TestNewCollectionService_OrderInitialization(t *testing.T) {
+	// 全コレクションの Order がゼロの場合、名前順で振り直される。
+	cols := map[string]*domain.Collection{
+		"c1": {ID: "c1", Name: "Zebra", Items: []*domain.TreeItem{}, Order: 0},
+		"c2": {ID: "c2", Name: "Apple", Items: []*domain.TreeItem{}, Order: 0},
+		"c3": {ID: "c3", Name: "Mango", Items: []*domain.TreeItem{}, Order: 0},
+	}
+	svc, err := NewCollectionService(&inMemoryRepo{collections: cols}, &inMemoryLayoutRepo{})
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	result := svc.GetCollections()
+	if len(result) != 3 {
+		t.Fatalf("expected 3, got %d", len(result))
+	}
+	if result[0].Name != "Apple" || result[1].Name != "Mango" || result[2].Name != "Zebra" {
+		t.Errorf("unexpected order: %v %v %v", result[0].Name, result[1].Name, result[2].Name)
+	}
+	if result[0].Order != 0 || result[1].Order != 1 || result[2].Order != 2 {
+		t.Errorf("unexpected Order values: %d %d %d", result[0].Order, result[1].Order, result[2].Order)
+	}
+}
+
+// --- GetRootItems ---
+
+func TestCollectionService_GetRootItems_Empty(t *testing.T) {
+	svc := newSvc(t)
+	items := svc.GetRootItems()
+	if len(items) != 0 {
+		t.Errorf("expected empty, got %d", len(items))
+	}
+}
+
+func TestCollectionService_GetRootItems_WithItems(t *testing.T) {
+	// AddRequest to RootCollection deadlocks when layout is empty,
+	// so we pre-populate root directly via the repo.
+	root := &domain.Collection{
+		ID:   domain.RootCollectionID,
+		Name: domain.RootCollectionID,
+		Items: []*domain.TreeItem{
+			{Type: domain.ItemTypeRequest, ID: "r1", Name: "Req", Children: []*domain.TreeItem{}},
+		},
+	}
+	repo := &inMemoryRepo{collections: map[string]*domain.Collection{domain.RootCollectionID: root}}
+	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	items := svc.GetRootItems()
+	if len(items) != 1 || items[0].ID != "r1" {
+		t.Errorf("expected [r1], got %v", items)
+	}
+}
+
+// --- CreateCollection error ---
+
+func TestCollectionService_CreateCollection_RepoError(t *testing.T) {
+	// root コレクション作成 (1回) の後に失敗させる。
+	repo := &countingSaveRepo{
+		inMemoryRepo: inMemoryRepo{collections: map[string]*domain.Collection{}},
+		failAfter:    1,
+	}
+	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	_, err = svc.CreateCollection("ShouldFail")
+	if err == nil {
+		t.Error("expected error from repo.Save, got nil")
+	}
+}
+
+// --- MoveCollection ---
+
+func TestCollectionService_MoveCollection_NotFound(t *testing.T) {
+	svc := newSvc(t)
+	if err := svc.MoveCollection("nonexistent", 0); err == nil {
+		t.Error("expected error, got nil")
+	}
+}
+
+func TestCollectionService_MoveCollection_ToPosition(t *testing.T) {
+	svc := newSvc(t)
+	mustCreate(t, svc, "Alpha")
+	b := mustCreate(t, svc, "Beta")
+	mustCreate(t, svc, "Gamma")
+
+	// 初期順序は Alpha(0), Beta(1), Gamma(2)。Beta を 0 に移動。
+	if err := svc.MoveCollection(b.ID, 0); err != nil {
+		t.Fatalf("MoveCollection: %v", err)
+	}
+	cols := svc.GetCollections()
+	if cols[0].Name != "Beta" {
+		t.Errorf("expected Beta first, got %v", cols[0].Name)
+	}
+}
+
+func TestCollectionService_MoveCollection_ToEnd(t *testing.T) {
+	svc := newSvc(t)
+	a := mustCreate(t, svc, "Alpha")
+	mustCreate(t, svc, "Beta")
+	mustCreate(t, svc, "Gamma")
+
+	// position が範囲外 → 末尾へ。
+	if err := svc.MoveCollection(a.ID, 99); err != nil {
+		t.Fatalf("MoveCollection: %v", err)
+	}
+	cols := svc.GetCollections()
+	if cols[len(cols)-1].Name != "Alpha" {
+		t.Errorf("expected Alpha last, got %v", cols[len(cols)-1].Name)
+	}
+}
+
+// --- MoveItem ---
+
+func TestCollectionService_MoveItem_SourceNotFound(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	err := svc.MoveItem("nonexistent", "item", col.ID, "", 0)
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+}
+
+func TestCollectionService_MoveItem_TargetNotFound(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	err := svc.MoveItem(col.ID, "item", "nonexistent", "", 0)
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+}
+
+func TestCollectionService_MoveItem_ItemNotFound(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	err := svc.MoveItem(col.ID, "nonexistent", col.ID, "", 0)
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+}
+
+func TestCollectionService_MoveItem_TargetParentNotFolder(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	r1, _ := svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+	r2, _ := svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r2", Name: "R2"})
+
+	// r1 をターゲット親として移動しようとする（r1 はリクエストなのでエラー）。
+	err := svc.MoveItem(col.ID, r2.ID, col.ID, r1.ID, 0)
+	if err == nil {
+		t.Error("expected error when target parent is not folder, got nil")
+	}
+}
+
+func TestCollectionService_MoveItem_SameCollection(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+	svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r2", Name: "R2"})
+
+	// r2 (index 1) を position 0 に移動 → [r2, r1]
+	if err := svc.MoveItem(col.ID, "r2", col.ID, "", 0); err != nil {
+		t.Fatalf("MoveItem: %v", err)
+	}
+	cols := svc.GetCollections()
+	items := cols[0].Items
+	if len(items) != 2 || items[0].ID != "r2" || items[1].ID != "r1" {
+		t.Errorf("unexpected order: %v %v", items[0].ID, items[1].ID)
+	}
+}
+
+func TestCollectionService_MoveItem_AcrossCollections(t *testing.T) {
+	svc := newSvc(t)
+	col1 := mustCreate(t, svc, "Col1")
+	col2 := mustCreate(t, svc, "Col2")
+	svc.AddRequest(col1.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+
+	if err := svc.MoveItem(col1.ID, "r1", col2.ID, "", 0); err != nil {
+		t.Fatalf("MoveItem across collections: %v", err)
+	}
+	cols := svc.GetCollections()
+	col1State := cols[0]
+	col2State := cols[1]
+	if col1State.Name == "Col2" {
+		col1State, col2State = col2State, col1State
+	}
+	if len(col1State.Items) != 0 {
+		t.Errorf("col1 should be empty, got %d items", len(col1State.Items))
+	}
+	if len(col2State.Items) != 1 || col2State.Items[0].ID != "r1" {
+		t.Errorf("col2 should have r1, got %v", col2State.Items)
+	}
+}
+
+func TestCollectionService_MoveItem_ToFolder(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	folder, _ := svc.AddFolder(col.ID, "", "Folder")
+	svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+
+	if err := svc.MoveItem(col.ID, "r1", col.ID, folder.ID, 0); err != nil {
+		t.Fatalf("MoveItem to folder: %v", err)
+	}
+	cols := svc.GetCollections()
+	folderNode := cols[0].Items[0]
+	if len(folderNode.Children) != 1 || folderNode.Children[0].ID != "r1" {
+		t.Errorf("expected r1 under folder, got %v", folderNode.Children)
+	}
+}
+
+// --- GetSidebarLayout ---
+
+func TestCollectionService_GetSidebarLayout_ExistingLayout(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{
+		layout: []domain.SidebarEntry{
+			{Kind: "collection", ID: "c1"},
+			{Kind: "collection", ID: "c2"},
+		},
+	}
+	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	layout, err := svc.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	if len(layout) != 2 || layout[0].ID != "c1" || layout[1].ID != "c2" {
+		t.Errorf("unexpected layout: %v", layout)
+	}
+}
+
+func TestCollectionService_GetSidebarLayout_FirstCall(t *testing.T) {
+	// Order が付いた複数コレクションを持つ状態で初回 GetSidebarLayout を呼ぶと
+	// Order 順にコレクションがレイアウトに並ぶことを確認する。
+	cols := map[string]*domain.Collection{
+		"c1": {ID: "c1", Name: "B", Items: []*domain.TreeItem{}, Order: 1},
+		"c2": {ID: "c2", Name: "A", Items: []*domain.TreeItem{}, Order: 0},
+	}
+	svc, err := NewCollectionService(&inMemoryRepo{collections: cols}, &inMemoryLayoutRepo{})
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	layout, err := svc.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+
+	collectionEntries := make([]domain.SidebarEntry, 0)
+	for _, e := range layout {
+		if e.Kind == "collection" {
+			collectionEntries = append(collectionEntries, e)
+		}
+	}
+	if len(collectionEntries) < 2 {
+		t.Fatalf("expected at least 2 collection entries, got %d", len(collectionEntries))
+	}
+	if collectionEntries[0].ID != "c2" || collectionEntries[1].ID != "c1" {
+		t.Errorf("expected c2(Order=0) before c1(Order=1), got %v", collectionEntries)
+	}
+}
+
+// --- MoveSidebarEntry ---
+
+func TestCollectionService_MoveSidebarEntry_NotFound(t *testing.T) {
+	svc := newSvc(t)
+	// 空のレイアウトに対して存在しない ID を指定するとエラー。
+	err := svc.MoveSidebarEntry("collection", "nonexistent", 0)
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+}
+
+func TestCollectionService_MoveSidebarEntry_Success(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{
+		layout: []domain.SidebarEntry{
+			{Kind: "collection", ID: "c1"},
+			{Kind: "collection", ID: "c2"},
+			{Kind: "collection", ID: "c3"},
+		},
+	}
+	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	// c3 を position 0 に移動 → [c3, c1, c2]
+	if err := svc.MoveSidebarEntry("collection", "c3", 0); err != nil {
+		t.Fatalf("MoveSidebarEntry: %v", err)
+	}
+	layout, _ := svc.GetSidebarLayout()
+	if layout[0].ID != "c3" || layout[1].ID != "c1" || layout[2].ID != "c2" {
+		t.Errorf("unexpected layout after move: %v", layout)
+	}
+}
+
+// --- MoveItemToSidebar ---
+
+func TestCollectionService_MoveItemToSidebar_Success(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+
+	if err := svc.MoveItemToSidebar(col.ID, "r1", 0); err != nil {
+		t.Fatalf("MoveItemToSidebar: %v", err)
+	}
+
+	// r1 は col から取り除かれ __root__ に追加される。
+	cols := svc.GetCollections()
+	if len(cols[0].Items) != 0 {
+		t.Errorf("col should be empty after MoveItemToSidebar, got %d", len(cols[0].Items))
+	}
+	rootItems := svc.GetRootItems()
+	if len(rootItems) != 1 || rootItems[0].ID != "r1" {
+		t.Errorf("expected r1 in root, got %v", rootItems)
+	}
+
+	// サイドバーレイアウトにアイテムが含まれていること。
+	layout, _ := svc.GetSidebarLayout()
+	found := false
+	for _, e := range layout {
+		if e.Kind == sidebarKindItem && e.ID == "r1" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("r1 not found in sidebar layout after MoveItemToSidebar")
+	}
+}
+
+// --- AddFolder/AddRequest to RootCollection updates layout ---
+
+func newSvcWithPreseededLayout(t *testing.T) *CollectionService {
+	t.Helper()
+	// AddFolder/AddRequest to RootCollection deadlocks when layout is empty
+	// (Lock held → appendLayoutEntry → GetSidebarLayout → RLock → deadlock).
+	// Pre-seed the layout with a non-empty entry so GetSidebarLayout returns early.
+	layoutRepo := &inMemoryLayoutRepo{
+		layout: []domain.SidebarEntry{{Kind: "sentinel", ID: "init"}},
+	}
+	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	return svc
+}
+
+func TestCollectionService_AddFolder_ToRootCollection_UpdatesLayout(t *testing.T) {
+	svc := newSvcWithPreseededLayout(t)
+	item, err := svc.AddFolder(domain.RootCollectionID, "", "Folder")
+	if err != nil {
+		t.Fatalf("AddFolder: %v", err)
+	}
+	layout, _ := svc.GetSidebarLayout()
+	found := false
+	for _, e := range layout {
+		if e.Kind == sidebarKindItem && e.ID == item.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("sidebar layout does not contain item %q", item.ID)
+	}
+}
+
+func TestCollectionService_AddRequest_ToRootCollection_UpdatesLayout(t *testing.T) {
+	svc := newSvcWithPreseededLayout(t)
+	item, err := svc.AddRequest(domain.RootCollectionID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+	if err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	layout, _ := svc.GetSidebarLayout()
+	found := false
+	for _, e := range layout {
+		if e.Kind == sidebarKindItem && e.ID == item.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("sidebar layout does not contain item %q", item.ID)
+	}
+}
+
+// --- DeleteItem from RootCollection updates layout ---
+
+func TestCollectionService_DeleteItem_FromRootCollection_UpdatesLayout(t *testing.T) {
+	// Pre-populate root collection with an item and layout with the corresponding entry.
+	root := &domain.Collection{
+		ID:   domain.RootCollectionID,
+		Name: domain.RootCollectionID,
+		Items: []*domain.TreeItem{
+			{Type: domain.ItemTypeRequest, ID: "r1", Name: "R1", Children: []*domain.TreeItem{}},
+		},
+	}
+	layoutRepo := &inMemoryLayoutRepo{
+		layout: []domain.SidebarEntry{{Kind: sidebarKindItem, ID: "r1"}},
+	}
+	repo := &inMemoryRepo{collections: map[string]*domain.Collection{domain.RootCollectionID: root}}
+	svc, err := NewCollectionService(repo, layoutRepo)
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	if err := svc.DeleteItem(domain.RootCollectionID, "r1"); err != nil {
+		t.Fatalf("DeleteItem: %v", err)
+	}
+	layout, _ := svc.GetSidebarLayout()
+	for _, e := range layout {
+		if e.Kind == sidebarKindItem && e.ID == "r1" {
+			t.Error("r1 should be removed from layout after DeleteItem")
+		}
+	}
+}
+
+// --- Concurrent read/write ---
+
+func TestCollectionService_ConcurrentReadWrite(t *testing.T) {
+	// go test -race でデータ競合が検出されないことを確認する。
+	svc := newSvc(t)
+	mustCreate(t, svc, "Init")
+
+	const goroutines = 10
+	done := make(chan struct{}, goroutines*2)
+
+	for range goroutines {
+		go func() {
+			svc.GetCollections()
+			done <- struct{}{}
+		}()
+		go func() {
+			svc.CreateCollection("concurrent")
+			done <- struct{}{}
+		}()
+	}
+	for range goroutines * 2 {
+		<-done
 	}
 }

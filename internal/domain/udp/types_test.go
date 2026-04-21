@@ -7,6 +7,34 @@ import (
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 )
 
+func TestFieldTypeByteSize_AllTypes(t *testing.T) {
+	tests := []struct {
+		fieldType FieldType
+		want      int
+	}{
+		{FieldTypeUint8, 1},
+		{FieldTypeInt8, 1},
+		{FieldTypeUint16, 2},
+		{FieldTypeInt16, 2},
+		{FieldTypeUint32, 4},
+		{FieldTypeInt32, 4},
+		{FieldTypeFloat32, 4},
+		{FieldTypeUint64, 8},
+		{FieldTypeInt64, 8},
+		{FieldTypeFloat64, 8},
+		{FieldTypeString, -1},
+		{FieldTypeBytes, -1},
+		{"unknown", -1},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.fieldType), func(t *testing.T) {
+			if got := FieldTypeByteSize(tt.fieldType); got != tt.want {
+				t.Errorf("FieldTypeByteSize(%q) = %d, want %d", tt.fieldType, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestUdpSendRequest_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
