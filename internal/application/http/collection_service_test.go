@@ -489,19 +489,10 @@ func TestCollectionService_GetRootItems_Empty(t *testing.T) {
 }
 
 func TestCollectionService_GetRootItems_WithItems(t *testing.T) {
-	// AddRequest to RootCollection deadlocks when layout is empty,
-	// so we pre-populate root directly via the repo.
-	root := &domain.Collection{
-		ID:   domain.RootCollectionID,
-		Name: domain.RootCollectionID,
-		Items: []*domain.TreeItem{
-			{Type: domain.ItemTypeRequest, ID: "r1", Name: "Req", Children: []*domain.TreeItem{}},
-		},
-	}
-	repo := &inMemoryRepo{collections: map[string]*domain.Collection{domain.RootCollectionID: root}}
-	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
-	if err != nil {
-		t.Fatalf("NewCollectionService: %v", err)
+	svc := newSvc(t)
+	req := domain.HttpRequest{ID: "r1", Name: "Req"}
+	if _, err := svc.AddRequest(domain.RootCollectionID, "", req); err != nil {
+		t.Fatalf("AddRequest: %v", err)
 	}
 	items := svc.GetRootItems()
 	if len(items) != 1 || items[0].ID != "r1" {
@@ -788,23 +779,8 @@ func TestCollectionService_MoveItemToSidebar_Success(t *testing.T) {
 
 // --- AddFolder/AddRequest to RootCollection updates layout ---
 
-func newSvcWithPreseededLayout(t *testing.T) *CollectionService {
-	t.Helper()
-	// AddFolder/AddRequest to RootCollection deadlocks when layout is empty
-	// (Lock held → appendLayoutEntry → GetSidebarLayout → RLock → deadlock).
-	// Pre-seed the layout with a non-empty entry so GetSidebarLayout returns early.
-	layoutRepo := &inMemoryLayoutRepo{
-		layout: []domain.SidebarEntry{{Kind: "sentinel", ID: "init"}},
-	}
-	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
-	if err != nil {
-		t.Fatalf("NewCollectionService: %v", err)
-	}
-	return svc
-}
-
 func TestCollectionService_AddFolder_ToRootCollection_UpdatesLayout(t *testing.T) {
-	svc := newSvcWithPreseededLayout(t)
+	svc := newSvc(t)
 	item, err := svc.AddFolder(domain.RootCollectionID, "", "Folder")
 	if err != nil {
 		t.Fatalf("AddFolder: %v", err)
@@ -823,7 +799,7 @@ func TestCollectionService_AddFolder_ToRootCollection_UpdatesLayout(t *testing.T
 }
 
 func TestCollectionService_AddRequest_ToRootCollection_UpdatesLayout(t *testing.T) {
-	svc := newSvcWithPreseededLayout(t)
+	svc := newSvc(t)
 	item, err := svc.AddRequest(domain.RootCollectionID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)

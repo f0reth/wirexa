@@ -257,10 +257,10 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	c, ok := s.cache[collectionID]
 	if !ok {
+		s.mu.Unlock()
 		return nil, &cmn.NotFoundError{Resource: "collection", ID: collectionID}
 	}
 
@@ -269,14 +269,17 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 	} else {
 		parent, _, ok := c.FindNode(parentID)
 		if !ok || parent.Type != domain.ItemTypeFolder {
+			s.mu.Unlock()
 			return nil, &cmn.NotFoundError{Resource: "parent", ID: parentID}
 		}
 		parent.Children = append(parent.Children, item)
 	}
 
 	if err := s.repo.Save(c); err != nil {
+		s.mu.Unlock()
 		return nil, fmt.Errorf("failed to save collection: %w", err)
 	}
+	s.mu.Unlock()
 
 	// root コレクションのルート直下に追加した場合、サイドバーレイアウトにも追加する。
 	if collectionID == domain.RootCollectionID && parentID == "" {
@@ -301,10 +304,10 @@ func (s *CollectionService) AddRequest(collectionID, parentID string, req domain
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	c, ok := s.cache[collectionID]
 	if !ok {
+		s.mu.Unlock()
 		return nil, &cmn.NotFoundError{Resource: "collection", ID: collectionID}
 	}
 
@@ -313,14 +316,17 @@ func (s *CollectionService) AddRequest(collectionID, parentID string, req domain
 	} else {
 		parent, _, ok := c.FindNode(parentID)
 		if !ok || parent.Type != domain.ItemTypeFolder {
+			s.mu.Unlock()
 			return nil, &cmn.NotFoundError{Resource: "parent", ID: parentID}
 		}
 		parent.Children = append(parent.Children, item)
 	}
 
 	if err := s.repo.Save(c); err != nil {
+		s.mu.Unlock()
 		return nil, fmt.Errorf("failed to save collection: %w", err)
 	}
+	s.mu.Unlock()
 
 	// root コレクションのルート直下に追加した場合、サイドバーレイアウトにも追加する。
 	if collectionID == domain.RootCollectionID && parentID == "" {
