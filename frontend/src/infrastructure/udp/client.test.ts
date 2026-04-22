@@ -98,6 +98,26 @@ describe("send", () => {
     const callArg = vi.mocked(Handler.Send).mock.calls[0][0];
     expect(callArg).toMatchObject({ host: "192.168.1.1", port: 5000 });
   });
+
+  it("passes all fields to the backend", async () => {
+    vi.mocked(Handler.Send).mockResolvedValue(makeWailsSendResult() as never);
+    const req = makeSendRequest({
+      host: "10.0.0.1",
+      port: 8080,
+      encoding: "text",
+      payload: "hello",
+      endianness: "big",
+    });
+    await send(req);
+    const callArg = vi.mocked(Handler.Send).mock.calls[0][0];
+    expect(callArg).toMatchObject({
+      host: "10.0.0.1",
+      port: 8080,
+      encoding: "text",
+      payload: "hello",
+      endianness: "big",
+    });
+  });
 });
 
 describe("getTargets", () => {
@@ -119,12 +139,17 @@ describe("getTargets", () => {
       host: "127.0.0.1",
       port: 9000,
     });
-    expect(result[1].id).toBe("target-2");
+    expect(result[1]).toEqual({
+      id: "target-2",
+      name: "Remote",
+      host: "127.0.0.1",
+      port: 9001,
+    });
   });
 });
 
 describe("saveTarget", () => {
-  it("returns the mapped saved target", async () => {
+  it("returns the mapped saved target with all fields", async () => {
     vi.mocked(Handler.SaveTarget).mockResolvedValue(
       makeWailsTarget({ id: "target-99" }) as never,
     );
@@ -134,7 +159,12 @@ describe("saveTarget", () => {
       host: "10.0.0.1",
       port: 7000,
     });
-    expect(result.id).toBe("target-99");
+    expect(result).toEqual({
+      id: "target-99",
+      name: "Local",
+      host: "127.0.0.1",
+      port: 9000,
+    });
   });
 
   it("passes the target fields to the backend", async () => {
@@ -198,6 +228,11 @@ describe("stopListen", () => {
     await stopListen("session-1");
     expect(Handler.StopListen).toHaveBeenCalledWith("session-1");
   });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.StopListen).mockRejectedValue(new Error("stop failed"));
+    await expect(stopListen("session-1")).rejects.toThrow("stop failed");
+  });
 });
 
 describe("getListeners", () => {
@@ -208,13 +243,33 @@ describe("getListeners", () => {
 
   it("maps the list of listen sessions", async () => {
     vi.mocked(Handler.GetListeners).mockResolvedValue([
-      makeWailsListenSession({ id: "s1", port: 9001 }) as never,
+      makeWailsListenSession({
+        id: "s1",
+        port: 9001,
+        encoding: "text",
+      }) as never,
       makeWailsListenSession({ id: "s2", port: 9002 }) as never,
     ]);
     const result = await getListeners();
     expect(result).toHaveLength(2);
     expect(result[0].id).toBe("s1");
+    expect(result[0].encoding).toBe("text");
     expect(result[1].port).toBe(9002);
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.GetListeners).mockRejectedValue(
+      new Error("get listeners failed"),
+    );
+    await expect(getListeners()).rejects.toThrow("get listeners failed");
+  });
+
+  it("silently passes unknown encoding (as-cast risk)", async () => {
+    vi.mocked(Handler.GetListeners).mockResolvedValue([
+      makeWailsListenSession({ encoding: "unknown" }) as never,
+    ]);
+    const result = await getListeners();
+    expect(result[0].encoding).toBe("unknown");
   });
 });
 

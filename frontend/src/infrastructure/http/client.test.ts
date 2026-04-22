@@ -3,12 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../../wailsjs/go/adapters/HttpHandler", () => ({
   AddFolder: vi.fn(),
   AddRequest: vi.fn(),
+  CancelRequest: vi.fn(),
   CreateCollection: vi.fn(),
   DeleteCollection: vi.fn(),
   DeleteItem: vi.fn(),
   GetCollections: vi.fn(),
+  GetRootItems: vi.fn(),
+  GetSidebarLayout: vi.fn(),
+  MoveCollection: vi.fn(),
+  MoveItem: vi.fn(),
+  MoveItemToSidebar: vi.fn(),
+  MoveSidebarEntry: vi.fn(),
   RenameCollection: vi.fn(),
   RenameItem: vi.fn(),
+  SaveResponseBody: vi.fn(),
   SendRequest: vi.fn(),
   UpdateRequest: vi.fn(),
 }));
@@ -17,12 +25,20 @@ import * as Handler from "../../../wailsjs/go/adapters/HttpHandler";
 import {
   addFolder,
   addRequest,
+  cancelRequest,
   createCollection,
   deleteCollection,
   deleteItem,
   getCollections,
+  getRootItems,
+  getSidebarLayout,
+  moveCollection,
+  moveItem,
+  moveItemToSidebar,
+  moveSidebarEntry,
   renameCollection,
   renameItem,
+  saveResponseBody,
   sendRequest,
   updateRequest,
 } from "./client";
@@ -126,6 +142,18 @@ describe("sendRequest", () => {
     });
   });
 
+  it("maps bodyTruncated and tempFilePath correctly when set", async () => {
+    vi.mocked(Handler.SendRequest).mockResolvedValue(
+      makeWailsResponse({
+        bodyTruncated: true,
+        tempFilePath: "/tmp/response.bin",
+      }) as never,
+    );
+    const result = await sendRequest(makeDomainRequest());
+    expect(result.bodyTruncated).toBe(true);
+    expect(result.tempFilePath).toBe("/tmp/response.bin");
+  });
+
   it("maps an error response", async () => {
     vi.mocked(Handler.SendRequest).mockResolvedValue(
       makeWailsResponse({
@@ -194,6 +222,79 @@ describe("getCollections", () => {
     expect(result).toEqual([
       { id: "col-1", name: "My Collection", items: [], order: 0 },
     ]);
+  });
+
+  it("preserves non-zero collection order", async () => {
+    vi.mocked(Handler.GetCollections).mockResolvedValue([
+      makeWailsCollection({ order: 5 }) as never,
+    ]);
+    const result = await getCollections();
+    expect(result[0].order).toBe(5);
+  });
+
+  it("maps proxyMode 'custom' correctly via fromWailsRequestSettings", async () => {
+    vi.mocked(Handler.GetCollections).mockResolvedValue([
+      makeWailsCollection({
+        items: [
+          makeWailsTreeItem({
+            type: "request",
+            request: {
+              ...makeWailsRequest(),
+              settings: {
+                timeoutSec: 0,
+                proxyMode: "custom",
+                proxyURL: "http://proxy:8080",
+                insecureSkipVerify: false,
+                disableRedirects: false,
+                maxResponseBodyMB: 0,
+              },
+            },
+          }),
+        ],
+      }) as never,
+    ]);
+    const result = await getCollections();
+    expect(result[0].items[0].request?.settings.proxyMode).toBe("custom");
+  });
+
+  it("maps unknown proxyMode to 'system' via fromWailsRequestSettings", async () => {
+    vi.mocked(Handler.GetCollections).mockResolvedValue([
+      makeWailsCollection({
+        items: [
+          makeWailsTreeItem({
+            type: "request",
+            request: {
+              ...makeWailsRequest(),
+              settings: {
+                timeoutSec: 0,
+                proxyMode: "unknown-value",
+                proxyURL: "",
+                insecureSkipVerify: false,
+                disableRedirects: false,
+                maxResponseBodyMB: 0,
+              },
+            },
+          }),
+        ],
+      }) as never,
+    ]);
+    const result = await getCollections();
+    expect(result[0].items[0].request?.settings.proxyMode).toBe("system");
+  });
+
+  it("uses DEFAULT_SETTINGS when settings is null", async () => {
+    vi.mocked(Handler.GetCollections).mockResolvedValue([
+      makeWailsCollection({
+        items: [
+          makeWailsTreeItem({
+            type: "request",
+            request: { ...makeWailsRequest(), settings: null },
+          }),
+        ],
+      }) as never,
+    ]);
+    const result = await getCollections();
+    expect(result[0].items[0].request?.settings.proxyMode).toBe("none");
   });
 
   it("maps multiple collections", async () => {
@@ -429,6 +530,18 @@ describe("addRequest", () => {
     await addRequest("col-1", "parent-1", makeDomainRequest());
     expect(Handler.AddRequest).toHaveBeenCalledOnce();
   });
+
+  it("passes the correct collectionId, parentId and request method to the backend", async () => {
+    vi.mocked(Handler.AddRequest).mockResolvedValue(
+      makeWailsTreeItem({ type: "request" }) as never,
+    );
+    await addRequest("col-1", "parent-1", makeDomainRequest());
+    expect(Handler.AddRequest).toHaveBeenCalledWith(
+      "col-1",
+      "parent-1",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
 });
 
 describe("updateRequest", () => {
@@ -438,6 +551,13 @@ describe("updateRequest", () => {
     expect(Handler.UpdateRequest).toHaveBeenCalledOnce();
     const [collectionId] = vi.mocked(Handler.UpdateRequest).mock.calls[0];
     expect(collectionId).toBe("col-1");
+  });
+
+  it("passes the request content as the second argument", async () => {
+    vi.mocked(Handler.UpdateRequest).mockResolvedValue(undefined);
+    await updateRequest("col-1", makeDomainRequest());
+    const [, reqArg] = vi.mocked(Handler.UpdateRequest).mock.calls[0];
+    expect(reqArg).toMatchObject({ method: "GET", url: "https://example.com" });
   });
 });
 
@@ -458,5 +578,180 @@ describe("deleteItem", () => {
     vi.mocked(Handler.DeleteItem).mockResolvedValue(undefined);
     await deleteItem("col-1", "item-1");
     expect(Handler.DeleteItem).toHaveBeenCalledWith("col-1", "item-1");
+  });
+});
+
+describe("cancelRequest", () => {
+  it("calls CancelRequest with the correct id", async () => {
+    vi.mocked(Handler.CancelRequest).mockResolvedValue(undefined);
+    await cancelRequest("req-1");
+    expect(Handler.CancelRequest).toHaveBeenCalledWith("req-1");
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.CancelRequest).mockRejectedValue(
+      new Error("cancel failed"),
+    );
+    await expect(cancelRequest("req-1")).rejects.toThrow("cancel failed");
+  });
+});
+
+describe("getRootItems", () => {
+  it("returns an empty array when there are no root items", async () => {
+    vi.mocked(Handler.GetRootItems).mockResolvedValue([]);
+    const result = await getRootItems();
+    expect(result).toEqual([]);
+  });
+
+  it("maps root tree items", async () => {
+    vi.mocked(Handler.GetRootItems).mockResolvedValue([
+      makeWailsTreeItem({
+        id: "f1",
+        type: "folder",
+        name: "Root Folder",
+      }) as never,
+    ]);
+    const result = await getRootItems();
+    expect(result[0]).toMatchObject({ id: "f1", type: "folder" });
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.GetRootItems).mockRejectedValue(
+      new Error("fetch failed"),
+    );
+    await expect(getRootItems()).rejects.toThrow("fetch failed");
+  });
+});
+
+describe("moveCollection", () => {
+  it("calls MoveCollection with the correct id and position", async () => {
+    vi.mocked(Handler.MoveCollection).mockResolvedValue(undefined);
+    await moveCollection("col-1", 2);
+    expect(Handler.MoveCollection).toHaveBeenCalledWith("col-1", 2);
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.MoveCollection).mockRejectedValue(
+      new Error("move failed"),
+    );
+    await expect(moveCollection("col-1", 0)).rejects.toThrow("move failed");
+  });
+});
+
+describe("moveItem", () => {
+  it("calls MoveItem with all five arguments", async () => {
+    vi.mocked(Handler.MoveItem).mockResolvedValue(undefined);
+    await moveItem("col-src", "item-1", "col-dst", "parent-1", 3);
+    expect(Handler.MoveItem).toHaveBeenCalledWith(
+      "col-src",
+      "item-1",
+      "col-dst",
+      "parent-1",
+      3,
+    );
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.MoveItem).mockRejectedValue(new Error("move failed"));
+    await expect(
+      moveItem("col-src", "item-1", "col-dst", "parent-1", 0),
+    ).rejects.toThrow("move failed");
+  });
+});
+
+describe("getSidebarLayout", () => {
+  it("returns a mapped list of sidebar entries", async () => {
+    vi.mocked(Handler.GetSidebarLayout).mockResolvedValue([
+      { kind: "collection", id: "col-1" } as never,
+      { kind: "item", id: "item-1" } as never,
+    ]);
+    const result = await getSidebarLayout();
+    expect(result).toEqual([
+      { kind: "collection", id: "col-1" },
+      { kind: "item", id: "item-1" },
+    ]);
+  });
+
+  it("returns an empty array when layout is empty", async () => {
+    vi.mocked(Handler.GetSidebarLayout).mockResolvedValue([]);
+    const result = await getSidebarLayout();
+    expect(result).toEqual([]);
+  });
+
+  it("silently passes unknown kind (as-cast risk)", async () => {
+    vi.mocked(Handler.GetSidebarLayout).mockResolvedValue([
+      { kind: "unknown", id: "x" } as never,
+    ]);
+    const result = await getSidebarLayout();
+    expect(result[0].kind).toBe("unknown");
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.GetSidebarLayout).mockRejectedValue(
+      new Error("layout failed"),
+    );
+    await expect(getSidebarLayout()).rejects.toThrow("layout failed");
+  });
+});
+
+describe("moveSidebarEntry", () => {
+  it("calls MoveSidebarEntry with the correct params", async () => {
+    vi.mocked(Handler.MoveSidebarEntry).mockResolvedValue(undefined);
+    await moveSidebarEntry("collection", "col-1", 1);
+    expect(Handler.MoveSidebarEntry).toHaveBeenCalledWith(
+      "collection",
+      "col-1",
+      1,
+    );
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.MoveSidebarEntry).mockRejectedValue(
+      new Error("move failed"),
+    );
+    await expect(moveSidebarEntry("collection", "col-1", 0)).rejects.toThrow(
+      "move failed",
+    );
+  });
+});
+
+describe("moveItemToSidebar", () => {
+  it("calls MoveItemToSidebar with the correct params", async () => {
+    vi.mocked(Handler.MoveItemToSidebar).mockResolvedValue(undefined);
+    await moveItemToSidebar("col-1", "item-1", 2);
+    expect(Handler.MoveItemToSidebar).toHaveBeenCalledWith(
+      "col-1",
+      "item-1",
+      2,
+    );
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.MoveItemToSidebar).mockRejectedValue(
+      new Error("move failed"),
+    );
+    await expect(moveItemToSidebar("col-1", "item-1", 0)).rejects.toThrow(
+      "move failed",
+    );
+  });
+});
+
+describe("saveResponseBody", () => {
+  it("calls SaveResponseBody with the correct params", async () => {
+    vi.mocked(Handler.SaveResponseBody).mockResolvedValue(undefined);
+    await saveResponseBody("/tmp/response.bin", "application/octet-stream");
+    expect(Handler.SaveResponseBody).toHaveBeenCalledWith(
+      "/tmp/response.bin",
+      "application/octet-stream",
+    );
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.SaveResponseBody).mockRejectedValue(
+      new Error("save failed"),
+    );
+    await expect(saveResponseBody("/tmp/file", "text/plain")).rejects.toThrow(
+      "save failed",
+    );
   });
 });

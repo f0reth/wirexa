@@ -202,4 +202,16 @@ describe("topicMatches", () => {
     expect(topicMatches("test", "test")).toBe(true);
     expect(topicMatches("test", "other")).toBe(false);
   });
+
+  it("matches empty string topic with # pattern", () => {
+    expect(topicMatches("#", "")).toBe(true);
+  });
+
+  it("handles trailing slash in topic", () => {
+    expect(topicMatches("sensors/+", "sensors/")).toBe(true);
+  });
+
+  it("handles leading slash in topic", () => {
+    expect(topicMatches("/sensors", "/sensors")).toBe(true);
+  });
 });

@@ -105,5 +105,47 @@ describe("isValidNumericFieldValue", () => {
       expect(isValidNumericFieldValue("abc", "float64")).toBe(false);
       expect(isValidNumericFieldValue("Infinity", "float64")).toBe(false);
     });
+    it("float32: rejects -Infinity", () => {
+      expect(isValidNumericFieldValue("-Infinity", "float32")).toBe(false);
+    });
+    it("float64: rejects -Infinity", () => {
+      expect(isValidNumericFieldValue("-Infinity", "float64")).toBe(false);
+    });
+  });
+
+  describe("int type decimal rejection", () => {
+    it("int8: rejects decimal value", () => {
+      expect(isValidNumericFieldValue("1.5", "int8")).toBe(false);
+    });
+    it("int16: rejects decimal value", () => {
+      expect(isValidNumericFieldValue("1.5", "int16")).toBe(false);
+    });
+    it("int32: rejects decimal value", () => {
+      expect(isValidNumericFieldValue("1.5", "int32")).toBe(false);
+    });
+    it("int64: rejects decimal value", () => {
+      expect(isValidNumericFieldValue("1.5", "int64")).toBe(false);
+    });
+  });
+
+  describe("uint type + prefix rejection", () => {
+    it("uint8: rejects value with + prefix", () => {
+      expect(isValidNumericFieldValue("+5", "uint8")).toBe(false);
+    });
+    it("uint16: rejects value with + prefix", () => {
+      expect(isValidNumericFieldValue("+5", "uint16")).toBe(false);
+    });
+    it("uint32: rejects value with + prefix", () => {
+      expect(isValidNumericFieldValue("+5", "uint32")).toBe(false);
+    });
+  });
+
+  describe("default branch (string/bytes type)", () => {
+    it("returns true for string type (default branch)", () => {
+      expect(isValidNumericFieldValue("anything", "string")).toBe(true);
+    });
+    it("returns true for bytes type (default branch)", () => {
+      expect(isValidNumericFieldValue("anything", "bytes")).toBe(true);
+    });
   });
 });

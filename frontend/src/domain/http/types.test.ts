@@ -30,6 +30,10 @@ describe("isHttpMethod", () => {
     expect(isHttpMethod("GE")).toBe(false);
     expect(isHttpMethod("POSTX")).toBe(false);
   });
+
+  it("returns false for whitespace-only string", () => {
+    expect(isHttpMethod(" ")).toBe(false);
+  });
 });
 
 describe("isBodyType", () => {
@@ -50,6 +54,10 @@ describe("isBodyType", () => {
     expect(isBodyType("form-data-encoded")).toBe(false);
     expect(isBodyType("urlencoded")).toBe(false);
   });
+
+  it("returns false for whitespace-only string", () => {
+    expect(isBodyType(" ")).toBe(false);
+  });
 });
 
 describe("isAuthType", () => {
@@ -68,5 +76,9 @@ describe("isAuthType", () => {
     expect(isAuthType("Basic")).toBe(false);
     expect(isAuthType("Bearer")).toBe(false);
     expect(isAuthType("NONE")).toBe(false);
+  });
+
+  it("returns false for whitespace-only string", () => {
+    expect(isAuthType(" ")).toBe(false);
   });
 });

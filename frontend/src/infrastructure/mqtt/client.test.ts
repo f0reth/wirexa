@@ -98,6 +98,13 @@ describe("disconnect", () => {
     await disconnect("conn-abc");
     expect(Handler.Disconnect).toHaveBeenCalledWith("conn-abc");
   });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.Disconnect).mockRejectedValue(
+      new Error("connection lost"),
+    );
+    await expect(disconnect("conn-abc")).rejects.toThrow("connection lost");
+  });
 });
 
 describe("subscribe", () => {
@@ -112,6 +119,15 @@ describe("subscribe", () => {
     await subscribe("conn-1", "test/topic", qos);
     expect(Handler.Subscribe).toHaveBeenCalledWith("conn-1", "test/topic", qos);
   });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.Subscribe).mockRejectedValue(
+      new Error("subscribe failed"),
+    );
+    await expect(subscribe("conn-1", "sensors/#", 0)).rejects.toThrow(
+      "subscribe failed",
+    );
+  });
 });
 
 describe("unsubscribe", () => {
@@ -119,6 +135,15 @@ describe("unsubscribe", () => {
     vi.mocked(Handler.Unsubscribe).mockResolvedValue(undefined);
     await unsubscribe("conn-1", "sensors/#");
     expect(Handler.Unsubscribe).toHaveBeenCalledWith("conn-1", "sensors/#");
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.Unsubscribe).mockRejectedValue(
+      new Error("unsubscribe failed"),
+    );
+    await expect(unsubscribe("conn-1", "sensors/#")).rejects.toThrow(
+      "unsubscribe failed",
+    );
   });
 });
 
@@ -158,6 +183,13 @@ describe("publish", () => {
       false,
     );
   });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.Publish).mockRejectedValue(new Error("publish failed"));
+    await expect(publish("conn-1", "topic", "msg", 0, false)).rejects.toThrow(
+      "publish failed",
+    );
+  });
 });
 
 describe("getConnections", () => {
@@ -174,8 +206,12 @@ describe("getConnections", () => {
     ]);
     const result = await getConnections();
     expect(result).toHaveLength(2);
-    expect(result[0].id).toBe("conn-1");
-    expect(result[0].connected).toBe(true);
+    expect(result[0]).toEqual({
+      id: "conn-1",
+      name: "Local",
+      broker: "mqtt://localhost:1883",
+      connected: true,
+    });
     expect(result[1].id).toBe("conn-2");
     expect(result[1].connected).toBe(false);
   });
@@ -195,7 +231,7 @@ describe("getProfiles", () => {
     ]);
     const result = await getProfiles();
     expect(result).toHaveLength(2);
-    expect(result[0].id).toBe("profile-1");
+    expect(result[0]).toEqual(makeProfile());
     expect(result[1].name).toBe("Remote");
   });
 });

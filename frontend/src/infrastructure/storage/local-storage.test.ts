@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createLastProfileStorage,
+  createPresetsStorage,
+  createThemeStorage,
   loadFromStorage,
   removeFromStorage,
   saveToStorage,
@@ -7,6 +10,61 @@ import {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  localStorage.clear();
+});
+
+describe("createLastProfileStorage", () => {
+  it("loadLastProfileId returns null when empty", () => {
+    const storage = createLastProfileStorage();
+    expect(storage.loadLastProfileId()).toBeNull();
+  });
+
+  it("saveLastProfileId persists id under the correct key", () => {
+    const storage = createLastProfileStorage();
+    storage.saveLastProfileId("profile-1");
+    expect(storage.loadLastProfileId()).toBe("profile-1");
+  });
+
+  it("removeLastProfileId clears the stored id", () => {
+    const storage = createLastProfileStorage();
+    storage.saveLastProfileId("profile-1");
+    storage.removeLastProfileId();
+    expect(storage.loadLastProfileId()).toBeNull();
+  });
+});
+
+describe("createPresetsStorage", () => {
+  it("load returns [] when empty", () => {
+    const storage = createPresetsStorage();
+    expect(storage.load()).toEqual([]);
+  });
+
+  it("save persists presets and load retrieves them", () => {
+    const storage = createPresetsStorage();
+    const preset = {
+      id: "p1",
+      name: "Test",
+      topic: "a/b",
+      payload: "msg",
+      qos: 0 as const,
+      retain: false,
+    };
+    storage.save([preset]);
+    expect(storage.load()).toEqual([preset]);
+  });
+});
+
+describe("createThemeStorage", () => {
+  it("returns 'light' as default theme when storage is empty", () => {
+    const storage = createThemeStorage();
+    expect(storage.load()).toBe("light");
+  });
+
+  it("save persists theme and load retrieves it", () => {
+    const storage = createThemeStorage();
+    storage.save("dark");
+    expect(storage.load()).toBe("dark");
+  });
 });
 
 describe("loadFromStorage", () => {
@@ -107,6 +165,13 @@ describe("saveToStorage", () => {
     saveToStorage("key", "first");
     saveToStorage("key", "second");
     expect(JSON.parse(localStorage.getItem("key") ?? "null")).toBe("second");
+  });
+
+  it("returns false when JSON.stringify throws (circular reference)", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(saveToStorage("key", circular)).toBe(false);
   });
 });
 
