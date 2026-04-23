@@ -4,3 +4,5 @@ dist
 .claude
 Taskfile.yml
 CLAUDE.md
+playwright-report
+test-results
