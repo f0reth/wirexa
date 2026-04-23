@@ -352,7 +352,7 @@ func (s *CollectionService) UpdateRequest(collectionID string, req domain.HttpRe
 		return &cmn.NotFoundError{Resource: "request", ID: req.ID}
 	}
 
-	node.Name = req.Name
+	req.Name = node.Name
 	node.Request = &req
 
 	if err := s.repo.Save(c); err != nil {

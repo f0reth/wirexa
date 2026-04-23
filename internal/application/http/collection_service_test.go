@@ -306,11 +306,32 @@ func TestCollectionService_UpdateRequest_Success(t *testing.T) {
 
 	cols := svc.GetCollections()
 	node := cols[0].Items[0]
-	if node.Name != "New" {
-		t.Errorf("node.Name = %q, want %q", node.Name, "New")
+	if node.Name != "Old" {
+		t.Errorf("node.Name = %q, want %q (UpdateRequest must not change name)", node.Name, "Old")
 	}
 	if node.Request.URL != "http://new.com" {
 		t.Errorf("Request.URL = %q, want %q", node.Request.URL, "http://new.com")
+	}
+	if node.Request.Method != "POST" {
+		t.Errorf("Request.Method = %q, want %q", node.Request.Method, "POST")
+	}
+}
+
+func TestCollectionService_UpdateRequest_PreservesNameWhenEmpty(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	req := domain.HttpRequest{ID: "r1", Name: "My API", Method: "GET", URL: "http://old.com"}
+	svc.AddRequest(col.ID, "", req)
+
+	updated := domain.HttpRequest{ID: "r1", Name: "", Method: "POST", URL: "http://new.com"}
+	if err := svc.UpdateRequest(col.ID, updated); err != nil {
+		t.Fatalf("UpdateRequest: %v", err)
+	}
+
+	cols := svc.GetCollections()
+	node := cols[0].Items[0]
+	if node.Name != "My API" {
+		t.Errorf("node.Name = %q, want %q (empty name must be ignored)", node.Name, "My API")
 	}
 }
 
