@@ -35,6 +35,7 @@ export function ProtocolSwitcher(props: ProtocolSwitcherProps) {
           )}
           onClick={() => props.onProtocolChange(p.value)}
           aria-label={p.label}
+          aria-pressed={props.protocol === p.value}
           title={p.label}
         >
           <p.icon size={22} aria-hidden="true" />

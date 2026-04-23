@@ -63,6 +63,7 @@ function App() {
                   <main class={styles.main}>
                     <Show when={visited().has("mqtt")}>
                       <div
+                        data-testid="mqtt-panel"
                         class={styles.panel}
                         style={{
                           display: protocol() === "mqtt" ? "flex" : "none",
@@ -73,6 +74,7 @@ function App() {
                     </Show>
                     <Show when={visited().has("http")}>
                       <div
+                        data-testid="http-panel"
                         class={styles.panel}
                         style={{
                           display: protocol() === "http" ? "flex" : "none",
@@ -83,6 +85,7 @@ function App() {
                     </Show>
                     <Show when={visited().has("udp")}>
                       <div
+                        data-testid="udp-panel"
                         class={styles.panel}
                         style={{
                           display: protocol() === "udp" ? "flex" : "none",
@@ -93,6 +96,7 @@ function App() {
                     </Show>
                     <Show when={visited().has("openapi")}>
                       <div
+                        data-testid="openapi-panel"
                         class={styles.panel}
                         style={{
                           display: protocol() === "openapi" ? "flex" : "none",
