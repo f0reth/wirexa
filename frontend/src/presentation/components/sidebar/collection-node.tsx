@@ -112,6 +112,7 @@ export function CollectionNode(props: {
     );
 
   const handleRenameCommit = (value: string) => {
+    if (!isRenaming()) return;
     const trimmed = value.trim();
     if (trimmed && trimmed !== props.collection.name) {
       props.onRenameCollection(props.collection.id, trimmed);
@@ -180,8 +181,8 @@ export function CollectionNode(props: {
           >
             <input
               class={styles.renameInput}
-              value={props.collection.name}
               ref={(el) => {
+                el.value = props.collection.name;
                 requestAnimationFrame(() => {
                   el.focus();
                   el.select();

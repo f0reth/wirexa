@@ -188,6 +188,7 @@ export function TreeItemNode(props: {
     );
 
     const handleRenameCommit = (value: string) => {
+      if (!isRenaming()) return;
       const trimmed = value.trim();
       if (trimmed && trimmed !== props.item.name) {
         props.onRenameItem(props.collectionId, props.item.id, trimmed);
@@ -244,8 +245,8 @@ export function TreeItemNode(props: {
             >
               <input
                 class={styles.renameInput}
-                value={props.item.name}
                 ref={(el) => {
+                  el.value = props.item.name;
                   requestAnimationFrame(() => {
                     el.focus();
                     el.select();
@@ -360,6 +361,7 @@ export function TreeItemNode(props: {
   );
 
   const handleRenameCommit = (value: string) => {
+    if (!isRenaming()) return;
     const trimmed = value.trim();
     if (trimmed && trimmed !== props.item.name) {
       props.onRenameItem(props.collectionId, props.item.id, trimmed);
@@ -420,8 +422,8 @@ export function TreeItemNode(props: {
         >
           <input
             class={styles.renameInput}
-            value={props.item.name}
             ref={(el) => {
+              el.value = props.item.name;
               requestAnimationFrame(() => {
                 el.focus();
                 el.select();
