@@ -244,6 +244,7 @@ export function TreeItemNode(props: {
               }
             >
               <input
+                data-testid="rename-input"
                 class={styles.renameInput}
                 ref={(el) => {
                   el.value = props.item.name;
@@ -385,6 +386,7 @@ export function TreeItemNode(props: {
       <button
         type="button"
         class={styles.requestSelectBtn}
+        aria-current={isActive() ? "true" : undefined}
         onClick={() => {
           if (suppressRef.suppress) {
             suppressRef.suppress = false;
@@ -421,6 +423,7 @@ export function TreeItemNode(props: {
           }
         >
           <input
+            data-testid="rename-input"
             class={styles.renameInput}
             ref={(el) => {
               el.value = props.item.name;

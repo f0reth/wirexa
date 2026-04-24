@@ -180,6 +180,7 @@ export function CollectionNode(props: {
             }
           >
             <input
+              data-testid="rename-input"
               class={styles.renameInput}
               ref={(el) => {
                 el.value = props.collection.name;
