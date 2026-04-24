@@ -34,12 +34,12 @@ test("sidebar content changes when switching protocols", async ({ page }) => {
   await expect(page.getByText("Brokers")).toBeVisible();
 
   await page.getByRole("button", { name: "HTTP", exact: true }).click();
-  await expect(page.getByText("Collections")).toBeVisible();
+  await expect(page.getByText("Collections", { exact: true })).toBeVisible();
   await expect(page.getByText("Brokers")).not.toBeVisible();
 
   await page.getByRole("button", { name: "UDP", exact: true }).click();
   await expect(page.getByText("Targets")).toBeVisible();
-  await expect(page.getByText("Collections")).not.toBeVisible();
+  await expect(page.getByText("Collections", { exact: true })).not.toBeVisible();
 
   await page.getByRole("button", { name: "OpenAPI", exact: true }).click();
   await expect(page.getByText("OpenAPI Files")).toBeVisible();

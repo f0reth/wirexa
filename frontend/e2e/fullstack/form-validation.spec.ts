@@ -41,7 +41,7 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByRole("button", { name: "HTTP", exact: true }).click();
-  await expect(page.getByText("Collections")).toBeVisible();
+  await expect(page.getByText("Collections", { exact: true })).toBeVisible();
 });
 
 // ── 観点D-8: 空白のみの入力でリネームがキャンセルされる ───────────────────────

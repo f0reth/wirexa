@@ -69,7 +69,7 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByRole("button", { name: "HTTP", exact: true }).click();
-  await expect(page.getByText("Collections")).toBeVisible();
+  await expect(page.getByText("Collections", { exact: true })).toBeVisible();
 });
 
 const getUrlInput = (page: Page) =>
@@ -105,10 +105,10 @@ test("response viewer shows status and body after successful request", async ({
   });
 
   // 200 ステータスコードが表示される
-  await expect(page.getByText("200")).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("200", { exact: true })).toBeVisible({ timeout: 10000 });
 
-  // レスポンスボディに "ok" が含まれる
-  await expect(page.getByText(/\"ok\"|ok/)).toBeVisible({ timeout: 5000 });
+  // レスポンスボディに JSON 値 "ok" が含まれる
+  await expect(page.getByText('"ok"', { exact: true })).toBeVisible({ timeout: 5000 });
 });
 
 // ── 観点E-3: 送信中は送信ボタンがキャンセルボタンに置き換えられる ───────────
@@ -188,8 +188,8 @@ test("connection error displays error message in response viewer", async ({
     page.getByText("Send a request to see the response"),
   ).not.toBeVisible();
 
-  // エラーメッセージが表示されていること
-  await expect(
-    page.getByText(/refused|connection|connect|failed|error/i),
-  ).toBeVisible({ timeout: 5000 });
+  // エラーメッセージが表示されていること（response-viewerのエラー領域）
+  await expect(page.getByTestId("response-error")).toBeVisible({
+    timeout: 5000,
+  });
 });

@@ -111,7 +111,12 @@ export function ResponseViewer() {
             <>
               <Show when={resp().error}>
                 <div class={styles.responseError}>
-                  <span class={styles.responseErrorText}>{resp().error}</span>
+                  <span
+                    class={styles.responseErrorText}
+                    data-testid="response-error"
+                  >
+                    {resp().error}
+                  </span>
                   <Show when={resp().timingMs > 0}>
                     <span class={styles.responseTiming}>
                       {resp().timingMs} ms
