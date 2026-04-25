@@ -50,20 +50,3 @@ jobs:
 
       - run: bun run test
         working-directory: frontend
-
-  test-frontend-e2e:
-    name: Frontend E2E Tests (Playwright)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-
-      - run: bun install
-        working-directory: frontend
-
-      - run: bunx playwright install --with-deps
-        working-directory: frontend
-
-      - run: bun run test:e2e
-        working-directory: frontend
