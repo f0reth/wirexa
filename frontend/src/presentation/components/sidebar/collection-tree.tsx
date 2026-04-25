@@ -70,9 +70,13 @@ export function CollectionTree() {
     type: string;
   } | null>(null);
 
-  onMount(() => {
-    collectionsCtx.refreshCollections();
+  // コレクションロード後にアクティブリクエストを復元する
+  onMount(async () => {
+    await collectionsCtx.refreshCollections();
+    requestCtx.restoreActiveRequest();
+  });
 
+  onMount(() => {
     const handleMouseMove = (e: MouseEvent) => {
       const di = dragItem();
       if (!di) return;

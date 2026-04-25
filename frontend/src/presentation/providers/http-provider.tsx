@@ -20,8 +20,10 @@ import type {
   SidebarEntry,
   TreeItem,
 } from "../../domain/http/types";
+import { ROOT_COLLECTION_ID } from "../../domain/http/types";
 import * as httpClient from "../../infrastructure/http/client";
 import { createLogger } from "../../infrastructure/logger/client";
+import { createActiveRequestStorage } from "../../infrastructure/storage/local-storage";
 
 export interface RequestContextValue {
   method: Accessor<HttpMethod>;
@@ -47,6 +49,7 @@ export interface RequestContextValue {
   loadRequest: (req: HttpRequest, collectionId: string) => void;
   newRequest: () => void;
   saveCurrentRequest: () => Promise<void>;
+  restoreActiveRequest: () => void;
 }
 
 export interface CollectionsContextValue {
@@ -138,8 +141,63 @@ export function HttpProvider(props: { children: JSX.Element }) {
     onCleanup(() => clearTimeout(timer));
   });
 
+  // アクティブリクエストをlocalStorageに永続化する
+  const activeRequestStorage = createActiveRequestStorage();
+  // 初期null（未選択）とユーザーによる明示的なクリアを区別するフラグ
+  let activeRequestWasSet = false;
+
+  createEffect(() => {
+    const id = requestState.activeRequestId();
+    const colId = requestState.activeCollectionId();
+    if (id && colId) {
+      activeRequestWasSet = true;
+      activeRequestStorage.save(id, colId);
+    } else if (!id && activeRequestWasSet) {
+      activeRequestStorage.clear();
+    }
+  });
+
+  // コレクションロード後にアクティブリクエストを復元する（CollectionTreeから呼ばれる）
+  const restoreActiveRequest = () => {
+    if (requestState.activeRequestId()) return;
+
+    const saved = activeRequestStorage.load();
+    if (!saved) return;
+
+    const { requestId, collectionId } = saved;
+
+    const findInTree = (items: TreeItem[]): HttpRequest | null => {
+      for (const item of items) {
+        if (item.type === "request" && item.id === requestId && item.request) {
+          return item.request;
+        }
+        const found = findInTree(item.children);
+        if (found) return found;
+      }
+      return null;
+    };
+
+    if (collectionId === ROOT_COLLECTION_ID) {
+      const item = collectionsState.rootItems.find(
+        (i) => i.id === requestId && i.type === "request",
+      );
+      if (item?.request) {
+        requestState.loadRequest(item.request, ROOT_COLLECTION_ID);
+      }
+      return;
+    }
+
+    const col = collectionsState.collections.find((c) => c.id === collectionId);
+    if (!col) return;
+    const req = findInTree(col.items);
+    if (req) {
+      requestState.loadRequest(req, collectionId);
+    }
+  };
+
   const contextValue: RequestContextValue = {
     ...requestState,
+    restoreActiveRequest,
   };
 
   return (

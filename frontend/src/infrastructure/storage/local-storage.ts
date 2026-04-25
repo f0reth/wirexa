@@ -8,6 +8,7 @@ import type { Theme, ThemeStorage } from "../../domain/ui/ports";
 const MQTT_LAST_PROFILE_KEY = "mqtt:lastActiveProfileId";
 const MQTT_PRESETS_KEY = "mqtt:presets";
 const THEME_KEY = "app:theme";
+const HTTP_ACTIVE_REQUEST_KEY = "wirexa:http:activeRequest";
 
 export function createLastProfileStorage(): ConnectionPersistence {
   return {
@@ -29,6 +30,21 @@ export function createThemeStorage(): ThemeStorage {
   return {
     load: () => loadFromStorage<Theme>(THEME_KEY, "light"),
     save: (t) => saveToStorage(THEME_KEY, t),
+  };
+}
+
+export interface ActiveRequestEntry {
+  requestId: string;
+  collectionId: string;
+}
+
+export function createActiveRequestStorage() {
+  return {
+    load: () =>
+      loadFromStorage<ActiveRequestEntry | null>(HTTP_ACTIVE_REQUEST_KEY, null),
+    save: (requestId: string, collectionId: string) =>
+      saveToStorage(HTTP_ACTIVE_REQUEST_KEY, { requestId, collectionId }),
+    clear: () => removeFromStorage(HTTP_ACTIVE_REQUEST_KEY),
   };
 }
 

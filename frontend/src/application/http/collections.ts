@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 import type {
   Collection,
@@ -69,6 +70,7 @@ export function createCollectionsState(api: CollectionsApi) {
   const [expandedIds, setExpandedIds] = createStore<Record<string, boolean>>(
     loadExpandedIds(),
   );
+  const [collectionsLoaded, setCollectionsLoaded] = createSignal(false);
 
   function isExpanded(id: string, defaultValue: boolean): boolean {
     return expandedIds[id] ?? defaultValue;
@@ -117,6 +119,7 @@ export function createCollectionsState(api: CollectionsApi) {
     pruneExpandedIds(cols);
     await refreshRootItems();
     await refreshSidebarLayout();
+    setCollectionsLoaded(true);
   }
 
   async function createCollection(name: string): Promise<Collection> {
@@ -251,6 +254,7 @@ export function createCollectionsState(api: CollectionsApi) {
     collections,
     rootItems,
     sidebarLayout,
+    collectionsLoaded,
     refreshCollections,
     createCollection,
     deleteCollection,
