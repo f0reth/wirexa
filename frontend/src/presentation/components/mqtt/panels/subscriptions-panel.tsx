@@ -44,7 +44,9 @@ export function SubscriptionsPanel() {
             class={styles.monoInput}
           />
           <div class={styles.addSubscriptionRow}>
-            <QosSelect value={newQos()} onChange={setNewQos} />
+            <div data-testid="qos-select">
+              <QosSelect value={newQos()} onChange={setNewQos} />
+            </div>
             <Button
               size="sm"
               onClick={() => addSubscription()}
