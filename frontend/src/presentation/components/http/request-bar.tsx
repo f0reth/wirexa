@@ -52,25 +52,27 @@ export function RequestBar(props: RequestBarProps) {
 
   return (
     <div class={styles.requestBar}>
-      <Select
-        value={method()}
-        onValueChange={(v) => setMethod(v as HttpMethod)}
-      >
-        <SelectTrigger class={styles.methodTrigger}>
-          <span style={{ color: methodColor(), "font-weight": "600" }}>
-            {method()}
-          </span>
-        </SelectTrigger>
-        <SelectContent>
-          {HTTP_METHODS.map((m) => (
-            <SelectItem value={m}>
-              <span style={{ color: METHOD_COLORS[m], "font-weight": "600" }}>
-                {m}
-              </span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div data-testid="method-select">
+        <Select
+          value={method()}
+          onValueChange={(v) => setMethod(v as HttpMethod)}
+        >
+          <SelectTrigger class={styles.methodTrigger}>
+            <span style={{ color: methodColor(), "font-weight": "600" }}>
+              {method()}
+            </span>
+          </SelectTrigger>
+          <SelectContent>
+            {HTTP_METHODS.map((m) => (
+              <SelectItem value={m}>
+                <span style={{ color: METHOD_COLORS[m], "font-weight": "600" }}>
+                  {m}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       <Input
         value={url()}
