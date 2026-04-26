@@ -31,11 +31,11 @@ test("can switch between all protocols in order", async ({ page }) => {
 });
 
 test("sidebar content changes when switching protocols", async ({ page }) => {
-  await expect(page.getByText("Brokers")).toBeVisible();
+  await expect(page.getByText("Brokers", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "HTTP", exact: true }).click();
   await expect(page.getByText("Collections", { exact: true })).toBeVisible();
-  await expect(page.getByText("Brokers")).not.toBeVisible();
+  await expect(page.getByText("Brokers", { exact: true })).not.toBeVisible();
 
   await page.getByRole("button", { name: "UDP", exact: true }).click();
   await expect(page.getByText("Targets", { exact: true })).toBeVisible();
@@ -43,7 +43,7 @@ test("sidebar content changes when switching protocols", async ({ page }) => {
 
   await page.getByRole("button", { name: "OpenAPI", exact: true }).click();
   await expect(page.getByText("OpenAPI Files")).toBeVisible();
-  await expect(page.getByText("Targets")).not.toBeVisible();
+  await expect(page.getByText("Targets", { exact: true })).not.toBeVisible();
 });
 
 test("returning to mqtt after visiting http preserves mqtt panel in dom", async ({
