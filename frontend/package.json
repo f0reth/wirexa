@@ -15,7 +15,7 @@
     "test:watch": "vitest",
     "dev:e2e": "bunx --bun vite --config vite.e2e.config.ts",
     "test:e2e": "bunx playwright test",
-    "test:e2e:fullstack": "bunx playwright test --config playwright.fullstack.config.ts",
+    "test:e2e:fullstack": "bunx playwright test --config playwright.integration.config.ts",
     "licenses": "bun scripts/generate-licenses.mjs"
   },
   "dependencies": {

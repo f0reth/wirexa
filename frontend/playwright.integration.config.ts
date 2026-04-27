@@ -8,8 +8,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const wailsDevUrl = process.env.WAILS_DEV_URL ?? "http://localhost:34115";
 
 export default defineConfig({
-  globalSetup: "./e2e/fullstack/global-setup.ts",
-  testDir: "./e2e/fullstack",
+  globalSetup: "./e2e/integration/global-setup.ts",
+  testDir: "./e2e/integration",
   testMatch: "**/*.spec.ts",
   testIgnore: "**/global-setup.ts",
   fullyParallel: false, // Wails アプリは1インスタンスのため並列不可
