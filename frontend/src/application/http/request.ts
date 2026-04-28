@@ -37,6 +37,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
   const [settings, setSettings] = createSignal<RequestSettings>({
     ...DEFAULT_SETTINGS,
   });
+  const [doc, setDoc] = createSignal("");
   const [response, setResponse] = createSignal<HttpResponse | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [activeRequestId, setActiveRequestId] = createSignal<string | null>(
@@ -63,6 +64,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
           body: body(),
           auth: auth(),
           settings: settings(),
+          doc: doc(),
         }),
       );
       setResponse(res);
@@ -111,6 +113,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     setBody(req.body);
     setAuth(req.auth);
     setSettings(req.settings ?? { ...DEFAULT_SETTINGS });
+    setDoc(req.doc ?? "");
     setActiveRequestId(req.id);
     setActiveCollectionId(collectionId);
   }
@@ -126,6 +129,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     setBody({ type: "none", contents: {} });
     setAuth({ type: "none", username: "", password: "", token: "" });
     setSettings({ ...DEFAULT_SETTINGS });
+    setDoc("");
     setActiveRequestId(null);
     setActiveCollectionId(null);
   }
@@ -144,6 +148,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
       body: body(),
       auth: auth(),
       settings: settings(),
+      doc: doc(),
     };
     await api.updateRequest(colId, req);
     api.afterSave?.(colId, req);
@@ -164,6 +169,8 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     setAuth,
     settings,
     setSettings,
+    doc,
+    setDoc,
     response,
     loading,
     activeRequestId,

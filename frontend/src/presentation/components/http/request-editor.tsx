@@ -17,6 +17,7 @@ import { Textarea } from "../../../components/ui/textarea";
 import type { AuthType, BodyType, ProxyMode } from "../../../domain/http/types";
 import { AUTH_TYPES, BODY_TYPES } from "../../constants/http";
 import { useHttpRequest } from "../../providers/http-provider";
+import { DocEditor } from "./doc-editor";
 import styles from "./http.module.css";
 import { JsonBodyEditor } from "./json-body-editor";
 import { KeyValueEditor } from "./key-value-editor";
@@ -35,6 +36,7 @@ const TABS = [
   { value: "body", label: "Body" },
   { value: "auth", label: "Auth" },
   { value: "settings", label: "Settings" },
+  { value: "doc", label: "Doc" },
 ];
 
 export function RequestEditor() {
@@ -49,6 +51,8 @@ export function RequestEditor() {
     setAuth,
     settings,
     setSettings,
+    doc,
+    setDoc,
   } = useHttpRequest();
 
   const bodyContent = () => {
@@ -393,6 +397,17 @@ export function RequestEditor() {
                 </label>
               </div>
             </div>
+          </div>
+        </Show>
+
+        <Show when={requestTab() === "doc"}>
+          <div
+            class={styles.bodyTabPanel}
+            role="tabpanel"
+            id="tabpanel-doc"
+            aria-labelledby="tab-doc"
+          >
+            <DocEditor value={doc()} onChange={(v) => setDoc(v)} />
           </div>
         </Show>
       </div>

@@ -40,6 +40,8 @@ export interface RequestContextValue {
   setAuth: (val: RequestAuth) => void;
   settings: Accessor<RequestSettings>;
   setSettings: (val: RequestSettings) => void;
+  doc: Accessor<string>;
+  setDoc: (val: string) => void;
   response: Accessor<HttpResponse | null>;
   loading: Accessor<boolean>;
   activeRequestId: Accessor<string | null>;
@@ -125,6 +127,7 @@ export function HttpProvider(props: { children: JSX.Element }) {
     requestState.body();
     requestState.auth();
     requestState.settings();
+    requestState.doc();
 
     const id = requestState.activeRequestId();
     if (!id) return;
