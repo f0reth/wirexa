@@ -206,6 +206,27 @@
   min-height: 100%;
 }
 
+.docEditor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.docEditor :global(.cm-editor) {
+  height: 100%;
+  font-size: 0.8125rem;
+}
+
+.docEditor :global(.cm-scroller) {
+  overflow: auto;
+}
+
+.docEditor :global(.cm-content) {
+  min-height: 100%;
+}
+
 .filePickerRow {
   display: flex;
   gap: 0.5rem;
