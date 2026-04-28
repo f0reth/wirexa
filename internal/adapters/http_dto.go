@@ -44,6 +44,7 @@ type HttpRequest struct {
 	Body     RequestBody     `json:"body"`
 	Auth     RequestAuth     `json:"auth"`
 	Settings RequestSettings `json:"settings"`
+	Doc      string          `json:"doc"`
 }
 
 // HttpResponse は HTTP レスポンスの RPC 転送型。
@@ -116,6 +117,7 @@ func fromHTTPRequestDTO(req HttpRequest) httpdomain.HttpRequest {
 			DisableRedirects:   req.Settings.DisableRedirects,
 			MaxResponseBodyMB:  req.Settings.MaxResponseBodyMB,
 		},
+		Doc: req.Doc,
 	}
 }
 
@@ -150,6 +152,7 @@ func toHTTPRequestDTO(req httpdomain.HttpRequest) HttpRequest {
 			DisableRedirects:   req.Settings.DisableRedirects,
 			MaxResponseBodyMB:  req.Settings.MaxResponseBodyMB,
 		},
+		Doc: req.Doc,
 	}
 }
 
