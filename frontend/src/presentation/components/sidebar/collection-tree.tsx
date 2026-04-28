@@ -225,6 +225,7 @@ export function CollectionTree() {
         body: { type: "none", contents: {} },
         auth: { type: "none", username: "", password: "", token: "" },
         settings: { ...DEFAULT_SETTINGS },
+        doc: "",
       });
       if (item?.id) setRenamingItemId(item.id);
     } catch (err) {
@@ -289,6 +290,7 @@ export function CollectionTree() {
         body: { type: "none", contents: {} },
         auth: { type: "none", username: "", password: "", token: "" },
         settings: { ...DEFAULT_SETTINGS },
+        doc: "",
       });
       if (item?.id) {
         setRenamingItemId(item.id);

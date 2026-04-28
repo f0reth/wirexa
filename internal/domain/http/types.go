@@ -30,6 +30,7 @@ type HttpRequest struct {
 	Body     RequestBody     `json:"body"`
 	Auth     RequestAuth     `json:"auth"`
 	Settings RequestSettings `json:"settings"`
+	Doc      string          `json:"doc"`
 }
 
 // KeyValuePair はヘッダーやパラメータのキーバリューペアを表す。

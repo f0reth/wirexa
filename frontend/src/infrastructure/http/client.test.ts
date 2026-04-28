@@ -111,6 +111,7 @@ function makeDomainRequest() {
       disableRedirects: false,
       maxResponseBodyMB: 0,
     },
+    doc: "",
   };
 }
 

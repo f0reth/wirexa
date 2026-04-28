@@ -58,6 +58,7 @@ export interface HttpRequest {
   body: RequestBody;
   auth: RequestAuth;
   settings: RequestSettings;
+  doc: string;
 }
 
 export interface HttpResponse {

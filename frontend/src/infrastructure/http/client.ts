@@ -95,6 +95,7 @@ function fromWailsHttpRequest(req: adapters.HttpRequest): HttpRequest {
     body: fromWailsRequestBody(req.body),
     auth: fromWailsRequestAuth(req.auth),
     settings: fromWailsRequestSettings(req.settings),
+    doc: req.doc ?? "",
   };
 }
 

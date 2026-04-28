@@ -104,6 +104,7 @@ export namespace adapters {
 	    body: RequestBody;
 	    auth: RequestAuth;
 	    settings: RequestSettings;
+	    doc: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new HttpRequest(source);
@@ -120,6 +121,7 @@ export namespace adapters {
 	        this.body = this.convertValues(source["body"], RequestBody);
 	        this.auth = this.convertValues(source["auth"], RequestAuth);
 	        this.settings = this.convertValues(source["settings"], RequestSettings);
+	        this.doc = source["doc"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
