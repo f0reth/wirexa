@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { Logger } from "../../application/logger";
 import type {
   HttpMethod,
@@ -181,4 +181,35 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     newRequest,
     saveCurrentRequest,
   };
+}
+
+export type RequestState = ReturnType<typeof createRequestState>;
+
+export function createAutoSaveEffect(
+  state: RequestState,
+  debounceMs = 500,
+): void {
+  let saveVersion = 0;
+  createEffect(() => {
+    state.method();
+    state.url();
+    state.headers();
+    state.params();
+    state.body();
+    state.auth();
+    state.settings();
+    state.doc();
+
+    if (!state.activeRequestId()) return;
+
+    const version = ++saveVersion;
+    const timer = setTimeout(() => {
+      if (version !== saveVersion) return;
+      state.saveCurrentRequest().catch((err) => {
+        console.error("Auto-save failed:", err);
+      });
+    }, debounceMs);
+
+    onCleanup(() => clearTimeout(timer));
+  });
 }

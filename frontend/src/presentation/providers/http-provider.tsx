@@ -3,11 +3,13 @@ import {
   createContext,
   createEffect,
   type JSX,
-  onCleanup,
   useContext,
 } from "solid-js";
 import { createCollectionsState } from "../../application/http/collections";
-import { createRequestState } from "../../application/http/request";
+import {
+  createAutoSaveEffect,
+  createRequestState,
+} from "../../application/http/request";
 import type {
   Collection,
   HttpMethod,
@@ -115,34 +117,7 @@ export function HttpProvider(props: { children: JSX.Element }) {
     createLogger("frontend:http"),
   );
 
-  // 自動保存: 変更から 500ms 後にバックエンドへ保存
-  // saveVersion で世代管理し、古い保存が実行されるのを防ぐ
-  let saveVersion = 0;
-
-  createEffect(() => {
-    requestState.method();
-    requestState.url();
-    requestState.headers();
-    requestState.params();
-    requestState.body();
-    requestState.auth();
-    requestState.settings();
-    requestState.doc();
-
-    const id = requestState.activeRequestId();
-    if (!id) return;
-
-    const version = ++saveVersion;
-
-    const timer = setTimeout(() => {
-      if (version !== saveVersion) return;
-      requestState.saveCurrentRequest().catch((err) => {
-        console.error("Auto-save failed:", err);
-      });
-    }, 500);
-
-    onCleanup(() => clearTimeout(timer));
-  });
+  createAutoSaveEffect(requestState);
 
   // アクティブリクエストをlocalStorageに永続化する
   const activeRequestStorage = createActiveRequestStorage();
