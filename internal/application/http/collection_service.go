@@ -277,15 +277,9 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 		return nil, &cmn.NotFoundError{Resource: sidebarKindCollection, ID: collectionID}
 	}
 
-	if parentID == "" {
-		c.Items = append(c.Items, item)
-	} else {
-		parent, _, ok := c.FindNode(parentID)
-		if !ok || parent.Type != domain.ItemTypeFolder {
-			s.mu.Unlock()
-			return nil, &cmn.NotFoundError{Resource: resourceParent, ID: parentID}
-		}
-		parent.Children = append(parent.Children, item)
+	if !c.AppendItem(parentID, item) {
+		s.mu.Unlock()
+		return nil, &cmn.NotFoundError{Resource: resourceParent, ID: parentID}
 	}
 
 	if err := s.repo.Save(c); err != nil {
@@ -324,15 +318,9 @@ func (s *CollectionService) AddRequest(collectionID, parentID string, req domain
 		return nil, &cmn.NotFoundError{Resource: sidebarKindCollection, ID: collectionID}
 	}
 
-	if parentID == "" {
-		c.Items = append(c.Items, item)
-	} else {
-		parent, _, ok := c.FindNode(parentID)
-		if !ok || parent.Type != domain.ItemTypeFolder {
-			s.mu.Unlock()
-			return nil, &cmn.NotFoundError{Resource: resourceParent, ID: parentID}
-		}
-		parent.Children = append(parent.Children, item)
+	if !c.AppendItem(parentID, item) {
+		s.mu.Unlock()
+		return nil, &cmn.NotFoundError{Resource: resourceParent, ID: parentID}
 	}
 
 	if err := s.repo.Save(c); err != nil {
@@ -442,14 +430,8 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 
 	src.RemoveNode(itemID)
 
-	if targetParentID == "" {
-		dst.Items = insertAt(dst.Items, item, position)
-	} else {
-		targetNode, _, ok := dst.FindNode(targetParentID)
-		if !ok || targetNode.Type != domain.ItemTypeFolder {
-			return &cmn.NotFoundError{Resource: resourceParent, ID: targetParentID}
-		}
-		targetNode.Children = insertAt(targetNode.Children, item, position)
+	if !dst.InsertItem(targetParentID, item, position) {
+		return &cmn.NotFoundError{Resource: resourceParent, ID: targetParentID}
 	}
 
 	if sourceCollectionID != targetCollectionID {
@@ -569,7 +551,7 @@ func (s *CollectionService) MoveItemToSidebar(sourceCollectionID, itemID string,
 	}
 
 	src.RemoveNode(itemID)
-	root.Items = append(root.Items, item)
+	root.AppendItem("", item)
 
 	if err := s.repo.Save(src); err != nil {
 		s.mu.Unlock()
@@ -598,18 +580,6 @@ func (s *CollectionService) MoveItemToSidebar(sourceCollectionID, itemID string,
 		layout[sidebarPosition] = entry
 	}
 	return s.layoutRepo.Save(layout)
-}
-
-// insertAt はスライスの指定インデックスにアイテムを挿入する。
-// position が負または範囲外の場合は末尾に追加する。
-func insertAt(items []*domain.TreeItem, item *domain.TreeItem, position int) []*domain.TreeItem {
-	if position < 0 || position >= len(items) {
-		return append(items, item)
-	}
-	items = append(items, nil)
-	copy(items[position+1:], items[position:])
-	items[position] = item
-	return items
 }
 
 // DeleteItem はコレクションからアイテムをサブツリーごと削除する。

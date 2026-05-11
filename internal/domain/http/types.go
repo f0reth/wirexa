@@ -136,3 +136,48 @@ func (c *Collection) RemoveNode(id string) bool {
 	}
 	return false
 }
+
+// AppendItem はアイテムをコレクションに追加する。
+// parentID が空の場合はルート直下に、非空の場合は指定フォルダの末尾に追加する。
+// parentID が見つからない、またはフォルダでない場合は false を返す。
+func (c *Collection) AppendItem(parentID string, item *TreeItem) bool {
+	if parentID == "" {
+		c.Items = append(c.Items, item)
+		return true
+	}
+	parent, _, ok := findNode(parentID, c.Items, nil)
+	if !ok || parent.Type != ItemTypeFolder {
+		return false
+	}
+	parent.Children = append(parent.Children, item)
+	return true
+}
+
+// InsertItem はアイテムをコレクションの指定位置に挿入する。
+// parentID が空の場合はルート直下に、非空の場合は指定フォルダ内に挿入する。
+// position が負または範囲外の場合は末尾に追加する。
+// parentID が見つからない、またはフォルダでない場合は false を返す。
+func (c *Collection) InsertItem(parentID string, item *TreeItem, position int) bool {
+	if parentID == "" {
+		c.Items = insertAt(c.Items, item, position)
+		return true
+	}
+	parent, _, ok := findNode(parentID, c.Items, nil)
+	if !ok || parent.Type != ItemTypeFolder {
+		return false
+	}
+	parent.Children = insertAt(parent.Children, item, position)
+	return true
+}
+
+// insertAt はスライスの指定インデックスにアイテムを挿入する。
+// position が負または範囲外の場合は末尾に追加する。
+func insertAt(items []*TreeItem, item *TreeItem, position int) []*TreeItem {
+	if position < 0 || position >= len(items) {
+		return append(items, item)
+	}
+	items = append(items, nil)
+	copy(items[position+1:], items[position:])
+	items[position] = item
+	return items
+}

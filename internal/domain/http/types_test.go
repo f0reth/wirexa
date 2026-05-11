@@ -165,3 +165,92 @@ func TestCollection_RemoveNode_EmptyCollection(t *testing.T) {
 		t.Error("expected false for empty collection")
 	}
 }
+
+func TestCollection_AppendItem_RootLevel(t *testing.T) {
+	col := buildTree()
+	newItem := &TreeItem{Type: ItemTypeRequest, ID: "new1", Name: "New", Children: []*TreeItem{}}
+	ok := col.AppendItem("", newItem)
+	if !ok {
+		t.Fatal("expected AppendItem to return true")
+	}
+	if col.Items[len(col.Items)-1].ID != "new1" {
+		t.Error("new item should be last in root")
+	}
+}
+
+func TestCollection_AppendItem_IntoFolder(t *testing.T) {
+	col := buildTree()
+	newItem := &TreeItem{Type: ItemTypeRequest, ID: "new2", Name: "New2", Children: []*TreeItem{}}
+	ok := col.AppendItem("f1", newItem)
+	if !ok {
+		t.Fatal("expected AppendItem to return true")
+	}
+	f1, _, _ := col.FindNode("f1")
+	if f1.Children[len(f1.Children)-1].ID != "new2" {
+		t.Error("new item should be last child of f1")
+	}
+}
+
+func TestCollection_AppendItem_ParentNotFound(t *testing.T) {
+	col := buildTree()
+	newItem := &TreeItem{Type: ItemTypeRequest, ID: "new3", Name: "New3", Children: []*TreeItem{}}
+	ok := col.AppendItem("nonexistent", newItem)
+	if ok {
+		t.Error("expected AppendItem to return false for unknown parent")
+	}
+}
+
+func TestCollection_AppendItem_ParentIsRequest(t *testing.T) {
+	col := buildTree()
+	newItem := &TreeItem{Type: ItemTypeRequest, ID: "new4", Name: "New4", Children: []*TreeItem{}}
+	ok := col.AppendItem("r3", newItem)
+	if ok {
+		t.Error("expected AppendItem to return false when parent is a request")
+	}
+}
+
+func TestCollection_InsertItem_RootLevel(t *testing.T) {
+	col := buildTree()
+	newItem := &TreeItem{Type: ItemTypeRequest, ID: "ins1", Name: "Ins1", Children: []*TreeItem{}}
+	ok := col.InsertItem("", newItem, 0)
+	if !ok {
+		t.Fatal("expected InsertItem to return true")
+	}
+	if col.Items[0].ID != "ins1" {
+		t.Errorf("expected ins1 at position 0, got %q", col.Items[0].ID)
+	}
+}
+
+func TestCollection_InsertItem_IntoFolder(t *testing.T) {
+	col := buildTree()
+	newItem := &TreeItem{Type: ItemTypeRequest, ID: "ins2", Name: "Ins2", Children: []*TreeItem{}}
+	ok := col.InsertItem("f1", newItem, 0)
+	if !ok {
+		t.Fatal("expected InsertItem to return true")
+	}
+	f1, _, _ := col.FindNode("f1")
+	if f1.Children[0].ID != "ins2" {
+		t.Errorf("expected ins2 at position 0 in f1, got %q", f1.Children[0].ID)
+	}
+}
+
+func TestCollection_InsertItem_OutOfBoundsAppends(t *testing.T) {
+	col := buildTree()
+	newItem := &TreeItem{Type: ItemTypeRequest, ID: "ins3", Name: "Ins3", Children: []*TreeItem{}}
+	ok := col.InsertItem("", newItem, 999)
+	if !ok {
+		t.Fatal("expected InsertItem to return true")
+	}
+	if col.Items[len(col.Items)-1].ID != "ins3" {
+		t.Error("out-of-bounds position should append to end")
+	}
+}
+
+func TestCollection_InsertItem_ParentNotFound(t *testing.T) {
+	col := buildTree()
+	newItem := &TreeItem{Type: ItemTypeRequest, ID: "ins4", Name: "Ins4", Children: []*TreeItem{}}
+	ok := col.InsertItem("nonexistent", newItem, 0)
+	if ok {
+		t.Error("expected InsertItem to return false for unknown parent")
+	}
+}
