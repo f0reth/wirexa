@@ -1,5 +1,5 @@
 import { Check, Copy } from "lucide-solid";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { TabList } from "../../../components/ui/tabs";
@@ -33,13 +33,16 @@ export function ResponseViewer() {
   const [responseTab, setResponseTab] = createSignal("body");
   const [copied, setCopied] = createSignal(false);
   const [showTruncatedBody, setShowTruncatedBody] = createSignal(false);
+  let copyTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(copyTimer));
 
   function handleCopy() {
     const resp = response();
     if (!resp) return;
     navigator.clipboard.writeText(bodyDisplay().text);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => setCopied(false), 1500);
   }
 
   async function handleSaveToFile() {

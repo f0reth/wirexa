@@ -1,5 +1,5 @@
 import { Check, Copy } from "lucide-solid";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { Badge } from "../../../../components/ui/badge";
 import { useMqttMessages } from "../../../providers/mqtt-provider";
 import styles from "../mqtt.module.css";
@@ -22,11 +22,14 @@ export function MessageDetail() {
           );
           const formattedTime = createMemo(() => formatTime(msg().timestamp));
           const [copied, setCopied] = createSignal(false);
+          let copyTimer: ReturnType<typeof setTimeout> | undefined;
+          onCleanup(() => clearTimeout(copyTimer));
 
           function handleCopy() {
             navigator.clipboard.writeText(formattedPayload());
             setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
+            clearTimeout(copyTimer);
+            copyTimer = setTimeout(() => setCopied(false), 1500);
           }
 
           return (

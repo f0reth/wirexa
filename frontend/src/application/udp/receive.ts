@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createSignal, onCleanup } from "solid-js";
 import { createStore } from "solid-js/store";
 import { UDP_MAX_MESSAGES } from "../../config/limits";
 import type {
@@ -23,9 +23,10 @@ export function createUdpReceiveState(api: UdpReceiveApi) {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
-  api.onMessage((msg) => {
+  const cancelMessage = api.onMessage((msg) => {
     setMessages((prev) => [msg, ...prev].slice(0, UDP_MAX_MESSAGES));
   });
+  onCleanup(cancelMessage);
 
   async function startListen(): Promise<void> {
     setLoading(true);
