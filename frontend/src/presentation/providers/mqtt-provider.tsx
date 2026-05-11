@@ -14,6 +14,7 @@ import { createMessagesState } from "../../application/mqtt/messages";
 import { createPresetsState } from "../../application/mqtt/presets";
 import { createProfilesState } from "../../application/mqtt/profiles";
 import { createSubscriptionsState } from "../../application/mqtt/subscriptions";
+import { MQTT_MAX_MESSAGES, MQTT_MAX_TOPICS } from "../../config/limits";
 import type {
   BrokerProfile,
   ConnectionState,
@@ -107,6 +108,8 @@ export function MqttProvider(props: { children: JSX.Element }) {
     profiles,
     saveProfile,
     mqttLogger,
+    MQTT_MAX_MESSAGES,
+    MQTT_MAX_TOPICS,
   );
 
   onMount(() => {

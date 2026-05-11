@@ -7,10 +7,6 @@ import {
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import type { Logger } from "../../application/logger";
-import {
-  MQTT_MAX_MESSAGES as MAX_MESSAGES,
-  MQTT_MAX_TOPICS as MAX_TOPICS,
-} from "../../config/limits";
 import type { ConnectionPersistence } from "../../domain/mqtt/ports";
 import { topicMatchesParts } from "../../domain/mqtt/topic";
 import type {
@@ -115,6 +111,8 @@ export function createConnectionsState(
   profiles: () => BrokerProfile[],
   saveProfile: (p: BrokerProfile) => Promise<void>,
   logger: Logger,
+  maxMessages: number,
+  maxTopics: number,
 ) {
   const [connections, setConnections] = createStore<
     Record<string, ConnectionStateExt>
@@ -190,22 +188,22 @@ export function createConnectionsState(
           }
         }
 
-        if (newBrokerTopics.length > MAX_TOPICS) {
+        if (newBrokerTopics.length > maxTopics) {
           const removed = newBrokerTopics.slice(
             0,
-            newBrokerTopics.length - MAX_TOPICS,
+            newBrokerTopics.length - maxTopics,
           );
           for (const t of removed) newBrokerTopicsSet.delete(t);
           newBrokerTopics = newBrokerTopics.slice(
-            newBrokerTopics.length - MAX_TOPICS,
+            newBrokerTopics.length - maxTopics,
           );
         }
 
         let newMessages = state.messages;
         if (pendingMessages.length > 0) {
           const combined = [...state.messages, ...pendingMessages];
-          if (combined.length > MAX_MESSAGES) {
-            combined.splice(0, combined.length - MAX_MESSAGES);
+          if (combined.length > maxMessages) {
+            combined.splice(0, combined.length - maxMessages);
           }
           newMessages = combined;
         }
