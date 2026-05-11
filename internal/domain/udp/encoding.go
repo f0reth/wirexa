@@ -14,6 +14,11 @@ import (
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 )
 
+const (
+	fieldPayload            = "payload"
+	fieldFixedLengthPayload = "fixedLengthPayload"
+)
+
 // EncodePayload はバイト列を指定エンコーディングで文字列化する。
 func EncodePayload(data []byte, encoding PayloadEncoding) string {
 	switch encoding {
@@ -38,7 +43,7 @@ func DecodePayload(payload string, encoding PayloadEncoding, messageLength int) 
 		return []byte(payload), nil
 	case EncodingJSON:
 		if !json.Valid([]byte(payload)) {
-			return nil, &cmn.ValidationError{Field: "payload", Message: "invalid JSON"}
+			return nil, &cmn.ValidationError{Field: fieldPayload, Message: "invalid JSON"}
 		}
 		return []byte(payload), nil
 	case EncodingFixed:
@@ -48,10 +53,10 @@ func DecodePayload(payload string, encoding PayloadEncoding, messageLength int) 
 		cleaned := strings.ReplaceAll(payload, " ", "")
 		data, err := hex.DecodeString(cleaned)
 		if err != nil {
-			return nil, &cmn.ValidationError{Field: "payload", Message: "invalid hex: " + err.Error()}
+			return nil, &cmn.ValidationError{Field: fieldPayload, Message: "invalid hex: " + err.Error()}
 		}
 		if len(data) > messageLength {
-			return nil, &cmn.ValidationError{Field: "payload", Message: "payload exceeds messageLength"}
+			return nil, &cmn.ValidationError{Field: fieldPayload, Message: "payload exceeds messageLength"}
 		}
 		if len(data) < messageLength {
 			padded := make([]byte, messageLength)
@@ -67,7 +72,7 @@ func DecodePayload(payload string, encoding PayloadEncoding, messageLength int) 
 // DecodeFixedLengthPayload は複数フィールドから単一バイト列を生成する。
 func DecodeFixedLengthPayload(payload *FixedLengthPayload, endianness Endianness) ([]byte, error) {
 	if payload == nil || len(payload.Fields) == 0 {
-		return nil, &cmn.ValidationError{Field: "fixedLengthPayload", Message: "no fields"}
+		return nil, &cmn.ValidationError{Field: fieldFixedLengthPayload, Message: "no fields"}
 	}
 
 	var byteOrder binary.ByteOrder
@@ -178,7 +183,7 @@ func encodeFixedField(field FixedLengthField, byteOrder binary.ByteOrder) ([]byt
 func encodeStringField(field FixedLengthField) ([]byte, error) {
 	if field.Length <= 0 {
 		return nil, &cmn.ValidationError{
-			Field:   "fixedLengthPayload",
+			Field:   fieldFixedLengthPayload,
 			Message: fmt.Sprintf("field '%s': length must be > 0", field.Name),
 		}
 	}
@@ -186,7 +191,7 @@ func encodeStringField(field FixedLengthField) ([]byte, error) {
 	for _, r := range field.Value {
 		if r > 0x7F {
 			return nil, &cmn.ValidationError{
-				Field:   "fixedLengthPayload",
+				Field:   fieldFixedLengthPayload,
 				Message: fmt.Sprintf("field '%s': character '%c' is not single-byte (ASCII only)", field.Name, r),
 			}
 		}
@@ -194,7 +199,7 @@ func encodeStringField(field FixedLengthField) ([]byte, error) {
 	}
 	if len(data) > field.Length {
 		return nil, &cmn.ValidationError{
-			Field:   "fixedLengthPayload",
+			Field:   fieldFixedLengthPayload,
 			Message: fmt.Sprintf("field '%s': data (%d bytes) exceeds length %d", field.Name, len(data), field.Length),
 		}
 	}
@@ -209,7 +214,7 @@ func encodeStringField(field FixedLengthField) ([]byte, error) {
 func encodeBytesField(field FixedLengthField) ([]byte, error) {
 	if field.Length <= 0 {
 		return nil, &cmn.ValidationError{
-			Field:   "fixedLengthPayload",
+			Field:   fieldFixedLengthPayload,
 			Message: fmt.Sprintf("field '%s': length must be > 0", field.Name),
 		}
 	}
@@ -217,13 +222,13 @@ func encodeBytesField(field FixedLengthField) ([]byte, error) {
 	data, err := hex.DecodeString(cleaned)
 	if err != nil {
 		return nil, &cmn.ValidationError{
-			Field:   "fixedLengthPayload",
+			Field:   fieldFixedLengthPayload,
 			Message: fmt.Sprintf("field '%s': invalid hex: %s", field.Name, err.Error()),
 		}
 	}
 	if len(data) > field.Length {
 		return nil, &cmn.ValidationError{
-			Field:   "fixedLengthPayload",
+			Field:   fieldFixedLengthPayload,
 			Message: fmt.Sprintf("field '%s': data (%d bytes) exceeds length %d", field.Name, len(data), field.Length),
 		}
 	}
@@ -237,7 +242,7 @@ func encodeBytesField(field FixedLengthField) ([]byte, error) {
 
 func fixedFieldErr(name, message string) *cmn.ValidationError {
 	return &cmn.ValidationError{
-		Field:   "fixedLengthPayload",
+		Field:   fieldFixedLengthPayload,
 		Message: fmt.Sprintf("field '%s': %s", name, message),
 	}
 }

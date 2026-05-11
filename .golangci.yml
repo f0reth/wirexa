@@ -87,6 +87,9 @@ linters:
         - -ST1016
         - -QF1008
 
+    goconst:
+      ignore-tests: true
+
     perfsprint:
       strconcat: false
 

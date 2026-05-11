@@ -22,6 +22,12 @@ const (
 	eventMessage          = "mqtt:message"
 )
 
+const (
+	msgIsRequired   = "is required"
+	keyConnectionID = "connectionId"
+	fieldTopic      = "topic"
+)
+
 var _ domain.MqttUseCase = (*MqttService)(nil)
 
 type connection struct {
@@ -53,7 +59,7 @@ func NewMqttService(emitter cmn.Emitter, clientFactory domain.BrokerClientFactor
 // Connect は MQTT ブローカーへ接続し、接続 ID を返す。
 func (s *MqttService) Connect(config domain.ConnectionConfig) (string, error) {
 	if config.Broker == "" {
-		return "", &cmn.ValidationError{Field: "broker URL", Message: "is required"}
+		return "", &cmn.ValidationError{Field: "broker URL", Message: msgIsRequired}
 	}
 
 	connID := uuid.New().String()
@@ -70,14 +76,14 @@ func (s *MqttService) Connect(config domain.ConnectionConfig) (string, error) {
 		func() {
 			s.logger.Info("MQTT connected", "source", "mqtt", "connection_id", connID, "broker", config.Broker)
 			s.emitter.Emit(eventConnected, map[string]any{
-				"connectionId": connID,
+				keyConnectionID: connID,
 			})
 		},
 		func(err error) {
 			s.logger.Error("MQTT connection lost", "source", "mqtt", "connection_id", connID, "error", err)
 			s.emitter.Emit(eventConnectionLost, map[string]any{
-				"connectionId": connID,
-				"error":        err.Error(),
+				keyConnectionID: connID,
+				"error":         err.Error(),
 			})
 		},
 	)
@@ -93,8 +99,8 @@ func (s *MqttService) Connect(config domain.ConnectionConfig) (string, error) {
 			s.mu.Unlock()
 			s.logger.Error("MQTT connection failed", "source", "mqtt", "connection_id", connID, "error", err)
 			s.emitter.Emit(eventConnectionFailed, map[string]any{
-				"connectionId": connID,
-				"error":        err.Error(),
+				keyConnectionID: connID,
+				"error":         err.Error(),
 			})
 		}
 	})
@@ -117,7 +123,7 @@ func (s *MqttService) Disconnect(connectionID string) error {
 
 	s.logger.Info("MQTT disconnected", "source", "mqtt", "connection_id", connectionID)
 	s.emitter.Emit(eventDisconnected, map[string]any{
-		"connectionId": connectionID,
+		keyConnectionID: connectionID,
 	})
 	return nil
 }
@@ -137,7 +143,7 @@ func (s *MqttService) withConn(id string, fn func(conn *connection) error) error
 // Publish は指定トピックへメッセージを送信する。
 func (s *MqttService) Publish(connectionID, topic, payload string, qos byte, retain bool) error {
 	if topic == "" {
-		return &cmn.ValidationError{Field: "topic", Message: "is required"}
+		return &cmn.ValidationError{Field: fieldTopic, Message: msgIsRequired}
 	}
 	if qos > 2 {
 		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
@@ -150,7 +156,7 @@ func (s *MqttService) Publish(connectionID, topic, payload string, qos byte, ret
 // Subscribe は指定トピックの購読を開始する。
 func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
 	if topic == "" {
-		return &cmn.ValidationError{Field: "topic", Message: "is required"}
+		return &cmn.ValidationError{Field: fieldTopic, Message: msgIsRequired}
 	}
 	if qos > 2 {
 		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
@@ -174,7 +180,7 @@ func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
 // Unsubscribe は指定トピックの購読を解除する。
 func (s *MqttService) Unsubscribe(connectionID, topic string) error {
 	if topic == "" {
-		return &cmn.ValidationError{Field: "topic", Message: "is required"}
+		return &cmn.ValidationError{Field: fieldTopic, Message: msgIsRequired}
 	}
 	return s.withConn(connectionID, func(conn *connection) error {
 		return conn.client.Unsubscribe(topic)

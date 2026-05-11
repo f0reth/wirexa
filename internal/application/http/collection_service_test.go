@@ -8,7 +8,13 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
-const sidebarKindItem = "item"
+const (
+	testColNameMyAPI = "My API"
+	testColNameApple = "Apple"
+	testColNameMango = "Mango"
+	testColNameZebra = "Zebra"
+	testReqName      = "Req"
+)
 
 type inMemoryRepo struct {
 	mu          sync.Mutex
@@ -63,12 +69,12 @@ func TestCollectionService_Create(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
-	col, err := svc.CreateCollection("My API")
+	col, err := svc.CreateCollection(testColNameMyAPI)
 	if err != nil {
 		t.Fatalf("CreateCollection: %v", err)
 	}
-	if col.Name != "My API" {
-		t.Errorf("got name %q, want %q", col.Name, "My API")
+	if col.Name != testColNameMyAPI {
+		t.Errorf("got name %q, want %q", col.Name, testColNameMyAPI)
 	}
 	if col.ID == "" {
 		t.Error("expected non-empty ID")
@@ -113,15 +119,15 @@ func TestCollectionService_GetCollections_Empty(t *testing.T) {
 
 func TestCollectionService_GetCollections_SortedByName(t *testing.T) {
 	svc := newSvc(t)
-	mustCreate(t, svc, "Zebra")
-	mustCreate(t, svc, "Apple")
-	mustCreate(t, svc, "Mango")
+	mustCreate(t, svc, testColNameZebra)
+	mustCreate(t, svc, testColNameApple)
+	mustCreate(t, svc, testColNameMango)
 
 	cols := svc.GetCollections()
 	if len(cols) != 3 {
 		t.Fatalf("expected 3, got %d", len(cols))
 	}
-	if cols[0].Name != "Apple" || cols[1].Name != "Mango" || cols[2].Name != "Zebra" {
+	if cols[0].Name != testColNameApple || cols[1].Name != testColNameMango || cols[2].Name != testColNameZebra {
 		t.Errorf("not sorted: %v %v %v", cols[0].Name, cols[1].Name, cols[2].Name)
 	}
 }
@@ -219,7 +225,7 @@ func TestCollectionService_AddFolder_ParentNotFound(t *testing.T) {
 func TestCollectionService_AddFolder_ParentIsRequest(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HttpRequest{ID: "r1", Name: "Req"}
+	req := domain.HttpRequest{ID: "r1", Name: testReqName}
 	item, _ := svc.AddRequest(col.ID, "", req)
 
 	_, err := svc.AddFolder(col.ID, item.ID, "Folder")
@@ -259,7 +265,7 @@ func TestCollectionService_AddRequest_AutoGeneratesID(t *testing.T) {
 
 func TestCollectionService_AddRequest_CollectionNotFound(t *testing.T) {
 	svc := newSvc(t)
-	req := domain.HttpRequest{Name: "Req"}
+	req := domain.HttpRequest{Name: testReqName}
 	_, err := svc.AddRequest("nonexistent", "", req)
 	if err == nil {
 		t.Error("expected error, got nil")
@@ -270,7 +276,7 @@ func TestCollectionService_AddRequest_ToFolder(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
 	folder, _ := svc.AddFolder(col.ID, "", "Folder")
-	req := domain.HttpRequest{ID: "r1", Name: "Req"}
+	req := domain.HttpRequest{ID: "r1", Name: testReqName}
 
 	item, err := svc.AddRequest(col.ID, folder.ID, req)
 	if err != nil {
@@ -286,7 +292,7 @@ func TestCollectionService_AddRequest_ToFolder(t *testing.T) {
 func TestCollectionService_AddRequest_ParentNotFound(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HttpRequest{Name: "Req"}
+	req := domain.HttpRequest{Name: testReqName}
 	_, err := svc.AddRequest(col.ID, "nonexistent", req)
 	if err == nil {
 		t.Error("expected error, got nil")
@@ -320,7 +326,7 @@ func TestCollectionService_UpdateRequest_Success(t *testing.T) {
 func TestCollectionService_UpdateRequest_PreservesNameWhenEmpty(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HttpRequest{ID: "r1", Name: "My API", Method: "GET", URL: "http://old.com"}
+	req := domain.HttpRequest{ID: "r1", Name: testColNameMyAPI, Method: "GET", URL: "http://old.com"}
 	svc.AddRequest(col.ID, "", req)
 
 	updated := domain.HttpRequest{ID: "r1", Name: "", Method: "POST", URL: "http://new.com"}
@@ -330,8 +336,8 @@ func TestCollectionService_UpdateRequest_PreservesNameWhenEmpty(t *testing.T) {
 
 	cols := svc.GetCollections()
 	node := cols[0].Items[0]
-	if node.Name != "My API" {
-		t.Errorf("node.Name = %q, want %q (empty name must be ignored)", node.Name, "My API")
+	if node.Name != testColNameMyAPI {
+		t.Errorf("node.Name = %q, want %q (empty name must be ignored)", node.Name, testColNameMyAPI)
 	}
 }
 
@@ -403,7 +409,7 @@ func TestCollectionService_RenameItem_ItemNotFound(t *testing.T) {
 func TestCollectionService_DeleteItem_Success(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HttpRequest{ID: "r1", Name: "Req"}
+	req := domain.HttpRequest{ID: "r1", Name: testReqName}
 	svc.AddRequest(col.ID, "", req)
 
 	if err := svc.DeleteItem(col.ID, "r1"); err != nil {
@@ -479,9 +485,9 @@ func TestNewCollectionService_RepoLoadError(t *testing.T) {
 func TestNewCollectionService_OrderInitialization(t *testing.T) {
 	// 全コレクションの Order がゼロの場合、名前順で振り直される。
 	cols := map[string]*domain.Collection{
-		"c1": {ID: "c1", Name: "Zebra", Items: []*domain.TreeItem{}, Order: 0},
-		"c2": {ID: "c2", Name: "Apple", Items: []*domain.TreeItem{}, Order: 0},
-		"c3": {ID: "c3", Name: "Mango", Items: []*domain.TreeItem{}, Order: 0},
+		"c1": {ID: "c1", Name: testColNameZebra, Items: []*domain.TreeItem{}, Order: 0},
+		"c2": {ID: "c2", Name: testColNameApple, Items: []*domain.TreeItem{}, Order: 0},
+		"c3": {ID: "c3", Name: testColNameMango, Items: []*domain.TreeItem{}, Order: 0},
 	}
 	svc, err := NewCollectionService(&inMemoryRepo{collections: cols}, &inMemoryLayoutRepo{})
 	if err != nil {
@@ -491,7 +497,7 @@ func TestNewCollectionService_OrderInitialization(t *testing.T) {
 	if len(result) != 3 {
 		t.Fatalf("expected 3, got %d", len(result))
 	}
-	if result[0].Name != "Apple" || result[1].Name != "Mango" || result[2].Name != "Zebra" {
+	if result[0].Name != testColNameApple || result[1].Name != testColNameMango || result[2].Name != testColNameZebra {
 		t.Errorf("unexpected order: %v %v %v", result[0].Name, result[1].Name, result[2].Name)
 	}
 	if result[0].Order != 0 || result[1].Order != 1 || result[2].Order != 2 {
@@ -511,7 +517,7 @@ func TestCollectionService_GetRootItems_Empty(t *testing.T) {
 
 func TestCollectionService_GetRootItems_WithItems(t *testing.T) {
 	svc := newSvc(t)
-	req := domain.HttpRequest{ID: "r1", Name: "Req"}
+	req := domain.HttpRequest{ID: "r1", Name: testReqName}
 	if _, err := svc.AddRequest(domain.RootCollectionID, "", req); err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
@@ -683,8 +689,8 @@ func TestCollectionService_MoveItem_ToFolder(t *testing.T) {
 func TestCollectionService_GetSidebarLayout_ExistingLayout(t *testing.T) {
 	layoutRepo := &inMemoryLayoutRepo{
 		layout: []domain.SidebarEntry{
-			{Kind: "collection", ID: "c1"},
-			{Kind: "collection", ID: "c2"},
+			{Kind: sidebarKindCollection, ID: "c1"},
+			{Kind: sidebarKindCollection, ID: "c2"},
 		},
 	}
 	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
@@ -718,7 +724,7 @@ func TestCollectionService_GetSidebarLayout_FirstCall(t *testing.T) {
 
 	collectionEntries := make([]domain.SidebarEntry, 0)
 	for _, e := range layout {
-		if e.Kind == "collection" {
+		if e.Kind == sidebarKindCollection {
 			collectionEntries = append(collectionEntries, e)
 		}
 	}
@@ -735,7 +741,7 @@ func TestCollectionService_GetSidebarLayout_FirstCall(t *testing.T) {
 func TestCollectionService_MoveSidebarEntry_NotFound(t *testing.T) {
 	svc := newSvc(t)
 	// 空のレイアウトに対して存在しない ID を指定するとエラー。
-	err := svc.MoveSidebarEntry("collection", "nonexistent", 0)
+	err := svc.MoveSidebarEntry(sidebarKindCollection, "nonexistent", 0)
 	if err == nil {
 		t.Error("expected error, got nil")
 	}
@@ -744,9 +750,9 @@ func TestCollectionService_MoveSidebarEntry_NotFound(t *testing.T) {
 func TestCollectionService_MoveSidebarEntry_Success(t *testing.T) {
 	layoutRepo := &inMemoryLayoutRepo{
 		layout: []domain.SidebarEntry{
-			{Kind: "collection", ID: "c1"},
-			{Kind: "collection", ID: "c2"},
-			{Kind: "collection", ID: "c3"},
+			{Kind: sidebarKindCollection, ID: "c1"},
+			{Kind: sidebarKindCollection, ID: "c2"},
+			{Kind: sidebarKindCollection, ID: "c3"},
 		},
 	}
 	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
@@ -754,7 +760,7 @@ func TestCollectionService_MoveSidebarEntry_Success(t *testing.T) {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
 	// c3 を position 0 に移動 → [c3, c1, c2]
-	if err := svc.MoveSidebarEntry("collection", "c3", 0); err != nil {
+	if err := svc.MoveSidebarEntry(sidebarKindCollection, "c3", 0); err != nil {
 		t.Fatalf("MoveSidebarEntry: %v", err)
 	}
 	layout, _ := svc.GetSidebarLayout()
