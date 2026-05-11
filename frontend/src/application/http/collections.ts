@@ -7,25 +7,19 @@ import type {
   TreeItem,
 } from "../../domain/http/types";
 import { ROOT_COLLECTION_ID } from "../../domain/http/types";
+import {
+  loadFromStorage,
+  saveToStorage,
+} from "../../infrastructure/storage/local-storage";
 
 const STORAGE_KEY = "wirexa:http:expandedFolders";
 
 function loadExpandedIds(): Record<string, boolean> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {
-    // ignore
-  }
-  return {};
+  return loadFromStorage<Record<string, boolean>>(STORAGE_KEY, {});
 }
 
 function saveExpandedIds(ids: Record<string, boolean>): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
-  } catch {
-    // ignore
-  }
+  saveToStorage(STORAGE_KEY, ids);
 }
 
 export interface CollectionsApi {

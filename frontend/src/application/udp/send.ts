@@ -10,6 +10,7 @@ import type {
   UdpTarget,
 } from "../../domain/udp/types";
 import { FIELD_TYPE_SIZES } from "../../domain/udp/types";
+import { generateId } from "../../infrastructure/id/generator";
 import { withLoading } from "../../shared/async-op";
 
 /** UI 管理用 id を付加したアプリケーション層のフィールド型。 */
@@ -45,7 +46,7 @@ export function createUdpSendState(api: UdpSendApi, logger: Logger) {
     const fieldType = field?.fieldType ?? "string";
     const fixedSize = FIELD_TYPE_SIZES[fieldType];
     const newField: FixedLengthFieldState = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       name: field?.name ?? "",
       fieldType,
       length: field?.length ?? (fixedSize !== undefined ? fixedSize : 1),
