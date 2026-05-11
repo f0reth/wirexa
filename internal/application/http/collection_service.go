@@ -209,6 +209,9 @@ func (s *CollectionService) RenameCollection(id, name string) error {
 // MoveCollection はコレクションを指定の位置に並び替える。
 // position は 0 始まりの挿入先インデックス。
 func (s *CollectionService) MoveCollection(collectionID string, position int) error {
+	if collectionID == domain.RootCollectionID {
+		return &cmn.ValidationError{Field: "collectionID", Message: "cannot move root collection"}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -448,6 +451,9 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 // GetSidebarLayout はサイドバーレイアウトを返す。
 // ファイルが存在しない場合は既存コレクションを Order 順で並べた初期値を生成して保存する。
 func (s *CollectionService) GetSidebarLayout() ([]domain.SidebarEntry, error) {
+	s.layoutMu.Lock()
+	defer s.layoutMu.Unlock()
+
 	layout, err := s.layoutRepo.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sidebar layout: %w", err)
