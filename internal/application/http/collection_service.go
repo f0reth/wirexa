@@ -23,6 +23,7 @@ type CollectionService struct {
 	repo       domain.CollectionRepository
 	layoutRepo domain.SidebarLayoutRepository
 	mu         sync.RWMutex
+	layoutMu   sync.Mutex
 	cache      map[string]*domain.Collection
 }
 
@@ -140,16 +141,19 @@ func (s *CollectionService) CreateCollection(name string) (domain.Collection, er
 
 // appendLayoutEntry はレイアウトの末尾にエントリを追加する。
 func (s *CollectionService) appendLayoutEntry(entry domain.SidebarEntry) error {
+	s.layoutMu.Lock()
+	defer s.layoutMu.Unlock()
 	layout, err := s.layoutRepo.Load()
 	if err != nil {
 		return err
 	}
-	layout = append(layout, entry)
-	return s.layoutRepo.Save(layout)
+	return s.layoutRepo.Save(append(layout, entry))
 }
 
 // removeLayoutEntry はレイアウトから指定 kind+ID のエントリを削除する。
 func (s *CollectionService) removeLayoutEntry(kind, id string) error {
+	s.layoutMu.Lock()
+	defer s.layoutMu.Unlock()
 	layout, err := s.layoutRepo.Load()
 	if err != nil {
 		return err
@@ -506,9 +510,15 @@ func (s *CollectionService) GetSidebarLayout() ([]domain.SidebarEntry, error) {
 
 // MoveSidebarEntry はサイドバー上のエントリを指定位置に移動する。
 func (s *CollectionService) MoveSidebarEntry(kind, id string, position int) error {
-	layout, err := s.GetSidebarLayout()
+	s.layoutMu.Lock()
+	defer s.layoutMu.Unlock()
+
+	layout, err := s.layoutRepo.Load()
 	if err != nil {
 		return err
+	}
+	if len(layout) == 0 {
+		return &cmn.NotFoundError{Resource: "sidebar entry", ID: id}
 	}
 
 	srcIdx := -1
@@ -571,15 +581,15 @@ func (s *CollectionService) MoveItemToSidebar(sourceCollectionID, itemID string,
 	}
 	s.mu.Unlock()
 
-	// レイアウト更新: エントリを追加して指定位置に移動する。
-	layout, err := s.GetSidebarLayout()
+	s.layoutMu.Lock()
+	defer s.layoutMu.Unlock()
+
+	layout, err := s.layoutRepo.Load()
 	if err != nil {
 		return err
 	}
-	layout = append(layout, domain.SidebarEntry{Kind: sidebarKindItem, ID: itemID})
-	entry := layout[len(layout)-1]
-	layout = layout[:len(layout)-1]
 
+	entry := domain.SidebarEntry{Kind: sidebarKindItem, ID: itemID}
 	if sidebarPosition < 0 || sidebarPosition >= len(layout) {
 		layout = append(layout, entry)
 	} else {
