@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,20 +58,34 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// mqttMockEmitter はテスト用の Emitter 実装。受信 MQTT メッセージをチャンネルで収集する。
+// mqttMockEmitter はテスト用の Emitter 実装。受信 MQTT メッセージとイベントをチャンネルで収集する。
 type mqttMockEmitter struct {
-	ch chan mqttdomain.MqttMessage
+	ch     chan mqttdomain.MqttMessage
+	failCh chan string // mqtt:connection-failed イベントの connectionId を受信する
 }
 
 func newMqttMockEmitter() *mqttMockEmitter {
-	return &mqttMockEmitter{ch: make(chan mqttdomain.MqttMessage, 16)}
+	return &mqttMockEmitter{
+		ch:     make(chan mqttdomain.MqttMessage, 16),
+		failCh: make(chan string, 16),
+	}
 }
 
-func (e *mqttMockEmitter) Emit(_ string, data any) {
+func (e *mqttMockEmitter) Emit(event string, data any) {
 	if msg, ok := data.(mqttdomain.MqttMessage); ok {
 		select {
 		case e.ch <- msg:
 		default:
+		}
+	}
+	if event == "mqtt:connection-failed" {
+		if m, ok := data.(map[string]any); ok {
+			if id, ok := m["connectionId"].(string); ok {
+				select {
+				case e.failCh <- id:
+				default:
+				}
+			}
 		}
 	}
 }
@@ -97,10 +112,22 @@ func (e *mqttMockEmitter) noMessage(t *testing.T, wait time.Duration) {
 	}
 }
 
-// newMQTTHandler は統合テスト用に MqttHandler を DI で組み立てる。
-func newMQTTHandler(t *testing.T, emitter cmndomain.Emitter) *adapters.MqttHandler {
+// waitConnectionFailed はタイムアウト付きで接続失敗イベントを待機し connectionId を返す。
+func (e *mqttMockEmitter) waitConnectionFailed(t *testing.T, timeout time.Duration) string {
 	t.Helper()
-	repo, err := infra.NewJSONStore(t.TempDir(), func(p *mqttdomain.BrokerProfile) string { return p.ID })
+	select {
+	case id := <-e.failCh:
+		return id
+	case <-time.After(timeout):
+		t.Fatal("timeout waiting for connection-failed event")
+		return ""
+	}
+}
+
+// newMQTTHandlerWithDir は指定ディレクトリから MqttHandler を組み立てる（永続化テスト用）。
+func newMQTTHandlerWithDir(t *testing.T, emitter cmndomain.Emitter, dir string) *adapters.MqttHandler {
+	t.Helper()
+	repo, err := infra.NewJSONStore(dir, func(p *mqttdomain.BrokerProfile) string { return p.ID })
 	if err != nil {
 		t.Fatalf("NewJSONStore: %v", err)
 	}
@@ -112,6 +139,29 @@ func newMQTTHandler(t *testing.T, emitter cmndomain.Emitter) *adapters.MqttHandl
 	h := &adapters.MqttHandler{}
 	adapters.SetupMqttHandler(h, mqttSvc, profileSvc)
 	return h
+}
+
+// newMQTTHandlerWithConfig は指定クライアント設定で MqttHandler を組み立てる（タイムアウトテスト用）。
+func newMQTTHandlerWithConfig(t *testing.T, emitter cmndomain.Emitter, cfg mqttinfra.MqttClientConfig) *adapters.MqttHandler {
+	t.Helper()
+	repo, err := infra.NewJSONStore(t.TempDir(), func(p *mqttdomain.BrokerProfile) string { return p.ID })
+	if err != nil {
+		t.Fatalf("NewJSONStore: %v", err)
+	}
+	profileSvc, err := mqttapp.NewProfileService(repo)
+	if err != nil {
+		t.Fatalf("NewProfileService: %v", err)
+	}
+	mqttSvc := mqttapp.NewMqttService(emitter, mqttinfra.NewPahoClientFactory(cfg), testutil.NoopLogger{})
+	h := &adapters.MqttHandler{}
+	adapters.SetupMqttHandler(h, mqttSvc, profileSvc)
+	return h
+}
+
+// newMQTTHandler は統合テスト用に MqttHandler を DI で組み立てる。
+func newMQTTHandler(t *testing.T, emitter cmndomain.Emitter) *adapters.MqttHandler {
+	t.Helper()
+	return newMQTTHandlerWithDir(t, emitter, t.TempDir())
 }
 
 // connectBroker は brokerAddr へ接続して connectionID を返すヘルパー。
@@ -372,5 +422,247 @@ func TestMQTT_Shutdown(t *testing.T) {
 
 	if conns := h.GetConnections(); len(conns) != 0 {
 		t.Errorf("expected 0 connections after shutdown, got %d", len(conns))
+	}
+}
+
+// TestMQTT_ProfilePersistenceRoundTrip は SaveProfile 後に同一 dir で再作成した Handler でデータが復元されることを確認する。
+func TestMQTT_ProfilePersistenceRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	emitter := newMqttMockEmitter()
+
+	// 1 回目: プロファイルを保存
+	h1 := newMQTTHandlerWithDir(t, emitter, dir)
+	profile := adapters.BrokerProfile{
+		ID:     uuid.New().String(),
+		Name:   "PersistProfile",
+		Broker: brokerAddr,
+	}
+	if err := h1.SaveProfile(profile); err != nil {
+		t.Fatalf("SaveProfile: %v", err)
+	}
+
+	// 2 回目: 同一 dir から Handler を再作成してデータを確認
+	h2 := newMQTTHandlerWithDir(t, emitter, dir)
+	profiles := h2.GetProfiles()
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile after reload, got %d", len(profiles))
+	}
+	if profiles[0].ID != profile.ID {
+		t.Errorf("profile ID = %q, want %q", profiles[0].ID, profile.ID)
+	}
+	if profiles[0].Name != "PersistProfile" {
+		t.Errorf("profile Name = %q, want PersistProfile", profiles[0].Name)
+	}
+}
+
+// TestMQTT_Connect_UnreachableBroker は到達不能ブローカーへの接続失敗後に接続エントリが削除されることを確認する。
+func TestMQTT_Connect_UnreachableBroker(t *testing.T) {
+	emitter := newMqttMockEmitter()
+	// 短いタイムアウトを設定してテストを高速化する
+	h := newMQTTHandlerWithConfig(t, emitter, mqttinfra.MqttClientConfig{
+		ConnectTimeout: 1 * time.Second,
+		TokenTimeout:   3 * time.Second,
+	})
+
+	// 空きポート番号を取得し（何もリッスンしていない）、接続を試みる
+	port := freePort(t)
+	unreachableBroker := fmt.Sprintf("tcp://127.0.0.1:%d", port)
+
+	connID, err := h.Connect(adapters.ConnectionConfig{
+		Name:   "unreachable",
+		Broker: unreachableBroker,
+	})
+	if err != nil {
+		t.Fatalf("Connect returned unexpected synchronous error: %v", err)
+	}
+
+	// 接続失敗イベントを待機し connectionId が一致することを確認する
+	failedID := emitter.waitConnectionFailed(t, 10*time.Second)
+	if failedID != connID {
+		t.Errorf("connection-failed event ID = %q, want %q", failedID, connID)
+	}
+
+	// 接続エントリが s.conns から削除されていることを確認する
+	if conns := h.GetConnections(); len(conns) != 0 {
+		t.Errorf("expected 0 connections after failure, got %d", len(conns))
+	}
+}
+
+// TestMQTT_Connect_EmptyBroker は Broker が空文字列のとき ValidationError が返ることを確認する。
+func TestMQTT_Connect_EmptyBroker(t *testing.T) {
+	emitter := newMqttMockEmitter()
+	h := newMQTTHandler(t, emitter)
+
+	_, err := h.Connect(adapters.ConnectionConfig{Name: "empty", Broker: ""})
+	if err == nil {
+		t.Error("expected error for empty broker, got nil")
+	}
+}
+
+// TestMQTT_Publish_InvalidInput は topic 空文字または qos>2 で ValidationError が返ることを確認する。
+func TestMQTT_Publish_InvalidInput(t *testing.T) {
+	emitter := newMqttMockEmitter()
+	h := newMQTTHandler(t, emitter)
+
+	connID := connectBroker(t, h, "pub-invalid")
+	t.Cleanup(func() { _ = h.Disconnect(connID) })
+	waitConnected(t, h, connID, 5*time.Second)
+
+	t.Run("empty_topic", func(t *testing.T) {
+		if err := h.Publish(connID, "", "payload", 0, false); err == nil {
+			t.Error("expected error for empty topic, got nil")
+		}
+	})
+
+	t.Run("qos_too_high", func(t *testing.T) {
+		if err := h.Publish(connID, "test/invalid", "payload", 3, false); err == nil {
+			t.Error("expected error for qos=3, got nil")
+		}
+	})
+}
+
+// TestMQTT_Subscribe_InvalidInput は topic 空文字または qos>2 で ValidationError が返ることを確認する。
+func TestMQTT_Subscribe_InvalidInput(t *testing.T) {
+	emitter := newMqttMockEmitter()
+	h := newMQTTHandler(t, emitter)
+
+	connID := connectBroker(t, h, "sub-invalid")
+	t.Cleanup(func() { _ = h.Disconnect(connID) })
+	waitConnected(t, h, connID, 5*time.Second)
+
+	t.Run("empty_topic", func(t *testing.T) {
+		if err := h.Subscribe(connID, "", 0); err == nil {
+			t.Error("expected error for empty topic, got nil")
+		}
+	})
+
+	t.Run("qos_too_high", func(t *testing.T) {
+		if err := h.Subscribe(connID, "test/invalid", 3); err == nil {
+			t.Error("expected error for qos=3, got nil")
+		}
+	})
+}
+
+// TestMQTT_Disconnect_NotFound は存在しない connectionID で Disconnect を呼ぶと error が返ることを確認する。
+func TestMQTT_Disconnect_NotFound(t *testing.T) {
+	emitter := newMqttMockEmitter()
+	h := newMQTTHandler(t, emitter)
+
+	if err := h.Disconnect("nonexistent-id"); err == nil {
+		t.Error("expected error for nonexistent connection, got nil")
+	}
+}
+
+// TestMQTT_Disconnect_Twice は同じ connectionID に対して 2 回目の Disconnect が error を返すことを確認する。
+func TestMQTT_Disconnect_Twice(t *testing.T) {
+	emitter := newMqttMockEmitter()
+	h := newMQTTHandler(t, emitter)
+
+	connID := connectBroker(t, h, "twice")
+	waitConnected(t, h, connID, 5*time.Second)
+
+	if err := h.Disconnect(connID); err != nil {
+		t.Fatalf("first Disconnect: %v", err)
+	}
+
+	if err := h.Disconnect(connID); err == nil {
+		t.Error("expected error on second Disconnect, got nil")
+	}
+}
+
+// TestMQTT_Subscribe_Wildcard はワイルドカードトピックでサブトピックのメッセージが届くことを確認する。
+func TestMQTT_Subscribe_Wildcard(t *testing.T) {
+	emitter := newMqttMockEmitter()
+	h := newMQTTHandler(t, emitter)
+
+	connID := connectBroker(t, h, "wildcard")
+	t.Cleanup(func() { _ = h.Disconnect(connID) })
+	waitConnected(t, h, connID, 5*time.Second)
+
+	// ワイルドカードトピックを購読
+	if err := h.Subscribe(connID, "test/wild/#", 0); err != nil {
+		t.Fatalf("Subscribe wildcard: %v", err)
+	}
+
+	// サブトピックに Publish
+	if err := h.Publish(connID, "test/wild/specific", "wildcard-msg", 0, false); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	msg := emitter.receiveMessage(t, 5*time.Second)
+	if msg.Topic != "test/wild/specific" {
+		t.Errorf("Topic = %q, want test/wild/specific", msg.Topic)
+	}
+	if msg.Payload != "wildcard-msg" {
+		t.Errorf("Payload = %q, want wildcard-msg", msg.Payload)
+	}
+}
+
+// TestMQTT_SubscribePublishQoS2 は QoS 2 でメッセージが確実に届くことを確認する。
+func TestMQTT_SubscribePublishQoS2(t *testing.T) {
+	emitter := newMqttMockEmitter()
+	h := newMQTTHandler(t, emitter)
+
+	connID := connectBroker(t, h, "qos2")
+	t.Cleanup(func() { _ = h.Disconnect(connID) })
+	waitConnected(t, h, connID, 5*time.Second)
+
+	if err := h.Subscribe(connID, "test/qos2", 2); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	if err := h.Publish(connID, "test/qos2", "hello-qos2", 2, false); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	msg := emitter.receiveMessage(t, 5*time.Second)
+	if msg.Payload != "hello-qos2" {
+		t.Errorf("Payload = %q, want hello-qos2", msg.Payload)
+	}
+}
+
+// TestMQTT_Unsubscribe_EmptyTopic は topic が空文字列のとき ValidationError が返ることを確認する。
+func TestMQTT_Unsubscribe_EmptyTopic(t *testing.T) {
+	emitter := newMqttMockEmitter()
+	h := newMQTTHandler(t, emitter)
+
+	connID := connectBroker(t, h, "unsub-empty")
+	t.Cleanup(func() { _ = h.Disconnect(connID) })
+	waitConnected(t, h, connID, 5*time.Second)
+
+	if err := h.Unsubscribe(connID, ""); err == nil {
+		t.Error("expected error for empty topic, got nil")
+	}
+}
+
+// TestMQTT_Connect_Concurrent は複数 goroutine から並行して Connect / Disconnect を呼んでも安全であることを確認する。
+func TestMQTT_Connect_Concurrent(t *testing.T) {
+	emitter := newMqttMockEmitter()
+	h := newMQTTHandler(t, emitter)
+	t.Cleanup(func() { h.Shutdown() })
+
+	const n = 5
+	var wg sync.WaitGroup
+	ids := make(chan string, n)
+
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			id, err := h.Connect(adapters.ConnectionConfig{
+				Name:   "concurrent",
+				Broker: brokerAddr,
+			})
+			if err == nil {
+				ids <- id
+			}
+		}()
+	}
+	wg.Wait()
+	close(ids)
+
+	// 全接続を切断する
+	for id := range ids {
+		_ = h.Disconnect(id)
 	}
 }
