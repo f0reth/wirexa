@@ -226,7 +226,9 @@ export function createConnectionsState(
 
   // Wails イベントリスナー登録 → onCleanup で解除
   const cancelMessage = onEvent("mqtt:message", (data) => {
-    messageBuffer.push(data as RawMessage);
+    if (messageBuffer.length < 5000) {
+      messageBuffer.push(data as RawMessage);
+    }
     if (!flushScheduled) {
       flushScheduled = true;
       requestAnimationFrame(flushMessages);

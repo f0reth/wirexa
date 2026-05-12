@@ -70,11 +70,11 @@ export function createSubscriptionsState(
   };
 
   const removeSubscription = async (id: string) => {
-    const connId = activeConnection()?.connectionId;
-    if (!connId) return;
-    const sub = subscriptions().find((s) => s.id === id);
-    if (!sub) return;
     const conn = activeConnection();
+    const connId = conn?.connectionId;
+    if (!connId) return;
+    const sub = conn?.subscriptions.find((s) => s.id === id);
+    if (!sub) return;
     if (conn?.type === "online" && conn.connected) {
       try {
         await api.unsubscribe(connId, sub.topic);
