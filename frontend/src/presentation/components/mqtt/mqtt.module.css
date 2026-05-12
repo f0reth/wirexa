@@ -586,18 +586,25 @@
   background-color: var(--item-hover-bg);
 }
 
+.presetItemSelected {
+  background-color: var(--color-accent);
+  border-color: var(--border-prominent);
+}
+
 .presetItemBody {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 0.25rem;
   text-align: left;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--color-foreground);
-  font-family: inherit;
   min-width: 0;
+}
+
+.presetNameInlineInput {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  height: 1.5rem;
+  padding: 0 0.25rem;
 }
 
 .presetName {

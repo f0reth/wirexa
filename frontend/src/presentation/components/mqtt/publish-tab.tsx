@@ -1,5 +1,5 @@
 import { Save, Send, Trash2 } from "lucide-solid";
-import { createSignal, For, Show } from "solid-js";
+import { batch, createEffect, createSignal, For, on, Show } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -24,7 +24,14 @@ function PresetsPanel(props: {
   publishQos: () => number;
   onLoadPreset: (preset: PublishPreset) => void;
 }) {
-  const { presets, savePreset, removePreset } = useMqttPublish();
+  const {
+    presets,
+    savePreset,
+    removePreset,
+    updatePreset,
+    selectedPresetId,
+    setSelectedPresetId,
+  } = useMqttPublish();
   const [presetName, setPresetName] = createSignal("");
 
   const handleSavePreset = () => {
@@ -36,6 +43,13 @@ function PresetsPanel(props: {
       qos: props.publishQos() as 0 | 1 | 2,
     });
     setPresetName("");
+  };
+
+  const handlePresetClick = (preset: PublishPreset) => {
+    batch(() => {
+      setSelectedPresetId(preset.id);
+      props.onLoadPreset(preset);
+    });
   };
 
   return (
@@ -69,27 +83,60 @@ function PresetsPanel(props: {
           >
             <div class={styles.itemList}>
               <For each={presets()}>
-                {(preset) => (
-                  <div class={styles.presetItem}>
-                    <button
-                      type="button"
-                      class={styles.presetItemBody}
-                      onClick={() => props.onLoadPreset(preset)}
+                {(preset) => {
+                  const isSelected = () => selectedPresetId() === preset.id;
+                  return (
+                    // biome-ignore lint/a11y/useSemanticElements: contains nested interactive elements (delete button, name input); button cannot contain button
+                    <div
+                      class={`${styles.presetItem}${isSelected() ? ` ${styles.presetItemSelected}` : ""}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        if (!isSelected()) handlePresetClick(preset);
+                      }}
+                      onKeyDown={(e) => {
+                        if (
+                          (e.key === "Enter" || e.key === " ") &&
+                          !isSelected()
+                        )
+                          handlePresetClick(preset);
+                      }}
                     >
-                      <span class={styles.presetName}>{preset.name}</span>
-                      <span class={styles.presetTopic}>{preset.topic}</span>
-                      <Badge variant="secondary">QoS {preset.qos}</Badge>
-                    </button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removePreset(preset.id)}
-                      class={styles.deleteButton}
-                    >
-                      <Trash2 size={16} />
-                    </Button>
-                  </div>
-                )}
+                      <div class={styles.presetItemBody}>
+                        <Show
+                          when={isSelected()}
+                          fallback={
+                            <span class={styles.presetName}>{preset.name}</span>
+                          }
+                        >
+                          <Input
+                            value={preset.name}
+                            onInput={(e) =>
+                              updatePreset(preset.id, {
+                                name: e.currentTarget.value,
+                              })
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                            class={styles.presetNameInlineInput}
+                          />
+                        </Show>
+                        <span class={styles.presetTopic}>{preset.topic}</span>
+                        <Badge variant="secondary">QoS {preset.qos}</Badge>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removePreset(preset.id);
+                        }}
+                        class={styles.deleteButton}
+                      >
+                        <Trash2 size={16} />
+                      </Button>
+                    </div>
+                  );
+                }}
               </For>
             </div>
           </Show>
@@ -166,6 +213,28 @@ export function PublishTab() {
   const [publishTopic, setPublishTopic] = createSignal("");
   const [publishPayload, setPublishPayload] = createSignal("");
   const [publishQos, setPublishQos] = createSignal<number>(0);
+
+  const { presets, updatePreset, selectedPresetId } = useMqttPublish();
+
+  createEffect(
+    on(
+      [publishTopic, publishPayload, publishQos],
+      ([topic, payload, qos]) => {
+        const id = selectedPresetId();
+        if (!id) return;
+        const current = presets().find((p) => p.id === id);
+        if (
+          current &&
+          current.topic === topic &&
+          current.payload === payload &&
+          current.qos === qos
+        )
+          return;
+        updatePreset(id, { topic, payload, qos: qos as 0 | 1 | 2 });
+      },
+      { defer: true },
+    ),
+  );
 
   const handleLoadPreset = (preset: PublishPreset) => {
     setPublishTopic(preset.topic);
