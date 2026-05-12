@@ -82,6 +82,12 @@ export interface PublishContextValue {
   presets: Accessor<PublishPreset[]>;
   savePreset: (preset: Omit<PublishPreset, "id">) => void;
   removePreset: (id: string) => void;
+  updatePreset: (
+    id: string,
+    updates: Partial<Omit<PublishPreset, "id">>,
+  ) => void;
+  selectedPresetId: Accessor<string | null>;
+  setSelectedPresetId: Setter<string | null>;
   publish: (topic: string, payload: string, qos: number) => Promise<void>;
 }
 

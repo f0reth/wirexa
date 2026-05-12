@@ -6,11 +6,27 @@ export type { PresetStorage };
 
 export function createPresetsState(storage: PresetStorage) {
   const [presets, setPresets] = createSignal<PublishPreset[]>(storage.load());
+  const [selectedPresetId, setSelectedPresetId] = createSignal<string | null>(
+    null,
+  );
 
   function savePreset(preset: Omit<PublishPreset, "id">) {
-    const newPreset: PublishPreset = { ...preset, id: crypto.randomUUID() };
+    const id = crypto.randomUUID();
+    const newPreset: PublishPreset = { ...preset, id };
     setPresets((prev) => {
       const next = [...prev, newPreset];
+      storage.save(next);
+      return next;
+    });
+    setSelectedPresetId(id);
+  }
+
+  function updatePreset(
+    id: string,
+    updates: Partial<Omit<PublishPreset, "id">>,
+  ) {
+    setPresets((prev) => {
+      const next = prev.map((p) => (p.id === id ? { ...p, ...updates } : p));
       storage.save(next);
       return next;
     });
@@ -22,7 +38,15 @@ export function createPresetsState(storage: PresetStorage) {
       storage.save(next);
       return next;
     });
+    setSelectedPresetId((prev) => (prev === id ? null : prev));
   }
 
-  return { presets, savePreset, removePreset };
+  return {
+    presets,
+    savePreset,
+    updatePreset,
+    removePreset,
+    selectedPresetId,
+    setSelectedPresetId,
+  };
 }
