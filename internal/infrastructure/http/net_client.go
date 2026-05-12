@@ -1,3 +1,4 @@
+// Package httpinfra は HTTP インフラストラクチャ層を提供する。
 package httpinfra
 
 import (

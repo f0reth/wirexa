@@ -1,3 +1,4 @@
+// Package udpinfra は UDP インフラストラクチャ層を提供する。
 package udpinfra
 
 import (

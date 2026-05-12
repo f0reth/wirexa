@@ -14,7 +14,8 @@ import (
 
 	"github.com/f0reth/Wirexa/internal/adapters"
 	httpapp "github.com/f0reth/Wirexa/internal/application/http"
-	domain "github.com/f0reth/Wirexa/internal/domain/http"
+	httpdomain "github.com/f0reth/Wirexa/internal/domain/http"
+	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 	httpinfra "github.com/f0reth/Wirexa/internal/infrastructure/http"
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
@@ -23,9 +24,9 @@ import (
 func newHTTPHandler(t *testing.T) *adapters.HttpHandler {
 	t.Helper()
 	dir := t.TempDir()
-	repo, err := httpinfra.NewJSONFileRepository(dir)
+	repo, err := infra.NewJSONStore(dir, func(c *httpdomain.Collection) string { return c.ID })
 	if err != nil {
-		t.Fatalf("NewJSONFileRepository: %v", err)
+		t.Fatalf("NewJSONStore: %v", err)
 	}
 	layoutRepo := httpinfra.NewSidebarLayoutRepository(filepath.Join(dir, "sidebar_layout.json"))
 	collSvc, err := httpapp.NewCollectionService(repo, layoutRepo)
@@ -106,13 +107,13 @@ func TestHTTP_FolderAndRequestTree(t *testing.T) {
 		t.Fatalf("expected 1 root item, got %d", len(cols[0].Items))
 	}
 	rootFolder := cols[0].Items[0]
-	if rootFolder.Type != domain.ItemTypeFolder {
+	if rootFolder.Type != httpdomain.ItemTypeFolder {
 		t.Errorf("root item type = %q, want folder", rootFolder.Type)
 	}
 	if len(rootFolder.Children) != 1 {
 		t.Fatalf("expected 1 child, got %d", len(rootFolder.Children))
 	}
-	if rootFolder.Children[0].Type != domain.ItemTypeRequest {
+	if rootFolder.Children[0].Type != httpdomain.ItemTypeRequest {
 		t.Errorf("child type = %q, want request", rootFolder.Children[0].Type)
 	}
 }

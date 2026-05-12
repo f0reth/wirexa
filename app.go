@@ -11,10 +11,20 @@ import (
 	httpapp "github.com/f0reth/Wirexa/internal/application/http"
 	mqttapp "github.com/f0reth/Wirexa/internal/application/mqtt"
 	udpapp "github.com/f0reth/Wirexa/internal/application/udp"
+	httpdomain "github.com/f0reth/Wirexa/internal/domain/http"
+	mqttdomain "github.com/f0reth/Wirexa/internal/domain/mqtt"
+	udpdomain "github.com/f0reth/Wirexa/internal/domain/udp"
 	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 	httpinfra "github.com/f0reth/Wirexa/internal/infrastructure/http"
 	mqttinfra "github.com/f0reth/Wirexa/internal/infrastructure/mqtt"
 	udpinfra "github.com/f0reth/Wirexa/internal/infrastructure/udp"
+)
+
+// コンパイル時に各ドメインインターフェースを JSONStore[T] が満たすことを検証
+var (
+	_ httpdomain.CollectionRepository = (*infra.JSONStore[httpdomain.Collection])(nil)
+	_ mqttdomain.ProfileRepository    = (*infra.JSONStore[mqttdomain.BrokerProfile])(nil)
+	_ udpdomain.TargetRepository      = (*infra.JSONStore[udpdomain.UdpTarget])(nil)
 )
 
 const wirexaConfigDir = "Wirexa"
@@ -53,7 +63,10 @@ func (a *App) startup(ctx context.Context) {
 	clientFactory := mqttinfra.NewPahoClientFactory(mqttinfra.MqttClientConfig{})
 	mqttSvc := mqttapp.NewMqttService(emitter, clientFactory, logger)
 
-	profileRepo, err := mqttinfra.NewJSONProfileRepository(filepath.Join(configDir, wirexaConfigDir, "mqtt-profiles"))
+	profileRepo, err := infra.NewJSONStore(
+		filepath.Join(configDir, wirexaConfigDir, "mqtt-profiles"),
+		func(p *mqttdomain.BrokerProfile) string { return p.ID },
+	)
 	if err != nil {
 		log.Fatalf("startup: failed to create profile repository: %v", err)
 	}
@@ -63,7 +76,10 @@ func (a *App) startup(ctx context.Context) {
 	}
 	adapters.SetupMqttHandler(a.mqttHandler, mqttSvc, profileSvc)
 
-	collRepo, err := httpinfra.NewJSONFileRepository(filepath.Join(configDir, wirexaConfigDir, "collections"))
+	collRepo, err := infra.NewJSONStore(
+		filepath.Join(configDir, wirexaConfigDir, "collections"),
+		func(c *httpdomain.Collection) string { return c.ID },
+	)
 	if err != nil {
 		log.Fatalf("startup: failed to create collection repository: %v", err)
 	}
@@ -76,7 +92,10 @@ func (a *App) startup(ctx context.Context) {
 	reqSvc := httpapp.NewHTTPRequestService(netClient, logger)
 	adapters.SetupHTTPHandler(ctx, a.httpHandler, reqSvc, collSvc, collSvc, netClient)
 
-	targetRepo, err := udpinfra.NewJSONTargetRepository(filepath.Join(configDir, wirexaConfigDir, "udp-targets"))
+	targetRepo, err := infra.NewJSONStore(
+		filepath.Join(configDir, wirexaConfigDir, "udp-targets"),
+		func(t *udpdomain.UdpTarget) string { return t.ID },
+	)
 	if err != nil {
 		log.Fatalf("startup: failed to create target repository: %v", err)
 	}

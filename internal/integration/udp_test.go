@@ -10,6 +10,7 @@ import (
 	udpapp "github.com/f0reth/Wirexa/internal/application/udp"
 	cmndomain "github.com/f0reth/Wirexa/internal/domain"
 	udpdomain "github.com/f0reth/Wirexa/internal/domain/udp"
+	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 	udpinfra "github.com/f0reth/Wirexa/internal/infrastructure/udp"
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
@@ -47,9 +48,9 @@ func (e *mockEmitter) receiveMessage(t *testing.T, timeout time.Duration) udpdom
 // newUDPHandler は統合テスト用に UdpHandler を DI で組み立てる。
 func newUDPHandler(t *testing.T, emitter cmndomain.Emitter) *adapters.UdpHandler {
 	t.Helper()
-	repo, err := udpinfra.NewJSONTargetRepository(t.TempDir())
+	repo, err := infra.NewJSONStore(t.TempDir(), func(t *udpdomain.UdpTarget) string { return t.ID })
 	if err != nil {
-		t.Fatalf("NewJSONTargetRepository: %v", err)
+		t.Fatalf("NewJSONStore: %v", err)
 	}
 	targetSvc, err := udpapp.NewTargetService(repo)
 	if err != nil {

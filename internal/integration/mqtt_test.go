@@ -20,6 +20,7 @@ import (
 	mqttapp "github.com/f0reth/Wirexa/internal/application/mqtt"
 	cmndomain "github.com/f0reth/Wirexa/internal/domain"
 	mqttdomain "github.com/f0reth/Wirexa/internal/domain/mqtt"
+	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 	mqttinfra "github.com/f0reth/Wirexa/internal/infrastructure/mqtt"
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
@@ -99,9 +100,9 @@ func (e *mqttMockEmitter) noMessage(t *testing.T, wait time.Duration) {
 // newMQTTHandler は統合テスト用に MqttHandler を DI で組み立てる。
 func newMQTTHandler(t *testing.T, emitter cmndomain.Emitter) *adapters.MqttHandler {
 	t.Helper()
-	repo, err := mqttinfra.NewJSONProfileRepository(t.TempDir())
+	repo, err := infra.NewJSONStore(t.TempDir(), func(p *mqttdomain.BrokerProfile) string { return p.ID })
 	if err != nil {
-		t.Fatalf("NewJSONProfileRepository: %v", err)
+		t.Fatalf("NewJSONStore: %v", err)
 	}
 	profileSvc, err := mqttapp.NewProfileService(repo)
 	if err != nil {
