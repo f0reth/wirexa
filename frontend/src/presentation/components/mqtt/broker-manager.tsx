@@ -1,40 +1,16 @@
 import clsx from "clsx";
 import { Wifi, WifiOff, Zap } from "lucide-solid";
 import { createSignal, Show } from "solid-js";
+import {
+  composeBrokerUrl,
+  defaultPort,
+  parseBrokerUrl,
+} from "../../../application/mqtt/broker-url";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { isConnected } from "../../../domain/mqtt/types";
 import { useMqttConnection } from "../../providers/mqtt-provider";
 import styles from "./mqtt.module.css";
-
-function defaultPort(scheme: string): string {
-  const map: Record<string, string> = {
-    mqtt: "1883",
-    mqtts: "8883",
-    tcp: "1883",
-    ws: "9001",
-    wss: "8884",
-  };
-  return map[scheme] ?? "1883";
-}
-
-function parseBrokerUrl(url: string): {
-  scheme: string;
-  host: string;
-  port: string;
-} {
-  const match = url.match(/^(mqtt|mqtts|tcp|ws|wss):\/\/([^:]+)(?::(\d+))?$/);
-  if (!match) return { scheme: "mqtt", host: "localhost", port: "1883" };
-  return {
-    scheme: match[1],
-    host: match[2],
-    port: match[3] ?? defaultPort(match[1]),
-  };
-}
-
-function composeBrokerUrl(scheme: string, host: string, port: string): string {
-  return `${scheme}://${host}:${port}`;
-}
 
 export function BrokerManager() {
   const {
