@@ -450,19 +450,21 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 
 // GetSidebarLayout はサイドバーレイアウトを返す。
 // ファイルが存在しない場合は既存コレクションを Order 順で並べた初期値を生成して保存する。
+// ロック順序: mu → layoutMu の統一順序に従い、layoutMu を先に取得しない。
 func (s *CollectionService) GetSidebarLayout() ([]domain.SidebarEntry, error) {
 	s.layoutMu.Lock()
-	defer s.layoutMu.Unlock()
-
 	layout, err := s.layoutRepo.Load()
 	if err != nil {
+		s.layoutMu.Unlock()
 		return nil, fmt.Errorf("failed to load sidebar layout: %w", err)
 	}
 	if len(layout) > 0 {
+		s.layoutMu.Unlock()
 		return layout, nil
 	}
+	s.layoutMu.Unlock()
 
-	// 初回: 既存コレクションを Order 順で並べて初期レイアウトを生成する。
+	// 初回: layoutMu を解放してから mu.RLock を取得（デッドロック防止）。
 	s.mu.RLock()
 	cols := make([]*domain.Collection, 0, len(s.cache))
 	for _, c := range s.cache {
@@ -480,20 +482,31 @@ func (s *CollectionService) GetSidebarLayout() ([]domain.SidebarEntry, error) {
 		return cols[i].Name < cols[j].Name
 	})
 
-	layout = make([]domain.SidebarEntry, 0, len(cols))
+	initial := make([]domain.SidebarEntry, 0, len(cols))
 	for _, c := range cols {
-		layout = append(layout, domain.SidebarEntry{Kind: sidebarKindCollection, ID: c.ID})
+		initial = append(initial, domain.SidebarEntry{Kind: sidebarKindCollection, ID: c.ID})
 	}
 	if rootItems != nil {
 		for _, item := range rootItems.Items {
-			layout = append(layout, domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID})
+			initial = append(initial, domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID})
 		}
 	}
 
-	if err := s.layoutRepo.Save(layout); err != nil {
+	// 他ゴルーチンが先に初期化した場合はそちらを優先する（ダブルチェック）。
+	s.layoutMu.Lock()
+	defer s.layoutMu.Unlock()
+	existing, err := s.layoutRepo.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load sidebar layout: %w", err)
+	}
+	if len(existing) > 0 {
+		return existing, nil
+	}
+
+	if err := s.layoutRepo.Save(initial); err != nil {
 		return nil, fmt.Errorf("failed to save initial sidebar layout: %w", err)
 	}
-	return layout, nil
+	return initial, nil
 }
 
 // MoveSidebarEntry はサイドバー上のエントリを指定位置に移動する。
@@ -535,7 +548,9 @@ func (s *CollectionService) MoveSidebarEntry(kind, id string, position int) erro
 }
 
 // MoveItemToSidebar はアイテムを指定コレクションから __root__ へ移動し、
-// サイドバーレイアウトの指定位置に挿入する。両操作をミューテックスロック内で行う。
+// サイドバーレイアウトの指定位置に挿入する。
+// コレクション更新（mu）とレイアウト挿入（layoutMu）を順に行う。
+// 2つのロックスコープの間に他ゴルーチンの割り込みが入り得る点は許容している。
 func (s *CollectionService) MoveItemToSidebar(sourceCollectionID, itemID string, sidebarPosition int) error {
 	s.mu.Lock()
 
