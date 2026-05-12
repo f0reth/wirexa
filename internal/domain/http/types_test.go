@@ -254,3 +254,25 @@ func TestCollection_InsertItem_ParentNotFound(t *testing.T) {
 		t.Error("expected InsertItem to return false for unknown parent")
 	}
 }
+
+func TestCollection_InsertItem_NegativePosition_AppendsToEnd(t *testing.T) {
+	col := buildTree()
+	newItem := &TreeItem{Type: ItemTypeRequest, ID: "ins5", Name: "Ins5", Children: []*TreeItem{}}
+	ok := col.InsertItem("", newItem, -1)
+	if !ok {
+		t.Fatal("expected InsertItem to return true")
+	}
+	if col.Items[len(col.Items)-1].ID != "ins5" {
+		t.Error("negative position should append to end")
+	}
+}
+
+func TestCollection_InsertItem_ParentIsRequest(t *testing.T) {
+	col := buildTree()
+	newItem := &TreeItem{Type: ItemTypeRequest, ID: "ins6", Name: "Ins6", Children: []*TreeItem{}}
+	// r3 はリクエスト型なので親として指定するとfalseを返す
+	ok := col.InsertItem("r3", newItem, 0)
+	if ok {
+		t.Error("expected InsertItem to return false when parent is a request")
+	}
+}

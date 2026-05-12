@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
@@ -22,19 +23,27 @@ type inMemoryRepo struct {
 }
 
 type inMemoryLayoutRepo struct {
-	mu     sync.Mutex
-	layout []domain.SidebarEntry
+	mu      sync.Mutex
+	layout  []domain.SidebarEntry
+	loadErr error
+	saveErr error
 }
 
 func (r *inMemoryLayoutRepo) Load() ([]domain.SidebarEntry, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.loadErr != nil {
+		return nil, r.loadErr
+	}
 	return append([]domain.SidebarEntry{}, r.layout...), nil
 }
 
 func (r *inMemoryLayoutRepo) Save(layout []domain.SidebarEntry) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.saveErr != nil {
+		return r.saveErr
+	}
 	r.layout = append([]domain.SidebarEntry{}, layout...)
 	return nil
 }
@@ -871,6 +880,235 @@ func TestCollectionService_DeleteItem_FromRootCollection_UpdatesLayout(t *testin
 		if e.Kind == sidebarKindItem && e.ID == "r1" {
 			t.Error("r1 should be removed from layout after DeleteItem")
 		}
+	}
+}
+
+// --- MoveCollection: RootCollectionID ---
+
+func TestCollectionService_MoveCollection_RootCollectionID_ReturnsValidationError(t *testing.T) {
+	svc := newSvc(t)
+	err := svc.MoveCollection(domain.RootCollectionID, 0)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ve *cmn.ValidationError
+	if !errors.As(err, &ve) {
+		t.Errorf("expected ValidationError, got %T", err)
+	}
+}
+
+func TestCollectionService_MoveCollection_NegativePosition_AppendsToEnd(t *testing.T) {
+	svc := newSvc(t)
+	a := mustCreate(t, svc, "Alpha")
+	mustCreate(t, svc, "Beta")
+	mustCreate(t, svc, "Gamma")
+
+	if err := svc.MoveCollection(a.ID, -1); err != nil {
+		t.Fatalf("MoveCollection: %v", err)
+	}
+	cols := svc.GetCollections()
+	if cols[len(cols)-1].Name != "Alpha" {
+		t.Errorf("expected Alpha last, got %v", cols[len(cols)-1].Name)
+	}
+}
+
+// --- UpdateRequest: node is folder ---
+
+func TestCollectionService_UpdateRequest_NodeIsFolder_ReturnsNotFound(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	folder, _ := svc.AddFolder(col.ID, "", "Folder")
+
+	err := svc.UpdateRequest(col.ID, domain.HttpRequest{ID: folder.ID, Name: "Renamed"})
+	if err == nil {
+		t.Fatal("expected error when updating a folder node, got nil")
+	}
+	var nfe *cmn.NotFoundError
+	if !errors.As(err, &nfe) {
+		t.Errorf("expected NotFoundError, got %T", err)
+	}
+}
+
+// --- AddFolder / AddRequest: repo.Save error ---
+
+func TestCollectionService_AddFolder_RepoSaveError(t *testing.T) {
+	// root コレクション作成(1回)後に失敗させる。
+	repo := &countingSaveRepo{
+		inMemoryRepo: inMemoryRepo{collections: map[string]*domain.Collection{}},
+		failAfter:    1,
+	}
+	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	_, err = svc.AddFolder(domain.RootCollectionID, "", "Folder")
+	if err == nil {
+		t.Error("expected error from repo.Save, got nil")
+	}
+}
+
+func TestCollectionService_AddRequest_RepoSaveError(t *testing.T) {
+	repo := &countingSaveRepo{
+		inMemoryRepo: inMemoryRepo{collections: map[string]*domain.Collection{}},
+		failAfter:    1,
+	}
+	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	_, err = svc.AddRequest(domain.RootCollectionID, "", domain.HttpRequest{Name: "R"})
+	if err == nil {
+		t.Error("expected error from repo.Save, got nil")
+	}
+}
+
+// --- layoutRepo エラー伝搬 ---
+
+func TestCollectionService_CreateCollection_LayoutRepoError(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{}
+	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	layoutRepo.loadErr = errors.New("layout load error")
+
+	_, err = svc.CreateCollection("ShouldFail")
+	if err == nil {
+		t.Error("expected error from layoutRepo, got nil")
+	}
+}
+
+func TestCollectionService_AddFolder_LayoutRepoError(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{}
+	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	layoutRepo.loadErr = errors.New("layout load error")
+
+	_, err = svc.AddFolder(domain.RootCollectionID, "", "Folder")
+	if err == nil {
+		t.Error("expected error from layoutRepo, got nil")
+	}
+}
+
+func TestCollectionService_DeleteCollection_LayoutRepoError(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{}
+	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	col := mustCreate(t, svc, "Col")
+	layoutRepo.loadErr = errors.New("layout load error")
+
+	err = svc.DeleteCollection(col.ID)
+	if err == nil {
+		t.Error("expected error from layoutRepo, got nil")
+	}
+}
+
+// --- NewCollectionService: layoutRepo エラー ---
+
+func TestNewCollectionService_LayoutRepoLoadError(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{loadErr: errors.New("layout load error")}
+	_, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	if err == nil {
+		t.Error("expected error from layoutRepo.Load, got nil")
+	}
+}
+
+func TestNewCollectionService_LayoutRepoSaveError(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{saveErr: errors.New("layout save error")}
+	_, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	if err == nil {
+		t.Error("expected error from layoutRepo.Save, got nil")
+	}
+}
+
+// --- MoveItemToSidebar: error cases ---
+
+func TestCollectionService_MoveItemToSidebar_SourceNotFound(t *testing.T) {
+	svc := newSvc(t)
+	err := svc.MoveItemToSidebar("nonexistent", "item", 0)
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+	var nfe *cmn.NotFoundError
+	if !errors.As(err, &nfe) {
+		t.Errorf("expected NotFoundError, got %T", err)
+	}
+}
+
+func TestCollectionService_MoveItemToSidebar_ItemNotFound(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	err := svc.MoveItemToSidebar(col.ID, "nonexistent", 0)
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+	var nfe *cmn.NotFoundError
+	if !errors.As(err, &nfe) {
+		t.Errorf("expected NotFoundError, got %T", err)
+	}
+}
+
+func TestCollectionService_MoveItemToSidebar_NegativePosition_AppendsToEnd(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+
+	if err := svc.MoveItemToSidebar(col.ID, "r1", -1); err != nil {
+		t.Fatalf("MoveItemToSidebar: %v", err)
+	}
+	layout, _ := svc.GetSidebarLayout()
+	last := layout[len(layout)-1]
+	if last.Kind != sidebarKindItem || last.ID != "r1" {
+		t.Errorf("expected r1 at end of layout, got %v", last)
+	}
+}
+
+// --- MoveSidebarEntry: out-of-bounds position ---
+
+func TestCollectionService_MoveSidebarEntry_OutOfBoundsPosition_AppendsToEnd(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{
+		layout: []domain.SidebarEntry{
+			{Kind: sidebarKindCollection, ID: "c1"},
+			{Kind: sidebarKindCollection, ID: "c2"},
+			{Kind: sidebarKindCollection, ID: "c3"},
+		},
+	}
+	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	// position < 0 → 末尾追加
+	if err := svc.MoveSidebarEntry(sidebarKindCollection, "c1", -1); err != nil {
+		t.Fatalf("MoveSidebarEntry: %v", err)
+	}
+	layout, _ := svc.GetSidebarLayout()
+	if layout[len(layout)-1].ID != "c1" {
+		t.Errorf("expected c1 at end, got %v", layout[len(layout)-1].ID)
+	}
+}
+
+// --- CreateCollection: updates layout ---
+
+func TestCollectionService_CreateCollection_UpdatesLayout(t *testing.T) {
+	svc := newSvc(t)
+	col, err := svc.CreateCollection("NewCol")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
+	}
+	layout, _ := svc.GetSidebarLayout()
+	found := false
+	for _, e := range layout {
+		if e.Kind == sidebarKindCollection && e.ID == col.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("sidebar layout does not contain collection entry %q", col.ID)
 	}
 }
 

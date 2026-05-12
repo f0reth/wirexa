@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
@@ -164,6 +165,30 @@ func TestHttpRequestService_CancelRequest_ValidID(t *testing.T) {
 	svc.CancelRequest(reqID)
 	if err := <-done; err == nil {
 		t.Error("expected context cancellation error, got nil")
+	}
+}
+
+func TestHttpRequestService_SendRequest_InvalidMethod_ReturnsValidationError(t *testing.T) {
+	svc := NewHTTPRequestService(&mockTransport{}, testutil.NoopLogger{})
+	_, err := svc.SendRequest(domain.HttpRequest{Method: "INVALID", URL: "http://example.com"})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var ve *cmn.ValidationError
+	if !errors.As(err, &ve) {
+		t.Errorf("expected ValidationError, got %T", err)
+	}
+}
+
+func TestHttpRequestService_SendRequest_EmptyID_DoesNotPanic(t *testing.T) {
+	transport := &mockTransport{}
+	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	resp, err := svc.SendRequest(domain.HttpRequest{ID: "", Method: "GET", URL: "http://example.com"})
+	if err != nil {
+		t.Fatalf("SendRequest with empty ID: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
 }
 
