@@ -48,6 +48,8 @@ export interface RequestContextValue {
   loading: Accessor<boolean>;
   activeRequestId: Accessor<string | null>;
   activeCollectionId: Accessor<string | null>;
+  saveError: Accessor<string | null>;
+  clearSaveError: () => void;
   sendRequest: () => Promise<void>;
   cancelRequest: () => Promise<void>;
   loadRequest: (req: HttpRequest, collectionId: string) => void;

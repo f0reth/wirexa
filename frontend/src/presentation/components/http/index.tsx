@@ -11,7 +11,7 @@ import { RequestEditor } from "./request-editor";
 import { ResponseViewer } from "./response-viewer";
 
 export function HttpClient() {
-  const { loading } = useHttpRequest();
+  const { loading, saveError, clearSaveError } = useHttpRequest();
   const [showResponse, setShowResponse] = createSignal(true);
   const [savedResponseSize, setSavedResponseSize] = createSignal(0.5);
 
@@ -27,6 +27,18 @@ export function HttpClient() {
         showResponse={showResponse()}
         onToggleResponse={() => setShowResponse((v) => !v)}
       />
+      <Show when={saveError()}>
+        <div class={styles.saveErrorBanner}>
+          <span class={styles.saveErrorText}>Save failed: {saveError()}</span>
+          <button
+            type="button"
+            class={styles.saveErrorDismiss}
+            onClick={clearSaveError}
+          >
+            ✕
+          </button>
+        </div>
+      </Show>
       <div class={styles.mainContent}>
         <Show
           when={showResponse()}

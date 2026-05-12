@@ -46,6 +46,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
   const [activeCollectionId, setActiveCollectionId] = createSignal<
     string | null
   >(null);
+  const [saveError, setSaveError] = createSignal<string | null>(null);
 
   async function sendRequest(): Promise<void> {
     const m = method();
@@ -150,8 +151,15 @@ export function createRequestState(api: RequestApi, logger: Logger) {
       settings: settings(),
       doc: doc(),
     };
-    await api.updateRequest(colId, req);
-    api.afterSave?.(colId, req);
+    try {
+      await api.updateRequest(colId, req);
+      setSaveError(null);
+      api.afterSave?.(colId, req);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSaveError(msg);
+      throw err;
+    }
   }
 
   return {
@@ -175,6 +183,8 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     loading,
     activeRequestId,
     activeCollectionId,
+    saveError,
+    clearSaveError: () => setSaveError(null),
     sendRequest,
     cancelRequest,
     loadRequest,

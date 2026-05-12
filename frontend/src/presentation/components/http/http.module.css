@@ -73,6 +73,44 @@
   box-shadow: var(--shadow-sm), var(--inner-glow);
 }
 
+/* ── Save error banner ─────────────────────────────────── */
+.saveErrorBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.375rem 1rem;
+  background-color: color-mix(
+    in oklch,
+    var(--color-destructive) 10%,
+    var(--surface-2)
+  );
+  border-bottom: 1px solid
+    color-mix(in oklch, var(--color-destructive) 30%, var(--border-subtle));
+  flex-shrink: 0;
+}
+
+.saveErrorText {
+  font-size: 0.8125rem;
+  color: var(--color-destructive);
+  font-family: var(--font-mono);
+}
+
+.saveErrorDismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--color-destructive);
+  padding: 0 0.25rem;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.saveErrorDismiss:hover {
+  opacity: 1;
+}
+
 /* ── Editor panel (shared for request/response) ────────── */
 .editorPanel {
   display: flex;
