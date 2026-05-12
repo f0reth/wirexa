@@ -1,4 +1,4 @@
-import { createEffect, createSignal, untrack } from "solid-js";
+import { createEffect, untrack } from "solid-js";
 import type { ConnectionStateExt, MqttMessageView } from "./connections";
 
 export function createMessagesState(
@@ -9,29 +9,37 @@ export function createMessagesState(
   ) => void,
 ) {
   const messages = () => activeConnection()?.messages ?? [];
-  const [selectedMessage, setSelectedMessageSignal] =
-    createSignal<MqttMessageView | null>(null);
-  const [autoFollow, setAutoFollowSignal] = createSignal(false);
+  const selectedMessage = () => activeConnection()?.selectedMessage ?? null;
+  const autoFollow = () => activeConnection()?.autoFollow ?? false;
 
   // autoFollow が true のとき selectedMessage を末尾に追従させる
-  // scrollTop は操作しない（Presentation 層の責務）
   createEffect(() => {
     const msgs = messages();
     const follow = autoFollow();
-    if (follow && msgs.length > 0) {
-      const lastMsg = msgs[msgs.length - 1];
-      if (untrack(selectedMessage) !== lastMsg) {
-        setSelectedMessageSignal(lastMsg);
-      }
+    if (!follow || msgs.length === 0) return;
+    const lastMsg = msgs[msgs.length - 1];
+    const connId = activeConnection()?.connectionId;
+    if (!connId) return;
+    // untrack で selectedMessage への依存を切り、追従後の再実行を防ぐ
+    if (untrack(selectedMessage) !== lastMsg) {
+      updateConnection(connId, (state) => ({
+        ...state,
+        selectedMessage: lastMsg,
+      }));
     }
   });
 
   const setSelectedMessage = (msg: MqttMessageView | null) => {
-    setSelectedMessageSignal(msg);
+    const connId = activeConnection()?.connectionId;
+    if (!connId) return;
+    updateConnection(connId, (state) => ({ ...state, selectedMessage: msg }));
   };
 
   const setAutoFollow = (value: boolean | ((prev: boolean) => boolean)) => {
-    setAutoFollowSignal(value);
+    const connId = activeConnection()?.connectionId;
+    if (!connId) return;
+    const next = typeof value === "function" ? value(autoFollow()) : value;
+    updateConnection(connId, (state) => ({ ...state, autoFollow: next }));
   };
 
   const clearMessages = () => {
@@ -40,8 +48,8 @@ export function createMessagesState(
     updateConnection(connId, (state) => ({
       ...state,
       messages: [],
+      selectedMessage: null,
     }));
-    setSelectedMessageSignal(null);
   };
 
   return {

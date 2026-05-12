@@ -31,6 +31,8 @@ export type MqttMessageView = MqttMessage & {
 interface ConnectionRuntimeState {
   subscriptions: Subscription[];
   messages: MqttMessageView[];
+  selectedMessage: MqttMessageView | null;
+  autoFollow: boolean;
   brokerTopics: string[];
   readonly brokerTopicsSet: Set<string>;
   isScanning: boolean;
@@ -80,6 +82,8 @@ function makeOfflineState(profile: BrokerProfile): OfflineStateExt {
     profile: { ...profile },
     subscriptions: [],
     messages: [],
+    selectedMessage: null,
+    autoFollow: false,
     brokerTopics: [],
     brokerTopicsSet: new Set(),
     isScanning: false,
@@ -98,6 +102,8 @@ function makeOnlineState(
     connected: false,
     subscriptions: [],
     messages: [],
+    selectedMessage: null,
+    autoFollow: false,
     brokerTopics: [],
     brokerTopicsSet: new Set(),
     isScanning: false,
