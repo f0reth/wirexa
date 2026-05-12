@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
@@ -38,10 +39,26 @@ func (r *SidebarLayoutRepository) Load() ([]domain.SidebarEntry, error) {
 }
 
 // Save はレイアウトをファイルに書き込む。
+// tmp ファイル経由の原子的置き換えで書き込み中断によるデータ破損を防ぐ。
 func (r *SidebarLayoutRepository) Save(layout []domain.SidebarEntry) error {
 	data, err := json.MarshalIndent(layout, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(r.path, data, 0o600)
+	dir := filepath.Dir(r.path)
+	tmp, err := os.CreateTemp(dir, ".tmp-sidebar-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err = tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return os.Rename(tmpName, r.path)
 }

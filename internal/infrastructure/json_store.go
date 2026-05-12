@@ -47,13 +47,28 @@ func (s *JSONStore[T]) Load() ([]T, error) {
 }
 
 // Save はアイテムを JSON ファイルに書き込む。
+// tmp ファイル経由の原子的置き換えで書き込み中断によるデータ破損を防ぐ。
 func (s *JSONStore[T]) Save(item *T) error {
 	data, err := json.MarshalIndent(item, "", "  ")
 	if err != nil {
 		return err
 	}
-
-	return os.WriteFile(filepath.Join(s.dir, s.getID(item)+".json"), data, 0o600)
+	dest := filepath.Join(s.dir, s.getID(item)+".json")
+	tmp, err := os.CreateTemp(s.dir, ".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err = tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return os.Rename(tmpName, dest)
 }
 
 // Delete はアイテムの JSON ファイルを削除する。
