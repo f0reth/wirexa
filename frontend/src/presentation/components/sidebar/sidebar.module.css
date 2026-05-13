@@ -213,14 +213,17 @@
 }
 
 .treeNodeActions {
-  display: none;
+  display: flex;
   align-items: center;
   gap: 0.125rem;
   flex-shrink: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .treeNodeHeader:hover .treeNodeActions {
-  display: flex;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .treeActionBtn {
@@ -367,7 +370,8 @@
 }
 
 .brokerItem:hover .treeNodeActions {
-  display: flex;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .brokerItemActive {
