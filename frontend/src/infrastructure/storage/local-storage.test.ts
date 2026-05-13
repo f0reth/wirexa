@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createActiveRequestStorage,
   createLastProfileStorage,
   createPresetsStorage,
   createThemeStorage,
@@ -52,6 +53,29 @@ describe("createPresetsStorage", () => {
     storage.save([preset]);
     expect(storage.load()).toEqual([preset]);
   });
+
+  it("save overwrites existing presets", () => {
+    const storage = createPresetsStorage();
+    const preset1 = {
+      id: "p1",
+      name: "First",
+      topic: "a/b",
+      payload: "msg1",
+      qos: 0 as const,
+      retain: false,
+    };
+    const preset2 = {
+      id: "p2",
+      name: "Second",
+      topic: "c/d",
+      payload: "msg2",
+      qos: 1 as const,
+      retain: true,
+    };
+    storage.save([preset1]);
+    storage.save([preset2]);
+    expect(storage.load()).toEqual([preset2]);
+  });
 });
 
 describe("createThemeStorage", () => {
@@ -64,6 +88,36 @@ describe("createThemeStorage", () => {
     const storage = createThemeStorage();
     storage.save("dark");
     expect(storage.load()).toBe("dark");
+  });
+
+  it("save overwrites existing theme", () => {
+    const storage = createThemeStorage();
+    storage.save("dark");
+    storage.save("light");
+    expect(storage.load()).toBe("light");
+  });
+});
+
+describe("createActiveRequestStorage", () => {
+  it("load returns null when empty", () => {
+    const storage = createActiveRequestStorage();
+    expect(storage.load()).toBeNull();
+  });
+
+  it("save persists requestId and collectionId and load retrieves them", () => {
+    const storage = createActiveRequestStorage();
+    storage.save("req-1", "col-1");
+    expect(storage.load()).toEqual({
+      requestId: "req-1",
+      collectionId: "col-1",
+    });
+  });
+
+  it("clear removes the stored entry", () => {
+    const storage = createActiveRequestStorage();
+    storage.save("req-1", "col-1");
+    storage.clear();
+    expect(storage.load()).toBeNull();
   });
 });
 

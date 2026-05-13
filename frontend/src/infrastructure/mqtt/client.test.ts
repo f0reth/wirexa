@@ -215,6 +215,13 @@ describe("getConnections", () => {
     expect(result[1].id).toBe("conn-2");
     expect(result[1].connected).toBe(false);
   });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.GetConnections).mockRejectedValue(
+      new Error("fetch failed"),
+    );
+    await expect(getConnections()).rejects.toThrow("fetch failed");
+  });
 });
 
 describe("getProfiles", () => {
@@ -233,6 +240,11 @@ describe("getProfiles", () => {
     expect(result).toHaveLength(2);
     expect(result[0]).toEqual(makeProfile());
     expect(result[1].name).toBe("Remote");
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.GetProfiles).mockRejectedValue(new Error("fetch failed"));
+    await expect(getProfiles()).rejects.toThrow("fetch failed");
   });
 });
 
@@ -259,6 +271,11 @@ describe("saveProfile", () => {
       useTls: false,
     });
   });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.SaveProfile).mockRejectedValue(new Error("save failed"));
+    await expect(saveProfile(makeProfile())).rejects.toThrow("save failed");
+  });
 });
 
 describe("deleteProfile", () => {
@@ -266,5 +283,12 @@ describe("deleteProfile", () => {
     vi.mocked(Handler.DeleteProfile).mockResolvedValue(undefined);
     await deleteProfile("profile-1");
     expect(Handler.DeleteProfile).toHaveBeenCalledWith("profile-1");
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.DeleteProfile).mockRejectedValue(
+      new Error("delete failed"),
+    );
+    await expect(deleteProfile("profile-1")).rejects.toThrow("delete failed");
   });
 });

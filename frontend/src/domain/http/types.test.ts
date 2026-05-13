@@ -55,6 +55,11 @@ describe("isBodyType", () => {
     expect(isBodyType("urlencoded")).toBe(false);
   });
 
+  it("returns false for capitalized variants", () => {
+    expect(isBodyType("JSON")).toBe(false);
+    expect(isBodyType("FILE")).toBe(false);
+  });
+
   it("returns false for whitespace-only string", () => {
     expect(isBodyType(" ")).toBe(false);
   });

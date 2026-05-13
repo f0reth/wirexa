@@ -233,6 +233,31 @@ describe("getCollections", () => {
     expect(result[0].order).toBe(5);
   });
 
+  it("maps proxyMode 'none' correctly via fromWailsRequestSettings", async () => {
+    vi.mocked(Handler.GetCollections).mockResolvedValue([
+      makeWailsCollection({
+        items: [
+          makeWailsTreeItem({
+            type: "request",
+            request: {
+              ...makeWailsRequest(),
+              settings: {
+                timeoutSec: 0,
+                proxyMode: "none",
+                proxyURL: "",
+                insecureSkipVerify: false,
+                disableRedirects: false,
+                maxResponseBodyMB: 0,
+              },
+            },
+          }),
+        ],
+      }) as never,
+    ]);
+    const result = await getCollections();
+    expect(result[0].items[0].request?.settings.proxyMode).toBe("none");
+  });
+
   it("maps proxyMode 'custom' correctly via fromWailsRequestSettings", async () => {
     vi.mocked(Handler.GetCollections).mockResolvedValue([
       makeWailsCollection({
@@ -296,6 +321,25 @@ describe("getCollections", () => {
     ]);
     const result = await getCollections();
     expect(result[0].items[0].request?.settings.proxyMode).toBe("none");
+  });
+
+  it("maps request headers correctly", async () => {
+    vi.mocked(Handler.GetCollections).mockResolvedValue([
+      makeWailsCollection({
+        items: [
+          makeWailsTreeItem({
+            type: "request",
+            request: makeWailsRequest({
+              headers: [{ key: "X-Foo", value: "bar", enabled: true }],
+            }),
+          }),
+        ],
+      }) as never,
+    ]);
+    const result = await getCollections();
+    expect(result[0].items[0].request?.headers).toEqual([
+      { key: "X-Foo", value: "bar", enabled: true },
+    ]);
   });
 
   it("maps multiple collections", async () => {
@@ -471,7 +515,19 @@ describe("createCollection", () => {
       makeWailsCollection({ id: "col-99", name: "New Col" }) as never,
     );
     const result = await createCollection("New Col");
-    expect(result).toMatchObject({ id: "col-99", name: "New Col", items: [] });
+    expect(result).toMatchObject({
+      id: "col-99",
+      name: "New Col",
+      items: [],
+      order: 0,
+    });
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.CreateCollection).mockRejectedValue(
+      new Error("create failed"),
+    );
+    await expect(createCollection("New Col")).rejects.toThrow("create failed");
   });
 });
 
@@ -481,6 +537,13 @@ describe("deleteCollection", () => {
     await deleteCollection("col-123");
     expect(Handler.DeleteCollection).toHaveBeenCalledWith("col-123");
   });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.DeleteCollection).mockRejectedValue(
+      new Error("delete failed"),
+    );
+    await expect(deleteCollection("col-123")).rejects.toThrow("delete failed");
+  });
 });
 
 describe("renameCollection", () => {
@@ -488,6 +551,15 @@ describe("renameCollection", () => {
     vi.mocked(Handler.RenameCollection).mockResolvedValue(undefined);
     await renameCollection("col-1", "New Name");
     expect(Handler.RenameCollection).toHaveBeenCalledWith("col-1", "New Name");
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.RenameCollection).mockRejectedValue(
+      new Error("rename failed"),
+    );
+    await expect(renameCollection("col-1", "New Name")).rejects.toThrow(
+      "rename failed",
+    );
   });
 });
 
@@ -511,6 +583,15 @@ describe("addFolder", () => {
     const result = await addFolder("col-1", "parent-1", "New Folder");
     expect(result.id).toBe("f2");
     expect(result.type).toBe("folder");
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.AddFolder).mockRejectedValue(
+      new Error("add folder failed"),
+    );
+    await expect(addFolder("col-1", "parent-1", "New Folder")).rejects.toThrow(
+      "add folder failed",
+    );
   });
 });
 
@@ -543,6 +624,15 @@ describe("addRequest", () => {
       expect.objectContaining({ method: "GET" }),
     );
   });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.AddRequest).mockRejectedValue(
+      new Error("add request failed"),
+    );
+    await expect(
+      addRequest("col-1", "parent-1", makeDomainRequest()),
+    ).rejects.toThrow("add request failed");
+  });
 });
 
 describe("updateRequest", () => {
@@ -560,6 +650,15 @@ describe("updateRequest", () => {
     const [, reqArg] = vi.mocked(Handler.UpdateRequest).mock.calls[0];
     expect(reqArg).toMatchObject({ method: "GET", url: "https://example.com" });
   });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.UpdateRequest).mockRejectedValue(
+      new Error("update failed"),
+    );
+    await expect(updateRequest("col-1", makeDomainRequest())).rejects.toThrow(
+      "update failed",
+    );
+  });
 });
 
 describe("renameItem", () => {
@@ -572,6 +671,15 @@ describe("renameItem", () => {
       "New Name",
     );
   });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.RenameItem).mockRejectedValue(
+      new Error("rename item failed"),
+    );
+    await expect(renameItem("col-1", "item-1", "New Name")).rejects.toThrow(
+      "rename item failed",
+    );
+  });
 });
 
 describe("deleteItem", () => {
@@ -579,6 +687,15 @@ describe("deleteItem", () => {
     vi.mocked(Handler.DeleteItem).mockResolvedValue(undefined);
     await deleteItem("col-1", "item-1");
     expect(Handler.DeleteItem).toHaveBeenCalledWith("col-1", "item-1");
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.DeleteItem).mockRejectedValue(
+      new Error("delete item failed"),
+    );
+    await expect(deleteItem("col-1", "item-1")).rejects.toThrow(
+      "delete item failed",
+    );
   });
 });
 

@@ -135,6 +135,12 @@ describe("topicMatchesParts", () => {
     });
   });
 
+  describe("# wildcard position", () => {
+    it("matches even when # is not at the end (implementation detail)", () => {
+      expect(topicMatchesParts(["#", "a"], ["b", "c"])).toBe(true);
+    });
+  });
+
   describe("edge cases", () => {
     it("empty pattern matches empty topic", () => {
       expect(topicMatchesParts([], [])).toBe(true);

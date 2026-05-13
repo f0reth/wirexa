@@ -146,6 +146,11 @@ describe("getTargets", () => {
       port: 9001,
     });
   });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.GetTargets).mockRejectedValue(new Error("fetch failed"));
+    await expect(getTargets()).rejects.toThrow("fetch failed");
+  });
 });
 
 describe("saveTarget", () => {
@@ -173,10 +178,18 @@ describe("saveTarget", () => {
     expect(Handler.SaveTarget).toHaveBeenCalledOnce();
     const callArg = vi.mocked(Handler.SaveTarget).mock.calls[0][0];
     expect(callArg).toMatchObject({
+      id: "",
       name: "Dev",
       host: "localhost",
       port: 1234,
     });
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.SaveTarget).mockRejectedValue(new Error("save failed"));
+    await expect(
+      saveTarget({ id: "", name: "Dev", host: "localhost", port: 1234 }),
+    ).rejects.toThrow("save failed");
   });
 });
 
@@ -185,6 +198,13 @@ describe("deleteTarget", () => {
     vi.mocked(Handler.DeleteTarget).mockResolvedValue(undefined);
     await deleteTarget("target-1");
     expect(Handler.DeleteTarget).toHaveBeenCalledWith("target-1");
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.DeleteTarget).mockRejectedValue(
+      new Error("delete failed"),
+    );
+    await expect(deleteTarget("target-1")).rejects.toThrow("delete failed");
   });
 });
 
@@ -220,6 +240,23 @@ describe("startListen", () => {
     const result = await startListen(9000, encoding);
     expect(result.encoding).toBe(encoding);
   });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.StartListen).mockRejectedValue(
+      new Error("start listen failed"),
+    );
+    await expect(startListen(9000, "text")).rejects.toThrow(
+      "start listen failed",
+    );
+  });
+
+  it("silently passes unknown encoding (as-cast risk)", async () => {
+    vi.mocked(Handler.StartListen).mockResolvedValue(
+      makeWailsListenSession({ encoding: "unknown" }) as never,
+    );
+    const result = await startListen(9000, "unknown");
+    expect(result.encoding).toBe("unknown");
+  });
 });
 
 describe("stopListen", () => {
@@ -248,13 +285,16 @@ describe("getListeners", () => {
         port: 9001,
         encoding: "text",
       }) as never,
-      makeWailsListenSession({ id: "s2", port: 9002 }) as never,
+      makeWailsListenSession({
+        id: "s2",
+        port: 9002,
+        encoding: "json",
+      }) as never,
     ]);
     const result = await getListeners();
     expect(result).toHaveLength(2);
-    expect(result[0].id).toBe("s1");
-    expect(result[0].encoding).toBe("text");
-    expect(result[1].port).toBe(9002);
+    expect(result[0]).toEqual({ id: "s1", port: 9001, encoding: "text" });
+    expect(result[1]).toEqual({ id: "s2", port: 9002, encoding: "json" });
   });
 
   it("propagates rejection from the backend", async () => {

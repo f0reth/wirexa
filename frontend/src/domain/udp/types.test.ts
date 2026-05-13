@@ -25,6 +25,10 @@ describe("isPayloadEncoding", () => {
     expect(isPayloadEncoding("tex")).toBe(false);
     expect(isPayloadEncoding("fixe")).toBe(false);
   });
+
+  it("returns false for whitespace-only string", () => {
+    expect(isPayloadEncoding(" ")).toBe(false);
+  });
 });
 
 describe("isValidNumericFieldValue", () => {
@@ -43,10 +47,12 @@ describe("isValidNumericFieldValue", () => {
       expect(isValidNumericFieldValue("1.5", "uint8")).toBe(false);
     });
     it("uint16: valid range 0-65535", () => {
+      expect(isValidNumericFieldValue("0", "uint16")).toBe(true);
       expect(isValidNumericFieldValue("65535", "uint16")).toBe(true);
       expect(isValidNumericFieldValue("65536", "uint16")).toBe(false);
     });
     it("uint32: valid range 0-4294967295", () => {
+      expect(isValidNumericFieldValue("0", "uint32")).toBe(true);
       expect(isValidNumericFieldValue("4294967295", "uint32")).toBe(true);
       expect(isValidNumericFieldValue("4294967296", "uint32")).toBe(false);
     });
@@ -110,6 +116,12 @@ describe("isValidNumericFieldValue", () => {
     });
     it("float64: rejects -Infinity", () => {
       expect(isValidNumericFieldValue("-Infinity", "float64")).toBe(false);
+    });
+    it("float32: rejects 'NaN' string", () => {
+      expect(isValidNumericFieldValue("NaN", "float32")).toBe(false);
+    });
+    it("float64: rejects 'NaN' string", () => {
+      expect(isValidNumericFieldValue("NaN", "float64")).toBe(false);
     });
   });
 
