@@ -35,7 +35,10 @@ function SidebarCollapseController(props: { sidebarOpen: () => boolean }) {
 
   createEffect(() => {
     if (props.sidebarOpen()) {
-      if (panelCtx.collapsed()) panelCtx.resize(lastSize);
+      if (panelCtx.collapsed()) {
+        panelCtx.expand();
+        panelCtx.resize(lastSize);
+      }
     } else {
       if (!panelCtx.collapsed()) panelCtx.collapse();
     }
