@@ -18,6 +18,7 @@ const PROTOCOLS: {
 
 interface ProtocolSwitcherProps {
   protocol: Protocol;
+  sidebarOpen: boolean;
   onProtocolChange: (p: Protocol) => void;
   theme: "light" | "dark";
   onThemeToggle: () => void;
@@ -31,11 +32,13 @@ export function ProtocolSwitcher(props: ProtocolSwitcherProps) {
           type="button"
           class={clsx(
             styles.activityIcon,
-            props.protocol === p.value && styles.activityIconActive,
+            props.protocol === p.value &&
+              props.sidebarOpen &&
+              styles.activityIconActive,
           )}
           onClick={() => props.onProtocolChange(p.value)}
           aria-label={p.label}
-          aria-pressed={props.protocol === p.value}
+          aria-pressed={props.protocol === p.value && props.sidebarOpen}
           title={p.label}
         >
           <p.icon size={22} aria-hidden="true" />

@@ -34,6 +34,7 @@ export function ResizablePanelGroup(props: ResizablePanelGroupProps) {
 type ResizablePanelProps = {
   defaultSize?: number;
   minSize?: number;
+  collapsible?: boolean;
   class?: string;
   children: JSX.Element;
   onResize?: (size: number) => void;
