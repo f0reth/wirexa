@@ -24,9 +24,18 @@ import { UdpProvider } from "./presentation/providers/udp-provider";
 
 function SidebarCollapseController(props: { sidebarOpen: () => boolean }) {
   const panelCtx = Resizable.usePanelContext();
+  let lastSize = 0.15;
+
+  createEffect(() => {
+    const size = panelCtx.size();
+    if (!panelCtx.collapsed() && size > 0) {
+      lastSize = size;
+    }
+  });
+
   createEffect(() => {
     if (props.sidebarOpen()) {
-      if (panelCtx.collapsed()) panelCtx.expand();
+      if (panelCtx.collapsed()) panelCtx.resize(lastSize);
     } else {
       if (!panelCtx.collapsed()) panelCtx.collapse();
     }
