@@ -85,6 +85,17 @@ function PresetsPanel(props: {
               <For each={presets()}>
                 {(preset) => {
                   const isSelected = () => selectedPresetId() === preset.id;
+                  const [editingName, setEditingName] = createSignal(
+                    preset.name,
+                  );
+
+                  const commitName = () => {
+                    const name = editingName().trim();
+                    if (name && name !== preset.name) {
+                      updatePreset(preset.id, { name });
+                    }
+                  };
+
                   return (
                     // biome-ignore lint/a11y/useSemanticElements: contains nested interactive elements (delete button, name input); button cannot contain button
                     <div
@@ -110,12 +121,21 @@ function PresetsPanel(props: {
                           }
                         >
                           <Input
-                            value={preset.name}
+                            value={editingName()}
                             onInput={(e) =>
-                              updatePreset(preset.id, {
-                                name: e.currentTarget.value,
-                              })
+                              setEditingName(e.currentTarget.value)
                             }
+                            onBlur={commitName}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                e.currentTarget.blur();
+                              } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                setEditingName(preset.name);
+                                e.currentTarget.blur();
+                              }
+                            }}
                             onClick={(e) => e.stopPropagation()}
                             class={styles.presetNameInlineInput}
                           />
