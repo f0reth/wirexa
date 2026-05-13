@@ -28,7 +28,7 @@ function SidebarCollapseController(props: { sidebarOpen: () => boolean }) {
 
   createEffect(() => {
     const size = panelCtx.size();
-    if (!panelCtx.collapsed() && size > 0) {
+    if (props.sidebarOpen() && !panelCtx.collapsed() && size > 0) {
       lastSize = size;
     }
   });
