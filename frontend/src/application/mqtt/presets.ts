@@ -45,7 +45,7 @@ export function createPresetsState(storage: PresetStorage) {
     const id = crypto.randomUUID();
     const newPreset: PublishPreset = {
       id,
-      name: name ?? "New Message",
+      name: name ?? "no name",
       topic: "",
       payload: "",
       qos: 0,

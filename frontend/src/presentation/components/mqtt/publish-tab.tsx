@@ -30,7 +30,7 @@ function PresetsPanel(props: { addPreset: () => void }) {
     <div class={styles.presetsPanel}>
       <div class={styles.sectionHeader}>
         <h3 class={styles.sectionTitle}>Messages</h3>
-        <Button variant="ghost" size="icon" onClick={props.addPreset}>
+        <Button variant="ghost" size="icon" onClick={() => props.addPreset()}>
           <Plus size={16} />
         </Button>
       </div>
