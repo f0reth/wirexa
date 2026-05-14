@@ -1,4 +1,4 @@
-import { Plus, Send, Trash2 } from "lucide-solid";
+import { GripVertical, Plus, Send, Trash2 } from "lucide-solid";
 import { batch, createEffect, createSignal, For, on, Show } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -22,6 +22,7 @@ function PresetsPanel(props: { addPreset: () => void }) {
     presets,
     removePreset,
     updatePreset,
+    reorderPresets,
     selectedPresetId,
     setSelectedPresetId,
   } = useMqttPublish();
@@ -43,11 +44,12 @@ function PresetsPanel(props: { addPreset: () => void }) {
           >
             <div class={styles.itemList}>
               <For each={presets()}>
-                {(preset) => {
+                {(preset, index) => {
                   const isSelected = () => selectedPresetId() === preset.id;
                   const [editingName, setEditingName] = createSignal(
                     preset.name,
                   );
+                  const [isDragging, setIsDragging] = createSignal(false);
 
                   const commitName = () => {
                     const name = editingName().trim();
@@ -59,10 +61,28 @@ function PresetsPanel(props: { addPreset: () => void }) {
                   return (
                     // biome-ignore lint/a11y/useSemanticElements: contains nested interactive elements (delete button, name input); button cannot contain button
                     <div
-                      class={`${styles.presetItem}${isSelected() ? ` ${styles.presetItemSelected}` : ""}`}
+                      class={`${styles.presetItem}${isSelected() ? ` ${styles.presetItemSelected}` : ""}${isDragging() ? ` ${styles.presetItemDragging}` : ""}`}
                       role="button"
                       tabIndex={0}
+                      draggable={true}
+                      onDragStart={(e) => {
+                        setIsDragging(true);
+                        e.dataTransfer?.setData("text/plain", String(index()));
+                      }}
+                      onDragEnd={() =>
+                        setTimeout(() => setIsDragging(false), 0)
+                      }
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const from = parseInt(
+                          e.dataTransfer?.getData("text/plain") ?? "-1",
+                          10,
+                        );
+                        reorderPresets(from, index());
+                      }}
                       onClick={() => {
+                        if (isDragging()) return;
                         if (!isSelected()) setSelectedPresetId(preset.id);
                       }}
                       onKeyDown={(e) => {
@@ -73,6 +93,7 @@ function PresetsPanel(props: { addPreset: () => void }) {
                           setSelectedPresetId(preset.id);
                       }}
                     >
+                      <GripVertical size={14} class={styles.dragHandle} />
                       <div class={styles.presetItemBody}>
                         <Show
                           when={isSelected()}

@@ -591,6 +591,16 @@
   border-color: var(--border-prominent);
 }
 
+.presetItemDragging {
+  opacity: 0.4;
+}
+
+.dragHandle {
+  color: var(--color-muted-foreground);
+  flex-shrink: 0;
+  cursor: grab;
+}
+
 .presetItemBody {
   display: flex;
   flex: 1;
