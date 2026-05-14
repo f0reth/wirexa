@@ -58,12 +58,25 @@ export function createPresetsState(storage: PresetStorage) {
     setSelectedPresetId(id);
   }
 
+  function reorderPresets(fromIndex: number, toIndex: number): void {
+    if (fromIndex < 0 || toIndex < 0) return;
+    setPresets((prev) => {
+      if (fromIndex >= prev.length || toIndex >= prev.length) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      storage.save(next);
+      return next;
+    });
+  }
+
   return {
     presets,
     savePreset,
     addPreset,
     updatePreset,
     removePreset,
+    reorderPresets,
     selectedPresetId,
     setSelectedPresetId,
   };
