@@ -87,6 +87,7 @@ export interface PublishContextValue {
     id: string,
     updates: Partial<Omit<PublishPreset, "id">>,
   ) => void;
+  reorderPresets: (fromIndex: number, toIndex: number) => void;
   selectedPresetId: Accessor<string | null>;
   setSelectedPresetId: Setter<string | null>;
   publish: (topic: string, payload: string, qos: number) => Promise<void>;
