@@ -1,4 +1,4 @@
-import { Save, Send, Trash2 } from "lucide-solid";
+import { Plus, Send, Trash2 } from "lucide-solid";
 import { batch, createEffect, createSignal, For, on, Show } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -10,7 +10,6 @@ import {
 } from "../../../components/ui/resizable";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Textarea } from "../../../components/ui/textarea";
-import type { PublishPreset } from "../../../domain/mqtt/types";
 import {
   useMqttConnection,
   useMqttPublish,
@@ -18,60 +17,21 @@ import {
 import styles from "./mqtt.module.css";
 import { QosSelect } from "./qos-select";
 
-function PresetsPanel(props: {
-  publishTopic: () => string;
-  publishPayload: () => string;
-  publishQos: () => number;
-  onLoadPreset: (preset: PublishPreset) => void;
-}) {
+function PresetsPanel(props: { addPreset: () => void }) {
   const {
     presets,
-    savePreset,
     removePreset,
     updatePreset,
     selectedPresetId,
     setSelectedPresetId,
   } = useMqttPublish();
-  const [presetName, setPresetName] = createSignal("");
-
-  const handleSavePreset = () => {
-    if (!presetName().trim() || !props.publishTopic().trim()) return;
-    savePreset({
-      name: presetName().trim(),
-      topic: props.publishTopic(),
-      payload: props.publishPayload(),
-      qos: props.publishQos() as 0 | 1 | 2,
-    });
-    setPresetName("");
-  };
-
-  const handlePresetClick = (preset: PublishPreset) => {
-    batch(() => {
-      setSelectedPresetId(preset.id);
-      props.onLoadPreset(preset);
-    });
-  };
 
   return (
     <div class={styles.presetsPanel}>
       <div class={styles.sectionHeader}>
-        <h3 class={styles.sectionTitle}>Saved</h3>
-      </div>
-
-      <div class={styles.savePresetSection}>
-        <Input
-          value={presetName()}
-          onInput={(e) => setPresetName(e.currentTarget.value)}
-          placeholder="Preset name"
-          class={styles.presetNameInput}
-        />
-        <Button
-          size="sm"
-          onClick={handleSavePreset}
-          class={styles.savePresetButton}
-        >
-          <Save size={16} />
-          Save current
+        <h3 class={styles.sectionTitle}>Messages</h3>
+        <Button variant="ghost" size="icon" onClick={props.addPreset}>
+          <Plus size={16} />
         </Button>
       </div>
 
@@ -103,14 +63,14 @@ function PresetsPanel(props: {
                       role="button"
                       tabIndex={0}
                       onClick={() => {
-                        if (!isSelected()) handlePresetClick(preset);
+                        if (!isSelected()) setSelectedPresetId(preset.id);
                       }}
                       onKeyDown={(e) => {
                         if (
                           (e.key === "Enter" || e.key === " ") &&
                           !isSelected()
                         )
-                          handlePresetClick(preset);
+                          setSelectedPresetId(preset.id);
                       }}
                     >
                       <div class={styles.presetItemBody}>
@@ -234,7 +194,25 @@ export function PublishTab() {
   const [publishPayload, setPublishPayload] = createSignal("");
   const [publishQos, setPublishQos] = createSignal<number>(0);
 
-  const { presets, updatePreset, selectedPresetId } = useMqttPublish();
+  const { presets, addPreset, updatePreset, selectedPresetId } =
+    useMqttPublish();
+
+  createEffect(
+    on(
+      selectedPresetId,
+      (id) => {
+        if (!id) return;
+        const preset = presets().find((p) => p.id === id);
+        if (!preset) return;
+        batch(() => {
+          setPublishTopic(preset.topic);
+          setPublishPayload(preset.payload);
+          setPublishQos(preset.qos);
+        });
+      },
+      { defer: true },
+    ),
+  );
 
   createEffect(
     on(
@@ -256,21 +234,10 @@ export function PublishTab() {
     ),
   );
 
-  const handleLoadPreset = (preset: PublishPreset) => {
-    setPublishTopic(preset.topic);
-    setPublishPayload(preset.payload);
-    setPublishQos(preset.qos);
-  };
-
   return (
     <ResizablePanelGroup direction="horizontal" class={styles.tabContent}>
       <ResizablePanel defaultSize={30} minSize={20}>
-        <PresetsPanel
-          publishTopic={publishTopic}
-          publishPayload={publishPayload}
-          publishQos={publishQos}
-          onLoadPreset={handleLoadPreset}
-        />
+        <PresetsPanel addPreset={addPreset} />
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={70} minSize={40}>
