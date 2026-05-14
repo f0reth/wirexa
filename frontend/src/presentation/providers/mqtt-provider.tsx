@@ -81,6 +81,7 @@ export interface MessagesContextValue {
 export interface PublishContextValue {
   presets: Accessor<PublishPreset[]>;
   savePreset: (preset: Omit<PublishPreset, "id">) => void;
+  addPreset: (name?: string) => void;
   removePreset: (id: string) => void;
   updatePreset: (
     id: string,
@@ -120,6 +121,9 @@ export function MqttProvider(props: { children: JSX.Element }) {
 
   onMount(() => {
     loadProfiles();
+    if (presetState.presets().length === 0) {
+      presetState.addPreset();
+    }
   });
   const subsState = createSubscriptionsState(
     connState.activeConnection,
