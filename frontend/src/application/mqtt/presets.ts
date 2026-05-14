@@ -41,9 +41,27 @@ export function createPresetsState(storage: PresetStorage) {
     setSelectedPresetId((prev) => (prev === id ? null : prev));
   }
 
+  function addPreset(name?: string) {
+    const id = crypto.randomUUID();
+    const newPreset: PublishPreset = {
+      id,
+      name: name ?? "New Message",
+      topic: "",
+      payload: "",
+      qos: 0,
+    };
+    setPresets((prev) => {
+      const next = [...prev, newPreset];
+      storage.save(next);
+      return next;
+    });
+    setSelectedPresetId(id);
+  }
+
   return {
     presets,
     savePreset,
+    addPreset,
     updatePreset,
     removePreset,
     selectedPresetId,
