@@ -1,3 +1,4 @@
+import { clsx } from "clsx";
 import { GripVertical, Plus, Send, Trash2 } from "lucide-solid";
 import { batch, createEffect, createSignal, For, on, Show } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
@@ -27,6 +28,11 @@ function PresetsPanel(props: { addPreset: () => void }) {
     setSelectedPresetId,
   } = useMqttPublish();
 
+  const [draggingIndex, setDraggingIndex] = createSignal<number | null>(null);
+  const [dropIndicatorIndex, setDropIndicatorIndex] = createSignal<
+    number | null
+  >(null);
+
   return (
     <div class={styles.presetsPanel}>
       <div class={styles.sectionHeader}>
@@ -49,7 +55,6 @@ function PresetsPanel(props: { addPreset: () => void }) {
                   const [editingName, setEditingName] = createSignal(
                     preset.name,
                   );
-                  const [isDragging, setIsDragging] = createSignal(false);
 
                   const commitName = () => {
                     const name = editingName().trim();
@@ -59,86 +64,139 @@ function PresetsPanel(props: { addPreset: () => void }) {
                   };
 
                   return (
-                    // biome-ignore lint/a11y/useSemanticElements: contains nested interactive elements (delete button, name input); button cannot contain button
-                    <div
-                      class={`${styles.presetItem}${isSelected() ? ` ${styles.presetItemSelected}` : ""}${isDragging() ? ` ${styles.presetItemDragging}` : ""}`}
-                      role="button"
-                      tabIndex={0}
-                      draggable={true}
-                      onDragStart={(e) => {
-                        setIsDragging(true);
-                        e.dataTransfer?.setData("text/plain", String(index()));
-                      }}
-                      onDragEnd={() =>
-                        setTimeout(() => setIsDragging(false), 0)
-                      }
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        const from = parseInt(
-                          e.dataTransfer?.getData("text/plain") ?? "-1",
-                          10,
-                        );
-                        reorderPresets(from, index());
-                      }}
-                      onClick={() => {
-                        if (isDragging()) return;
-                        if (!isSelected()) setSelectedPresetId(preset.id);
-                      }}
-                      onKeyDown={(e) => {
-                        if (
-                          (e.key === "Enter" || e.key === " ") &&
-                          !isSelected()
-                        )
-                          setSelectedPresetId(preset.id);
-                      }}
-                    >
-                      <GripVertical size={14} class={styles.dragHandle} />
-                      <div class={styles.presetItemBody}>
-                        <Show
-                          when={isSelected()}
-                          fallback={
-                            <span class={styles.presetName}>{preset.name}</span>
-                          }
-                        >
-                          <Input
-                            value={editingName()}
-                            onInput={(e) =>
-                              setEditingName(e.currentTarget.value)
-                            }
-                            onBlur={commitName}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                e.currentTarget.blur();
-                              } else if (e.key === "Escape") {
-                                e.preventDefault();
-                                setEditingName(preset.name);
-                                e.currentTarget.blur();
-                              }
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            class={styles.presetNameInlineInput}
-                          />
-                        </Show>
-                        <span class={styles.presetTopic}>{preset.topic}</span>
-                        <Badge variant="secondary">QoS {preset.qos}</Badge>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removePreset(preset.id);
+                    <>
+                      <div
+                        class={clsx(
+                          styles.insertionZone,
+                          draggingIndex() !== null &&
+                            styles.insertionZoneVisible,
+                          dropIndicatorIndex() === index() &&
+                            styles.insertionZoneActive,
+                        )}
+                      />
+                      {/* biome-ignore lint/a11y/useSemanticElements: contains nested interactive elements (delete button, name input); button cannot contain button */}
+                      <div
+                        class={clsx(
+                          styles.presetItem,
+                          isSelected() && styles.presetItemSelected,
+                          draggingIndex() === index() &&
+                            styles.presetItemDragging,
+                        )}
+                        role="button"
+                        tabIndex={0}
+                        draggable={true}
+                        onDragStart={(e) => {
+                          setDraggingIndex(index());
+                          e.dataTransfer?.setData(
+                            "text/plain",
+                            String(index()),
+                          );
                         }}
-                        class={styles.deleteButton}
+                        onDragEnd={() => {
+                          setTimeout(() => setDraggingIndex(null), 0);
+                          setDropIndicatorIndex(null);
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          const rect = (
+                            e.currentTarget as HTMLElement
+                          ).getBoundingClientRect();
+                          const mid = rect.top + rect.height / 2;
+                          setDropIndicatorIndex(
+                            e.clientY < mid ? index() : index() + 1,
+                          );
+                        }}
+                        onDragLeave={(e) => {
+                          if (
+                            !(e.currentTarget as HTMLElement).contains(
+                              e.relatedTarget as Node,
+                            )
+                          ) {
+                            setDropIndicatorIndex(null);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const from = parseInt(
+                            e.dataTransfer?.getData("text/plain") ?? "-1",
+                            10,
+                          );
+                          const p = dropIndicatorIndex();
+                          if (p !== null && from >= 0) {
+                            const to = p > from ? p - 1 : p;
+                            reorderPresets(from, to);
+                          }
+                          setDropIndicatorIndex(null);
+                        }}
+                        onClick={() => {
+                          if (draggingIndex() !== null) return;
+                          if (!isSelected()) setSelectedPresetId(preset.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (
+                            (e.key === "Enter" || e.key === " ") &&
+                            !isSelected()
+                          )
+                            setSelectedPresetId(preset.id);
+                        }}
                       >
-                        <Trash2 size={16} />
-                      </Button>
-                    </div>
+                        <GripVertical size={14} class={styles.dragHandle} />
+                        <div class={styles.presetItemBody}>
+                          <Show
+                            when={isSelected()}
+                            fallback={
+                              <span class={styles.presetName}>
+                                {preset.name}
+                              </span>
+                            }
+                          >
+                            <Input
+                              value={editingName()}
+                              onInput={(e) =>
+                                setEditingName(e.currentTarget.value)
+                              }
+                              onBlur={commitName}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  e.currentTarget.blur();
+                                } else if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  setEditingName(preset.name);
+                                  e.currentTarget.blur();
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              class={styles.presetNameInlineInput}
+                            />
+                          </Show>
+                          <span class={styles.presetTopic}>{preset.topic}</span>
+                          <Badge variant="secondary">QoS {preset.qos}</Badge>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removePreset(preset.id);
+                          }}
+                          class={styles.deleteButton}
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      </div>
+                    </>
                   );
                 }}
               </For>
+              <div
+                class={clsx(
+                  styles.insertionZone,
+                  draggingIndex() !== null && styles.insertionZoneVisible,
+                  dropIndicatorIndex() === presets().length &&
+                    styles.insertionZoneActive,
+                )}
+              />
             </div>
           </Show>
         </div>

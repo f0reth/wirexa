@@ -539,6 +539,29 @@
   box-shadow: inset 0 1px 3px var(--inset-shadow);
 }
 
+/* ── Drag-and-drop insertion zone ───────────────────────── */
+.insertionZone {
+  height: 4px;
+  position: relative;
+  margin: 0;
+}
+
+.insertionZoneVisible {
+  height: 8px;
+}
+
+.insertionZoneActive::after {
+  content: "";
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 2px;
+  background-color: var(--color-primary);
+  border-radius: 1px;
+}
+
 /* ── Presets panel ───────────────────────────────────────── */
 .presetsPanel {
   display: flex;
