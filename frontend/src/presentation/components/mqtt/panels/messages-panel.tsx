@@ -2,7 +2,11 @@ import { createVirtualizer } from "@tanstack/solid-virtual";
 import { clsx } from "clsx";
 import { Radio, X, Zap } from "lucide-solid";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { useMqttMessages } from "../../../providers/mqtt-provider";
+import { topicMatches } from "../../../../domain/mqtt/topic";
+import {
+  useMqttMessages,
+  useMqttSubscribe,
+} from "../../../providers/mqtt-provider";
 import styles from "../mqtt.module.css";
 import { formatTime, getTopicColor } from "../utils";
 
@@ -15,15 +19,30 @@ export function MessagesPanel() {
     setAutoFollow,
     clearMessages,
   } = useMqttMessages();
+  const { subscriptions } = useMqttSubscribe();
 
   const [topicFilter, setTopicFilter] = createSignal("");
 
   const uniqueTopics = createMemo(() => {
-    const topics = new Set(messages().map((m) => m.topic));
-    return Array.from(topics).sort();
+    const subs = subscriptions();
+    const msgs = messages();
+    const result = new Set<string>();
+
+    for (const sub of subs) {
+      result.add(sub.topic);
+      if (sub.topic.includes("#") || sub.topic.includes("+")) {
+        for (const msg of msgs) {
+          if (topicMatches(sub.topic, msg.topic)) {
+            result.add(msg.topic);
+          }
+        }
+      }
+    }
+
+    return Array.from(result).sort();
   });
 
-  // Reset filter when the selected topic disappears from messages
+  // Reset filter when the selected topic disappears from subscriptions
   createEffect(() => {
     const filter = topicFilter();
     if (filter && !uniqueTopics().includes(filter)) {
@@ -34,6 +53,9 @@ export function MessagesPanel() {
   const filteredMessages = createMemo(() => {
     const filter = topicFilter();
     if (!filter) return messages();
+    if (filter.includes("#") || filter.includes("+")) {
+      return messages().filter((m) => topicMatches(filter, m.topic));
+    }
     return messages().filter((m) => m.topic === filter);
   });
 
