@@ -35,6 +35,10 @@ export function BrokerTree() {
     id: string;
     name: string;
   } | null>(null);
+  const [draggingIndex, setDraggingIndex] = createSignal<number | null>(null);
+  const [dropIndicatorIndex, setDropIndicatorIndex] = createSignal<
+    number | null
+  >(null);
 
   // Memoize profileId → ConnectionState index to avoid repeated object→Array conversions
   const connectionByProfileId = createMemo(() => {
@@ -115,104 +119,142 @@ export function BrokerTree() {
       <ScrollArea class={styles.treeScroll}>
         <div class={styles.treeList}>
           <For each={profiles()}>
-            {(profile, index) => {
-              const [isDragging, setIsDragging] = createSignal(false);
-
-              return (
-                <>
-                  {/* biome-ignore lint/a11y/useSemanticElements: contains nested action buttons; cannot use <button> with nested interactive elements */}
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    class={clsx(
-                      styles.brokerItem,
-                      isActive(profile.id) && styles.brokerItemActive,
-                      isDragging() && styles.brokerItemDragging,
-                    )}
-                    draggable={true}
-                    onDragStart={(e) => {
-                      setIsDragging(true);
-                      e.dataTransfer?.setData("text/plain", String(index()));
-                    }}
-                    onDragEnd={() => setTimeout(() => setIsDragging(false), 0)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const from = parseInt(
-                        e.dataTransfer?.getData("text/plain") ?? "-1",
-                        10,
-                      );
-                      reorderProfiles(from, index());
-                    }}
-                    onClick={() => {
-                      if (isDragging()) return;
+            {(profile, index) => (
+              <>
+                <div
+                  class={clsx(
+                    styles.insertionZone,
+                    draggingIndex() !== null && styles.insertionZoneVisible,
+                    dropIndicatorIndex() === index() &&
+                      styles.insertionZoneActive,
+                  )}
+                />
+                {/* biome-ignore lint/a11y/useSemanticElements: contains nested action buttons; cannot use <button> with nested interactive elements */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  class={clsx(
+                    styles.brokerItem,
+                    isActive(profile.id) && styles.brokerItemActive,
+                    draggingIndex() === index() && styles.brokerItemDragging,
+                  )}
+                  draggable={true}
+                  onDragStart={(e) => {
+                    setDraggingIndex(index());
+                    e.dataTransfer?.setData("text/plain", String(index()));
+                  }}
+                  onDragEnd={() => {
+                    setTimeout(() => setDraggingIndex(null), 0);
+                    setDropIndicatorIndex(null);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    const rect = (
+                      e.currentTarget as HTMLElement
+                    ).getBoundingClientRect();
+                    const mid = rect.top + rect.height / 2;
+                    setDropIndicatorIndex(
+                      e.clientY < mid ? index() : index() + 1,
+                    );
+                  }}
+                  onDragLeave={(e) => {
+                    if (
+                      !(e.currentTarget as HTMLElement).contains(
+                        e.relatedTarget as Node,
+                      )
+                    ) {
+                      setDropIndicatorIndex(null);
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const from = parseInt(
+                      e.dataTransfer?.getData("text/plain") ?? "-1",
+                      10,
+                    );
+                    const p = dropIndicatorIndex();
+                    if (p !== null && from >= 0) {
+                      const to = p > from ? p - 1 : p;
+                      reorderProfiles(from, to);
+                    }
+                    setDropIndicatorIndex(null);
+                  }}
+                  onClick={() => {
+                    if (draggingIndex() !== null) return;
+                    handleProfileClick(profile.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ")
                       handleProfileClick(profile.id);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ")
-                        handleProfileClick(profile.id);
-                    }}
-                  >
-                    <GripVertical
-                      size={12}
-                      class={styles.dragHandle}
-                      aria-hidden="true"
-                    />
-                    <span
-                      class={clsx(
-                        styles.brokerDot,
-                        isProfileConnected(profile.id)
-                          ? styles.brokerDotConnected
-                          : styles.brokerDotDisconnected,
-                      )}
-                      title={
-                        isProfileConnected(profile.id)
-                          ? "Connected"
-                          : "Disconnected"
-                      }
-                      aria-hidden="true"
-                    />
-                    <div class={styles.brokerInfo}>
-                      <span class={styles.brokerName}>{profile.name}</span>
-                      <span class={styles.brokerUrl}>{profile.broker}</span>
-                    </div>
-                    <div class={styles.treeNodeActions}>
-                      <button
-                        type="button"
-                        class={styles.treeActionBtn}
-                        aria-label="Edit broker"
-                        title="Edit"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingProfile(profile);
-                        }}
-                      >
-                        <Settings size={12} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        class={clsx(
-                          styles.treeActionBtn,
-                          styles.treeActionBtnDanger,
-                        )}
-                        aria-label="Delete broker"
-                        title="Delete"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeletingProfile({
-                            id: profile.id,
-                            name: profile.name,
-                          });
-                        }}
-                      >
-                        <Trash2 size={12} aria-hidden="true" />
-                      </button>
-                    </div>
+                  }}
+                >
+                  <GripVertical
+                    size={12}
+                    class={styles.dragHandle}
+                    aria-hidden="true"
+                  />
+                  <span
+                    class={clsx(
+                      styles.brokerDot,
+                      isProfileConnected(profile.id)
+                        ? styles.brokerDotConnected
+                        : styles.brokerDotDisconnected,
+                    )}
+                    title={
+                      isProfileConnected(profile.id)
+                        ? "Connected"
+                        : "Disconnected"
+                    }
+                    aria-hidden="true"
+                  />
+                  <div class={styles.brokerInfo}>
+                    <span class={styles.brokerName}>{profile.name}</span>
+                    <span class={styles.brokerUrl}>{profile.broker}</span>
                   </div>
-                </>
-              );
-            }}
+                  <div class={styles.treeNodeActions}>
+                    <button
+                      type="button"
+                      class={styles.treeActionBtn}
+                      aria-label="Edit broker"
+                      title="Edit"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingProfile(profile);
+                      }}
+                    >
+                      <Settings size={12} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      class={clsx(
+                        styles.treeActionBtn,
+                        styles.treeActionBtnDanger,
+                      )}
+                      aria-label="Delete broker"
+                      title="Delete"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletingProfile({
+                          id: profile.id,
+                          name: profile.name,
+                        });
+                      }}
+                    >
+                      <Trash2 size={12} aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </For>
+          <div
+            class={clsx(
+              styles.insertionZone,
+              draggingIndex() !== null && styles.insertionZoneVisible,
+              dropIndicatorIndex() === profiles().length &&
+                styles.insertionZoneActive,
+            )}
+          />
 
           <Show when={profiles().length === 0}>
             <p class={styles.emptyTree}>No brokers yet</p>

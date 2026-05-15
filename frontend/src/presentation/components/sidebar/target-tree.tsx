@@ -159,6 +159,10 @@ export function TargetTree() {
     id: string;
     name: string;
   } | null>(null);
+  const [draggingIndex, setDraggingIndex] = createSignal<number | null>(null);
+  const [dropIndicatorIndex, setDropIndicatorIndex] = createSignal<
+    number | null
+  >(null);
 
   const handleSave = async (t: UdpTarget) => {
     await saveTarget(t);
@@ -184,91 +188,128 @@ export function TargetTree() {
       <ScrollArea class={styles.treeScroll}>
         <div class={styles.treeList}>
           <For each={targets}>
-            {(target, index) => {
-              const [isDragging, setIsDragging] = createSignal(false);
-
-              return (
-                <>
-                  {/* biome-ignore lint/a11y/useSemanticElements: contains nested action buttons; cannot use <button> with nested interactive elements */}
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    class={clsx(
-                      styles.brokerItem,
-                      isDragging() && styles.brokerItemDragging,
-                    )}
-                    draggable={true}
-                    onDragStart={(e) => {
-                      setIsDragging(true);
-                      e.dataTransfer?.setData("text/plain", String(index()));
-                    }}
-                    onDragEnd={() => setTimeout(() => setIsDragging(false), 0)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const from = parseInt(
-                        e.dataTransfer?.getData("text/plain") ?? "-1",
-                        10,
-                      );
-                      reorderTargets(from, index());
-                    }}
-                    onClick={() => {
-                      if (isDragging()) return;
-                      loadTarget(target);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ")
-                        loadTarget(target);
-                    }}
-                  >
-                    <GripVertical
-                      size={12}
-                      class={styles.dragHandle}
-                      aria-hidden="true"
-                    />
-                    <div class={styles.brokerInfo}>
-                      <span class={styles.brokerName}>{target.name}</span>
-                      <span class={styles.brokerUrl}>
-                        {target.host}:{target.port}
-                      </span>
-                    </div>
-                    <div class={styles.treeNodeActions}>
-                      <button
-                        type="button"
-                        class={styles.treeActionBtn}
-                        aria-label="Edit target"
-                        title="Edit"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingTarget(target);
-                        }}
-                      >
-                        <Settings size={12} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        class={clsx(
-                          styles.treeActionBtn,
-                          styles.treeActionBtnDanger,
-                        )}
-                        aria-label="Delete target"
-                        title="Delete"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeletingTarget({
-                            id: target.id,
-                            name: target.name,
-                          });
-                        }}
-                      >
-                        <Trash2 size={12} aria-hidden="true" />
-                      </button>
-                    </div>
+            {(target, index) => (
+              <>
+                <div
+                  class={clsx(
+                    styles.insertionZone,
+                    draggingIndex() !== null && styles.insertionZoneVisible,
+                    dropIndicatorIndex() === index() &&
+                      styles.insertionZoneActive,
+                  )}
+                />
+                {/* biome-ignore lint/a11y/useSemanticElements: contains nested action buttons; cannot use <button> with nested interactive elements */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  class={clsx(
+                    styles.brokerItem,
+                    draggingIndex() === index() && styles.brokerItemDragging,
+                  )}
+                  draggable={true}
+                  onDragStart={(e) => {
+                    setDraggingIndex(index());
+                    e.dataTransfer?.setData("text/plain", String(index()));
+                  }}
+                  onDragEnd={() => {
+                    setTimeout(() => setDraggingIndex(null), 0);
+                    setDropIndicatorIndex(null);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    const rect = (
+                      e.currentTarget as HTMLElement
+                    ).getBoundingClientRect();
+                    const mid = rect.top + rect.height / 2;
+                    setDropIndicatorIndex(
+                      e.clientY < mid ? index() : index() + 1,
+                    );
+                  }}
+                  onDragLeave={(e) => {
+                    if (
+                      !(e.currentTarget as HTMLElement).contains(
+                        e.relatedTarget as Node,
+                      )
+                    ) {
+                      setDropIndicatorIndex(null);
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const from = parseInt(
+                      e.dataTransfer?.getData("text/plain") ?? "-1",
+                      10,
+                    );
+                    const p = dropIndicatorIndex();
+                    if (p !== null && from >= 0) {
+                      const to = p > from ? p - 1 : p;
+                      reorderTargets(from, to);
+                    }
+                    setDropIndicatorIndex(null);
+                  }}
+                  onClick={() => {
+                    if (draggingIndex() !== null) return;
+                    loadTarget(target);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") loadTarget(target);
+                  }}
+                >
+                  <GripVertical
+                    size={12}
+                    class={styles.dragHandle}
+                    aria-hidden="true"
+                  />
+                  <div class={styles.brokerInfo}>
+                    <span class={styles.brokerName}>{target.name}</span>
+                    <span class={styles.brokerUrl}>
+                      {target.host}:{target.port}
+                    </span>
                   </div>
-                </>
-              );
-            }}
+                  <div class={styles.treeNodeActions}>
+                    <button
+                      type="button"
+                      class={styles.treeActionBtn}
+                      aria-label="Edit target"
+                      title="Edit"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingTarget(target);
+                      }}
+                    >
+                      <Settings size={12} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      class={clsx(
+                        styles.treeActionBtn,
+                        styles.treeActionBtnDanger,
+                      )}
+                      aria-label="Delete target"
+                      title="Delete"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletingTarget({
+                          id: target.id,
+                          name: target.name,
+                        });
+                      }}
+                    >
+                      <Trash2 size={12} aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </For>
+          <div
+            class={clsx(
+              styles.insertionZone,
+              draggingIndex() !== null && styles.insertionZoneVisible,
+              dropIndicatorIndex() === targets.length &&
+                styles.insertionZoneActive,
+            )}
+          />
 
           <Show when={targets.length === 0}>
             <p class={styles.emptyTree}>No targets yet</p>
