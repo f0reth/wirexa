@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { ChevronDown, ChevronUp, Plus, Settings, Trash2 } from "lucide-solid";
+import { GripVertical, Plus, Settings, Trash2 } from "lucide-solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Button } from "../../../components/ui/button";
@@ -115,101 +115,103 @@ export function BrokerTree() {
       <ScrollArea class={styles.treeScroll}>
         <div class={styles.treeList}>
           <For each={profiles()}>
-            {(profile, index) => (
-              <>
-                {/* biome-ignore lint/a11y/useSemanticElements: contains nested action buttons; cannot use <button> with nested interactive elements */}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  class={clsx(
-                    styles.brokerItem,
-                    isActive(profile.id) && styles.brokerItemActive,
-                  )}
-                  onClick={() => handleProfileClick(profile.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ")
-                      handleProfileClick(profile.id);
-                  }}
-                >
-                  <span
+            {(profile, index) => {
+              const [isDragging, setIsDragging] = createSignal(false);
+
+              return (
+                <>
+                  {/* biome-ignore lint/a11y/useSemanticElements: contains nested action buttons; cannot use <button> with nested interactive elements */}
+                  <div
+                    role="button"
+                    tabIndex={0}
                     class={clsx(
-                      styles.brokerDot,
-                      isProfileConnected(profile.id)
-                        ? styles.brokerDotConnected
-                        : styles.brokerDotDisconnected,
+                      styles.brokerItem,
+                      isActive(profile.id) && styles.brokerItemActive,
+                      isDragging() && styles.brokerItemDragging,
                     )}
-                    title={
-                      isProfileConnected(profile.id)
-                        ? "Connected"
-                        : "Disconnected"
-                    }
-                    aria-hidden="true"
-                  />
-                  <div class={styles.brokerInfo}>
-                    <span class={styles.brokerName}>{profile.name}</span>
-                    <span class={styles.brokerUrl}>{profile.broker}</span>
-                  </div>
-                  <div class={styles.treeNodeActions}>
-                    <button
-                      type="button"
-                      class={styles.treeActionBtn}
-                      aria-label="Move up"
-                      title="Move up"
-                      disabled={index() === 0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        reorderProfiles(index(), index() - 1);
-                      }}
-                    >
-                      <ChevronUp size={12} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      class={styles.treeActionBtn}
-                      aria-label="Move down"
-                      title="Move down"
-                      disabled={index() === profiles().length - 1}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        reorderProfiles(index(), index() + 1);
-                      }}
-                    >
-                      <ChevronDown size={12} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      class={styles.treeActionBtn}
-                      aria-label="Edit broker"
-                      title="Edit"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingProfile(profile);
-                      }}
-                    >
-                      <Settings size={12} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
+                    draggable={true}
+                    onDragStart={(e) => {
+                      setIsDragging(true);
+                      e.dataTransfer?.setData("text/plain", String(index()));
+                    }}
+                    onDragEnd={() => setTimeout(() => setIsDragging(false), 0)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const from = parseInt(
+                        e.dataTransfer?.getData("text/plain") ?? "-1",
+                        10,
+                      );
+                      reorderProfiles(from, index());
+                    }}
+                    onClick={() => {
+                      if (isDragging()) return;
+                      handleProfileClick(profile.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ")
+                        handleProfileClick(profile.id);
+                    }}
+                  >
+                    <GripVertical
+                      size={12}
+                      class={styles.dragHandle}
+                      aria-hidden="true"
+                    />
+                    <span
                       class={clsx(
-                        styles.treeActionBtn,
-                        styles.treeActionBtnDanger,
+                        styles.brokerDot,
+                        isProfileConnected(profile.id)
+                          ? styles.brokerDotConnected
+                          : styles.brokerDotDisconnected,
                       )}
-                      aria-label="Delete broker"
-                      title="Delete"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeletingProfile({
-                          id: profile.id,
-                          name: profile.name,
-                        });
-                      }}
-                    >
-                      <Trash2 size={12} aria-hidden="true" />
-                    </button>
+                      title={
+                        isProfileConnected(profile.id)
+                          ? "Connected"
+                          : "Disconnected"
+                      }
+                      aria-hidden="true"
+                    />
+                    <div class={styles.brokerInfo}>
+                      <span class={styles.brokerName}>{profile.name}</span>
+                      <span class={styles.brokerUrl}>{profile.broker}</span>
+                    </div>
+                    <div class={styles.treeNodeActions}>
+                      <button
+                        type="button"
+                        class={styles.treeActionBtn}
+                        aria-label="Edit broker"
+                        title="Edit"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingProfile(profile);
+                        }}
+                      >
+                        <Settings size={12} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        class={clsx(
+                          styles.treeActionBtn,
+                          styles.treeActionBtnDanger,
+                        )}
+                        aria-label="Delete broker"
+                        title="Delete"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeletingProfile({
+                            id: profile.id,
+                            name: profile.name,
+                          });
+                        }}
+                      >
+                        <Trash2 size={12} aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
+                </>
+              );
+            }}
           </For>
 
           <Show when={profiles().length === 0}>

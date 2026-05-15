@@ -526,6 +526,16 @@
   opacity: 0.9;
 }
 
+.dragHandle {
+  color: var(--color-muted-foreground);
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.brokerItemDragging {
+  opacity: 0.5;
+}
+
 /* ── Inline rename input ──────────────────────────────── */
 .renameInput {
   font-size: 0.75rem;

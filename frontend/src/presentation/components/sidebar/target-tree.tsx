@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { ChevronDown, ChevronUp, Plus, Settings, Trash2 } from "lucide-solid";
+import { GripVertical, Plus, Settings, Trash2 } from "lucide-solid";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Button } from "../../../components/ui/button";
@@ -184,82 +184,90 @@ export function TargetTree() {
       <ScrollArea class={styles.treeScroll}>
         <div class={styles.treeList}>
           <For each={targets}>
-            {(target, index) => (
-              <>
-                {/* biome-ignore lint/a11y/useSemanticElements: contains nested action buttons; cannot use <button> with nested interactive elements */}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  class={clsx(styles.brokerItem)}
-                  onClick={() => loadTarget(target)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") loadTarget(target);
-                  }}
-                >
-                  <div class={styles.brokerInfo}>
-                    <span class={styles.brokerName}>{target.name}</span>
-                    <span class={styles.brokerUrl}>
-                      {target.host}:{target.port}
-                    </span>
+            {(target, index) => {
+              const [isDragging, setIsDragging] = createSignal(false);
+
+              return (
+                <>
+                  {/* biome-ignore lint/a11y/useSemanticElements: contains nested action buttons; cannot use <button> with nested interactive elements */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    class={clsx(
+                      styles.brokerItem,
+                      isDragging() && styles.brokerItemDragging,
+                    )}
+                    draggable={true}
+                    onDragStart={(e) => {
+                      setIsDragging(true);
+                      e.dataTransfer?.setData("text/plain", String(index()));
+                    }}
+                    onDragEnd={() => setTimeout(() => setIsDragging(false), 0)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const from = parseInt(
+                        e.dataTransfer?.getData("text/plain") ?? "-1",
+                        10,
+                      );
+                      reorderTargets(from, index());
+                    }}
+                    onClick={() => {
+                      if (isDragging()) return;
+                      loadTarget(target);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ")
+                        loadTarget(target);
+                    }}
+                  >
+                    <GripVertical
+                      size={12}
+                      class={styles.dragHandle}
+                      aria-hidden="true"
+                    />
+                    <div class={styles.brokerInfo}>
+                      <span class={styles.brokerName}>{target.name}</span>
+                      <span class={styles.brokerUrl}>
+                        {target.host}:{target.port}
+                      </span>
+                    </div>
+                    <div class={styles.treeNodeActions}>
+                      <button
+                        type="button"
+                        class={styles.treeActionBtn}
+                        aria-label="Edit target"
+                        title="Edit"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingTarget(target);
+                        }}
+                      >
+                        <Settings size={12} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        class={clsx(
+                          styles.treeActionBtn,
+                          styles.treeActionBtnDanger,
+                        )}
+                        aria-label="Delete target"
+                        title="Delete"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeletingTarget({
+                            id: target.id,
+                            name: target.name,
+                          });
+                        }}
+                      >
+                        <Trash2 size={12} aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
-                  <div class={styles.treeNodeActions}>
-                    <button
-                      type="button"
-                      class={styles.treeActionBtn}
-                      aria-label="Move up"
-                      title="Move up"
-                      disabled={index() === 0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        reorderTargets(index(), index() - 1);
-                      }}
-                    >
-                      <ChevronUp size={12} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      class={styles.treeActionBtn}
-                      aria-label="Move down"
-                      title="Move down"
-                      disabled={index() === targets.length - 1}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        reorderTargets(index(), index() + 1);
-                      }}
-                    >
-                      <ChevronDown size={12} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      class={styles.treeActionBtn}
-                      aria-label="Edit target"
-                      title="Edit"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingTarget(target);
-                      }}
-                    >
-                      <Settings size={12} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      class={clsx(
-                        styles.treeActionBtn,
-                        styles.treeActionBtnDanger,
-                      )}
-                      aria-label="Delete target"
-                      title="Delete"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeletingTarget({ id: target.id, name: target.name });
-                      }}
-                    >
-                      <Trash2 size={12} aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
+                </>
+              );
+            }}
           </For>
 
           <Show when={targets.length === 0}>
