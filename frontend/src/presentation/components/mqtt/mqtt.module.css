@@ -345,7 +345,7 @@
   color: var(--color-muted-foreground);
   cursor: pointer;
   font-family: var(--font-mono);
-  max-width: 9rem;
+  width: max-content;
   letter-spacing: -0.01em;
 }
 
