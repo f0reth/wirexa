@@ -3,6 +3,7 @@ package httpapp
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
@@ -33,7 +34,7 @@ func TestHttpRequestService_SendRequest_ValidMethods(t *testing.T) {
 			if err != nil {
 				t.Fatalf("SendRequest(%q): unexpected error %v", method, err)
 			}
-			if resp.StatusCode != 200 {
+			if resp.StatusCode != http.StatusOK {
 				t.Errorf("expected 200, got %d", resp.StatusCode)
 			}
 		})
@@ -187,7 +188,7 @@ func TestHttpRequestService_SendRequest_EmptyID_DoesNotPanic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendRequest with empty ID: %v", err)
 	}
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
 }

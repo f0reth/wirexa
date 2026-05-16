@@ -15,8 +15,8 @@ var _ domain.TargetUseCase = (*TargetService)(nil)
 // TargetService はターゲット管理ユースケースの実装。
 type TargetService struct {
 	repo    domain.TargetRepository
-	mu      sync.RWMutex
 	targets map[string]domain.UdpTarget
+	mu      sync.RWMutex
 }
 
 // NewTargetService は TargetService を生成する。

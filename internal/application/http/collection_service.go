@@ -22,9 +22,9 @@ const (
 type CollectionService struct {
 	repo       domain.CollectionRepository
 	layoutRepo domain.SidebarLayoutRepository
+	cache      map[string]*domain.Collection
 	mu         sync.RWMutex
 	layoutMu   sync.Mutex
-	cache      map[string]*domain.Collection
 }
 
 // NewCollectionService は CollectionService を生成する。

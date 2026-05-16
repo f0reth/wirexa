@@ -68,8 +68,8 @@ type UdpTarget struct {
 type FixedLengthField struct {
 	Name      string    `json:"name"`
 	FieldType FieldType `json:"fieldType"`
-	Length    int       `json:"length"` // FieldTypeString, FieldTypeBytes のみ使用
 	Value     string    `json:"value"`
+	Length    int       `json:"length"`
 }
 
 // FixedLengthPayload は複数フィールドで構成されるペイロード。
@@ -80,12 +80,12 @@ type FixedLengthPayload struct {
 // UdpSendRequest は UDP 送信リクエストを表す。
 type UdpSendRequest struct {
 	Host               string             `json:"host"`
-	Port               int                `json:"port"`
 	Encoding           PayloadEncoding    `json:"encoding"`
 	Payload            string             `json:"payload"`
-	MessageLength      int                `json:"messageLength"`
-	FixedLengthPayload FixedLengthPayload `json:"fixedLengthPayload"`
 	Endianness         Endianness         `json:"endianness"`
+	FixedLengthPayload FixedLengthPayload `json:"fixedLengthPayload"`
+	Port               int                `json:"port"`
+	MessageLength      int                `json:"messageLength"`
 }
 
 // UdpSendResult は UDP 送信結果を表す。
@@ -107,16 +107,16 @@ func (r *UdpSendRequest) Validate() error {
 // UdpListenSession はアクティブなリスニングセッションを表す。
 type UdpListenSession struct {
 	ID       string          `json:"id"`
-	Port     int             `json:"port"`
 	Encoding PayloadEncoding `json:"encoding"`
+	Port     int             `json:"port"`
 }
 
 // UdpReceivedMessage は受信した UDP パケットを表す。
 type UdpReceivedMessage struct {
 	SessionID  string          `json:"sessionId"`
-	Port       int             `json:"port"`
 	RemoteAddr string          `json:"remoteAddr"`
 	Payload    string          `json:"payload"`
 	Encoding   PayloadEncoding `json:"encoding"`
+	Port       int             `json:"port"`
 	Timestamp  int64           `json:"timestamp"`
 }

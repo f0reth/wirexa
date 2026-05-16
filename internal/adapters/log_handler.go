@@ -6,10 +6,10 @@ import (
 
 // LogEntry はフロントエンドから送信されるログエントリを表す。
 type LogEntry struct {
+	Attrs   map[string]any `json:"attrs,omitempty"`
 	Level   string         `json:"level"`
 	Source  string         `json:"source"`
 	Message string         `json:"message"`
-	Attrs   map[string]any `json:"attrs,omitempty"`
 }
 
 // LogHandler はフロントエンドからのログを受け取る Wails RPC アダプター。

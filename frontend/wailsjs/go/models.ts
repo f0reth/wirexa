@@ -25,12 +25,12 @@ export namespace adapters {
 	    }
 	}
 	export class RequestSettings {
-	    timeoutSec: number;
 	    proxyMode: string;
 	    proxyURL: string;
+	    timeoutSec: number;
+	    maxResponseBodyMB: number;
 	    insecureSkipVerify: boolean;
 	    disableRedirects: boolean;
-	    maxResponseBodyMB: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new RequestSettings(source);
@@ -38,12 +38,28 @@ export namespace adapters {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.timeoutSec = source["timeoutSec"];
 	        this.proxyMode = source["proxyMode"];
 	        this.proxyURL = source["proxyURL"];
+	        this.timeoutSec = source["timeoutSec"];
+	        this.maxResponseBodyMB = source["maxResponseBodyMB"];
 	        this.insecureSkipVerify = source["insecureSkipVerify"];
 	        this.disableRedirects = source["disableRedirects"];
-	        this.maxResponseBodyMB = source["maxResponseBodyMB"];
+	    }
+	}
+	export class KeyValuePair {
+	    key: string;
+	    value: string;
+	    enabled: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new KeyValuePair(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.value = source["value"];
+	        this.enabled = source["enabled"];
 	    }
 	}
 	export class RequestAuth {
@@ -65,8 +81,8 @@ export namespace adapters {
 	    }
 	}
 	export class RequestBody {
-	    type: string;
 	    contents: Record<string, string>;
+	    type: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RequestBody(source);
@@ -74,37 +90,21 @@ export namespace adapters {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.type = source["type"];
 	        this.contents = source["contents"];
-	    }
-	}
-	export class KeyValuePair {
-	    key: string;
-	    value: string;
-	    enabled: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new KeyValuePair(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.key = source["key"];
-	        this.value = source["value"];
-	        this.enabled = source["enabled"];
+	        this.type = source["type"];
 	    }
 	}
 	export class HttpRequest {
+	    body: RequestBody;
+	    auth: RequestAuth;
 	    id: string;
 	    name: string;
 	    method: string;
 	    url: string;
+	    doc: string;
 	    headers: KeyValuePair[];
 	    params: KeyValuePair[];
-	    body: RequestBody;
-	    auth: RequestAuth;
 	    settings: RequestSettings;
-	    doc: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new HttpRequest(source);
@@ -112,16 +112,16 @@ export namespace adapters {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.body = this.convertValues(source["body"], RequestBody);
+	        this.auth = this.convertValues(source["auth"], RequestAuth);
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.method = source["method"];
 	        this.url = source["url"];
+	        this.doc = source["doc"];
 	        this.headers = this.convertValues(source["headers"], KeyValuePair);
 	        this.params = this.convertValues(source["params"], KeyValuePair);
-	        this.body = this.convertValues(source["body"], RequestBody);
-	        this.auth = this.convertValues(source["auth"], RequestAuth);
 	        this.settings = this.convertValues(source["settings"], RequestSettings);
-	        this.doc = source["doc"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -143,11 +143,11 @@ export namespace adapters {
 		}
 	}
 	export class TreeItem {
+	    request?: HttpRequest;
 	    type: string;
 	    id: string;
 	    name: string;
 	    children: TreeItem[];
-	    request?: HttpRequest;
 	
 	    static createFrom(source: any = {}) {
 	        return new TreeItem(source);
@@ -155,11 +155,11 @@ export namespace adapters {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.request = this.convertValues(source["request"], HttpRequest);
 	        this.type = source["type"];
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.children = this.convertValues(source["children"], TreeItem);
-	        this.request = this.convertValues(source["request"], HttpRequest);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -259,8 +259,8 @@ export namespace adapters {
 	export class FixedLengthField {
 	    name: string;
 	    fieldType: string;
-	    length: number;
 	    value: string;
+	    length: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new FixedLengthField(source);
@@ -270,8 +270,8 @@ export namespace adapters {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.fieldType = source["fieldType"];
-	        this.length = source["length"];
 	        this.value = source["value"];
+	        this.length = source["length"];
 	    }
 	}
 	export class FixedLengthPayload {
@@ -306,16 +306,16 @@ export namespace adapters {
 	}
 	
 	export class HttpResponse {
-	    statusCode: number;
-	    statusText: string;
 	    headers: Record<string, string>;
+	    statusText: string;
 	    body: string;
 	    contentType: string;
+	    error: string;
+	    tempFilePath: string;
+	    statusCode: number;
 	    size: number;
 	    timingMs: number;
-	    error: string;
 	    bodyTruncated: boolean;
-	    tempFilePath: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new HttpResponse(source);
@@ -323,24 +323,24 @@ export namespace adapters {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.statusCode = source["statusCode"];
-	        this.statusText = source["statusText"];
 	        this.headers = source["headers"];
+	        this.statusText = source["statusText"];
 	        this.body = source["body"];
 	        this.contentType = source["contentType"];
+	        this.error = source["error"];
+	        this.tempFilePath = source["tempFilePath"];
+	        this.statusCode = source["statusCode"];
 	        this.size = source["size"];
 	        this.timingMs = source["timingMs"];
-	        this.error = source["error"];
 	        this.bodyTruncated = source["bodyTruncated"];
-	        this.tempFilePath = source["tempFilePath"];
 	    }
 	}
 	
 	export class LogEntry {
+	    attrs?: Record<string, any>;
 	    level: string;
 	    source: string;
 	    message: string;
-	    attrs?: Record<string, any>;
 	
 	    static createFrom(source: any = {}) {
 	        return new LogEntry(source);
@@ -348,10 +348,10 @@ export namespace adapters {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.attrs = source["attrs"];
 	        this.level = source["level"];
 	        this.source = source["source"];
 	        this.message = source["message"];
-	        this.attrs = source["attrs"];
 	    }
 	}
 	
@@ -374,8 +374,8 @@ export namespace adapters {
 	
 	export class UdpListenSession {
 	    id: string;
-	    port: number;
 	    encoding: string;
+	    port: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new UdpListenSession(source);
@@ -384,18 +384,18 @@ export namespace adapters {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
-	        this.port = source["port"];
 	        this.encoding = source["encoding"];
+	        this.port = source["port"];
 	    }
 	}
 	export class UdpSendRequest {
 	    host: string;
-	    port: number;
 	    encoding: string;
 	    payload: string;
-	    messageLength: number;
-	    fixedLengthPayload: FixedLengthPayload;
 	    endianness: string;
+	    fixedLengthPayload: FixedLengthPayload;
+	    port: number;
+	    messageLength: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new UdpSendRequest(source);
@@ -404,12 +404,12 @@ export namespace adapters {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.host = source["host"];
-	        this.port = source["port"];
 	        this.encoding = source["encoding"];
 	        this.payload = source["payload"];
-	        this.messageLength = source["messageLength"];
-	        this.fixedLengthPayload = this.convertValues(source["fixedLengthPayload"], FixedLengthPayload);
 	        this.endianness = source["endianness"];
+	        this.fixedLengthPayload = this.convertValues(source["fixedLengthPayload"], FixedLengthPayload);
+	        this.port = source["port"];
+	        this.messageLength = source["messageLength"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

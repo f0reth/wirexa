@@ -14,8 +14,8 @@ type UdpTarget struct {
 type FixedLengthField struct {
 	Name      string `json:"name"`
 	FieldType string `json:"fieldType"`
-	Length    int    `json:"length"`
 	Value     string `json:"value"`
+	Length    int    `json:"length"`
 }
 
 // FixedLengthPayload は固定長ペイロードの RPC 転送型。
@@ -26,12 +26,12 @@ type FixedLengthPayload struct {
 // UdpSendRequest は UDP 送信リクエストの RPC 転送型。
 type UdpSendRequest struct {
 	Host               string             `json:"host"`
-	Port               int                `json:"port"`
 	Encoding           string             `json:"encoding"`
 	Payload            string             `json:"payload"`
-	MessageLength      int                `json:"messageLength"`
-	FixedLengthPayload FixedLengthPayload `json:"fixedLengthPayload"`
 	Endianness         string             `json:"endianness"`
+	FixedLengthPayload FixedLengthPayload `json:"fixedLengthPayload"`
+	Port               int                `json:"port"`
+	MessageLength      int                `json:"messageLength"`
 }
 
 // UdpSendResult は UDP 送信結果の RPC 転送型。
@@ -42,8 +42,8 @@ type UdpSendResult struct {
 // UdpListenSession は UDP リスニングセッションの RPC 転送型。
 type UdpListenSession struct {
 	ID       string `json:"id"`
-	Port     int    `json:"port"`
 	Encoding string `json:"encoding"`
+	Port     int    `json:"port"`
 }
 
 func fromUdpSendRequestDTO(req UdpSendRequest) udpdomain.UdpSendRequest {

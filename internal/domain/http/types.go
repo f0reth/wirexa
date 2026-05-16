@@ -11,26 +11,26 @@ type RequestAuth struct {
 // RequestSettings はリクエストごとの HTTP クライアント設定を表す。
 // ゼロ値はすべてデフォルト動作を意味する。
 type RequestSettings struct {
-	TimeoutSec         int    `json:"timeoutSec"`         // 0 = デフォルト (30s)
-	ProxyMode          string `json:"proxyMode"`          // "" | "system" | "none" | "custom"
-	ProxyURL           string `json:"proxyURL"`           // ProxyMode == "custom" のときに使用
-	InsecureSkipVerify bool   `json:"insecureSkipVerify"` // TLS 証明書検証をスキップ
-	DisableRedirects   bool   `json:"disableRedirects"`   // リダイレクトを無効化
-	MaxResponseBodyMB  int    `json:"maxResponseBodyMB"`  // 0 = デフォルト (10MB)
+	ProxyMode          string `json:"proxyMode"`
+	ProxyURL           string `json:"proxyURL"`
+	TimeoutSec         int    `json:"timeoutSec"`
+	MaxResponseBodyMB  int    `json:"maxResponseBodyMB"`
+	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
+	DisableRedirects   bool   `json:"disableRedirects"`
 }
 
 // HttpRequest は HTTP リクエストを表す。
 type HttpRequest struct {
+	Body     RequestBody     `json:"body"`
+	Auth     RequestAuth     `json:"auth"`
 	ID       string          `json:"id"`
 	Name     string          `json:"name"`
 	Method   string          `json:"method"`
 	URL      string          `json:"url"`
+	Doc      string          `json:"doc"`
 	Headers  []KeyValuePair  `json:"headers"`
 	Params   []KeyValuePair  `json:"params"`
-	Body     RequestBody     `json:"body"`
-	Auth     RequestAuth     `json:"auth"`
 	Settings RequestSettings `json:"settings"`
-	Doc      string          `json:"doc"`
 }
 
 // KeyValuePair はヘッダーやパラメータのキーバリューペアを表す。
@@ -42,21 +42,21 @@ type KeyValuePair struct {
 
 // RequestBody はリクエストボディを表す。
 type RequestBody struct {
-	Type     string            `json:"type"`     // "none"|"json"|"text"|"form-urlencoded"|"form-data"|"file"
-	Contents map[string]string `json:"contents"` // ボディタイプごとのコンテンツ
+	Contents map[string]string `json:"contents"`
+	Type     string            `json:"type"`
 }
 
 // HttpResponse は HTTP レスポンスを表す。
 type HttpResponse struct {
-	StatusCode    int               `json:"statusCode"`
-	StatusText    string            `json:"statusText"`
 	Headers       map[string]string `json:"headers"`
+	StatusText    string            `json:"statusText"`
 	Body          string            `json:"body"`
 	ContentType   string            `json:"contentType"`
+	Error         string            `json:"error"`
+	StatusCode    int               `json:"statusCode"`
 	Size          int64             `json:"size"`
 	TimingMs      int64             `json:"timingMs"`
-	Error         string            `json:"error"`
-	BodyTruncated bool              `json:"bodyTruncated"` // ボディが上限で切り捨てられた場合 true
+	BodyTruncated bool              `json:"bodyTruncated"`
 }
 
 // Collection はリクエストコレクションを表す。
@@ -69,11 +69,11 @@ type Collection struct {
 
 // TreeItem はコレクション内のフォルダまたはリクエストアイテムを表す。
 type TreeItem struct {
+	Request  *HttpRequest `json:"request,omitempty"`
 	Type     string       `json:"type"`
 	ID       string       `json:"id"`
 	Name     string       `json:"name"`
 	Children []*TreeItem  `json:"children"`
-	Request  *HttpRequest `json:"request,omitempty"`
 }
 
 // ItemType 定数はツリーアイテムの種別を定義する。

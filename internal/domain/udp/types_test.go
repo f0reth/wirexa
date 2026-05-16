@@ -38,9 +38,9 @@ func TestFieldTypeByteSize_AllTypes(t *testing.T) {
 func TestUdpSendRequest_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
+		field   string
 		req     UdpSendRequest
 		wantErr bool
-		field   string
 	}{
 		{
 			name:    "valid request",

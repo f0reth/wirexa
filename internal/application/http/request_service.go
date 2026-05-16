@@ -19,8 +19,8 @@ var validMethods = map[string]bool{
 type HttpRequestService struct {
 	transport domain.HttpTransport
 	logger    cmn.Logger
-	mu        sync.Mutex
 	cancels   map[string]context.CancelFunc
+	mu        sync.Mutex
 }
 
 // NewHTTPRequestService は HttpRequestService を生成する。

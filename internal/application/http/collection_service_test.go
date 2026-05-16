@@ -2,6 +2,7 @@ package httpapp
 
 import (
 	"errors"
+	"net/http"
 	"sync"
 	"testing"
 
@@ -18,15 +19,15 @@ const (
 )
 
 type inMemoryRepo struct {
-	mu          sync.Mutex
 	collections map[string]*domain.Collection
+	mu          sync.Mutex
 }
 
 type inMemoryLayoutRepo struct {
-	mu      sync.Mutex
-	layout  []domain.SidebarEntry
 	loadErr error
 	saveErr error
+	layout  []domain.SidebarEntry
+	mu      sync.Mutex
 }
 
 func (r *inMemoryLayoutRepo) Load() ([]domain.SidebarEntry, error) {
@@ -327,7 +328,7 @@ func TestCollectionService_UpdateRequest_Success(t *testing.T) {
 	if node.Request.URL != "http://new.com" {
 		t.Errorf("Request.URL = %q, want %q", node.Request.URL, "http://new.com")
 	}
-	if node.Request.Method != "POST" {
+	if node.Request.Method != http.MethodPost {
 		t.Errorf("Request.Method = %q, want %q", node.Request.Method, "POST")
 	}
 }

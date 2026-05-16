@@ -13,19 +13,19 @@ import (
 
 // mockEmitter は domain.Emitter のインメモリモック。
 type mockEmitter struct {
-	mu     sync.Mutex
 	events []emittedEvent
+	mu     sync.Mutex
 }
 
 type emittedEvent struct {
-	event string
 	data  any
+	event string
 }
 
 func (e *mockEmitter) Emit(event string, data any) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.events = append(e.events, emittedEvent{event, data})
+	e.events = append(e.events, emittedEvent{data, event})
 }
 
 func (e *mockEmitter) hasEvent(event string) bool {
@@ -195,10 +195,10 @@ func TestMqttService_Connect_FailureRemovesConnection(t *testing.T) {
 
 // mockEmitterWithChan は特定イベントを検出してチャンネルに通知するモック。
 type mockEmitterWithChan struct {
-	mockEmitter
 	ch          chan struct{}
 	targetEvent string
-	once        sync.Once
+	mockEmitter
+	once sync.Once
 }
 
 func (e *mockEmitterWithChan) Emit(event string, data any) {

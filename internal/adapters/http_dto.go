@@ -11,8 +11,8 @@ type KeyValuePair struct {
 
 // RequestBody はリクエストボディの RPC 転送型。
 type RequestBody struct {
-	Type     string            `json:"type"`
 	Contents map[string]string `json:"contents"`
+	Type     string            `json:"type"`
 }
 
 // RequestAuth はリクエスト認証情報の RPC 転送型。
@@ -25,49 +25,49 @@ type RequestAuth struct {
 
 // RequestSettings はリクエスト設定の RPC 転送型。
 type RequestSettings struct {
-	TimeoutSec         int    `json:"timeoutSec"`
 	ProxyMode          string `json:"proxyMode"`
 	ProxyURL           string `json:"proxyURL"`
+	TimeoutSec         int    `json:"timeoutSec"`
+	MaxResponseBodyMB  int    `json:"maxResponseBodyMB"`
 	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
 	DisableRedirects   bool   `json:"disableRedirects"`
-	MaxResponseBodyMB  int    `json:"maxResponseBodyMB"`
 }
 
 // HttpRequest は HTTP リクエストの RPC 転送型。
 type HttpRequest struct {
+	Body     RequestBody     `json:"body"`
+	Auth     RequestAuth     `json:"auth"`
 	ID       string          `json:"id"`
 	Name     string          `json:"name"`
 	Method   string          `json:"method"`
 	URL      string          `json:"url"`
+	Doc      string          `json:"doc"`
 	Headers  []KeyValuePair  `json:"headers"`
 	Params   []KeyValuePair  `json:"params"`
-	Body     RequestBody     `json:"body"`
-	Auth     RequestAuth     `json:"auth"`
 	Settings RequestSettings `json:"settings"`
-	Doc      string          `json:"doc"`
 }
 
 // HttpResponse は HTTP レスポンスの RPC 転送型。
 type HttpResponse struct {
-	StatusCode    int               `json:"statusCode"`
-	StatusText    string            `json:"statusText"`
 	Headers       map[string]string `json:"headers"`
+	StatusText    string            `json:"statusText"`
 	Body          string            `json:"body"`
 	ContentType   string            `json:"contentType"`
+	Error         string            `json:"error"`
+	TempFilePath  string            `json:"tempFilePath"`
+	StatusCode    int               `json:"statusCode"`
 	Size          int64             `json:"size"`
 	TimingMs      int64             `json:"timingMs"`
-	Error         string            `json:"error"`
 	BodyTruncated bool              `json:"bodyTruncated"`
-	TempFilePath  string            `json:"tempFilePath"` // インフラ詳細: 上限超過時のみ非空
 }
 
 // TreeItem はコレクション内アイテムの RPC 転送型。
 type TreeItem struct {
+	Request  *HttpRequest `json:"request,omitempty"`
 	Type     string       `json:"type"`
 	ID       string       `json:"id"`
 	Name     string       `json:"name"`
 	Children []*TreeItem  `json:"children"`
-	Request  *HttpRequest `json:"request,omitempty"`
 }
 
 // Collection はリクエストコレクションの RPC 転送型。

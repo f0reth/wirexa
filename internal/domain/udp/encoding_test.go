@@ -126,8 +126,8 @@ func TestDecodeFixedLengthPayload_MultipleFields(t *testing.T) {
 
 func TestDecodeFixedLengthPayload_ErrorCases(t *testing.T) {
 	tests := []struct {
-		name    string
 		payload *FixedLengthPayload
+		name    string
 		wantErr bool
 	}{
 		{
@@ -255,8 +255,8 @@ func TestDecodeFixedLengthPayload_NumericTypes(t *testing.T) {
 func TestDecodeFixedLengthPayload_NumericTypes_Int32_Int64_Float(t *testing.T) {
 	tests := []struct {
 		name       string
-		field      FixedLengthField
 		endianness Endianness
+		field      FixedLengthField
 		wantLen    int
 		wantErr    bool
 	}{
@@ -376,9 +376,9 @@ func bytesEqual(a, b []byte) bool {
 func TestEncodePayload(t *testing.T) {
 	tests := []struct {
 		name     string
-		data     []byte
 		encoding PayloadEncoding
 		want     string
+		data     []byte
 	}{
 		{
 			name:     "text",
@@ -433,8 +433,8 @@ func TestDecodePayload(t *testing.T) {
 		name          string
 		payload       string
 		encoding      PayloadEncoding
-		messageLength int
 		want          []byte
+		messageLength int
 		wantErr       bool
 	}{
 		{

@@ -31,19 +31,19 @@ const (
 var _ domain.MqttUseCase = (*MqttService)(nil)
 
 type connection struct {
+	client domain.BrokerClient
 	id     string
 	config domain.ConnectionConfig
-	client domain.BrokerClient
 }
 
 // MqttService は複数の MQTT 接続を管理するアプリケーションサービス。
 type MqttService struct {
 	emitter       cmn.Emitter
-	clientFactory domain.BrokerClientFactory
 	logger        cmn.Logger
-	mu            sync.RWMutex
+	clientFactory domain.BrokerClientFactory
 	conns         map[string]*connection
 	connWg        sync.WaitGroup
+	mu            sync.RWMutex
 }
 
 // NewMqttService は MqttService を生成する。
