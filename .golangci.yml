@@ -1,139 +1,110 @@
 version: "2"
 
-issues:
-  # 同一内容のIssue最大数
-  max-same-issues: 50
+run:
+  timeout: 10m
+  tests: true
+  allow-parallel-runners: true
 
-# -----------------------------
-# Formatter
-# -----------------------------
 formatters:
   enable:
-    # gofmtの厳格版
-    - gofumpt
-
-    # import整理
     - goimports
-
+    - gofumpt
+  exclusions:
+    generated: lax
+    paths:
+      - '.*\.pb\.go$'
+      - '(^|/|\\)mock_.*\.go$'
+      - '(^|/|\\)vendor(/|\\)'
   settings:
     gofumpt:
-      # gofumpt追加ルール
       extra-rules: true
 
-    goimports:
-      # 自分のmodule
-      local-prefixes:
-        - github.com/f0reth/Wirexa
-
-# -----------------------------
-# Linters
-# -----------------------------
 linters:
+  default: none
   enable:
-    # ---------- Go公式 ----------
-    - govet
+    # ---- デフォルト ----
+    - errcheck # 未チェックの error を検出
+    - govet # 怪しい構文・落とし穴
+    - staticcheck # バグ・非推奨API・無駄などを検出
+    - unused # 未使用の定数・変数・関数・型を検出
 
-    # ---------- 最重要 ----------
-    - staticcheck
-    - errcheck
-    - ineffassign
-    - unused
+    # ---- リソースリーク（HTTP/DB）----
+    - bodyclose # HTTPレスポンスの Body を 適切に close しているか
+    - rowserrcheck # DBの rows.Err() の チェック漏れを検出
+    - sqlclosecheck # sql.Rows/Stmt/pgx.Query などの close漏れを検出
 
-    # ---------- error処理 ----------
-    - errorlint
-    - nilerr
-    - nilnil
+    # ---- セキュリティ ----
+    - gosec # 代表的なセキュリティ問題を検出
+    - bidichk # Unicode の双方向制御文字などによる 見た目と実体が違う危険な並びを検出
+    - nosprintfhostport # URLの host:port を Sprintf で作る等の 誤用を検出
 
-    # ---------- セキュリティ ----------
-    - gosec
+    # ---- よくあるミス・改善 ----
+    - unconvert # 不要な型変換を削除できる箇所を検出
+    - predeclared # len や error 等の 事前宣言識別子をシャドーイングしてないか検出
+    - nolintlint # nolint が不正、理由不足、範囲違いなど nolint運用の健全性を検査
+    - gocritic # バグ、パフォーマンス、スタイル上の問題を検出
 
-    # ---------- IO ----------
-    - bodyclose
+    # ---- スタイル・可読性 ----
+    - revive # スタイル/命名/コメント等を柔軟に設定してチェック
+    - modernize # 新しい言語・標準ライブラリで より簡潔に書ける箇所を提案
+    - usestdlibvars # http.MethodGet など 標準ライブラリの定数/変数を使える箇所を検出
 
-    # ---------- コード品質 ----------
-    - revive
-    - gocritic
-    - goconst
-    - misspell
-
-    # ---------- モダンGo ----------
-    - modernize
-    - copyloopvar
-
-    # ---------- 最適化 ----------
-    - perfsprint
-    - unconvert
-
-    # ---------- lint管理 ----------
-    - nolintlint
-
-    # ---------- その他 ----------
-    - whitespace
-
+    # ---- slog / protobuf / test ----
+    - sloglint # log/slog の スタイル・使い方の一貫性を強制
+    - loggercheck # zap/slog/logr などで キー・バリューのペア不整合等を検出
+    - protogetter # protobuf メッセージのフィールド直読みではなく getter を使うべき等を検出
+    - testifylint # stretchr/testify の 推奨される書き方をチェック
+    - usetesting # testing パッケージ内で 推奨される代替関数がある利用箇所を検出
+    - thelper # テストヘルパ関数で t.Helper() を 呼んでいるかを検出
+  exclusions:
+    generated: lax
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - revive
+    paths:
+      - '.*\.pb\.go$'
+      - '(^|/|\\)mock_.*\.go$'
+      - '(^|/|\\)vendor(/|\\)'
   settings:
-    errcheck:
-      # 型アサーションもチェック
-      check-type-assertions: true
-
     govet:
       enable-all: true
-      disable:
-        - fieldalignment
-
     staticcheck:
       checks:
-        - all
-        - -ST1000
-        - -ST1016
-        - -QF1008
+        - "all"
+        - "-ST1003" # Wails 公開 API が Http*/Udp* スタイルで安定しているため除外
+    errcheck:
+      check-type-assertions: true # 型アサーション時にokを使う
+      check-blank: true # エラーを _ に捨てているのを報告
+    unused:
+      parameters-are-used: true
+    revive:
+      rules:
+        - name: exported
+        - name: indent-error-flow
+        - name: superfluous-else
+        - name: var-naming
+          disabled: true # Wails 公開 API が Http*/Udp* スタイルで安定しているため除外
+        - name: receiver-naming
+        - name: blank-imports
+        - name: early-return
+        - name: unnecessary-stmt
+    gocritic:
+      disable-all: true
+      enabled-checks:
+        - ruleguard
+      enabled-tags:
+        - diagnostic
+        - performance
+      settings:
+        rangeValCopy:
+          sizeThreshold: 64
+          skipTestFuncs: true
+        hugeParam:
+          sizeThreshold: 300
 
-    goconst:
-      ignore-tests: true
-
-    perfsprint:
-      strconcat: false
-
-    nolintlint:
-      require-explanation: true
-      require-specific: true
-
-  # -----------------------------
-  # Exclusions
-  # -----------------------------
-  exclusions:
-    warn-unused: true
-
-    presets:
-      - std-error-handling
-      - common-false-positives
-
-    rules:
-      - path: "_test\\.go"
-        linters:
-          - gosec
-          - errcheck
-
-      # Http/Udp は Go 慣習（HTTP/UDP）と異なるが Wails バインディングの都合で統一
-      - linters:
-          - revive
-        text: "var-naming: type Http"
-
-      - linters:
-          - revive
-        text: "var-naming: type Udp"
-
-      - linters:
-          - revive
-        text: "var-naming: func.*Udp"
-
-      - linters:
-          - staticcheck
-        text: "ST1003: type Http"
-
-      - linters:
-          - staticcheck
-        text: "ST1003: type Udp"
-
-      - linters:
-          - staticcheck
-        text: "ST1003: func.*Udp"
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
