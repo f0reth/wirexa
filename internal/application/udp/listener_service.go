@@ -17,8 +17,8 @@ var _ domain.ListenUseCase = (*UdpListenerService)(nil)
 
 // listenSession はアクティブなリスニングセッションの内部状態を保持する。
 type listenSession struct {
-	session domain.UdpListenSession
 	conn    domain.UdpConn
+	session domain.UdpListenSession
 }
 
 // UdpListenerService は UDP 受信ユースケースの実装。
@@ -114,7 +114,7 @@ func (s *UdpListenerService) StopAll() {
 	s.mu.Unlock()
 
 	for _, ls := range sessions {
-		_ = ls.conn.Close()
+		_ = ls.conn.Close() //nolint:errcheck // best-effort cleanup
 	}
 }
 

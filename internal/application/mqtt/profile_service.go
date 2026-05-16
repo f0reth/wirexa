@@ -14,8 +14,8 @@ var _ domain.ProfileUseCase = (*ProfileService)(nil)
 // ProfileService は MQTT ブローカープロファイルの CRUD を管理するアプリケーションサービス。
 type ProfileService struct {
 	repo     domain.ProfileRepository
-	mu       sync.RWMutex
 	profiles map[string]domain.BrokerProfile
+	mu       sync.RWMutex
 }
 
 // NewProfileService はリポジトリからプロファイルをロードして ProfileService を生成する。
@@ -25,8 +25,8 @@ func NewProfileService(repo domain.ProfileRepository) (*ProfileService, error) {
 		return nil, fmt.Errorf("failed to load profiles: %w", err)
 	}
 	profiles := make(map[string]domain.BrokerProfile, len(loaded))
-	for _, p := range loaded {
-		profiles[p.ID] = p
+	for i := range loaded {
+		profiles[loaded[i].ID] = loaded[i]
 	}
 	return &ProfileService{repo: repo, profiles: profiles}, nil
 }
@@ -36,8 +36,8 @@ func (s *ProfileService) GetProfiles() []domain.BrokerProfile {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	result := make([]domain.BrokerProfile, 0, len(s.profiles))
-	for _, p := range s.profiles {
-		result = append(result, p)
+	for k := range s.profiles {
+		result = append(result, s.profiles[k])
 	}
 	return result
 }

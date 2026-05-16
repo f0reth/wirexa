@@ -10,8 +10,8 @@ import (
 // JSONStore は JSON ファイルによる汎用永続化ストア。
 // T は保存するドメイン型、getID は T から一意な ID を取得する関数。
 type JSONStore[T any] struct {
-	dir   string
 	getID func(*T) string
+	dir   string
 }
 
 // NewJSONStore はディレクトリを作成して JSONStore を返す。
@@ -60,12 +60,12 @@ func (s *JSONStore[T]) Save(item *T) error {
 	}
 	tmpName := tmp.Name()
 	if _, err = tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
+		_ = tmp.Close()        //nolint:errcheck // best-effort cleanup
+		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
 		return err
 	}
 	if err = tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
+		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
 		return err
 	}
 	return os.Rename(tmpName, dest)

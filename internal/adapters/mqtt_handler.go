@@ -47,8 +47,8 @@ func (h *MqttHandler) Unsubscribe(connectionID, topic string) error {
 func (h *MqttHandler) GetConnections() []ConnectionStatus {
 	statuses := h.svc.GetConnections()
 	result := make([]ConnectionStatus, len(statuses))
-	for i, s := range statuses {
-		result[i] = toConnectionStatusDTO(s)
+	for i := range statuses {
+		result[i] = toConnectionStatusDTO(statuses[i])
 	}
 	return result
 }
@@ -62,8 +62,8 @@ func (h *MqttHandler) Shutdown() {
 func (h *MqttHandler) GetProfiles() []BrokerProfile {
 	profiles := h.profileSvc.GetProfiles()
 	result := make([]BrokerProfile, len(profiles))
-	for i, p := range profiles {
-		result[i] = toBrokerProfileDTO(p)
+	for i := range profiles {
+		result[i] = toBrokerProfileDTO(profiles[i])
 	}
 	return result
 }

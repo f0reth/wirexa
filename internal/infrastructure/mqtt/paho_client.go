@@ -53,7 +53,7 @@ func applyTLSScheme(broker string) string {
 	case strings.HasPrefix(broker, "ws://"):
 		return "wss://" + broker[len("ws://"):]
 	}
-	return broker // ssl://, mqtts://, wss:// はそのまま
+	return broker
 }
 
 // NewPahoClientFactory は Paho MQTT を用いた domain.BrokerClientFactory を返す。

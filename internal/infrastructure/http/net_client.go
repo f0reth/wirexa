@@ -41,7 +41,10 @@ func NewNetClient() *NetClient {
 // 上限超過がなかった場合は空文字列を返す。
 func (c *NetClient) ConsumeTempFilePath(requestID string) string {
 	if v, ok := c.tempFiles.LoadAndDelete(requestID); ok {
-		s, _ := v.(string)
+		s, ok := v.(string)
+		if !ok {
+			return ""
+		}
 		return s
 	}
 	return ""
@@ -80,7 +83,7 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	case "file":
 		if bodyContent != "" {
 			var fileData []byte
-			fileData, err = os.ReadFile(bodyContent)
+			fileData, err = os.ReadFile(bodyContent) //nolint:gosec // user-selected file path
 			if err != nil {
 				return domain.HttpResponse{}, fmt.Errorf("failed to read file: %w", err)
 			}
@@ -123,7 +126,7 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	if err != nil {
 		return domain.HttpResponse{}, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // best-effort cleanup
 
 	// ボディをテンポラリファイルへストリーミング（メモリを圧迫しない）
 	tmpFile, err := os.CreateTemp("", "wirexa-response-*")
@@ -133,15 +136,15 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	tmpName := tmpFile.Name()
 
 	if _, err = io.Copy(tmpFile, resp.Body); err != nil {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpName)
+		_ = tmpFile.Close()    //nolint:errcheck // best-effort cleanup
+		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
 		return domain.HttpResponse{}, fmt.Errorf("failed to read response: %w", err)
 	}
-	_ = tmpFile.Close()
+	_ = tmpFile.Close() //nolint:errcheck // best-effort cleanup
 
 	info, err := os.Stat(tmpName)
 	if err != nil {
-		_ = os.Remove(tmpName)
+		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
 		return domain.HttpResponse{}, fmt.Errorf("failed to stat temp file: %w", err)
 	}
 
@@ -149,25 +152,25 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	bodyTruncated := false
 	if info.Size() <= maxBody {
 		// 上限以内: メモリへ読み込み、テンポラリファイルを削除
-		body, err = os.ReadFile(tmpName)
-		_ = os.Remove(tmpName)
+		body, err = os.ReadFile(tmpName) //nolint:gosec // path is app-generated temp file
+		_ = os.Remove(tmpName)           //nolint:errcheck // best-effort cleanup
 		if err != nil {
 			return domain.HttpResponse{}, fmt.Errorf("failed to read temp file: %w", err)
 		}
 	} else {
 		// 上限超過: 先頭 maxBody バイトのみ読み込み、テンポラリファイルは保持
-		f, err := os.Open(tmpName)
+		f, err := os.Open(tmpName) //nolint:gosec // path is app-generated temp file
 		if err != nil {
-			_ = os.Remove(tmpName)
+			_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
 			return domain.HttpResponse{}, fmt.Errorf("failed to open temp file: %w", err)
 		}
 		body = make([]byte, maxBody)
 		if _, err = io.ReadFull(f, body); err != nil {
-			_ = f.Close()
-			_ = os.Remove(tmpName)
+			_ = f.Close()          //nolint:errcheck // best-effort cleanup
+			_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
 			return domain.HttpResponse{}, fmt.Errorf("failed to read temp file: %w", err)
 		}
-		_ = f.Close()
+		_ = f.Close() //nolint:errcheck // best-effort cleanup
 		bodyTruncated = true
 		c.tempFiles.Store(req.ID, tmpName)
 	}

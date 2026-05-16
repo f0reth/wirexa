@@ -31,7 +31,7 @@ func (h *OpenAPIHandler) OpenFilePicker() (string, error) {
 
 // ReadFile は指定パスのファイル内容を文字列で返す。
 func (h *OpenAPIHandler) ReadFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path comes from OS file picker dialog
 	if err != nil {
 		return "", err
 	}

@@ -97,8 +97,8 @@ func (h *HttpHandler) GetRootItems() []*TreeItem {
 func (h *HttpHandler) GetCollections() []Collection {
 	cols := h.collSvc.GetCollections()
 	result := make([]Collection, len(cols))
-	for i, c := range cols {
-		result[i] = toCollectionDTO(c)
+	for i := range cols {
+		result[i] = toCollectionDTO(cols[i])
 	}
 	return result
 }
@@ -212,16 +212,16 @@ func contentTypeToExtension(contentType string) string {
 }
 
 func copyFile(src, dst string) error {
-	in, err := os.Open(src)
+	in, err := os.Open(src) //nolint:gosec // path comes from OS save dialog
 	if err != nil {
 		return err
 	}
-	defer in.Close()
-	out, err := os.Create(dst)
+	defer func() { _ = in.Close() }() //nolint:errcheck // best-effort cleanup
+	out, err := os.Create(dst)        //nolint:gosec // path comes from OS save dialog
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }() //nolint:errcheck // best-effort cleanup
 	_, err = io.Copy(out, in)
 	return err
 }
