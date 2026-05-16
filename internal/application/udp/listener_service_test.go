@@ -14,19 +14,19 @@ import (
 // mockUDPConn は domain.UdpConn のモック。
 // packets に登録されたデータを順番に返し、なくなると done チャンネルが閉じられるまでブロックする。
 type mockUDPConn struct {
-	mu      sync.Mutex
-	idx     int
+	done    chan struct{}
 	packets []struct {
-		data []byte
 		addr string
+		data []byte
 	}
-	done   chan struct{}
+	mu     sync.Mutex
+	idx    int
 	closed bool
 }
 
 func newMockConn(packets ...struct {
-	data []byte
 	addr string
+	data []byte
 },
 ) *mockUDPConn {
 	return &mockUDPConn{
@@ -290,8 +290,8 @@ func TestUdpListenerService_StopAll_NoSessions(_ *testing.T) {
 
 func TestUdpListenerService_ReceiveLoop_EmitsMessage(t *testing.T) {
 	pkt := struct {
-		data []byte
 		addr string
+		data []byte
 	}{data: []byte("hello"), addr: "127.0.0.1:12345"}
 	conn := newMockConn(pkt)
 
