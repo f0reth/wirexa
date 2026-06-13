@@ -217,13 +217,6 @@
   align-items: center;
   gap: 0.125rem;
   flex-shrink: 0;
-  visibility: hidden;
-  pointer-events: none;
-}
-
-.treeNodeHeader:hover .treeNodeActions {
-  visibility: visible;
-  pointer-events: auto;
 }
 
 .treeActionBtn {
