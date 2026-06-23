@@ -22,16 +22,12 @@ function toWailsRequest(req: UdpSendRequest): udpdomain.UdpSendRequest {
 }
 
 function fromWailsSendResult(res: udpdomain.UdpSendResult): UdpSendResult {
-  return { bytesSent: res.bytesSent };
+  return { ...res };
 }
 
 function fromWailsTarget(t: udpdomain.UdpTarget): UdpTarget {
-  return {
-    id: t.id,
-    name: t.name,
-    host: t.host,
-    port: t.port,
-  };
+  // スプレッドで素通しし、Go 側がプリミティブ項目を足しても黙って落ちないようにする。
+  return { ...t };
 }
 
 function toWailsTarget(t: UdpTarget): udpdomain.UdpTarget {
@@ -61,8 +57,7 @@ function fromWailsListenSession(
   s: udpdomain.UdpListenSession,
 ): UdpListenSession {
   return {
-    id: s.id,
-    port: s.port,
+    ...s,
     encoding: s.encoding as UdpListenSession["encoding"],
   };
 }

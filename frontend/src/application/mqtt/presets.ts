@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import type { PresetStorage } from "../../domain/mqtt/ports";
 import type { PublishPreset } from "../../domain/mqtt/types";
+import { generateId } from "../../infrastructure/id/generator";
 
 export type { PresetStorage };
 
@@ -11,7 +12,7 @@ export function createPresetsState(storage: PresetStorage) {
   );
 
   function savePreset(preset: Omit<PublishPreset, "id">) {
-    const id = crypto.randomUUID();
+    const id = generateId();
     const newPreset: PublishPreset = { ...preset, id };
     setPresets((prev) => {
       const next = [...prev, newPreset];
@@ -42,7 +43,7 @@ export function createPresetsState(storage: PresetStorage) {
   }
 
   function addPreset(name?: string) {
-    const id = crypto.randomUUID();
+    const id = generateId();
     const newPreset: PublishPreset = {
       id,
       name: name ?? "no name",

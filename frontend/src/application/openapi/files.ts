@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import type { OpenApiFile } from "../../domain/openapi/types";
+import { generateId } from "../../infrastructure/id/generator";
 
 const STORAGE_KEY = "wirexa:openapi-files";
 const MAX_FILES = 50;
@@ -16,10 +17,6 @@ function loadFromStorage(): OpenApiFile[] {
 
 function saveToStorage(files: OpenApiFile[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
-}
-
-function generateId(): string {
-  return crypto.randomUUID();
 }
 
 export function createFilesState() {

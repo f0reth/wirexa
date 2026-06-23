@@ -12,6 +12,7 @@ import {
   MoveItem,
   MoveItemToSidebar,
   MoveSidebarEntry,
+  OpenFilePicker,
   RenameCollection,
   RenameItem,
   SaveResponseBody,
@@ -49,7 +50,10 @@ function fromWailsRequestSettings(
   settings: httpdomain.RequestSettings | undefined | null,
 ): RequestSettings {
   if (!settings) return { ...DEFAULT_SETTINGS };
+  // スプレッドで素通しし、Go 側がプリミティブ項目を足しても黙って落ちないようにする。
+  // ユニオン型の proxyMode のみ明示的に絞り込む。
   return {
+    ...settings,
     timeoutSec: settings.timeoutSec ?? 0,
     proxyMode:
       settings.proxyMode === "none" || settings.proxyMode === "custom"
@@ -85,11 +89,11 @@ function fromWailsHttpRequest(req: httpdomain.HttpRequest): HttpRequest {
   if (!isHttpMethod(req.method)) {
     throw new Error(`Unknown HTTP method: ${req.method}`);
   }
+  // スプレッドで素通しし、新規プリミティブ項目が黙って落ちないようにする。
+  // ユニオン型・入れ子のフィールドのみ明示的に変換/絞り込む。
   return {
-    id: req.id,
-    name: req.name,
+    ...req,
     method: req.method,
-    url: req.url,
     headers: req.headers.map(fromWailsKeyValuePair),
     params: req.params.map(fromWailsKeyValuePair),
     body: fromWailsRequestBody(req.body),
@@ -101,14 +105,7 @@ function fromWailsHttpRequest(req: httpdomain.HttpRequest): HttpRequest {
 
 function fromWailsHttpResponse(res: httpdomain.HttpResponse): HttpResponse {
   return {
-    statusCode: res.statusCode,
-    statusText: res.statusText,
-    headers: res.headers,
-    body: res.body,
-    contentType: res.contentType,
-    size: res.size,
-    timingMs: res.timingMs,
-    error: res.error,
+    ...res,
     bodyTruncated: res.bodyTruncated ?? false,
     tempFilePath: res.tempFilePath ?? "",
   };
@@ -143,6 +140,12 @@ export async function sendRequest(req: HttpRequest): Promise<HttpResponse> {
 
 export async function cancelRequest(id: string): Promise<void> {
   return CancelRequest(id);
+}
+
+// openFilePicker はネイティブのファイル選択ダイアログを開き、選択パスを返す。
+// presentation 層が wailsjs バインディングを直接叩かないようインフラ層でラップする。
+export function openFilePicker(): Promise<string> {
+  return OpenFilePicker();
 }
 
 export async function getCollections(): Promise<Collection[]> {
