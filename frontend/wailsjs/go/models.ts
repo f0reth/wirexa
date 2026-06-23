@@ -64,54 +64,6 @@ export namespace adapters {
 	        this.connected = source["connected"];
 	    }
 	}
-	export class FixedLengthField {
-	    name: string;
-	    fieldType: string;
-	    value: string;
-	    length: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new FixedLengthField(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.name = source["name"];
-	        this.fieldType = source["fieldType"];
-	        this.value = source["value"];
-	        this.length = source["length"];
-	    }
-	}
-	export class FixedLengthPayload {
-	    fields: FixedLengthField[];
-	
-	    static createFrom(source: any = {}) {
-	        return new FixedLengthPayload(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.fields = this.convertValues(source["fields"], FixedLengthField);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
 	export class LogEntry {
 	    attrs?: Record<string, any>;
 	    level: string;
@@ -128,94 +80,6 @@ export namespace adapters {
 	        this.level = source["level"];
 	        this.source = source["source"];
 	        this.message = source["message"];
-	    }
-	}
-	export class UdpListenSession {
-	    id: string;
-	    encoding: string;
-	    port: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new UdpListenSession(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.encoding = source["encoding"];
-	        this.port = source["port"];
-	    }
-	}
-	export class UdpSendRequest {
-	    host: string;
-	    encoding: string;
-	    payload: string;
-	    endianness: string;
-	    fixedLengthPayload: FixedLengthPayload;
-	    port: number;
-	    messageLength: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new UdpSendRequest(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.host = source["host"];
-	        this.encoding = source["encoding"];
-	        this.payload = source["payload"];
-	        this.endianness = source["endianness"];
-	        this.fixedLengthPayload = this.convertValues(source["fixedLengthPayload"], FixedLengthPayload);
-	        this.port = source["port"];
-	        this.messageLength = source["messageLength"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class UdpSendResult {
-	    bytesSent: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new UdpSendResult(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.bytesSent = source["bytesSent"];
-	    }
-	}
-	export class UdpTarget {
-	    id: string;
-	    name: string;
-	    host: string;
-	    port: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new UdpTarget(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.name = source["name"];
-	        this.host = source["host"];
-	        this.port = source["port"];
 	    }
 	}
 
@@ -462,6 +326,147 @@ export namespace httpdomain {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.kind = source["kind"];
 	        this.id = source["id"];
+	    }
+	}
+
+}
+
+export namespace udpdomain {
+	
+	export class FixedLengthField {
+	    name: string;
+	    fieldType: string;
+	    value: string;
+	    length: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new FixedLengthField(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.fieldType = source["fieldType"];
+	        this.value = source["value"];
+	        this.length = source["length"];
+	    }
+	}
+	export class FixedLengthPayload {
+	    fields: FixedLengthField[];
+	
+	    static createFrom(source: any = {}) {
+	        return new FixedLengthPayload(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.fields = this.convertValues(source["fields"], FixedLengthField);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class UdpListenSession {
+	    id: string;
+	    encoding: string;
+	    port: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new UdpListenSession(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.encoding = source["encoding"];
+	        this.port = source["port"];
+	    }
+	}
+	export class UdpSendRequest {
+	    host: string;
+	    encoding: string;
+	    payload: string;
+	    endianness: string;
+	    fixedLengthPayload: FixedLengthPayload;
+	    port: number;
+	    messageLength: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new UdpSendRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.host = source["host"];
+	        this.encoding = source["encoding"];
+	        this.payload = source["payload"];
+	        this.endianness = source["endianness"];
+	        this.fixedLengthPayload = this.convertValues(source["fixedLengthPayload"], FixedLengthPayload);
+	        this.port = source["port"];
+	        this.messageLength = source["messageLength"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class UdpSendResult {
+	    bytesSent: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new UdpSendResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.bytesSent = source["bytesSent"];
+	    }
+	}
+	export class UdpTarget {
+	    id: string;
+	    name: string;
+	    host: string;
+	    port: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new UdpTarget(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.host = source["host"];
+	        this.port = source["port"];
 	    }
 	}
 

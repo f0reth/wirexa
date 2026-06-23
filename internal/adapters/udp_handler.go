@@ -19,31 +19,18 @@ func SetupUdpHandler(h *UdpHandler, sendSvc udpdomain.SendUseCase, targetSvc udp
 }
 
 // Send は UDP パケットを送信する。
-func (h *UdpHandler) Send(req UdpSendRequest) (UdpSendResult, error) {
-	res, err := h.sendSvc.Send(fromUdpSendRequestDTO(req))
-	if err != nil {
-		return UdpSendResult{}, err
-	}
-	return toUdpSendResultDTO(res), nil
+func (h *UdpHandler) Send(req udpdomain.UdpSendRequest) (udpdomain.UdpSendResult, error) {
+	return h.sendSvc.Send(req)
 }
 
 // GetTargets は全ターゲットを返す。
-func (h *UdpHandler) GetTargets() []UdpTarget {
-	targets := h.targetSvc.GetTargets()
-	result := make([]UdpTarget, len(targets))
-	for i, t := range targets {
-		result[i] = toUdpTargetDTO(t)
-	}
-	return result
+func (h *UdpHandler) GetTargets() []udpdomain.UdpTarget {
+	return h.targetSvc.GetTargets()
 }
 
 // SaveTarget はターゲットを保存する。
-func (h *UdpHandler) SaveTarget(target UdpTarget) (UdpTarget, error) {
-	saved, err := h.targetSvc.SaveTarget(fromUdpTargetDTO(target))
-	if err != nil {
-		return UdpTarget{}, err
-	}
-	return toUdpTargetDTO(saved), nil
+func (h *UdpHandler) SaveTarget(target udpdomain.UdpTarget) (udpdomain.UdpTarget, error) {
+	return h.targetSvc.SaveTarget(target)
 }
 
 // DeleteTarget は ID でターゲットを削除する。
@@ -52,12 +39,10 @@ func (h *UdpHandler) DeleteTarget(id string) error {
 }
 
 // StartListen は指定ポートで UDP リスニングを開始する。
-func (h *UdpHandler) StartListen(port int, encoding string) (UdpListenSession, error) {
-	session, err := h.listenSvc.StartListen(port, udpdomain.PayloadEncoding(encoding))
-	if err != nil {
-		return UdpListenSession{}, err
-	}
-	return toUdpListenSessionDTO(session), nil
+// encoding は名前付き文字列型をそのまま引数に取ると Wails が models.ts に型定義を生成せず
+// バインディングが壊れるため、string で受けてここでドメイン型へ変換する。
+func (h *UdpHandler) StartListen(port int, encoding string) (udpdomain.UdpListenSession, error) {
+	return h.listenSvc.StartListen(port, udpdomain.PayloadEncoding(encoding))
 }
 
 // StopListen は指定セッションのリスニングを停止する。
@@ -66,13 +51,8 @@ func (h *UdpHandler) StopListen(sessionID string) error {
 }
 
 // GetListeners はアクティブなリスニングセッション一覧を返す。
-func (h *UdpHandler) GetListeners() []UdpListenSession {
-	sessions := h.listenSvc.GetListeners()
-	result := make([]UdpListenSession, len(sessions))
-	for i, s := range sessions {
-		result[i] = toUdpListenSessionDTO(s)
-	}
-	return result
+func (h *UdpHandler) GetListeners() []udpdomain.UdpListenSession {
+	return h.listenSvc.GetListeners()
 }
 
 // Shutdown は全リスニングセッションを停止する。
