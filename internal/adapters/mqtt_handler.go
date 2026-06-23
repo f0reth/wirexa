@@ -19,8 +19,8 @@ func SetupMqttHandler(h *MqttHandler, svc mqttdomain.MqttUseCase, profileSvc mqt
 }
 
 // Connect は MQTT ブローカーへ接続し、接続 ID を返す。
-func (h *MqttHandler) Connect(config ConnectionConfig) (string, error) {
-	return h.svc.Connect(fromConnectionConfigDTO(config))
+func (h *MqttHandler) Connect(config mqttdomain.ConnectionConfig) (string, error) {
+	return h.svc.Connect(config)
 }
 
 // Disconnect は指定した接続を切断する。
@@ -44,13 +44,8 @@ func (h *MqttHandler) Unsubscribe(connectionID, topic string) error {
 }
 
 // GetConnections は全接続の現在状態を返す。
-func (h *MqttHandler) GetConnections() []ConnectionStatus {
-	statuses := h.svc.GetConnections()
-	result := make([]ConnectionStatus, len(statuses))
-	for i := range statuses {
-		result[i] = toConnectionStatusDTO(statuses[i])
-	}
-	return result
+func (h *MqttHandler) GetConnections() []mqttdomain.ConnectionStatus {
+	return h.svc.GetConnections()
 }
 
 // Shutdown は全接続を切断してサービスを終了する。
@@ -59,18 +54,13 @@ func (h *MqttHandler) Shutdown() {
 }
 
 // GetProfiles は全 MQTT ブローカープロファイルを返す。
-func (h *MqttHandler) GetProfiles() []BrokerProfile {
-	profiles := h.profileSvc.GetProfiles()
-	result := make([]BrokerProfile, len(profiles))
-	for i := range profiles {
-		result[i] = toBrokerProfileDTO(profiles[i])
-	}
-	return result
+func (h *MqttHandler) GetProfiles() []mqttdomain.BrokerProfile {
+	return h.profileSvc.GetProfiles()
 }
 
 // SaveProfile は MQTT ブローカープロファイルを保存する。
-func (h *MqttHandler) SaveProfile(profile BrokerProfile) error {
-	return h.profileSvc.SaveProfile(fromBrokerProfileDTO(profile))
+func (h *MqttHandler) SaveProfile(profile mqttdomain.BrokerProfile) error {
+	return h.profileSvc.SaveProfile(profile)
 }
 
 // DeleteProfile は MQTT ブローカープロファイルを削除する。

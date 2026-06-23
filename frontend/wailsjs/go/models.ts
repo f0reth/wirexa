@@ -1,69 +1,5 @@
 export namespace adapters {
 	
-	export class BrokerProfile {
-	    id: string;
-	    name: string;
-	    broker: string;
-	    clientId: string;
-	    username: string;
-	    password: string;
-	    useTls: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new BrokerProfile(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.name = source["name"];
-	        this.broker = source["broker"];
-	        this.clientId = source["clientId"];
-	        this.username = source["username"];
-	        this.password = source["password"];
-	        this.useTls = source["useTls"];
-	    }
-	}
-	export class ConnectionConfig {
-	    name: string;
-	    broker: string;
-	    clientId: string;
-	    username: string;
-	    password: string;
-	    useTls: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new ConnectionConfig(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.name = source["name"];
-	        this.broker = source["broker"];
-	        this.clientId = source["clientId"];
-	        this.username = source["username"];
-	        this.password = source["password"];
-	        this.useTls = source["useTls"];
-	    }
-	}
-	export class ConnectionStatus {
-	    id: string;
-	    name: string;
-	    broker: string;
-	    connected: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new ConnectionStatus(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.name = source["name"];
-	        this.broker = source["broker"];
-	        this.connected = source["connected"];
-	    }
-	}
 	export class LogEntry {
 	    attrs?: Record<string, any>;
 	    level: string;
@@ -326,6 +262,75 @@ export namespace httpdomain {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.kind = source["kind"];
 	        this.id = source["id"];
+	    }
+	}
+
+}
+
+export namespace mqttdomain {
+	
+	export class BrokerProfile {
+	    id: string;
+	    name: string;
+	    broker: string;
+	    clientId: string;
+	    username: string;
+	    password: string;
+	    useTls: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new BrokerProfile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.broker = source["broker"];
+	        this.clientId = source["clientId"];
+	        this.username = source["username"];
+	        this.password = source["password"];
+	        this.useTls = source["useTls"];
+	    }
+	}
+	export class ConnectionConfig {
+	    name: string;
+	    broker: string;
+	    clientId: string;
+	    username: string;
+	    password: string;
+	    useTls: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ConnectionConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.broker = source["broker"];
+	        this.clientId = source["clientId"];
+	        this.username = source["username"];
+	        this.password = source["password"];
+	        this.useTls = source["useTls"];
+	    }
+	}
+	export class ConnectionStatus {
+	    id: string;
+	    name: string;
+	    broker: string;
+	    connected: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ConnectionStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.broker = source["broker"];
+	        this.connected = source["connected"];
 	    }
 	}
 
