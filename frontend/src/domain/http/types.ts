@@ -19,7 +19,13 @@ export interface RequestBody {
 }
 
 export type AuthType = "none" | "basic" | "bearer";
-export const AUTH_TYPES: AuthType[] = ["none", "basic", "bearer"];
+// AuthType ユニオンに値を追加して下のレコードを更新し忘れると satisfies がコンパイルエラーになる。
+const AUTH_TYPE_SET = {
+  none: true,
+  basic: true,
+  bearer: true,
+} satisfies Record<AuthType, true>;
+export const AUTH_TYPES = Object.keys(AUTH_TYPE_SET) as AuthType[];
 
 export interface RequestAuth {
   type: AuthType;
@@ -102,25 +108,29 @@ export type HttpMethod =
   | "DELETE"
   | "HEAD"
   | "OPTIONS";
-export const HTTP_METHODS: HttpMethod[] = [
-  "GET",
-  "POST",
-  "PUT",
-  "PATCH",
-  "DELETE",
-  "HEAD",
-  "OPTIONS",
-];
+// HttpMethod ユニオンに値を追加して下のレコードを更新し忘れると satisfies がコンパイルエラーになる。
+const HTTP_METHOD_SET = {
+  GET: true,
+  POST: true,
+  PUT: true,
+  PATCH: true,
+  DELETE: true,
+  HEAD: true,
+  OPTIONS: true,
+} satisfies Record<HttpMethod, true>;
+export const HTTP_METHODS = Object.keys(HTTP_METHOD_SET) as HttpMethod[];
 
 export type BodyType = RequestBody["type"];
-export const BODY_TYPES: BodyType[] = [
-  "none",
-  "json",
-  "text",
-  "form-urlencoded",
-  "form-data",
-  "file",
-];
+// BodyType ユニオンに値を追加して下のレコードを更新し忘れると satisfies がコンパイルエラーになる。
+const BODY_TYPE_SET = {
+  none: true,
+  json: true,
+  text: true,
+  "form-urlencoded": true,
+  "form-data": true,
+  file: true,
+} satisfies Record<BodyType, true>;
+export const BODY_TYPES = Object.keys(BODY_TYPE_SET) as BodyType[];
 
 export function isHttpMethod(v: string): v is HttpMethod {
   return (HTTP_METHODS as string[]).includes(v);
