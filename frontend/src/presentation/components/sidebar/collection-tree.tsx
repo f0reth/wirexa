@@ -20,28 +20,10 @@ import {
   useHttpRequest,
 } from "../../providers/http-provider";
 import { CollectionNode } from "./collection-node";
-import {
-  type DragItem,
-  dragItem,
-  ghostPos,
-  setDragItem,
-  setDropTarget,
-  setGhostPos,
-} from "./drag-state";
+import { type DragItem, dragItem, ghostPos } from "./drag-state";
 import styles from "./sidebar.module.css";
-import {
-  DROP_COLLECTION_ID_ATTR,
-  DROP_KIND_ATTR,
-  DROP_PARENT_ID_ATTR,
-  DROP_POSITION_ATTR,
-  DROP_ZONE_ATTR,
-  InsertionZone,
-  TREE_ITEM_COLLECTION_ID_ATTR,
-  TREE_ITEM_ID_ATTR,
-  TREE_ITEM_INDEX_ATTR,
-  TREE_ITEM_PARENT_ID_ATTR,
-  TreeItemNode,
-} from "./tree-item-node";
+import { InsertionZone, TreeItemNode } from "./tree-item-node";
+import { useTreeDragDrop } from "./use-tree-drag-drop";
 
 export function CollectionTree() {
   const requestCtx = useHttpRequest();
@@ -74,142 +56,6 @@ export function CollectionTree() {
   onMount(async () => {
     await collectionsCtx.refreshCollections();
     requestCtx.restoreActiveRequest();
-  });
-
-  onMount(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const di = dragItem();
-      if (!di) return;
-      setGhostPos({ x: e.clientX, y: e.clientY });
-
-      // elementFromPoint で現在マウス下にあるドロップゾーンを検出する。
-      const el = document.elementFromPoint(e.clientX, e.clientY);
-      const zone = el?.closest(`[${DROP_ZONE_ATTR}]`) as HTMLElement | null;
-      if (zone) {
-        const zoneKind = zone.getAttribute(DROP_KIND_ATTR) ?? "item";
-        if (zoneKind === "collection-header" && di.kind === "item") {
-          const collectionId = zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
-          setDropTarget({
-            kind: "item",
-            collectionId,
-            parentId: "",
-            position: -1,
-          });
-          return;
-        }
-        const position = parseInt(
-          zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
-          10,
-        );
-        if (position === -1) {
-          setDropTarget(null);
-          return;
-        }
-        if (zoneKind === "sidebar") {
-          setDropTarget({ kind: "sidebar", position });
-        } else if (zoneKind === "item" && di.kind === "item") {
-          const collectionId = zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
-          const parentId = zone.getAttribute(DROP_PARENT_ID_ATTR) ?? "";
-          setDropTarget({ kind: "item", collectionId, parentId, position });
-        } else {
-          setDropTarget(null);
-        }
-      } else {
-        // InsertionZone が見つからない場合、アイテム行上か確認する
-        const itemEl = el?.closest(
-          `[${TREE_ITEM_ID_ATTR}]`,
-        ) as HTMLElement | null;
-        if (itemEl && di.kind === "item") {
-          const rect = itemEl.getBoundingClientRect();
-          const isUpperHalf = e.clientY < rect.top + rect.height / 2;
-          const itemIndex = parseInt(
-            itemEl.getAttribute(TREE_ITEM_INDEX_ATTR) ?? "-1",
-            10,
-          );
-          const collectionId =
-            itemEl.getAttribute(TREE_ITEM_COLLECTION_ID_ATTR) ?? "";
-          const parentId = itemEl.getAttribute(TREE_ITEM_PARENT_ID_ATTR) ?? "";
-          const position = isUpperHalf ? itemIndex : itemIndex + 1;
-          setDropTarget({ kind: "item", collectionId, parentId, position });
-        } else {
-          setDropTarget(null);
-        }
-      }
-    };
-
-    const handleMouseUp = (e: MouseEvent) => {
-      const di = dragItem();
-      if (di) {
-        // mousemove のスロットリングで dropTarget が古くなる可能性があるため、
-        // mouseup 時の正確な座標からドロップゾーンを直接検出する。
-        const el = document.elementFromPoint(e.clientX, e.clientY);
-        const zone = el?.closest(`[${DROP_ZONE_ATTR}]`) as HTMLElement | null;
-        if (zone) {
-          const zoneKind = zone.getAttribute(DROP_KIND_ATTR) ?? "item";
-          if (zoneKind === "collection-header" && di.kind === "item") {
-            const collectionId =
-              zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
-            handleMoveItem(di.collectionId, di.itemId, collectionId, "", -1);
-          } else {
-            const position = parseInt(
-              zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
-              10,
-            );
-            if (position !== -1) {
-              if (zoneKind === "sidebar") {
-                handleDropToSidebar(di, position);
-              } else if (zoneKind === "item" && di.kind === "item") {
-                const collectionId =
-                  zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
-                const parentId = zone.getAttribute(DROP_PARENT_ID_ATTR) ?? "";
-                handleMoveItem(
-                  di.collectionId,
-                  di.itemId,
-                  collectionId,
-                  parentId,
-                  position,
-                );
-              }
-            }
-          }
-        } else {
-          // InsertionZone が見つからない場合、アイテム行上か確認する
-          const itemEl = el?.closest(
-            `[${TREE_ITEM_ID_ATTR}]`,
-          ) as HTMLElement | null;
-          if (itemEl && di.kind === "item") {
-            const rect = itemEl.getBoundingClientRect();
-            const isUpperHalf = e.clientY < rect.top + rect.height / 2;
-            const itemIndex = parseInt(
-              itemEl.getAttribute(TREE_ITEM_INDEX_ATTR) ?? "-1",
-              10,
-            );
-            const collectionId =
-              itemEl.getAttribute(TREE_ITEM_COLLECTION_ID_ATTR) ?? "";
-            const parentId =
-              itemEl.getAttribute(TREE_ITEM_PARENT_ID_ATTR) ?? "";
-            const position = isUpperHalf ? itemIndex : itemIndex + 1;
-            handleMoveItem(
-              di.collectionId,
-              di.itemId,
-              collectionId,
-              parentId,
-              position,
-            );
-          }
-        }
-      }
-      setDragItem(null);
-      setDropTarget(null);
-      setGhostPos(null);
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    onCleanup(() => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    });
   });
 
   const handleAddRootRequest = async () => {
@@ -368,6 +214,12 @@ export function CollectionTree() {
       console.error("Failed to move item:", err);
     }
   };
+
+  // ドラッグ&ドロップの document レベルハンドラを登録する（ハンドラ定義後に呼ぶ）。
+  useTreeDragDrop({
+    onMoveItem: handleMoveItem,
+    onDropToSidebar: handleDropToSidebar,
+  });
 
   return (
     <div class={styles.collectionTree}>
