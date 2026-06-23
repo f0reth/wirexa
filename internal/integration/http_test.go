@@ -98,7 +98,7 @@ func TestHTTP_FolderAndRequestTree(t *testing.T) {
 	}
 
 	// フォルダ内にリクエストを追加
-	req := adapters.HttpRequest{Name: "GET example", Method: "GET", URL: "http://example.com"}
+	req := httpdomain.HttpRequest{Name: "GET example", Method: "GET", URL: "http://example.com"}
 	item, err := h.AddRequest(col.ID, folder.ID, req)
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
@@ -139,7 +139,7 @@ func TestHTTP_SendRequest_2xx(t *testing.T) {
 
 	for _, method := range []string{"GET", "POST"} {
 		t.Run(method, func(t *testing.T) {
-			resp, err := h.SendRequest(adapters.HttpRequest{
+			resp, err := h.SendRequest(httpdomain.HttpRequest{
 				Method: method,
 				URL:    srv.URL,
 			})
@@ -173,7 +173,7 @@ func TestHTTP_SendRequest_4xx5xx(t *testing.T) {
 			defer srv.Close()
 
 			h := newHTTPHandler(t)
-			resp, err := h.SendRequest(adapters.HttpRequest{
+			resp, err := h.SendRequest(httpdomain.HttpRequest{
 				Method: "GET",
 				URL:    srv.URL,
 			})
@@ -198,13 +198,13 @@ func TestHTTP_SendRequest_HeadersAndParams(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(adapters.HttpRequest{
+	_, err := h.SendRequest(httpdomain.HttpRequest{
 		Method: "GET",
 		URL:    srv.URL,
-		Headers: []adapters.KeyValuePair{
+		Headers: []httpdomain.KeyValuePair{
 			{Key: "X-Test", Value: "hello", Enabled: true},
 		},
-		Params: []adapters.KeyValuePair{
+		Params: []httpdomain.KeyValuePair{
 			{Key: "q", Value: "world", Enabled: true},
 		},
 	})
@@ -232,7 +232,7 @@ func TestHTTP_CancelRequest(t *testing.T) {
 	h := newHTTPHandler(t)
 	done := make(chan error, 1)
 	go func() {
-		_, err := h.SendRequest(adapters.HttpRequest{
+		_, err := h.SendRequest(httpdomain.HttpRequest{
 			Method: "GET",
 			URL:    srv.URL,
 		})
@@ -262,12 +262,12 @@ func TestHTTP_UpdateRequest(t *testing.T) {
 	h := newHTTPHandler(t)
 	col, _ := h.CreateCollection("C")
 
-	item, err := h.AddRequest(col.ID, "", adapters.HttpRequest{Name: "Req", Method: "GET", URL: "http://old.example.com"})
+	item, err := h.AddRequest(col.ID, "", httpdomain.HttpRequest{Name: "Req", Method: "GET", URL: "http://old.example.com"})
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
 
-	if err := h.UpdateRequest(col.ID, adapters.HttpRequest{ID: item.ID, Name: "Req", Method: "POST", URL: "http://new.example.com"}); err != nil {
+	if err := h.UpdateRequest(col.ID, httpdomain.HttpRequest{ID: item.ID, Name: "Req", Method: "POST", URL: "http://new.example.com"}); err != nil {
 		t.Fatalf("UpdateRequest: %v", err)
 	}
 
@@ -289,7 +289,7 @@ func TestHTTP_RenameItem(t *testing.T) {
 	h := newHTTPHandler(t)
 	col, _ := h.CreateCollection("C")
 
-	item, err := h.AddRequest(col.ID, "", adapters.HttpRequest{Name: "OldName", Method: "GET", URL: "http://example.com"})
+	item, err := h.AddRequest(col.ID, "", httpdomain.HttpRequest{Name: "OldName", Method: "GET", URL: "http://example.com"})
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestHTTP_DeleteItem(t *testing.T) {
 	h := newHTTPHandler(t)
 	col, _ := h.CreateCollection("C")
 
-	item, err := h.AddRequest(col.ID, "", adapters.HttpRequest{Name: "Req", Method: "GET", URL: "http://example.com"})
+	item, err := h.AddRequest(col.ID, "", httpdomain.HttpRequest{Name: "Req", Method: "GET", URL: "http://example.com"})
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
@@ -394,7 +394,7 @@ func TestHTTP_MoveItem(t *testing.T) {
 	col1, _ := h.CreateCollection("Source")
 	col2, _ := h.CreateCollection("Target")
 
-	item, err := h.AddRequest(col1.ID, "", adapters.HttpRequest{Name: "Req", Method: "GET", URL: "http://example.com"})
+	item, err := h.AddRequest(col1.ID, "", httpdomain.HttpRequest{Name: "Req", Method: "GET", URL: "http://example.com"})
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
@@ -456,7 +456,7 @@ func TestHTTP_SidebarLayout(t *testing.T) {
 	}
 
 	// MoveItemToSidebar: col2 にリクエストを追加し、サイドバー先頭に移動
-	item, err := h.AddRequest(col2.ID, "", adapters.HttpRequest{Name: "R", Method: "GET", URL: "http://example.com"})
+	item, err := h.AddRequest(col2.ID, "", httpdomain.HttpRequest{Name: "R", Method: "GET", URL: "http://example.com"})
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
@@ -502,7 +502,7 @@ func TestHTTP_PersistenceRoundTrip(t *testing.T) {
 	if err := h1.RenameCollection(col.ID, "RenamedCol"); err != nil {
 		t.Fatalf("RenameCollection: %v", err)
 	}
-	if _, err := h1.AddRequest(col.ID, "", adapters.HttpRequest{Name: "Req", Method: "GET", URL: "http://example.com"}); err != nil {
+	if _, err := h1.AddRequest(col.ID, "", httpdomain.HttpRequest{Name: "Req", Method: "GET", URL: "http://example.com"}); err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
 
@@ -538,10 +538,10 @@ func TestHTTP_SendRequest_DisabledHeaderExcluded(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(adapters.HttpRequest{
+	_, err := h.SendRequest(httpdomain.HttpRequest{
 		Method: "GET",
 		URL:    srv.URL,
-		Headers: []adapters.KeyValuePair{
+		Headers: []httpdomain.KeyValuePair{
 			{Key: "X-Disabled", Value: "should-not-appear", Enabled: false},
 			{Key: "X-Enabled", Value: "should-appear", Enabled: true},
 		},
@@ -568,10 +568,10 @@ func TestHTTP_SendRequest_DisabledParamExcluded(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(adapters.HttpRequest{
+	_, err := h.SendRequest(httpdomain.HttpRequest{
 		Method: "GET",
 		URL:    srv.URL,
-		Params: []adapters.KeyValuePair{
+		Params: []httpdomain.KeyValuePair{
 			{Key: "disabled", Value: "should-not-appear", Enabled: false},
 			{Key: "enabled", Value: "should-appear", Enabled: true},
 		},
@@ -590,7 +590,7 @@ func TestHTTP_SendRequest_DisabledParamExcluded(t *testing.T) {
 // TestHTTP_SendRequest_InvalidMethod は無効な HTTP メソッドで ValidationError が返ることを確認する。
 func TestHTTP_SendRequest_InvalidMethod(t *testing.T) {
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(adapters.HttpRequest{
+	_, err := h.SendRequest(httpdomain.HttpRequest{
 		Method: "INVALID",
 		URL:    "http://example.com",
 	})
@@ -611,10 +611,10 @@ func TestHTTP_SendRequest_Auth(t *testing.T) {
 		defer srv.Close()
 
 		h := newHTTPHandler(t)
-		_, err := h.SendRequest(adapters.HttpRequest{
+		_, err := h.SendRequest(httpdomain.HttpRequest{
 			Method: "GET",
 			URL:    srv.URL,
-			Auth:   adapters.RequestAuth{Type: "basic", Username: "user", Password: "pass"},
+			Auth:   httpdomain.RequestAuth{Type: "basic", Username: "user", Password: "pass"},
 		})
 		if err != nil {
 			t.Fatalf("SendRequest: %v", err)
@@ -636,10 +636,10 @@ func TestHTTP_SendRequest_Auth(t *testing.T) {
 		defer srv.Close()
 
 		h := newHTTPHandler(t)
-		_, err := h.SendRequest(adapters.HttpRequest{
+		_, err := h.SendRequest(httpdomain.HttpRequest{
 			Method: "GET",
 			URL:    srv.URL,
-			Auth:   adapters.RequestAuth{Type: "bearer", Token: "mytoken123"},
+			Auth:   httpdomain.RequestAuth{Type: "bearer", Token: "mytoken123"},
 		})
 		if err != nil {
 			t.Fatalf("SendRequest: %v", err)
@@ -672,10 +672,10 @@ func TestHTTP_SendRequest_BodyTypes(t *testing.T) {
 			defer srv.Close()
 
 			h := newHTTPHandler(t)
-			_, err := h.SendRequest(adapters.HttpRequest{
+			_, err := h.SendRequest(httpdomain.HttpRequest{
 				Method: "POST",
 				URL:    srv.URL,
-				Body: adapters.RequestBody{
+				Body: httpdomain.RequestBody{
 					Type:     tc.bodyType,
 					Contents: map[string]string{tc.bodyType: tc.content},
 				},
@@ -698,7 +698,7 @@ func TestHTTP_SendRequest_UnreachableServer(t *testing.T) {
 	srv.Close() // サーバーを先に閉じる
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(adapters.HttpRequest{
+	_, err := h.SendRequest(httpdomain.HttpRequest{
 		Method: "GET",
 		URL:    srv.URL,
 	})
@@ -719,10 +719,10 @@ func TestHTTP_SendRequest_Timeout(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(adapters.HttpRequest{
+	_, err := h.SendRequest(httpdomain.HttpRequest{
 		Method:   "GET",
 		URL:      srv.URL,
-		Settings: adapters.RequestSettings{TimeoutSec: 1},
+		Settings: httpdomain.RequestSettings{TimeoutSec: 1},
 	})
 	if err == nil {
 		t.Error("expected timeout error, got nil")
@@ -745,7 +745,7 @@ func TestHTTP_SendRequest_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := h.SendRequest(adapters.HttpRequest{
+			_, err := h.SendRequest(httpdomain.HttpRequest{
 				Method: "GET",
 				URL:    srv.URL,
 			})
@@ -782,7 +782,7 @@ func TestHTTP_AddRequest_AfterDeleteCollection(t *testing.T) {
 		t.Fatalf("DeleteCollection: %v", err)
 	}
 
-	_, err = h.AddRequest(col.ID, "", adapters.HttpRequest{Name: "R", Method: "GET", URL: "http://example.com"})
+	_, err = h.AddRequest(col.ID, "", httpdomain.HttpRequest{Name: "R", Method: "GET", URL: "http://example.com"})
 	if err == nil {
 		t.Error("expected error after collection deleted, got nil")
 	}

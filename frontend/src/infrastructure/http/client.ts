@@ -18,7 +18,7 @@ import {
   SendRequest,
   UpdateRequest,
 } from "../../../wailsjs/go/adapters/HttpHandler";
-import { adapters } from "../../../wailsjs/go/models";
+import { httpdomain } from "../../../wailsjs/go/models";
 import {
   type Collection,
   DEFAULT_SETTINGS,
@@ -36,17 +36,17 @@ import {
 } from "../../domain/http/types";
 
 // domain → Wails
-function toWailsRequest(req: HttpRequest): adapters.HttpRequest {
-  return adapters.HttpRequest.createFrom(req);
+function toWailsRequest(req: HttpRequest): httpdomain.HttpRequest {
+  return httpdomain.HttpRequest.createFrom(req);
 }
 
 // Wails → domain
-function fromWailsKeyValuePair(kv: adapters.KeyValuePair): KeyValuePair {
+function fromWailsKeyValuePair(kv: httpdomain.KeyValuePair): KeyValuePair {
   return { key: kv.key, value: kv.value, enabled: kv.enabled };
 }
 
 function fromWailsRequestSettings(
-  settings: adapters.RequestSettings | undefined | null,
+  settings: httpdomain.RequestSettings | undefined | null,
 ): RequestSettings {
   if (!settings) return { ...DEFAULT_SETTINGS };
   return {
@@ -62,7 +62,7 @@ function fromWailsRequestSettings(
   };
 }
 
-function fromWailsRequestAuth(auth: adapters.RequestAuth): RequestAuth {
+function fromWailsRequestAuth(auth: httpdomain.RequestAuth): RequestAuth {
   return {
     type: auth && isAuthType(auth.type) ? auth.type : "none",
     username: auth?.username ?? "",
@@ -71,7 +71,7 @@ function fromWailsRequestAuth(auth: adapters.RequestAuth): RequestAuth {
   };
 }
 
-function fromWailsRequestBody(body: adapters.RequestBody): RequestBody {
+function fromWailsRequestBody(body: httpdomain.RequestBody): RequestBody {
   if (!isBodyType(body.type)) {
     throw new Error(`Unknown body type: ${body.type}`);
   }
@@ -81,7 +81,7 @@ function fromWailsRequestBody(body: adapters.RequestBody): RequestBody {
   };
 }
 
-function fromWailsHttpRequest(req: adapters.HttpRequest): HttpRequest {
+function fromWailsHttpRequest(req: httpdomain.HttpRequest): HttpRequest {
   if (!isHttpMethod(req.method)) {
     throw new Error(`Unknown HTTP method: ${req.method}`);
   }
@@ -99,7 +99,7 @@ function fromWailsHttpRequest(req: adapters.HttpRequest): HttpRequest {
   };
 }
 
-function fromWailsHttpResponse(res: adapters.HttpResponse): HttpResponse {
+function fromWailsHttpResponse(res: httpdomain.HttpResponse): HttpResponse {
   return {
     statusCode: res.statusCode,
     statusText: res.statusText,
@@ -114,7 +114,7 @@ function fromWailsHttpResponse(res: adapters.HttpResponse): HttpResponse {
   };
 }
 
-function fromWailsTreeItem(item: adapters.TreeItem): TreeItem {
+function fromWailsTreeItem(item: httpdomain.TreeItem): TreeItem {
   if (item.type !== "folder" && item.type !== "request") {
     throw new Error(`Unknown tree item type: ${item.type}`);
   }
@@ -127,7 +127,7 @@ function fromWailsTreeItem(item: adapters.TreeItem): TreeItem {
   };
 }
 
-function fromWailsCollection(col: adapters.Collection): Collection {
+function fromWailsCollection(col: httpdomain.Collection): Collection {
   return {
     id: col.id,
     name: col.name,
