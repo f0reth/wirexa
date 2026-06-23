@@ -1,6 +1,8 @@
-// フロントエンド domain 層の型定義（正）。
-// Wails 自動生成型（wailsjs/go/models.ts）との変換は infrastructure/mqtt/client.ts で行う。
-// これらの型を変更した場合は internal/domain/mqtt/types.go も必ず合わせて更新すること。
+// フロントエンド domain 層の型定義（ユニオン型・型ガードで UI に意味付けする層）。
+// 配線型の正は Go ドメイン型 internal/domain/mqtt/types.go で、これが RPC 境界に直接公開され
+// Wails 生成型 wailsjs/go/models.ts に反映される。Go 側を変更したら `wails generate module` を
+// 実行する（再生成忘れは CI のバインディング鮮度チェックが検知する）。
+// 生成型 → この型の変換は infrastructure/mqtt/client.ts で行う。
 
 export interface ConnectionStatus {
   id: string;
