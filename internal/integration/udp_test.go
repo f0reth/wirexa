@@ -86,10 +86,10 @@ func TestUDP_SendRaw(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = h.StopListen(sess.ID) })
 
-	result, err := h.Send(adapters.UdpSendRequest{
+	result, err := h.Send(udpdomain.UdpSendRequest{
 		Host:     "127.0.0.1",
 		Port:     port,
-		Encoding: string(udpdomain.EncodingText),
+		Encoding: udpdomain.EncodingText,
 		Payload:  "hello",
 	})
 	if err != nil {
@@ -124,12 +124,12 @@ func TestUDP_SendFixed(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = h.StopListen(sess.ID) })
 
-	result, err := h.Send(adapters.UdpSendRequest{
+	result, err := h.Send(udpdomain.UdpSendRequest{
 		Host:     "127.0.0.1",
 		Port:     port,
-		Encoding: string(udpdomain.EncodingFixed),
-		FixedLengthPayload: adapters.FixedLengthPayload{
-			Fields: []adapters.FixedLengthField{
+		Encoding: udpdomain.EncodingFixed,
+		FixedLengthPayload: udpdomain.FixedLengthPayload{
+			Fields: []udpdomain.FixedLengthField{
 				{Name: "data", Length: 4, Value: "ABCD"},
 			},
 		},
@@ -219,7 +219,7 @@ func TestUDP_TargetCRUD(t *testing.T) {
 	}
 
 	// 新規保存
-	target, err := h.SaveTarget(adapters.UdpTarget{
+	target, err := h.SaveTarget(udpdomain.UdpTarget{
 		Name: "TestTarget",
 		Host: "192.168.1.1",
 		Port: 5000,
@@ -286,7 +286,7 @@ func TestUDP_TargetPersistenceRoundTrip(t *testing.T) {
 
 	// 1 回目: ターゲットを保存
 	h1 := newUDPHandlerWithDir(t, emitter, dir)
-	target, err := h1.SaveTarget(adapters.UdpTarget{
+	target, err := h1.SaveTarget(udpdomain.UdpTarget{
 		Name: "PersistTarget",
 		Host: "192.168.1.100",
 		Port: 9999,
@@ -356,10 +356,10 @@ func TestUDP_Send_EmptyHost(t *testing.T) {
 	emitter := newMockEmitter()
 	h := newUDPHandler(t, emitter)
 
-	_, err := h.Send(adapters.UdpSendRequest{
+	_, err := h.Send(udpdomain.UdpSendRequest{
 		Host:     "",
 		Port:     5000,
-		Encoding: string(udpdomain.EncodingText),
+		Encoding: udpdomain.EncodingText,
 		Payload:  "test",
 	})
 	if err == nil {
@@ -373,10 +373,10 @@ func TestUDP_Send_InvalidPort(t *testing.T) {
 	h := newUDPHandler(t, emitter)
 
 	for _, port := range []int{0, 65536, -1} {
-		_, err := h.Send(adapters.UdpSendRequest{
+		_, err := h.Send(udpdomain.UdpSendRequest{
 			Host:     "127.0.0.1",
 			Port:     port,
-			Encoding: string(udpdomain.EncodingText),
+			Encoding: udpdomain.EncodingText,
 			Payload:  "test",
 		})
 		if err == nil {
@@ -427,10 +427,10 @@ func TestUDP_Send_UnreachableHost(t *testing.T) {
 	h := newUDPHandler(t, emitter)
 
 	// 解決不能なホスト名を使い DNS 失敗を確実に引き起こす
-	_, err := h.Send(adapters.UdpSendRequest{
+	_, err := h.Send(udpdomain.UdpSendRequest{
 		Host:     "invalid.hostname.that.does.not.exist.wirexa-test.invalid",
 		Port:     5000,
-		Encoding: string(udpdomain.EncodingText),
+		Encoding: udpdomain.EncodingText,
 		Payload:  "test",
 	})
 	if err == nil {
@@ -451,10 +451,10 @@ func TestUDP_SendJSON(t *testing.T) {
 	t.Cleanup(func() { _ = h.StopListen(sess.ID) })
 
 	payload := `{"key":"value"}`
-	result, err := h.Send(adapters.UdpSendRequest{
+	result, err := h.Send(udpdomain.UdpSendRequest{
 		Host:     "127.0.0.1",
 		Port:     port,
-		Encoding: string(udpdomain.EncodingText),
+		Encoding: udpdomain.EncodingText,
 		Payload:  payload,
 	})
 	if err != nil {
@@ -485,12 +485,12 @@ func TestUDP_EncodingMismatch(t *testing.T) {
 	t.Cleanup(func() { _ = h.StopListen(sess.ID) })
 
 	// 送信は Fixed エンコード
-	_, err = h.Send(adapters.UdpSendRequest{
+	_, err = h.Send(udpdomain.UdpSendRequest{
 		Host:     "127.0.0.1",
 		Port:     port,
-		Encoding: string(udpdomain.EncodingFixed),
-		FixedLengthPayload: adapters.FixedLengthPayload{
-			Fields: []adapters.FixedLengthField{
+		Encoding: udpdomain.EncodingFixed,
+		FixedLengthPayload: udpdomain.FixedLengthPayload{
+			Fields: []udpdomain.FixedLengthField{
 				{Name: "data", Length: 4, Value: "ABCD"},
 			},
 		},
@@ -527,10 +527,10 @@ func TestUDP_StopListen_RaceWithSend(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		_, _ = h.Send(adapters.UdpSendRequest{
+		_, _ = h.Send(udpdomain.UdpSendRequest{
 			Host:     "127.0.0.1",
 			Port:     port,
-			Encoding: string(udpdomain.EncodingText),
+			Encoding: udpdomain.EncodingText,
 			Payload:  "race-test",
 		})
 	}()

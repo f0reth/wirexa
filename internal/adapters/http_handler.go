@@ -45,17 +45,15 @@ func (h *HttpHandler) OpenFilePicker() (string, error) {
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
-func (h *HttpHandler) SendRequest(req HttpRequest) (HttpResponse, error) {
-	domainReq := fromHTTPRequestDTO(req)
-	res, err := h.reqSvc.SendRequest(domainReq)
+func (h *HttpHandler) SendRequest(req httpdomain.HttpRequest) (httpdomain.HttpResponse, error) {
+	res, err := h.reqSvc.SendRequest(req)
 	if err != nil {
-		return HttpResponse{}, err
+		return httpdomain.HttpResponse{}, err
 	}
-	var tempFilePath string
 	if res.BodyTruncated && h.tempFiles != nil {
-		tempFilePath = h.tempFiles.ConsumeTempFilePath(domainReq.ID)
+		res.TempFilePath = h.tempFiles.ConsumeTempFilePath(req.ID)
 	}
-	return toHTTPResponseDTO(res, tempFilePath), nil
+	return res, nil
 }
 
 // CancelRequest は指定 ID の実行中 HTTP リクエストをキャンセルする。
@@ -84,32 +82,18 @@ func (h *HttpHandler) SaveResponseBody(tempFilePath, contentType string) error {
 }
 
 // GetRootItems はルートコレクションのアイテム一覧を返す。
-func (h *HttpHandler) GetRootItems() []*TreeItem {
-	items := h.collSvc.GetRootItems()
-	result := make([]*TreeItem, len(items))
-	for i, item := range items {
-		result[i] = toTreeItemDTO(item)
-	}
-	return result
+func (h *HttpHandler) GetRootItems() []*httpdomain.TreeItem {
+	return h.collSvc.GetRootItems()
 }
 
 // GetCollections は全コレクションを返す。
-func (h *HttpHandler) GetCollections() []Collection {
-	cols := h.collSvc.GetCollections()
-	result := make([]Collection, len(cols))
-	for i := range cols {
-		result[i] = toCollectionDTO(cols[i])
-	}
-	return result
+func (h *HttpHandler) GetCollections() []httpdomain.Collection {
+	return h.collSvc.GetCollections()
 }
 
 // CreateCollection は新規コレクションを作成する。
-func (h *HttpHandler) CreateCollection(name string) (Collection, error) {
-	col, err := h.collSvc.CreateCollection(name)
-	if err != nil {
-		return Collection{}, err
-	}
-	return toCollectionDTO(col), nil
+func (h *HttpHandler) CreateCollection(name string) (httpdomain.Collection, error) {
+	return h.collSvc.CreateCollection(name)
 }
 
 // DeleteCollection は ID でコレクションを削除する。
@@ -123,26 +107,18 @@ func (h *HttpHandler) RenameCollection(id, name string) error {
 }
 
 // AddFolder はコレクションにフォルダを追加する。
-func (h *HttpHandler) AddFolder(collectionID, parentID, name string) (*TreeItem, error) {
-	item, err := h.itemSvc.AddFolder(collectionID, parentID, name)
-	if err != nil {
-		return nil, err
-	}
-	return toTreeItemDTO(item), nil
+func (h *HttpHandler) AddFolder(collectionID, parentID, name string) (*httpdomain.TreeItem, error) {
+	return h.itemSvc.AddFolder(collectionID, parentID, name)
 }
 
 // AddRequest はコレクションにリクエストを追加する。
-func (h *HttpHandler) AddRequest(collectionID, parentID string, req HttpRequest) (*TreeItem, error) {
-	item, err := h.itemSvc.AddRequest(collectionID, parentID, fromHTTPRequestDTO(req))
-	if err != nil {
-		return nil, err
-	}
-	return toTreeItemDTO(item), nil
+func (h *HttpHandler) AddRequest(collectionID, parentID string, req httpdomain.HttpRequest) (*httpdomain.TreeItem, error) {
+	return h.itemSvc.AddRequest(collectionID, parentID, req)
 }
 
 // UpdateRequest はコレクション内のリクエストを更新する。
-func (h *HttpHandler) UpdateRequest(collectionID string, req HttpRequest) error {
-	return h.itemSvc.UpdateRequest(collectionID, fromHTTPRequestDTO(req))
+func (h *HttpHandler) UpdateRequest(collectionID string, req httpdomain.HttpRequest) error {
+	return h.itemSvc.UpdateRequest(collectionID, req)
 }
 
 // RenameItem はコレクション内のアイテム名を変更する。
@@ -168,16 +144,8 @@ func (h *HttpHandler) MoveItem(sourceCollectionID, itemID, targetCollectionID, t
 }
 
 // GetSidebarLayout はサイドバーレイアウトを返す。
-func (h *HttpHandler) GetSidebarLayout() ([]SidebarEntryDTO, error) {
-	layout, err := h.collSvc.GetSidebarLayout()
-	if err != nil {
-		return nil, err
-	}
-	result := make([]SidebarEntryDTO, len(layout))
-	for i, e := range layout {
-		result[i] = toSidebarEntryDTO(e)
-	}
-	return result, nil
+func (h *HttpHandler) GetSidebarLayout() ([]httpdomain.SidebarEntry, error) {
+	return h.collSvc.GetSidebarLayout()
 }
 
 // MoveSidebarEntry はサイドバー上のエントリを指定位置に移動する。

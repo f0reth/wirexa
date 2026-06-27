@@ -12,13 +12,14 @@ import {
   MoveItem,
   MoveItemToSidebar,
   MoveSidebarEntry,
+  OpenFilePicker,
   RenameCollection,
   RenameItem,
   SaveResponseBody,
   SendRequest,
   UpdateRequest,
 } from "../../../wailsjs/go/adapters/HttpHandler";
-import { adapters } from "../../../wailsjs/go/models";
+import { httpdomain } from "../../../wailsjs/go/models";
 import {
   type Collection,
   DEFAULT_SETTINGS,
@@ -36,20 +37,23 @@ import {
 } from "../../domain/http/types";
 
 // domain → Wails
-function toWailsRequest(req: HttpRequest): adapters.HttpRequest {
-  return adapters.HttpRequest.createFrom(req);
+function toWailsRequest(req: HttpRequest): httpdomain.HttpRequest {
+  return httpdomain.HttpRequest.createFrom(req);
 }
 
 // Wails → domain
-function fromWailsKeyValuePair(kv: adapters.KeyValuePair): KeyValuePair {
+function fromWailsKeyValuePair(kv: httpdomain.KeyValuePair): KeyValuePair {
   return { key: kv.key, value: kv.value, enabled: kv.enabled };
 }
 
 function fromWailsRequestSettings(
-  settings: adapters.RequestSettings | undefined | null,
+  settings: httpdomain.RequestSettings | undefined | null,
 ): RequestSettings {
   if (!settings) return { ...DEFAULT_SETTINGS };
+  // スプレッドで素通しし、Go 側がプリミティブ項目を足しても黙って落ちないようにする。
+  // ユニオン型の proxyMode のみ明示的に絞り込む。
   return {
+    ...settings,
     timeoutSec: settings.timeoutSec ?? 0,
     proxyMode:
       settings.proxyMode === "none" || settings.proxyMode === "custom"
@@ -62,7 +66,7 @@ function fromWailsRequestSettings(
   };
 }
 
-function fromWailsRequestAuth(auth: adapters.RequestAuth): RequestAuth {
+function fromWailsRequestAuth(auth: httpdomain.RequestAuth): RequestAuth {
   return {
     type: auth && isAuthType(auth.type) ? auth.type : "none",
     username: auth?.username ?? "",
@@ -71,7 +75,7 @@ function fromWailsRequestAuth(auth: adapters.RequestAuth): RequestAuth {
   };
 }
 
-function fromWailsRequestBody(body: adapters.RequestBody): RequestBody {
+function fromWailsRequestBody(body: httpdomain.RequestBody): RequestBody {
   if (!isBodyType(body.type)) {
     throw new Error(`Unknown body type: ${body.type}`);
   }
@@ -81,15 +85,15 @@ function fromWailsRequestBody(body: adapters.RequestBody): RequestBody {
   };
 }
 
-function fromWailsHttpRequest(req: adapters.HttpRequest): HttpRequest {
+function fromWailsHttpRequest(req: httpdomain.HttpRequest): HttpRequest {
   if (!isHttpMethod(req.method)) {
     throw new Error(`Unknown HTTP method: ${req.method}`);
   }
+  // スプレッドで素通しし、新規プリミティブ項目が黙って落ちないようにする。
+  // ユニオン型・入れ子のフィールドのみ明示的に変換/絞り込む。
   return {
-    id: req.id,
-    name: req.name,
+    ...req,
     method: req.method,
-    url: req.url,
     headers: req.headers.map(fromWailsKeyValuePair),
     params: req.params.map(fromWailsKeyValuePair),
     body: fromWailsRequestBody(req.body),
@@ -99,22 +103,15 @@ function fromWailsHttpRequest(req: adapters.HttpRequest): HttpRequest {
   };
 }
 
-function fromWailsHttpResponse(res: adapters.HttpResponse): HttpResponse {
+function fromWailsHttpResponse(res: httpdomain.HttpResponse): HttpResponse {
   return {
-    statusCode: res.statusCode,
-    statusText: res.statusText,
-    headers: res.headers,
-    body: res.body,
-    contentType: res.contentType,
-    size: res.size,
-    timingMs: res.timingMs,
-    error: res.error,
+    ...res,
     bodyTruncated: res.bodyTruncated ?? false,
     tempFilePath: res.tempFilePath ?? "",
   };
 }
 
-function fromWailsTreeItem(item: adapters.TreeItem): TreeItem {
+function fromWailsTreeItem(item: httpdomain.TreeItem): TreeItem {
   if (item.type !== "folder" && item.type !== "request") {
     throw new Error(`Unknown tree item type: ${item.type}`);
   }
@@ -127,7 +124,7 @@ function fromWailsTreeItem(item: adapters.TreeItem): TreeItem {
   };
 }
 
-function fromWailsCollection(col: adapters.Collection): Collection {
+function fromWailsCollection(col: httpdomain.Collection): Collection {
   return {
     id: col.id,
     name: col.name,
@@ -143,6 +140,12 @@ export async function sendRequest(req: HttpRequest): Promise<HttpResponse> {
 
 export async function cancelRequest(id: string): Promise<void> {
   return CancelRequest(id);
+}
+
+// openFilePicker はネイティブのファイル選択ダイアログを開き、選択パスを返す。
+// presentation 層が wailsjs バインディングを直接叩かないようインフラ層でラップする。
+export function openFilePicker(): Promise<string> {
+  return OpenFilePicker();
 }
 
 export async function getCollections(): Promise<Collection[]> {

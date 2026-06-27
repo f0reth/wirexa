@@ -1,6 +1,8 @@
-// フロントエンド domain 層の型定義（正）。
-// Wails 自動生成型（wailsjs/go/models.ts）との変換は infrastructure/http/client.ts で行う。
-// これらの型を変更した場合は internal/domain/http/types.go も必ず合わせて更新すること。
+// フロントエンド domain 層の型定義（ユニオン型・型ガードで UI に意味付けする層）。
+// 配線型の正は Go ドメイン型 internal/domain/http/types.go で、これが RPC 境界に直接公開され
+// Wails 生成型 wailsjs/go/models.ts に反映される。Go 側を変更したら `wails generate module` を
+// 実行する（再生成忘れは CI のバインディング鮮度チェックが検知する）。
+// 生成型 → この型の変換は infrastructure/http/client.ts でスプレッド素通し＋ユニオン検証で行う。
 
 export interface KeyValuePair {
   key: string;
@@ -19,7 +21,13 @@ export interface RequestBody {
 }
 
 export type AuthType = "none" | "basic" | "bearer";
-export const AUTH_TYPES: AuthType[] = ["none", "basic", "bearer"];
+// AuthType ユニオンに値を追加して下のレコードを更新し忘れると satisfies がコンパイルエラーになる。
+const AUTH_TYPE_SET = {
+  none: true,
+  basic: true,
+  bearer: true,
+} satisfies Record<AuthType, true>;
+export const AUTH_TYPES = Object.keys(AUTH_TYPE_SET) as AuthType[];
 
 export interface RequestAuth {
   type: AuthType;
@@ -102,25 +110,29 @@ export type HttpMethod =
   | "DELETE"
   | "HEAD"
   | "OPTIONS";
-export const HTTP_METHODS: HttpMethod[] = [
-  "GET",
-  "POST",
-  "PUT",
-  "PATCH",
-  "DELETE",
-  "HEAD",
-  "OPTIONS",
-];
+// HttpMethod ユニオンに値を追加して下のレコードを更新し忘れると satisfies がコンパイルエラーになる。
+const HTTP_METHOD_SET = {
+  GET: true,
+  POST: true,
+  PUT: true,
+  PATCH: true,
+  DELETE: true,
+  HEAD: true,
+  OPTIONS: true,
+} satisfies Record<HttpMethod, true>;
+export const HTTP_METHODS = Object.keys(HTTP_METHOD_SET) as HttpMethod[];
 
 export type BodyType = RequestBody["type"];
-export const BODY_TYPES: BodyType[] = [
-  "none",
-  "json",
-  "text",
-  "form-urlencoded",
-  "form-data",
-  "file",
-];
+// BodyType ユニオンに値を追加して下のレコードを更新し忘れると satisfies がコンパイルエラーになる。
+const BODY_TYPE_SET = {
+  none: true,
+  json: true,
+  text: true,
+  "form-urlencoded": true,
+  "form-data": true,
+  file: true,
+} satisfies Record<BodyType, true>;
+export const BODY_TYPES = Object.keys(BODY_TYPE_SET) as BodyType[];
 
 export function isHttpMethod(v: string): v is HttpMethod {
   return (HTTP_METHODS as string[]).includes(v);

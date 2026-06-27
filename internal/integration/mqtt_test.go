@@ -167,7 +167,7 @@ func newMQTTHandler(t *testing.T, emitter cmndomain.Emitter) *adapters.MqttHandl
 // connectBroker は brokerAddr へ接続して connectionID を返すヘルパー。
 func connectBroker(t *testing.T, h *adapters.MqttHandler, name string) string {
 	t.Helper()
-	id, err := h.Connect(adapters.ConnectionConfig{
+	id, err := h.Connect(mqttdomain.ConnectionConfig{
 		Name:   name,
 		Broker: brokerAddr,
 	})
@@ -362,7 +362,7 @@ func TestMQTT_ProfileCRUD(t *testing.T) {
 		t.Fatalf("expected 0 profiles initially, got %d", len(profiles))
 	}
 
-	profile := adapters.BrokerProfile{
+	profile := mqttdomain.BrokerProfile{
 		ID:     uuid.New().String(),
 		Name:   "LocalBroker",
 		Broker: brokerAddr,
@@ -432,7 +432,7 @@ func TestMQTT_ProfilePersistenceRoundTrip(t *testing.T) {
 
 	// 1 回目: プロファイルを保存
 	h1 := newMQTTHandlerWithDir(t, emitter, dir)
-	profile := adapters.BrokerProfile{
+	profile := mqttdomain.BrokerProfile{
 		ID:     uuid.New().String(),
 		Name:   "PersistProfile",
 		Broker: brokerAddr,
@@ -468,7 +468,7 @@ func TestMQTT_Connect_UnreachableBroker(t *testing.T) {
 	port := freePort(t)
 	unreachableBroker := fmt.Sprintf("tcp://127.0.0.1:%d", port)
 
-	connID, err := h.Connect(adapters.ConnectionConfig{
+	connID, err := h.Connect(mqttdomain.ConnectionConfig{
 		Name:   "unreachable",
 		Broker: unreachableBroker,
 	})
@@ -493,7 +493,7 @@ func TestMQTT_Connect_EmptyBroker(t *testing.T) {
 	emitter := newMqttMockEmitter()
 	h := newMQTTHandler(t, emitter)
 
-	_, err := h.Connect(adapters.ConnectionConfig{Name: "empty", Broker: ""})
+	_, err := h.Connect(mqttdomain.ConnectionConfig{Name: "empty", Broker: ""})
 	if err == nil {
 		t.Error("expected error for empty broker, got nil")
 	}
@@ -649,7 +649,7 @@ func TestMQTT_Connect_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			id, err := h.Connect(adapters.ConnectionConfig{
+			id, err := h.Connect(mqttdomain.ConnectionConfig{
 				Name:   "concurrent",
 				Broker: brokerAddr,
 			})

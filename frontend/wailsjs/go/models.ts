@@ -1,29 +1,28 @@
 export namespace adapters {
 	
-	export class BrokerProfile {
-	    id: string;
-	    name: string;
-	    broker: string;
-	    clientId: string;
-	    username: string;
-	    password: string;
-	    useTls: boolean;
+	export class LogEntry {
+	    attrs?: Record<string, any>;
+	    level: string;
+	    source: string;
+	    message: string;
 	
 	    static createFrom(source: any = {}) {
-	        return new BrokerProfile(source);
+	        return new LogEntry(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.name = source["name"];
-	        this.broker = source["broker"];
-	        this.clientId = source["clientId"];
-	        this.username = source["username"];
-	        this.password = source["password"];
-	        this.useTls = source["useTls"];
+	        this.attrs = source["attrs"];
+	        this.level = source["level"];
+	        this.source = source["source"];
+	        this.message = source["message"];
 	    }
 	}
+
+}
+
+export namespace httpdomain {
+	
 	export class RequestSettings {
 	    proxyMode: string;
 	    proxyURL: string;
@@ -216,6 +215,84 @@ export namespace adapters {
 		    return a;
 		}
 	}
+	
+	export class HttpResponse {
+	    headers: Record<string, string>;
+	    statusText: string;
+	    body: string;
+	    contentType: string;
+	    error: string;
+	    tempFilePath: string;
+	    statusCode: number;
+	    size: number;
+	    timingMs: number;
+	    bodyTruncated: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new HttpResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.headers = source["headers"];
+	        this.statusText = source["statusText"];
+	        this.body = source["body"];
+	        this.contentType = source["contentType"];
+	        this.error = source["error"];
+	        this.tempFilePath = source["tempFilePath"];
+	        this.statusCode = source["statusCode"];
+	        this.size = source["size"];
+	        this.timingMs = source["timingMs"];
+	        this.bodyTruncated = source["bodyTruncated"];
+	    }
+	}
+	
+	
+	
+	
+	export class SidebarEntry {
+	    kind: string;
+	    id: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SidebarEntry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.id = source["id"];
+	    }
+	}
+
+}
+
+export namespace mqttdomain {
+	
+	export class BrokerProfile {
+	    id: string;
+	    name: string;
+	    broker: string;
+	    clientId: string;
+	    username: string;
+	    password: string;
+	    useTls: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new BrokerProfile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.broker = source["broker"];
+	        this.clientId = source["clientId"];
+	        this.username = source["username"];
+	        this.password = source["password"];
+	        this.useTls = source["useTls"];
+	    }
+	}
 	export class ConnectionConfig {
 	    name: string;
 	    broker: string;
@@ -256,6 +333,11 @@ export namespace adapters {
 	        this.connected = source["connected"];
 	    }
 	}
+
+}
+
+export namespace udpdomain {
+	
 	export class FixedLengthField {
 	    name: string;
 	    fieldType: string;
@@ -304,74 +386,6 @@ export namespace adapters {
 		    return a;
 		}
 	}
-	
-	export class HttpResponse {
-	    headers: Record<string, string>;
-	    statusText: string;
-	    body: string;
-	    contentType: string;
-	    error: string;
-	    tempFilePath: string;
-	    statusCode: number;
-	    size: number;
-	    timingMs: number;
-	    bodyTruncated: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new HttpResponse(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.headers = source["headers"];
-	        this.statusText = source["statusText"];
-	        this.body = source["body"];
-	        this.contentType = source["contentType"];
-	        this.error = source["error"];
-	        this.tempFilePath = source["tempFilePath"];
-	        this.statusCode = source["statusCode"];
-	        this.size = source["size"];
-	        this.timingMs = source["timingMs"];
-	        this.bodyTruncated = source["bodyTruncated"];
-	    }
-	}
-	
-	export class LogEntry {
-	    attrs?: Record<string, any>;
-	    level: string;
-	    source: string;
-	    message: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new LogEntry(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.attrs = source["attrs"];
-	        this.level = source["level"];
-	        this.source = source["source"];
-	        this.message = source["message"];
-	    }
-	}
-	
-	
-	
-	export class SidebarEntryDTO {
-	    kind: string;
-	    id: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new SidebarEntryDTO(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.kind = source["kind"];
-	        this.id = source["id"];
-	    }
-	}
-	
 	export class UdpListenSession {
 	    id: string;
 	    encoding: string;

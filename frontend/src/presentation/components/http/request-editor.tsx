@@ -1,5 +1,4 @@
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
-import { OpenFilePicker } from "../../../../wailsjs/go/adapters/HttpHandler";
 import {
   parseFormPairs,
   serializeFormPairs,
@@ -15,6 +14,7 @@ import {
 import { TabList } from "../../../components/ui/tabs";
 import { Textarea } from "../../../components/ui/textarea";
 import type { AuthType, BodyType, ProxyMode } from "../../../domain/http/types";
+import { openFilePicker } from "../../../infrastructure/http/client";
 import { AUTH_TYPES, BODY_TYPES } from "../../constants/http";
 import { useHttpRequest } from "../../providers/http-provider";
 import { DocEditor } from "./doc-editor";
@@ -162,7 +162,7 @@ export function RequestEditor() {
                             type="button"
                             class={styles.fileBrowseButton}
                             onClick={async () => {
-                              const path = await OpenFilePicker();
+                              const path = await openFilePicker();
                               if (path) {
                                 setBodyContent(path);
                               }

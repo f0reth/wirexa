@@ -19,21 +19,22 @@ const (
 )
 
 // CollectionService はコレクション管理ユースケースを提供する。
+// サイドバーレイアウトの操作は SidebarLayoutService に委譲し、
+// 自身はコレクションキャッシュ用のロック(mu)のみを保持する。
 type CollectionService struct {
-	repo       domain.CollectionRepository
-	layoutRepo domain.SidebarLayoutRepository
-	cache      map[string]*domain.Collection
-	mu         sync.RWMutex
-	layoutMu   sync.Mutex
+	repo   domain.CollectionRepository
+	layout *SidebarLayoutService
+	cache  map[string]*domain.Collection
+	mu     sync.RWMutex
 }
 
 // NewCollectionService は CollectionService を生成する。
 // コンストラクタ内でリポジトリからコレクションを読み込む。
 func NewCollectionService(repo domain.CollectionRepository, layoutRepo domain.SidebarLayoutRepository) (*CollectionService, error) {
 	svc := &CollectionService{
-		repo:       repo,
-		layoutRepo: layoutRepo,
-		cache:      make(map[string]*domain.Collection),
+		repo:   repo,
+		layout: NewSidebarLayoutService(layoutRepo),
+		cache:  make(map[string]*domain.Collection),
 	}
 	cols, err := repo.Load()
 	if err != nil {
@@ -133,40 +134,10 @@ func (s *CollectionService) CreateCollection(name string) (domain.Collection, er
 	s.mu.Unlock()
 
 	// レイアウトファイルに末尾エントリを追加する。
-	if err := s.appendLayoutEntry(domain.SidebarEntry{Kind: sidebarKindCollection, ID: c.ID}); err != nil {
+	if err := s.layout.Append(domain.SidebarEntry{Kind: sidebarKindCollection, ID: c.ID}); err != nil {
 		return domain.Collection{}, fmt.Errorf("failed to update sidebar layout: %w", err)
 	}
 	return c, nil
-}
-
-// appendLayoutEntry はレイアウトの末尾にエントリを追加する。
-func (s *CollectionService) appendLayoutEntry(entry domain.SidebarEntry) error {
-	s.layoutMu.Lock()
-	defer s.layoutMu.Unlock()
-	layout, err := s.layoutRepo.Load()
-	if err != nil {
-		return err
-	}
-	return s.layoutRepo.Save(append(layout, entry))
-}
-
-// removeLayoutEntry はレイアウトから指定 kind+ID のエントリを削除する。
-func (s *CollectionService) removeLayoutEntry(kind, id string) error {
-	s.layoutMu.Lock()
-	defer s.layoutMu.Unlock()
-	layout, err := s.layoutRepo.Load()
-	if err != nil {
-		return err
-	}
-	n := 0
-	for _, e := range layout {
-		if e.Kind == kind && e.ID == id {
-			continue
-		}
-		layout[n] = e
-		n++
-	}
-	return s.layoutRepo.Save(layout[:n])
 }
 
 // DeleteCollection は ID でコレクションを削除する。
@@ -185,7 +156,7 @@ func (s *CollectionService) DeleteCollection(id string) error {
 	delete(s.cache, id)
 	s.mu.Unlock()
 
-	if err := s.removeLayoutEntry(sidebarKindCollection, id); err != nil {
+	if err := s.layout.Remove(sidebarKindCollection, id); err != nil {
 		return fmt.Errorf("failed to update sidebar layout: %w", err)
 	}
 	return nil
@@ -293,7 +264,7 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 
 	// root コレクションのルート直下に追加した場合、サイドバーレイアウトにも追加する。
 	if collectionID == domain.RootCollectionID && parentID == "" {
-		if err := s.appendLayoutEntry(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID}); err != nil {
+		if err := s.layout.Append(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID}); err != nil {
 			return nil, fmt.Errorf("failed to update sidebar layout: %w", err)
 		}
 	}
@@ -334,7 +305,7 @@ func (s *CollectionService) AddRequest(collectionID, parentID string, req domain
 
 	// root コレクションのルート直下に追加した場合、サイドバーレイアウトにも追加する。
 	if collectionID == domain.RootCollectionID && parentID == "" {
-		if err := s.appendLayoutEntry(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID}); err != nil {
+		if err := s.layout.Append(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID}); err != nil {
 			return nil, fmt.Errorf("failed to update sidebar layout: %w", err)
 		}
 	}
@@ -450,21 +421,14 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 
 // GetSidebarLayout はサイドバーレイアウトを返す。
 // ファイルが存在しない場合は既存コレクションを Order 順で並べた初期値を生成して保存する。
-// ロック順序: mu → layoutMu の統一順序に従い、layoutMu を先に取得しない。
+// 初期値計算（mu.RLock）はレイアウトロックを保持していない状態で行われるため、
+// 2つのロックがネストせずデッドロックの危険がない。
 func (s *CollectionService) GetSidebarLayout() ([]domain.SidebarEntry, error) {
-	s.layoutMu.Lock()
-	layout, err := s.layoutRepo.Load()
-	if err != nil {
-		s.layoutMu.Unlock()
-		return nil, fmt.Errorf("failed to load sidebar layout: %w", err)
-	}
-	if len(layout) > 0 {
-		s.layoutMu.Unlock()
-		return layout, nil
-	}
-	s.layoutMu.Unlock()
+	return s.layout.GetOrInit(s.computeInitialLayout)
+}
 
-	// 初回: layoutMu を解放してから mu.RLock を取得（デッドロック防止）。
+// computeInitialLayout はコレクション順とルートアイテムからレイアウト初期値を生成する。
+func (s *CollectionService) computeInitialLayout() []domain.SidebarEntry {
 	s.mu.RLock()
 	cols := make([]*domain.Collection, 0, len(s.cache))
 	for _, c := range s.cache {
@@ -491,66 +455,18 @@ func (s *CollectionService) GetSidebarLayout() ([]domain.SidebarEntry, error) {
 			initial = append(initial, domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID})
 		}
 	}
-
-	// 他ゴルーチンが先に初期化した場合はそちらを優先する（ダブルチェック）。
-	s.layoutMu.Lock()
-	defer s.layoutMu.Unlock()
-	existing, err := s.layoutRepo.Load()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load sidebar layout: %w", err)
-	}
-	if len(existing) > 0 {
-		return existing, nil
-	}
-
-	if err := s.layoutRepo.Save(initial); err != nil {
-		return nil, fmt.Errorf("failed to save initial sidebar layout: %w", err)
-	}
-	return initial, nil
+	return initial
 }
 
 // MoveSidebarEntry はサイドバー上のエントリを指定位置に移動する。
 func (s *CollectionService) MoveSidebarEntry(kind, id string, position int) error {
-	s.layoutMu.Lock()
-	defer s.layoutMu.Unlock()
-
-	layout, err := s.layoutRepo.Load()
-	if err != nil {
-		return err
-	}
-	if len(layout) == 0 {
-		return &cmn.NotFoundError{Resource: "sidebar entry", ID: id}
-	}
-
-	srcIdx := -1
-	for i, e := range layout {
-		if e.Kind == kind && e.ID == id {
-			srcIdx = i
-			break
-		}
-	}
-	if srcIdx == -1 {
-		return &cmn.NotFoundError{Resource: "sidebar entry", ID: id}
-	}
-
-	entry := layout[srcIdx]
-	layout = append(layout[:srcIdx], layout[srcIdx+1:]...)
-
-	if position < 0 || position >= len(layout) {
-		layout = append(layout, entry)
-	} else {
-		layout = append(layout, domain.SidebarEntry{})
-		copy(layout[position+1:], layout[position:])
-		layout[position] = entry
-	}
-
-	return s.layoutRepo.Save(layout)
+	return s.layout.Move(kind, id, position)
 }
 
 // MoveItemToSidebar はアイテムを指定コレクションから __root__ へ移動し、
 // サイドバーレイアウトの指定位置に挿入する。
-// コレクション更新（mu）とレイアウト挿入（layoutMu）を順に行う。
-// 2つのロックスコープの間に他ゴルーチンの割り込みが入り得る点は許容している。
+// コレクション更新（mu）を終えてロックを解放した後にレイアウト挿入を委譲する。
+// 2つの操作の間に他ゴルーチンの割り込みが入り得る点は許容している。
 func (s *CollectionService) MoveItemToSidebar(sourceCollectionID, itemID string, sidebarPosition int) error {
 	s.mu.Lock()
 
@@ -584,23 +500,7 @@ func (s *CollectionService) MoveItemToSidebar(sourceCollectionID, itemID string,
 	}
 	s.mu.Unlock()
 
-	s.layoutMu.Lock()
-	defer s.layoutMu.Unlock()
-
-	layout, err := s.layoutRepo.Load()
-	if err != nil {
-		return err
-	}
-
-	entry := domain.SidebarEntry{Kind: sidebarKindItem, ID: itemID}
-	if sidebarPosition < 0 || sidebarPosition >= len(layout) {
-		layout = append(layout, entry)
-	} else {
-		layout = append(layout, domain.SidebarEntry{})
-		copy(layout[sidebarPosition+1:], layout[sidebarPosition:])
-		layout[sidebarPosition] = entry
-	}
-	return s.layoutRepo.Save(layout)
+	return s.layout.InsertItem(itemID, sidebarPosition)
 }
 
 // DeleteItem はコレクションからアイテムをサブツリーごと削除する。
@@ -623,7 +523,7 @@ func (s *CollectionService) DeleteItem(collectionID, itemID string) error {
 
 	// root コレクションのアイテムはサイドバーレイアウトからも削除する。
 	if collectionID == domain.RootCollectionID {
-		if err := s.removeLayoutEntry(sidebarKindItem, itemID); err != nil {
+		if err := s.layout.Remove(sidebarKindItem, itemID); err != nil {
 			return fmt.Errorf("failed to update sidebar layout: %w", err)
 		}
 	}

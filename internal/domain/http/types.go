@@ -48,15 +48,18 @@ type RequestBody struct {
 
 // HttpResponse は HTTP レスポンスを表す。
 type HttpResponse struct {
-	Headers       map[string]string `json:"headers"`
-	StatusText    string            `json:"statusText"`
-	Body          string            `json:"body"`
-	ContentType   string            `json:"contentType"`
-	Error         string            `json:"error"`
-	StatusCode    int               `json:"statusCode"`
-	Size          int64             `json:"size"`
-	TimingMs      int64             `json:"timingMs"`
-	BodyTruncated bool              `json:"bodyTruncated"`
+	Headers     map[string]string `json:"headers"`
+	StatusText  string            `json:"statusText"`
+	Body        string            `json:"body"`
+	ContentType string            `json:"contentType"`
+	Error       string            `json:"error"`
+	// TempFilePath はボディが大きく切り詰められた際に全文を保存したテンポラリファイルのパス。
+	// adapter 層が ConsumeTempFilePath で設定する出力用フィールド（infra は設定しない）。
+	TempFilePath  string `json:"tempFilePath"`
+	StatusCode    int    `json:"statusCode"`
+	Size          int64  `json:"size"`
+	TimingMs      int64  `json:"timingMs"`
+	BodyTruncated bool   `json:"bodyTruncated"`
 }
 
 // Collection はリクエストコレクションを表す。

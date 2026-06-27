@@ -14,11 +14,15 @@ export default defineConfig({
   testIgnore: "**/global-setup.ts",
   fullyParallel: false, // Wails アプリは1インスタンスのため並列不可
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  // Wails dev は全アセットを Vite devサーバーへプロキシするため、reload 多用の本スイートでは
+  // Windows のエフェメラルポート枯渇でページが空白になりプロトコル切替ボタン操作がタイムアウトする
+  // ことがある。環境起因のフレークのため再試行で吸収する（各 beforeEach の二重ロードも単一化済み）。
+  retries: 2,
   workers: 1,
   reporter: "html",
   use: {
     baseURL: wailsDevUrl,
+    screenshot: "only-on-failure",
     trace: "on-first-retry",
     launchOptions: {
       cdpPort: 0,

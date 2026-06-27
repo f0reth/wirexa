@@ -7,7 +7,7 @@ import {
   StartListen,
   StopListen,
 } from "../../../wailsjs/go/adapters/UdpHandler";
-import { adapters } from "../../../wailsjs/go/models";
+import { udpdomain } from "../../../wailsjs/go/models";
 import { EventsOn } from "../../../wailsjs/runtime/runtime";
 import type {
   UdpListenSession,
@@ -17,25 +17,21 @@ import type {
   UdpTarget,
 } from "../../domain/udp/types";
 
-function toWailsRequest(req: UdpSendRequest): adapters.UdpSendRequest {
-  return adapters.UdpSendRequest.createFrom(req);
+function toWailsRequest(req: UdpSendRequest): udpdomain.UdpSendRequest {
+  return udpdomain.UdpSendRequest.createFrom(req);
 }
 
-function fromWailsSendResult(res: adapters.UdpSendResult): UdpSendResult {
-  return { bytesSent: res.bytesSent };
+function fromWailsSendResult(res: udpdomain.UdpSendResult): UdpSendResult {
+  return { ...res };
 }
 
-function fromWailsTarget(t: adapters.UdpTarget): UdpTarget {
-  return {
-    id: t.id,
-    name: t.name,
-    host: t.host,
-    port: t.port,
-  };
+function fromWailsTarget(t: udpdomain.UdpTarget): UdpTarget {
+  // スプレッドで素通しし、Go 側がプリミティブ項目を足しても黙って落ちないようにする。
+  return { ...t };
 }
 
-function toWailsTarget(t: UdpTarget): adapters.UdpTarget {
-  return adapters.UdpTarget.createFrom(t);
+function toWailsTarget(t: UdpTarget): udpdomain.UdpTarget {
+  return udpdomain.UdpTarget.createFrom(t);
 }
 
 export async function send(req: UdpSendRequest): Promise<UdpSendResult> {
@@ -58,11 +54,10 @@ export async function deleteTarget(id: string): Promise<void> {
 }
 
 function fromWailsListenSession(
-  s: adapters.UdpListenSession,
+  s: udpdomain.UdpListenSession,
 ): UdpListenSession {
   return {
-    id: s.id,
-    port: s.port,
+    ...s,
     encoding: s.encoding as UdpListenSession["encoding"],
   };
 }
