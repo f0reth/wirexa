@@ -6,6 +6,7 @@ import {
 import { linter } from "@codemirror/lint";
 import { basicSetup, EditorView } from "codemirror";
 import { createEffect, onCleanup, onMount } from "solid-js";
+import { gutterTheme } from "../shared/editor-theme";
 import styles from "./http.module.css";
 
 interface Props {
@@ -34,6 +35,7 @@ export function JsonBodyEditor(props: Props) {
           "&": { height: "100%" },
           ".cm-scroller": { overflow: "auto" },
         }),
+        gutterTheme,
       ],
       // biome-ignore lint/style/noNonNullAssertion: ref is always set before onMount fires
       parent: containerRef!,

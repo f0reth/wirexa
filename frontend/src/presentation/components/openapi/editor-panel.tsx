@@ -11,6 +11,7 @@ import {
   useOpenApiEditor,
   useOpenApiFiles,
 } from "../../providers/openapi-provider";
+import { gutterTheme } from "../shared/editor-theme";
 import styles from "./openapi.module.css";
 
 function getLangExtension(filename: string) {
@@ -48,6 +49,7 @@ export function EditorPanel() {
           "&": { height: "100%" },
           ".cm-scroller": { overflow: "auto" },
         }),
+        gutterTheme,
       ],
       // biome-ignore lint/style/noNonNullAssertion: ref is always set before onMount fires
       parent: containerRef!,
