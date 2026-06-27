@@ -68,6 +68,9 @@ function wailsMockPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [wailsMockPlugin(), solid()],
+  resolve: {
+    dedupe: ["@codemirror/state", "@codemirror/view"],
+  },
   server: {
     port: 5173,
   },
