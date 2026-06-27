@@ -1,4 +1,17 @@
-import { type Page, test, expect } from "@playwright/test";
+import { type Locator, type Page, test, expect } from "@playwright/test";
+
+// HTML5 ネイティブ drag-and-drop で並び替えをトリガーする。
+// Playwright の dragTo はネイティブ DnD イベントを発火しないため、
+// 共有 DataTransfer オブジェクトで dragstart → dragover → drop を手動 dispatch する。
+// dispatchEvent では clientY が 0 になるため、ドロップ先の行の上半分に落ちる扱いになり、
+// source は target の直前（＝上）に挿入される。
+const dragRowOnto = async (page: Page, source: Locator, target: Locator) => {
+  const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+  await source.dispatchEvent("dragstart", { dataTransfer });
+  await target.dispatchEvent("dragover", { dataTransfer });
+  await target.dispatchEvent("drop", { dataTransfer });
+  await source.dispatchEvent("dragend", { dataTransfer });
+};
 
 // ── ヘルパー: HTTPコレクション ─────────────────────────────────────────────────
 
@@ -85,9 +98,8 @@ const deleteUdpTarget = async (page: Page, name: string) => {
 
 test.describe("M-1: Wails binding calls succeed", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.clear());
     await page.goto("/");
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
   });
 
   test("GetCollections wails binding returns data from backend", async ({
@@ -128,9 +140,8 @@ const E2E_COLLECTION_NAME = "E2E Backend Integration Collection";
 
 test.describe("M-2: Collection persistence", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.clear());
     await page.goto("/");
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
     await page.getByRole("button", { name: "HTTP", exact: true }).click();
     await expect(
       page.getByText("Collections", { exact: true }),
@@ -186,9 +197,8 @@ const E2E_BROKER_NAME = "E2E Backend Integration Broker";
 
 test.describe("M-3: MQTT broker profile persistence", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.clear());
     await page.goto("/");
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
     await expect(page.getByText("Brokers", { exact: true })).toBeVisible();
     // 前回テストで残ったプロファイルを削除
     for (;;) {
@@ -238,9 +248,8 @@ const E2E_UDP_TARGET_NAME = "E2E Backend Integration Target";
 
 test.describe("M-4: UDP target persistence", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.clear());
     await page.goto("/");
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
     await page.getByRole("button", { name: "UDP", exact: true }).click();
     await expect(page.getByText("Targets", { exact: true })).toBeVisible();
     // 前回テストで残ったターゲットを削除
@@ -292,9 +301,8 @@ const E2E_BROKER_B = "E2E Broker Beta";
 
 test.describe("M-8: Sidebar layout persistence", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.clear());
     await page.goto("/");
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
     await expect(page.getByText("Brokers", { exact: true })).toBeVisible();
     // 前回テストで残ったデータを削除
     for (const name of [E2E_BROKER_A, E2E_BROKER_B]) {
@@ -340,12 +348,16 @@ test.describe("M-8: Sidebar layout persistence", () => {
     await expect(brokerItems.first()).toContainText(E2E_BROKER_A);
     await expect(brokerItems.nth(1)).toContainText(E2E_BROKER_B);
 
-    // Beta の "Move up" をクリックして順序を入れ替える（Beta → Alpha）
+    // Beta を Alpha の上にドラッグして順序を入れ替える（drag-and-drop による並び替え）
+    const alphaItem = page
+      .locator('[role="button"]')
+      .filter({ hasText: E2E_BROKER_A })
+      .first();
     const betaItem = page
       .locator('[role="button"]')
       .filter({ hasText: E2E_BROKER_B })
       .first();
-    await betaItem.locator('[aria-label="Move up"]').dispatchEvent("click");
+    await dragRowOnto(page, betaItem, alphaItem);
 
     // 順序が入れ替わった（Beta が上、Alpha が下）
     await expect(brokerItems.first()).toContainText(E2E_BROKER_B, {

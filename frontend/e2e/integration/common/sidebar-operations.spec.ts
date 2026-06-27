@@ -58,9 +58,8 @@ test.afterEach(async ({ page }) => {
 });
 
 test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.clear());
   await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
   // Switch to HTTP to access the collection sidebar
   await page.getByRole("button", { name: "HTTP", exact: true }).click();
   await expect(page.getByText("Collections", { exact: true })).toBeVisible();

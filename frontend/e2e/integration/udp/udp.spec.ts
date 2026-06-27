@@ -102,9 +102,8 @@ async function startListen(page: Page, listenPort: number) {
 }
 
 test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.clear());
   await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
   await navigateToUdp(page);
   // 前回テストランで残った同名ターゲットを全て削除する
   await cleanupAllTargets(page, E2E_TARGET_NAME);

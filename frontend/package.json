@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dev:e2e": "bunx --bun vite --config vite.e2e.config.ts",
+    "test:e2e:setup": "bunx playwright install chromium",
     "test:e2e": "bunx playwright test",
     "test:e2e:fullstack": "bunx playwright test --config playwright.integration.config.ts",
     "licenses": "bun scripts/generate-licenses.mjs"
@@ -34,7 +35,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.61.1",
     "@types/node": "^25.5.0",
     "jsdom": "^29.0.1",
     "typescript": "~6.0.2",
