@@ -66,9 +66,11 @@ test("loading an openapi file displays it in the editor", async ({ page }) => {
     timeout: 5000,
   });
 
-  // プレビューパネルが更新される（有効な spec のため rapi-doc が表示される）
+  // プレビューパネルが更新される（有効な spec のため Swagger UI プレビューが表示される）
   await expect(page.getByText("No valid OpenAPI spec")).not.toBeVisible({
     timeout: 5000,
   });
-  await expect(page.locator("rapi-doc")).toBeAttached({ timeout: 5000 });
+  await expect(page.getByTestId("openapi-preview")).toBeAttached({
+    timeout: 5000,
+  });
 });

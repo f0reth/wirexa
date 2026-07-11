@@ -119,13 +119,12 @@
   color: var(--color-muted-foreground);
 }
 
-.rapiDocWrap {
+.swaggerWrap {
   flex: 1;
   min-height: 0;
   overflow: auto;
 }
 
-.rapiDocWrap rapi-doc {
-  display: block;
+.swaggerWrap :global(.swagger-ui) {
   height: 100%;
 }

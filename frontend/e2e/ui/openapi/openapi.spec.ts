@@ -42,7 +42,9 @@ test("editing openapi yaml in editor updates the preview panel", async ({
   await expect(page.getByText("No valid OpenAPI spec")).not.toBeVisible({
     timeout: 3000,
   });
-  await expect(page.locator("rapi-doc")).toBeAttached({ timeout: 3000 });
+  await expect(page.getByTestId("openapi-preview")).toBeAttached({
+    timeout: 3000,
+  });
 });
 
 test("clearing editor content shows no valid spec message in preview", async ({

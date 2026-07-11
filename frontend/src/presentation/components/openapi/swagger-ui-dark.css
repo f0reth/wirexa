@@ -1,0 +1,118 @@
+/*
+ * Dark theme overrides for Swagger UI.
+ *
+ * Swagger UI ships a light-only stylesheet, so we override it under the
+ * app's `<html>.dark` class (the single source of truth set in App.tsx).
+ * This follows the theme purely via CSS cascade — no JS observer needed.
+ * Colours reuse the app's design tokens from index.css for visual unity.
+ */
+
+.dark .swagger-ui,
+.dark .swagger-ui .info .title,
+.dark .swagger-ui .info li,
+.dark .swagger-ui .info p,
+.dark .swagger-ui .info table,
+.dark .swagger-ui label,
+.dark .swagger-ui .opblock-tag,
+.dark .swagger-ui .opblock .opblock-summary-operation-id,
+.dark .swagger-ui .opblock .opblock-summary-path,
+.dark .swagger-ui .opblock .opblock-summary-path__deprecated,
+.dark .swagger-ui .opblock .opblock-summary-description,
+.dark .swagger-ui .opblock-description-wrapper p,
+.dark .swagger-ui .opblock-external-docs-wrapper p,
+.dark .swagger-ui .opblock-title_normal p,
+.dark .swagger-ui .responses-inner h4,
+.dark .swagger-ui .responses-inner h5,
+.dark .swagger-ui .response-col_status,
+.dark .swagger-ui .parameter__name,
+.dark .swagger-ui .parameter__type,
+.dark .swagger-ui table thead tr td,
+.dark .swagger-ui table thead tr th,
+.dark .swagger-ui .parameters-col_description,
+.dark .swagger-ui .tab li,
+.dark .swagger-ui .opblock-section-header h4,
+.dark .swagger-ui .opblock-section-header > label,
+.dark .swagger-ui .model-title,
+.dark .swagger-ui .model,
+.dark .swagger-ui .servers > label,
+.dark .swagger-ui .markdown p,
+.dark .swagger-ui .markdown li {
+  color: var(--color-foreground);
+}
+
+/* Page / section backgrounds */
+.dark .swagger-ui {
+  background: transparent;
+}
+
+.dark .swagger-ui .scheme-container,
+.dark .swagger-ui .opblock-tag,
+.dark .swagger-ui section.models {
+  background: var(--surface-2);
+  border-color: var(--border-subtle);
+  box-shadow: none;
+}
+
+.dark .swagger-ui section.models .model-container {
+  background: var(--surface-3);
+}
+
+/* Operation blocks: darken the tinted bodies, keep method accent colours */
+.dark .swagger-ui .opblock {
+  background: var(--surface-2);
+  border-color: var(--border-subtle);
+  box-shadow: none;
+}
+
+.dark .swagger-ui .opblock .opblock-section-header {
+  background: var(--surface-3);
+  box-shadow: none;
+}
+
+.dark .swagger-ui .opblock-body pre.microlight,
+.dark .swagger-ui .highlight-code > .microlight {
+  background: var(--surface-1);
+  color: var(--color-foreground);
+}
+
+/* Tables */
+.dark .swagger-ui table thead tr td,
+.dark .swagger-ui table thead tr th {
+  border-color: var(--border-subtle);
+}
+
+/* Form fields */
+.dark .swagger-ui input[type="text"],
+.dark .swagger-ui input[type="password"],
+.dark .swagger-ui input[type="search"],
+.dark .swagger-ui input[type="email"],
+.dark .swagger-ui textarea,
+.dark .swagger-ui select {
+  background: var(--surface-1);
+  color: var(--color-foreground);
+  border-color: var(--border-subtle);
+}
+
+/* Models / schema text */
+.dark .swagger-ui .model-toggle::after {
+  filter: invert(1);
+}
+
+.dark .swagger-ui .prop-type {
+  color: oklch(0.72 0.12 280);
+}
+
+/* Links */
+.dark .swagger-ui a,
+.dark .swagger-ui .info a {
+  color: var(--color-primary);
+}
+
+/* Make the various expand/collapse arrows visible on dark */
+.dark .swagger-ui .expand-operation svg,
+.dark .swagger-ui .opblock-summary-control svg,
+.dark .swagger-ui .models-control svg,
+.dark .swagger-ui .model-box-control svg,
+.dark .swagger-ui svg.arrow {
+  fill: var(--color-foreground);
+}
