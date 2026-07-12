@@ -298,6 +298,18 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 		return &cmn.NotFoundError{Resource: sidebarKindItem, ID: itemID}
 	}
 
+	// 挿入先を RemoveNode の前に検証する。失敗時はソースを一切変更しない (#6)。
+	if targetParentID != "" {
+		parent, _, ok := dst.FindNode(targetParentID)
+		if !ok || parent.Type != domain.ItemTypeFolder {
+			return &cmn.NotFoundError{Resource: resourceParent, ID: targetParentID}
+		}
+		// 自身のサブツリー内へは移動できない（RemoveNode で親ごと消えるため）。
+		if item.Contains(targetParentID) {
+			return &cmn.ValidationError{Field: resourceParent, Message: "cannot move an item into its own subtree"}
+		}
+	}
+
 	// 同一コレクション内移動の場合、削除前に挿入先インデックスを補正する。
 	if sourceCollectionID == targetCollectionID && position > 0 {
 		var targetItems []*domain.TreeItem

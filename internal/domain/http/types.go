@@ -116,6 +116,15 @@ func (c *Collection) FindNode(id string) (*TreeItem, *TreeItem, bool) {
 	return findNode(id, c.Items, nil)
 }
 
+// Contains は t 自身または子孫に id のノードが存在するか返す。
+func (t *TreeItem) Contains(id string) bool {
+	if t.ID == id {
+		return true
+	}
+	_, _, ok := findNode(id, t.Children, nil)
+	return ok
+}
+
 // RemoveNode はコレクションからIDに対応するノードをサブツリーごと削除する。
 // 削除に成功した場合は true を返す。
 func (c *Collection) RemoveNode(id string) bool {

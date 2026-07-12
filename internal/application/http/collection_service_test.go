@@ -119,6 +119,18 @@ func mustCreate(t *testing.T, svc *CollectionService, name string) domain.Collec
 	return col
 }
 
+// findColItem はキャッシュ上のコレクション内からアイテムを ID で探す。
+func findColItem(t *testing.T, svc *CollectionService, collectionID, itemID string) (*domain.TreeItem, *domain.TreeItem, bool) {
+	t.Helper()
+	svc.mu.RLock()
+	c, ok := svc.cache[collectionID]
+	svc.mu.RUnlock()
+	if !ok {
+		t.Fatalf("collection %q not found", collectionID)
+	}
+	return c.FindNode(itemID)
+}
+
 func TestCollectionService_GetCollections_Empty(t *testing.T) {
 	svc := newSvc(t)
 	cols := svc.GetCollections()
@@ -571,6 +583,57 @@ func TestCollectionService_MoveItem_TargetParentNotFolder(t *testing.T) {
 	err := svc.MoveItem(col.ID, r2.ID, col.ID, r1.ID, 0)
 	if err == nil {
 		t.Error("expected error when target parent is not folder, got nil")
+	}
+	// #6: 検証失敗時に r2 が失われていないこと。
+	if _, _, ok := findColItem(t, svc, col.ID, "r2"); !ok {
+		t.Error("r2 was lost from source collection after failed move")
+	}
+}
+
+func TestCollectionService_MoveItem_TargetParentNotFound_PreservesItem(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+
+	// 存在しない親を指定した移動はエラーになり、アイテムは残る (#6)。
+	err := svc.MoveItem(col.ID, "r1", col.ID, "nonexistent-parent", 0)
+	if err == nil {
+		t.Fatal("expected error for nonexistent target parent, got nil")
+	}
+	if _, _, ok := findColItem(t, svc, col.ID, "r1"); !ok {
+		t.Error("r1 was lost from source collection after failed move")
+	}
+}
+
+func TestCollectionService_MoveItem_IntoOwnSubtree_Rejected(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	f, _ := svc.AddFolder(col.ID, "", "F")
+	f2, _ := svc.AddFolder(col.ID, f.ID, "F2")
+	svc.AddRequest(col.ID, f.ID, domain.HttpRequest{ID: "r1", Name: "R1"})
+
+	// フォルダ F を自身へ移動 → 拒否。
+	if err := svc.MoveItem(col.ID, f.ID, col.ID, f.ID, 0); err == nil {
+		t.Error("expected error when moving folder into itself, got nil")
+	}
+	// フォルダ F を子孫フォルダ F2 へ移動 → 拒否。
+	err := svc.MoveItem(col.ID, f.ID, col.ID, f2.ID, 0)
+	if err == nil {
+		t.Fatal("expected error when moving folder into its descendant, got nil")
+	}
+	var verr *cmn.ValidationError
+	if !errors.As(err, &verr) {
+		t.Errorf("expected ValidationError, got %T: %v", err, err)
+	}
+	// F とその中身が温存されていること (#6)。
+	if _, _, ok := findColItem(t, svc, col.ID, f.ID); !ok {
+		t.Error("F was lost after rejected self-subtree move")
+	}
+	if _, _, ok := findColItem(t, svc, col.ID, f2.ID); !ok {
+		t.Error("f2 was lost after rejected self-subtree move")
+	}
+	if _, _, ok := findColItem(t, svc, col.ID, "r1"); !ok {
+		t.Error("r1 was lost after rejected self-subtree move")
 	}
 }
 

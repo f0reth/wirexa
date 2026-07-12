@@ -276,3 +276,27 @@ func TestCollection_InsertItem_ParentIsRequest(t *testing.T) {
 		t.Error("expected InsertItem to return false when parent is a request")
 	}
 }
+
+func TestTreeItem_Contains(t *testing.T) {
+	col := buildTree()
+	f1, _, ok := col.FindNode("f1")
+	if !ok {
+		t.Fatal("f1 not found")
+	}
+	tests := []struct {
+		id   string
+		want bool
+	}{
+		{"f1", true},          // 自身
+		{"r1", true},          // 直下の子
+		{"f2", true},          // 直下の子フォルダ
+		{"r2", true},          // 孫（f2 の子）
+		{"r3", false},         // f1 の外
+		{"nonexistent", false}, // 存在しない
+	}
+	for _, tt := range tests {
+		if got := f1.Contains(tt.id); got != tt.want {
+			t.Errorf("f1.Contains(%q) = %v, want %v", tt.id, got, tt.want)
+		}
+	}
+}
