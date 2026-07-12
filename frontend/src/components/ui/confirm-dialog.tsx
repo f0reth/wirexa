@@ -1,4 +1,4 @@
-import { onMount } from "solid-js";
+import { onMount, Show } from "solid-js";
 import { Button } from "./button";
 import styles from "./confirm-dialog.module.css";
 
@@ -9,6 +9,10 @@ export function ConfirmDialog(props: {
   variant?: "destructive" | "default";
   onConfirm: () => void;
   onCancel: () => void;
+  // 任意の第 3 ボタン（例: 「破棄して切替」）。指定時のみ描画される。
+  secondaryLabel?: string;
+  secondaryVariant?: "destructive" | "default" | "outline";
+  onSecondary?: () => void;
 }) {
   let cardRef: HTMLDivElement | undefined;
 
@@ -64,6 +68,15 @@ export function ConfirmDialog(props: {
           <Button variant="outline" size="sm" onClick={() => props.onCancel()}>
             Cancel
           </Button>
+          <Show when={props.secondaryLabel}>
+            <Button
+              variant={props.secondaryVariant ?? "destructive"}
+              size="sm"
+              onClick={() => props.onSecondary?.()}
+            >
+              {props.secondaryLabel}
+            </Button>
+          </Show>
           <Button
             variant={props.variant ?? "destructive"}
             size="sm"

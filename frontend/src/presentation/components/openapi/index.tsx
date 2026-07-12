@@ -36,7 +36,8 @@ export function OpenApiClient() {
   const displayLabel = () => {
     const doc = activeDoc();
     if (!doc) return "No file opened — use the sidebar to open or paste a spec";
-    return doc.kind === "file" ? doc.path : `${doc.name} (untitled)`;
+    const base = doc.kind === "file" ? doc.path : `${doc.name} (untitled)`;
+    return editorCtx.isDirty() ? `${base} *` : base;
   };
 
   // OpenAPI ファイルの D&D: HTML5 drop で内容を直接読み込み無題文書として開く。
@@ -53,7 +54,7 @@ export function OpenApiClient() {
     e.preventDefault();
     try {
       const content = await file.text();
-      filesCtx.openDropped(content, file.name);
+      await filesCtx.openDropped(content, file.name);
     } catch (err) {
       notify.error("Failed to open dropped file", errorMessage(err));
     }

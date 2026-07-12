@@ -38,7 +38,9 @@ type App struct {
 	udpHandler     *adapters.UdpHandler
 	logHandler     *adapters.LogHandler
 	openAPIHandler *adapters.OpenAPIHandler
+	ctx            context.Context
 	ready          bool
+	quitConfirmed  bool
 }
 
 func NewApp() *App {
@@ -52,6 +54,7 @@ func NewApp() *App {
 }
 
 func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
 	if err := a.initialize(ctx); err != nil {
 		// GUI アプリではコンソールが無いため、致命的エラーはダイアログで提示してから終了する。
 		log.Printf("startup failed: %v", err) // stderr へのベストエフォート
@@ -138,6 +141,26 @@ func (a *App) initialize(ctx context.Context) error {
 		filepath.Join(configDir, wirexaConfigDir, "openapi-recents.json"))
 
 	return nil
+}
+
+// beforeClose はウィンドウを閉じようとしたときに呼ばれる。
+// true を返すと閉じるのを阻止する。未保存文書の有無はフロントエンドしか
+// 知らないため、"app:before-close" を通知して一旦阻止し、フロント側の判断
+// (ConfirmQuit の呼び出し) を待つ。ConfirmQuit 経由で quitConfirmed が立てば
+// 次の呼び出しでそのまま閉じる。
+func (a *App) beforeClose(ctx context.Context) bool {
+	if a.quitConfirmed {
+		return false
+	}
+	runtime.EventsEmit(ctx, "app:before-close")
+	return true
+}
+
+// ConfirmQuit はフロントエンドが「終了してよい」と判断したときに呼ぶ RPC。
+// quitConfirmed を立ててから終了させることで beforeClose を通過させる。
+func (a *App) ConfirmQuit() {
+	a.quitConfirmed = true
+	runtime.Quit(a.ctx)
 }
 
 func (a *App) shutdown(_ context.Context) {
