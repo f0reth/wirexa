@@ -120,12 +120,6 @@ export function MqttProvider(props: { children: JSX.Element }) {
     MQTT_MAX_TOPICS,
   );
 
-  onMount(() => {
-    loadProfiles();
-    if (presetState.presets().length === 0) {
-      presetState.addPreset();
-    }
-  });
   const subsState = createSubscriptionsState(
     connState.activeConnection,
     connState.updateConnection,
@@ -137,6 +131,15 @@ export function MqttProvider(props: { children: JSX.Element }) {
     connState.updateConnection,
   );
   const presetState = createPresetsState(createPresetsStorage());
+
+  onMount(async () => {
+    // プロファイルをロードしてからバックエンドの実接続状態を復元する。
+    await loadProfiles();
+    await connState.restore();
+    if (presetState.presets().length === 0) {
+      presetState.addPreset();
+    }
+  });
 
   const publish = async (
     topic: string,

@@ -36,6 +36,11 @@ type connection struct {
 	client domain.BrokerClient
 	id     string
 	config domain.ConnectionConfig
+	// subs は現在購読中のトピック→QoS。リロード後の状態復元のためサーバー側で保持する。
+	// s.mu は接続 map の保護用で、購読 map の変更は withConn(RLock 保持) 中に起きるため
+	// per-connection の subMu で保護する。
+	subMu sync.Mutex
+	subs  map[string]byte
 }
 
 // MqttService は複数の MQTT 接続を管理するアプリケーションサービス。
@@ -91,7 +96,7 @@ func (s *MqttService) Connect(config domain.ConnectionConfig) (string, error) {
 	)
 
 	s.mu.Lock()
-	s.conns[connID] = &connection{id: connID, client: client, config: config}
+	s.conns[connID] = &connection{id: connID, client: client, config: config, subs: make(map[string]byte)}
 	s.mu.Unlock()
 
 	s.connWg.Go(func() {
@@ -183,7 +188,13 @@ func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
 				Timestamp:     time.Now().UnixMilli(),
 			})
 		}
-		return conn.client.Subscribe(topic, qos, handler)
+		if err := conn.client.Subscribe(topic, qos, handler); err != nil {
+			return err
+		}
+		conn.subMu.Lock()
+		conn.subs[topic] = qos
+		conn.subMu.Unlock()
+		return nil
 	})
 }
 
@@ -193,7 +204,13 @@ func (s *MqttService) Unsubscribe(connectionID, topic string) error {
 		return &cmn.ValidationError{Field: fieldTopic, Message: msgIsRequired}
 	}
 	return s.withConn(connectionID, func(conn *connection) error {
-		return conn.client.Unsubscribe(topic)
+		if err := conn.client.Unsubscribe(topic); err != nil {
+			return err
+		}
+		conn.subMu.Lock()
+		delete(conn.subs, topic)
+		conn.subMu.Unlock()
+		return nil
 	})
 }
 
@@ -204,11 +221,19 @@ func (s *MqttService) GetConnections() []domain.ConnectionStatus {
 
 	statuses := make([]domain.ConnectionStatus, 0, len(s.conns))
 	for id, conn := range s.conns {
+		conn.subMu.Lock()
+		subs := make([]domain.SubscriptionInfo, 0, len(conn.subs))
+		for topic, qos := range conn.subs {
+			subs = append(subs, domain.SubscriptionInfo{Topic: topic, QoS: qos})
+		}
+		conn.subMu.Unlock()
 		statuses = append(statuses, domain.ConnectionStatus{
-			ID:        id,
-			Name:      conn.config.Name,
-			Broker:    conn.config.Broker,
-			Connected: conn.client.IsConnected(),
+			ID:            id,
+			Name:          conn.config.Name,
+			Broker:        conn.config.Broker,
+			Connected:     conn.client.IsConnected(),
+			ProfileID:     conn.config.ProfileID,
+			Subscriptions: subs,
 		})
 	}
 	return statuses

@@ -1,21 +1,17 @@
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  on,
-  onCleanup,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import type { Logger } from "../../application/logger";
 import { notify } from "../../application/ui/notifications";
 import type { ConnectionPersistence } from "../../domain/mqtt/ports";
-import { topicMatchesParts } from "../../domain/mqtt/topic";
+import { compilePattern, topicMatchesParts } from "../../domain/mqtt/topic";
 import type {
   BrokerProfile,
+  ConnectionStatus,
   MqttMessage,
   OfflineConnectionState,
   OnlineConnectionState,
   Subscription,
+  SubscriptionInfo,
   Tab,
 } from "../../domain/mqtt/types";
 import { errorMessage } from "../../shared/error";
@@ -61,6 +57,7 @@ export interface MqttConnectionApi {
   disconnect(connectionId: string): Promise<void>;
   subscribe(connectionId: string, topic: string, qos: number): Promise<void>;
   unsubscribe(connectionId: string, topic: string): Promise<void>;
+  getConnections(): Promise<ConnectionStatus[]>;
 }
 
 interface RawMessage {
@@ -90,6 +87,32 @@ function makeOfflineState(profile: BrokerProfile): OfflineStateExt {
     brokerTopics: [],
     brokerTopicsSet: new Set(),
     isScanning: false,
+  };
+}
+
+// バックエンドの購読情報を UI 表示用の Subscription へ変換する。
+// subscriptions.ts の addSubscription と同一のロジック。
+function toSubscription(info: SubscriptionInfo): Subscription {
+  const isWildcard = info.topic.includes("+") || info.topic.includes("#");
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    topic: info.topic,
+    qos: info.qos as 0 | 1 | 2,
+    patternParts: isWildcard ? compilePattern(info.topic) : undefined,
+    muted: false,
+  };
+}
+
+// プロファイルが既に削除された接続を復元する際に、状態から最小限のプロファイルを合成する。
+function synthesizeProfile(status: ConnectionStatus): BrokerProfile {
+  return {
+    id: status.profileId || status.id,
+    name: status.name,
+    broker: status.broker,
+    clientId: "",
+    username: "",
+    password: "",
+    useTls: false,
   };
 }
 
@@ -289,27 +312,56 @@ export function createConnectionsState(
     cancelConnectionFailed();
   });
 
-  // 起動時に全プロファイルをオフラインタブとして復元し、最後に使ったプロファイルをアクティブにする
-  // profiles はバックエンドから非同期でロードされるため、on() で profiles のみを明示的に追跡する
-  let profilesRestored = false;
-  createEffect(
-    on(profiles, (ps) => {
-      if (ps.length === 0 || profilesRestored) return;
-      profilesRestored = true;
+  // 起動時にバックエンドの実接続状態から UI を復元する。
+  // webview リロード後もバックエンドは接続・購読を維持しているため、GetConnections で
+  // 生きている接続をオンラインタブ (購読付き) として復元し、残りのプロファイルを
+  // オフラインタブとして並べる。最後に使ったプロファイルをアクティブにする。
+  // 呼び出し側 (provider) は loadProfiles() の完了後に一度だけ呼ぶ。
+  let restored = false;
+  async function restore(): Promise<void> {
+    if (restored) return;
+    restored = true;
 
-      const savedProfileId = persistence.loadLastProfileId();
-      for (const profile of ps) {
-        const entry = makeOfflineState(profile);
-        setConnections(entry.connectionId, entry);
-      }
-      if (savedProfileId) {
-        const savedProfile = ps.find((p) => p.id === savedProfileId);
-        if (savedProfile) {
-          setActiveConnectionId(offlineId(savedProfile.id));
+    let live: ConnectionStatus[] = [];
+    try {
+      live = await api.getConnections();
+    } catch (err) {
+      logger.error("MQTT restore failed", { error: String(err) });
+    }
+
+    const ps = profiles();
+    const onlineProfileIds = new Set<string>();
+
+    setConnections(
+      produce((s) => {
+        for (const status of live) {
+          const profile =
+            ps.find((p) => p.id === status.profileId) ??
+            synthesizeProfile(status);
+          const st = makeOnlineState(status.id, profile);
+          st.connected = status.connected;
+          st.subscriptions = status.subscriptions.map(toSubscription);
+          s[status.id] = st;
+          onlineProfileIds.add(profile.id);
         }
+        for (const profile of ps) {
+          if (onlineProfileIds.has(profile.id)) continue;
+          const entry = makeOfflineState(profile);
+          s[entry.connectionId] = entry;
+        }
+      }),
+    );
+
+    const savedProfileId = persistence.loadLastProfileId();
+    if (savedProfileId) {
+      const onlineMatch = live.find((c) => c.profileId === savedProfileId);
+      if (onlineMatch) {
+        setActiveConnectionId(onlineMatch.id);
+      } else if (ps.some((p) => p.id === savedProfileId)) {
+        setActiveConnectionId(offlineId(savedProfileId));
       }
-    }),
-  );
+    }
+  }
 
   // アクティブプロファイルを永続化
   createEffect(() => {
@@ -476,5 +528,6 @@ export function createConnectionsState(
     handleReconnect,
     closeConnection,
     updateConnectionBroker,
+    restore,
   } as const;
 }

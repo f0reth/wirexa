@@ -318,6 +318,7 @@ export namespace mqttdomain {
 	    username: string;
 	    password: string;
 	    useTls: boolean;
+	    profileId: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionConfig(source);
@@ -331,6 +332,21 @@ export namespace mqttdomain {
 	        this.username = source["username"];
 	        this.password = source["password"];
 	        this.useTls = source["useTls"];
+	        this.profileId = source["profileId"];
+	    }
+	}
+	export class SubscriptionInfo {
+	    topic: string;
+	    qos: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SubscriptionInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.topic = source["topic"];
+	        this.qos = source["qos"];
 	    }
 	}
 	export class ConnectionStatus {
@@ -338,6 +354,8 @@ export namespace mqttdomain {
 	    name: string;
 	    broker: string;
 	    connected: boolean;
+	    profileId: string;
+	    subscriptions: SubscriptionInfo[];
 	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionStatus(source);
@@ -349,7 +367,27 @@ export namespace mqttdomain {
 	        this.name = source["name"];
 	        this.broker = source["broker"];
 	        this.connected = source["connected"];
+	        this.profileId = source["profileId"];
+	        this.subscriptions = this.convertValues(source["subscriptions"], SubscriptionInfo);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }

@@ -21,6 +21,7 @@ export async function connect(profile: BrokerProfile): Promise<string> {
     username: profile.username,
     password: profile.password,
     useTls: profile.useTls,
+    profileId: profile.id,
   }) as Promise<string>;
 }
 

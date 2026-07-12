@@ -46,6 +46,8 @@ function makeConnectionStatus(overrides: Record<string, unknown> = {}) {
     name: "Local",
     broker: "mqtt://localhost:1883",
     connected: true,
+    profileId: "profile-1",
+    subscriptions: [],
     ...overrides,
   };
 }
@@ -81,6 +83,7 @@ describe("connect", () => {
       username: "user",
       password: "pass",
       useTls: true,
+      profileId: "profile-1",
     });
   });
 
@@ -211,6 +214,8 @@ describe("getConnections", () => {
       name: "Local",
       broker: "mqtt://localhost:1883",
       connected: true,
+      profileId: "profile-1",
+      subscriptions: [],
     });
     expect(result[1].id).toBe("conn-2");
     expect(result[1].connected).toBe(false);

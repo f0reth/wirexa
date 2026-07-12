@@ -535,6 +535,61 @@ func TestMqttService_GetConnections_ReflectsIsConnected(t *testing.T) {
 	}
 }
 
+func TestMqttService_GetConnections_TracksProfileIDAndSubscriptions(t *testing.T) {
+	done := make(chan struct{})
+	client := &mockBrokerClient{
+		connectFn: func() error { close(done); return nil },
+	}
+	svc := NewMqttService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
+	id, _ := svc.Connect(domain.ConnectionConfig{
+		Broker:    "tcp://localhost:1883",
+		ProfileID: "profile-123",
+	})
+	waitForEvent(t, done, time.Second, "connect goroutine timeout")
+
+	if err := svc.Subscribe(id, "sensors/temp", 1); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	if err := svc.Subscribe(id, "sensors/#", 0); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	conns := svc.GetConnections()
+	if len(conns) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(conns))
+	}
+	if conns[0].ProfileID != "profile-123" {
+		t.Errorf("ProfileID = %q, want profile-123", conns[0].ProfileID)
+	}
+	subs := map[string]byte{}
+	for _, s := range conns[0].Subscriptions {
+		subs[s.Topic] = s.QoS
+	}
+	if len(subs) != 2 {
+		t.Fatalf("expected 2 subscriptions, got %d (%v)", len(subs), conns[0].Subscriptions)
+	}
+	if subs["sensors/temp"] != 1 {
+		t.Errorf("sensors/temp qos = %d, want 1", subs["sensors/temp"])
+	}
+	if _, ok := subs["sensors/#"]; !ok {
+		t.Error("expected sensors/# subscription to be tracked")
+	}
+
+	// Unsubscribe removes the topic from tracking.
+	if err := svc.Unsubscribe(id, "sensors/temp"); err != nil {
+		t.Fatalf("Unsubscribe: %v", err)
+	}
+	conns = svc.GetConnections()
+	for _, s := range conns[0].Subscriptions {
+		if s.Topic == "sensors/temp" {
+			t.Error("sensors/temp should be removed after Unsubscribe")
+		}
+	}
+	if len(conns[0].Subscriptions) != 1 {
+		t.Errorf("expected 1 subscription after unsubscribe, got %d", len(conns[0].Subscriptions))
+	}
+}
+
 // ------- Shutdown -------
 
 func TestMqttService_Shutdown_DisconnectsAll(t *testing.T) {

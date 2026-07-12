@@ -4,11 +4,18 @@
 // 実行する（再生成忘れは CI のバインディング鮮度チェックが検知する）。
 // 生成型 → この型の変換は infrastructure/mqtt/client.ts で行う。
 
+export interface SubscriptionInfo {
+  topic: string;
+  qos: number;
+}
+
 export interface ConnectionStatus {
   id: string;
   name: string;
   broker: string;
   connected: boolean;
+  profileId: string;
+  subscriptions: SubscriptionInfo[];
 }
 
 export interface MqttMessage {
