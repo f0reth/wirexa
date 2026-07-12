@@ -16,6 +16,7 @@ vi.mock("../../../wailsjs/go/adapters/HttpHandler", () => ({
   MoveSidebarEntry: vi.fn(),
   RenameCollection: vi.fn(),
   RenameItem: vi.fn(),
+  SaveResponseBase64: vi.fn(),
   SaveResponseBody: vi.fn(),
   SendRequest: vi.fn(),
   UpdateRequest: vi.fn(),
@@ -38,6 +39,7 @@ import {
   moveSidebarEntry,
   renameCollection,
   renameItem,
+  saveResponseBinary,
   saveResponseBody,
   sendRequest,
   updateRequest,
@@ -140,6 +142,7 @@ describe("sendRequest", () => {
       error: "",
       bodyTruncated: false,
       tempFilePath: "",
+      bodyBase64: false,
     });
   });
 
@@ -153,6 +156,23 @@ describe("sendRequest", () => {
     const result = await sendRequest(makeDomainRequest());
     expect(result.bodyTruncated).toBe(true);
     expect(result.tempFilePath).toBe("/tmp/response.bin");
+  });
+
+  it("maps bodyBase64 when the backend flags a binary body", async () => {
+    vi.mocked(Handler.SendRequest).mockResolvedValue(
+      makeWailsResponse({ bodyBase64: true, body: "AAECaGk=" }) as never,
+    );
+    const result = await sendRequest(makeDomainRequest());
+    expect(result.bodyBase64).toBe(true);
+    expect(result.body).toBe("AAECaGk=");
+  });
+
+  it("defaults bodyBase64 to false when the field is absent", async () => {
+    vi.mocked(Handler.SendRequest).mockResolvedValue(
+      makeWailsResponse() as never,
+    );
+    const result = await sendRequest(makeDomainRequest());
+    expect(result.bodyBase64).toBe(false);
   });
 
   it("maps an error response", async () => {
@@ -871,5 +891,25 @@ describe("saveResponseBody", () => {
     await expect(saveResponseBody("/tmp/file", "text/plain")).rejects.toThrow(
       "save failed",
     );
+  });
+});
+
+describe("saveResponseBinary", () => {
+  it("calls SaveResponseBase64 with the base64 body and content type", async () => {
+    vi.mocked(Handler.SaveResponseBase64).mockResolvedValue(undefined);
+    await saveResponseBinary("AAECaGk=", "application/octet-stream");
+    expect(Handler.SaveResponseBase64).toHaveBeenCalledWith(
+      "AAECaGk=",
+      "application/octet-stream",
+    );
+  });
+
+  it("propagates rejection from the backend", async () => {
+    vi.mocked(Handler.SaveResponseBase64).mockRejectedValue(
+      new Error("save failed"),
+    );
+    await expect(
+      saveResponseBinary("AAECaGk=", "application/zip"),
+    ).rejects.toThrow("save failed");
   });
 });

@@ -3,6 +3,7 @@ package adapters
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"os"
 	"strings"
@@ -79,6 +80,28 @@ func (h *HttpHandler) SaveResponseBody(tempFilePath, contentType string) error {
 		return err
 	}
 	return os.Remove(tempFilePath)
+}
+
+// SaveResponseBase64 は base64 エンコードされたバイナリボディをデコードし、
+// OSのファイル保存ダイアログで指定された先へ書き出す。キャンセル時は何もしない。
+// 切り詰められていない非 UTF-8 レスポンスの保存に使う（temp ファイルを介さない）。
+func (h *HttpHandler) SaveResponseBase64(base64Content, contentType string) error {
+	data, err := base64.StdEncoding.DecodeString(base64Content)
+	if err != nil {
+		return err
+	}
+	ext := contentTypeToExtension(contentType)
+	savePath, err := runtime.SaveFileDialog(h.ctx, runtime.SaveDialogOptions{
+		DefaultFilename: "response" + ext,
+		Filters: []runtime.FileFilter{{
+			DisplayName: contentType,
+			Pattern:     "*" + ext,
+		}},
+	})
+	if err != nil || savePath == "" {
+		return err
+	}
+	return os.WriteFile(savePath, data, 0o600)
 }
 
 // GetRootItems はルートコレクションのアイテム一覧を返す。

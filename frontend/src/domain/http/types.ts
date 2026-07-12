@@ -80,6 +80,7 @@ export interface HttpResponse {
   error: string;
   bodyTruncated: boolean;
   tempFilePath: string;
+  bodyBase64: boolean;
 }
 
 export interface Collection {

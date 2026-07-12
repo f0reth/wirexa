@@ -3,8 +3,12 @@ import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { TabList } from "../../../components/ui/tabs";
-import { saveResponseBody } from "../../../infrastructure/http/client";
+import {
+  saveResponseBinary,
+  saveResponseBody,
+} from "../../../infrastructure/http/client";
 import { useHttpRequest } from "../../providers/http-provider";
+import { HexView } from "../shared/hex-view";
 import styles from "./http.module.css";
 
 const TABS = [
@@ -48,7 +52,12 @@ export function ResponseViewer() {
   async function handleSaveToFile() {
     const resp = response();
     if (!resp) return;
-    await saveResponseBody(resp.tempFilePath, resp.contentType);
+    // 切り詰め時は temp ファイル（全文）から、非切り詰めバイナリはメモリ上の base64 から保存する。
+    if (resp.bodyTruncated) {
+      await saveResponseBody(resp.tempFilePath, resp.contentType);
+    } else {
+      await saveResponseBinary(resp.body, resp.contentType);
+    }
   }
 
   // パースを1回だけ行い、コピー用テキストと表示用HTMLを同時に生成する
@@ -75,7 +84,12 @@ export function ResponseViewer() {
       <div class={styles.responsePanelHeader}>
         <span class={styles.responsePanelTitle}>Response</span>
         <Show
-          when={response() && !response()?.error && !response()?.bodyTruncated}
+          when={
+            response() &&
+            !response()?.error &&
+            !response()?.bodyTruncated &&
+            !response()?.bodyBase64
+          }
         >
           <button
             type="button"
@@ -204,32 +218,52 @@ export function ResponseViewer() {
                           <Show
                             when={isImageContentType(resp().contentType)}
                             fallback={
-                              <>
-                                <Show
-                                  when={
-                                    isJsonContentType(resp().contentType) &&
-                                    resp().body.length > HIGHLIGHT_SIZE_LIMIT
-                                  }
-                                >
-                                  <div class={styles.responseHighlightBanner}>
-                                    ℹ Syntax highlighting is disabled for large
-                                    responses (&gt; 1 MB).
-                                  </div>
-                                </Show>
-                                <Show
-                                  when={bodyDisplay().html !== null}
-                                  fallback={
-                                    <pre class={styles.responseBody}>
-                                      {bodyDisplay().text}
-                                    </pre>
-                                  }
-                                >
-                                  <pre
-                                    class={styles.responseBody}
-                                    innerHTML={bodyDisplay().html ?? ""}
-                                  />
-                                </Show>
-                              </>
+                              <Show
+                                when={resp().bodyBase64}
+                                fallback={
+                                  <>
+                                    <Show
+                                      when={
+                                        isJsonContentType(resp().contentType) &&
+                                        resp().body.length >
+                                          HIGHLIGHT_SIZE_LIMIT
+                                      }
+                                    >
+                                      <div
+                                        class={styles.responseHighlightBanner}
+                                      >
+                                        ℹ Syntax highlighting is disabled for
+                                        large responses (&gt; 1 MB).
+                                      </div>
+                                    </Show>
+                                    <Show
+                                      when={bodyDisplay().html !== null}
+                                      fallback={
+                                        <pre class={styles.responseBody}>
+                                          {bodyDisplay().text}
+                                        </pre>
+                                      }
+                                    >
+                                      <pre
+                                        class={styles.responseBody}
+                                        innerHTML={bodyDisplay().html ?? ""}
+                                      />
+                                    </Show>
+                                  </>
+                                }
+                              >
+                                {/* 非 UTF-8 バイナリ: hex ダンプ + 保存ボタン */}
+                                <div class={styles.responseBodyLimitActions}>
+                                  <button
+                                    type="button"
+                                    class={styles.responseBodyLimitBtn}
+                                    onClick={handleSaveToFile}
+                                  >
+                                    Save body to file
+                                  </button>
+                                </div>
+                                <HexView base64={resp().body} />
+                              </Show>
                             }
                           >
                             <div class={styles.responseImageContainer}>

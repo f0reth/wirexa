@@ -60,6 +60,8 @@ type HttpResponse struct {
 	Size          int64  `json:"size"`
 	TimingMs      int64  `json:"timingMs"`
 	BodyTruncated bool   `json:"bodyTruncated"`
+	// BodyBase64 は Body が非 UTF-8 バイナリのため base64 エンコードされていることを示す。
+	BodyBase64 bool `json:"bodyBase64"`
 }
 
 // Collection はリクエストコレクションを表す。

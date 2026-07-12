@@ -46,6 +46,9 @@ export function RenameCollection(_arg1: string, _arg2: string): Promise<void> {
 export function RenameItem(_arg1: unknown, _arg2: unknown, _arg3: unknown): Promise<void> {
   return Promise.resolve();
 }
+export function SaveResponseBase64(_arg1: unknown, _arg2: unknown): Promise<void> {
+  return Promise.resolve();
+}
 export function SaveResponseBody(_arg1: unknown, _arg2: unknown): Promise<void> {
   return Promise.resolve();
 }

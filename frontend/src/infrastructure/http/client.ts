@@ -15,6 +15,7 @@ import {
   OpenFilePicker,
   RenameCollection,
   RenameItem,
+  SaveResponseBase64,
   SaveResponseBody,
   SendRequest,
   UpdateRequest,
@@ -108,6 +109,7 @@ function fromWailsHttpResponse(res: httpdomain.HttpResponse): HttpResponse {
     ...res,
     bodyTruncated: res.bodyTruncated ?? false,
     tempFilePath: res.tempFilePath ?? "",
+    bodyBase64: res.bodyBase64 ?? false,
   };
 }
 
@@ -266,4 +268,13 @@ export async function saveResponseBody(
   contentType: string,
 ): Promise<void> {
   return SaveResponseBody(tempFilePath, contentType);
+}
+
+// saveResponseBinary はメモリ上の base64 ボディを保存ダイアログの選択先へ書き出す。
+// 切り詰められていない非 UTF-8 レスポンスの保存に使う (temp ファイルを介さない)。
+export async function saveResponseBinary(
+  base64Content: string,
+  contentType: string,
+): Promise<void> {
+  return SaveResponseBase64(base64Content, contentType);
 }

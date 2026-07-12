@@ -42,7 +42,8 @@ function wailsMockPlugin(): Plugin {
                   GetCollections: _noopArr, GetRootItems: _noopArr, GetSidebarLayout: _noopArr,
                   MoveCollection: _noopVoid, MoveItem: _noopVoid, MoveItemToSidebar: _noopVoid,
                   MoveSidebarEntry: _noopVoid, OpenFilePicker: () => Promise.resolve(""),
-                  RenameCollection: _noopVoid, RenameItem: _noopVoid, SaveResponseBody: _noopVoid,
+                  RenameCollection: _noopVoid, RenameItem: _noopVoid,
+                  SaveResponseBase64: _noopVoid, SaveResponseBody: _noopVoid,
                   SendRequest: _noopNull, UpdateRequest: _noopVoid,
                 },
                 MqttHandler: {

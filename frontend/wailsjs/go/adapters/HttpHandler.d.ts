@@ -34,6 +34,8 @@ export function RenameCollection(arg1:string,arg2:string):Promise<void>;
 
 export function RenameItem(arg1:string,arg2:string,arg3:string):Promise<void>;
 
+export function SaveResponseBase64(arg1:string,arg2:string):Promise<void>;
+
 export function SaveResponseBody(arg1:string,arg2:string):Promise<void>;
 
 export function SendRequest(arg1:httpdomain.HttpRequest):Promise<httpdomain.HttpResponse>;

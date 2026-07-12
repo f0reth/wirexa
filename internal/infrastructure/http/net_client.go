@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
@@ -183,9 +184,12 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	}
 
 	respContentType := resp.Header.Get("Content-Type")
+	// 非 UTF-8 のバイナリボディは string 変換で壊れるため base64 で渡す。
 	bodyStr := string(body)
-	if strings.HasPrefix(strings.ToLower(respContentType), "image/") {
+	bodyBase64 := false
+	if !utf8.Valid(body) {
 		bodyStr = base64.StdEncoding.EncodeToString(body)
+		bodyBase64 = true
 	}
 
 	return domain.HttpResponse{
@@ -197,6 +201,7 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		Size:          info.Size(),
 		TimingMs:      elapsed,
 		BodyTruncated: bodyTruncated,
+		BodyBase64:    bodyBase64,
 	}, nil
 }
 
