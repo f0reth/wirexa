@@ -48,11 +48,12 @@ type RequestBody struct {
 
 // HttpResponse は HTTP レスポンスを表す。
 type HttpResponse struct {
-	Headers     map[string]string `json:"headers"`
-	StatusText  string            `json:"statusText"`
-	Body        string            `json:"body"`
-	ContentType string            `json:"contentType"`
-	Error       string            `json:"error"`
+	// Headers は Set-Cookie などの複数値ヘッダを落とさないよう、キーごとに全値を保持する。
+	Headers     map[string][]string `json:"headers"`
+	StatusText  string              `json:"statusText"`
+	Body        string              `json:"body"`
+	ContentType string              `json:"contentType"`
+	Error       string              `json:"error"`
 	// TempFilePath はボディが大きく切り詰められた際に全文を保存したテンポラリファイルのパス。
 	// adapter 層が ConsumeTempFilePath で設定する出力用フィールド（infra は設定しない）。
 	TempFilePath  string `json:"tempFilePath"`

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -216,6 +217,54 @@ func TestHTTP_SendRequest_HeadersAndParams(t *testing.T) {
 	}
 	if gotParam != "world" {
 		t.Errorf("query param q = %q, want world", gotParam)
+	}
+}
+
+// TestHTTP_SendRequest_DuplicateRequestHeaders は同名ヘッダーが複数指定された場合に全て送信されることを確認する。
+func TestHTTP_SendRequest_DuplicateRequestHeaders(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Values("X-Dup")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	h := newHTTPHandler(t)
+	_, err := h.SendRequest(httpdomain.HttpRequest{
+		Method: "GET",
+		URL:    srv.URL,
+		Headers: []httpdomain.KeyValuePair{
+			{Key: "X-Dup", Value: "one", Enabled: true},
+			{Key: "X-Dup", Value: "two", Enabled: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendRequest: %v", err)
+	}
+	want := []string{"one", "two"}
+	if !slices.Equal(got, want) {
+		t.Errorf("X-Dup headers = %v, want %v", got, want)
+	}
+}
+
+// TestHTTP_SendRequest_MultiValueResponseHeaders は Set-Cookie のような複数値レスポンスヘッダーが
+// 先頭 1 件に潰されず全て保持されることを確認する。
+func TestHTTP_SendRequest_MultiValueResponseHeaders(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Add("Set-Cookie", "a=1; Path=/")
+		w.Header().Add("Set-Cookie", "b=2; Path=/")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	h := newHTTPHandler(t)
+	resp, err := h.SendRequest(httpdomain.HttpRequest{Method: "GET", URL: srv.URL})
+	if err != nil {
+		t.Fatalf("SendRequest: %v", err)
+	}
+	want := []string{"a=1; Path=/", "b=2; Path=/"}
+	if !slices.Equal(resp.Headers["Set-Cookie"], want) {
+		t.Errorf("Set-Cookie = %v, want %v", resp.Headers["Set-Cookie"], want)
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -161,11 +162,13 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		return domain.HttpResponse{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
+	// Add で積む。同名ヘッダを複数行入力できる UI なので、Set で潰すと入力が黙って消える。
 	for _, h := range req.Headers {
 		if h.Enabled && h.Key != "" {
-			httpReq.Header.Set(h.Key, h.Value)
+			httpReq.Header.Add(h.Key, h.Value)
 		}
 	}
+	// 認証はユーザー指定の Authorization ヘッダより優先する (Set で上書き)。
 	switch req.Auth.Type {
 	case "basic":
 		httpReq.SetBasicAuth(req.Auth.Username, req.Auth.Password)
@@ -249,11 +252,9 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		c.tempFiles.Store(req.ID, tmpName)
 	}
 
-	headers := make(map[string]string, len(resp.Header))
+	headers := make(map[string][]string, len(resp.Header))
 	for k, v := range resp.Header {
-		if len(v) > 0 {
-			headers[k] = v[0]
-		}
+		headers[k] = slices.Clone(v)
 	}
 
 	respContentType := resp.Header.Get("Content-Type")
