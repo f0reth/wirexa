@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -24,18 +25,31 @@ import (
 const (
 	defaultTimeoutSec    = 30
 	defaultMaxResponseMB = 10
+	// maxCachedTransports は transports の上限。ProxyURL はユーザー入力のため
+	// キーが際限なく増えうるので、上限に達したらまとめて破棄して作り直す。
+	maxCachedTransports = 16
 )
 
 var _ domain.HttpTransport = (*NetClient)(nil)
 
+// transportKey は Transport の挙動を決める設定のみを抜き出したキャッシュキー。
+// Timeout / CheckRedirect は http.Client 側の責務なので含めない。
+type transportKey struct {
+	proxyMode          string
+	proxyURL           string
+	insecureSkipVerify bool
+}
+
 // NetClient は net/http を使った domain.HttpTransport の実装。
 type NetClient struct {
-	tempFiles sync.Map // requestID → tempFilePath (string)
+	transports map[transportKey]*http.Transport
+	tempFiles  sync.Map // requestID → tempFilePath (string)
+	mu         sync.Mutex
 }
 
 // NewNetClient は NetClient を生成する。
 func NewNetClient() *NetClient {
-	return &NetClient{}
+	return &NetClient{transports: make(map[transportKey]*http.Transport)}
 }
 
 // ConsumeTempFilePath は指定リクエストIDのテンポラリファイルパスを返し、マップから削除する。
@@ -51,7 +65,8 @@ func (c *NetClient) ConsumeTempFilePath(requestID string) string {
 	return ""
 }
 
-// Cleanup は tempFiles に残る打ち切りレスポンスの一時ファイルを全削除する。
+// Cleanup は tempFiles に残る打ち切りレスポンスの一時ファイルを全削除し、
+// キャッシュした Transport のアイドルコネクションを閉じる。
 // フロントへ未受け渡し (ConsumeTempFilePath されていない) のまま終了したものを回収する。
 func (c *NetClient) Cleanup() {
 	c.tempFiles.Range(func(k, v any) bool {
@@ -61,6 +76,18 @@ func (c *NetClient) Cleanup() {
 		c.tempFiles.Delete(k)
 		return true
 	})
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.closeTransportsLocked()
+}
+
+// closeTransportsLocked はキャッシュ済み Transport を全て破棄する。呼び出し元は c.mu を保持していること。
+func (c *NetClient) closeTransportsLocked() {
+	for k, t := range c.transports {
+		t.CloseIdleConnections()
+		delete(c.transports, k)
+	}
 }
 
 // SweepStaleTempFiles は前回セッションで残った wirexa-response-* を削除する。
@@ -79,6 +106,12 @@ func SweepStaleTempFiles() {
 
 // Do は HttpRequest を実行して HttpResponse を返す。
 func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.HttpResponse, error) {
+	timeout := resolveTimeout(req.Settings)
+	// タイムアウトは http.Client.Timeout ではなく context で表現し、
+	// RequestUseCase 側のキャンセルと同じ経路に一本化する。
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	parsedURL, err := url.Parse(req.URL)
 	if err != nil {
 		return domain.HttpResponse{}, fmt.Errorf("invalid URL: %w", err)
@@ -143,7 +176,7 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		httpReq.Header.Set("Content-Type", contentType)
 	}
 
-	client := buildHTTPClient(req.Settings)
+	client := c.buildHTTPClient(req.Settings)
 	maxBody := resolveMaxResponseBody(req.Settings)
 
 	start := time.Now()
@@ -151,6 +184,11 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	elapsed := time.Since(start).Milliseconds()
 
 	if err != nil {
+		// context 由来のタイムアウトは "context deadline exceeded" としか出ないため、
+		// ユーザーに意味の伝わる文言へ置き換える。
+		if errors.Is(err, context.DeadlineExceeded) {
+			return domain.HttpResponse{}, fmt.Errorf("request timed out after %s", timeout)
+		}
 		return domain.HttpResponse{}, fmt.Errorf("request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // best-effort cleanup
@@ -165,6 +203,9 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	if _, err = io.Copy(tmpFile, resp.Body); err != nil {
 		_ = tmpFile.Close()    //nolint:errcheck // best-effort cleanup
 		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
+		if errors.Is(err, context.DeadlineExceeded) {
+			return domain.HttpResponse{}, fmt.Errorf("request timed out after %s", timeout)
+		}
 		return domain.HttpResponse{}, fmt.Errorf("failed to read response: %w", err)
 	}
 	_ = tmpFile.Close() //nolint:errcheck // best-effort cleanup
@@ -237,34 +278,63 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	}, nil
 }
 
-func buildHTTPClient(s domain.RequestSettings) *http.Client {
-	timeout := time.Duration(defaultTimeoutSec) * time.Second
-	if s.TimeoutSec > 0 {
-		timeout = time.Duration(s.TimeoutSec) * time.Second
-	}
-
-	var tlsConfig *tls.Config
-	if s.InsecureSkipVerify {
-		tlsConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // ユーザーが明示的に設定した場合のみ有効
-	}
-
-	transport := &http.Transport{
-		Proxy:           resolveProxy(s),
-		TLSClientConfig: tlsConfig,
-	}
-
-	client := &http.Client{
-		Timeout:   timeout,
-		Transport: transport,
-	}
-
+// buildHTTPClient はリクエスト設定に対応する http.Client を組み立てる。
+// Transport はキャッシュから再利用し、http.Client 自体は軽量なので毎回生成する。
+func (c *NetClient) buildHTTPClient(s domain.RequestSettings) *http.Client {
+	client := &http.Client{Transport: c.transportFor(s)}
 	if s.DisableRedirects {
 		client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		}
 	}
-
 	return client
+}
+
+// transportFor は設定に対応する Transport をキャッシュから返す (無ければ生成する)。
+// リクエストごとに Transport を作ると keep-alive が効かず毎回 TCP + TLS ハンドシェイクが走るため、
+// Transport の挙動を決める設定が同じリクエスト間ではコネクションプールを共有する。
+func (c *NetClient) transportFor(s domain.RequestSettings) *http.Transport {
+	key := transportKey{
+		proxyMode:          s.ProxyMode,
+		proxyURL:           s.ProxyURL,
+		insecureSkipVerify: s.InsecureSkipVerify,
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if t, ok := c.transports[key]; ok {
+		return t
+	}
+
+	t := newTransport(s)
+	if len(c.transports) >= maxCachedTransports {
+		c.closeTransportsLocked()
+	}
+	c.transports[key] = t
+	return t
+}
+
+// newTransport は標準の DefaultTransport (コネクションプール設定 / HTTP2) を土台に Transport を生成する。
+func newTransport(s domain.RequestSettings) *http.Transport {
+	var t *http.Transport
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+		t = dt.Clone()
+	} else {
+		t = &http.Transport{}
+	}
+	t.Proxy = resolveProxy(s)
+	if s.InsecureSkipVerify {
+		t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // ユーザーが明示的に設定した場合のみ有効
+	}
+	return t
+}
+
+func resolveTimeout(s domain.RequestSettings) time.Duration {
+	if s.TimeoutSec > 0 {
+		return time.Duration(s.TimeoutSec) * time.Second
+	}
+	return time.Duration(defaultTimeoutSec) * time.Second
 }
 
 func resolveProxy(s domain.RequestSettings) func(*http.Request) (*url.URL, error) {
