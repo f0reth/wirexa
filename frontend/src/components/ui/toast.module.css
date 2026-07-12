@@ -1,0 +1,113 @@
+/* ── Toast notifications ───────────────────────────────── */
+.viewport {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: min(22rem, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.75rem 0.875rem;
+  background-color: var(--surface-3);
+  border: 1px solid var(--border-prominent);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg), var(--inner-glow);
+  animation: toastIn 0.18s ease-out;
+}
+
+.icon {
+  flex-shrink: 0;
+  display: flex;
+  margin-top: 0.0625rem;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-foreground);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.description {
+  font-size: 0.75rem;
+  color: var(--color-muted-foreground);
+  line-height: 1.45;
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.close {
+  flex-shrink: 0;
+  display: flex;
+  padding: 0.125rem;
+  border: none;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  border-radius: var(--radius-sm, 0.375rem);
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background-color 0.12s ease;
+}
+
+.close:hover {
+  color: var(--color-foreground);
+  background-color: var(--surface-2);
+}
+
+/* Level accents (icon + left border). warning/info are defined locally
+   since the design tokens only cover destructive/success. */
+.error {
+  border-left-color: var(--destructive);
+}
+.error .icon {
+  color: var(--destructive);
+}
+
+.success {
+  border-left-color: var(--success);
+}
+.success .icon {
+  color: var(--success);
+}
+
+.warning {
+  border-left-color: oklch(0.72 0.15 75);
+}
+.warning .icon {
+  color: oklch(0.72 0.15 75);
+}
+
+.info {
+  border-left-color: oklch(0.6 0.13 250);
+}
+.info .icon {
+  color: oklch(0.6 0.13 250);
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateX(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

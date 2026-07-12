@@ -1,5 +1,6 @@
 import Resizable from "@corvu/resizable";
 import { createEffect, createSignal, Show } from "solid-js";
+import { Portal } from "solid-js/web";
 import styles from "./App.module.css";
 import { createThemeStore } from "./application/ui/theme";
 import {
@@ -7,6 +8,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "./components/ui/resizable";
+import { ToastViewport } from "./components/ui/toast";
 import { createThemeStorage } from "./infrastructure/storage/local-storage";
 import { HttpClient } from "./presentation/components/http";
 import { MqttClient } from "./presentation/components/mqtt";
@@ -79,6 +81,9 @@ function App() {
 
   return (
     <div class={styles.app}>
+      <Portal>
+        <ToastViewport />
+      </Portal>
       <UdpProvider>
         <HttpProvider>
           <MqttProvider>
