@@ -18,6 +18,8 @@ type MqttMessage struct {
 	QoS          byte   `json:"qos"`
 	Retained     bool   `json:"retained"`
 	Timestamp    int64  `json:"timestamp"`
+	// PayloadBase64 は Payload が非 UTF-8 バイナリのため base64 エンコードされていることを示す。
+	PayloadBase64 bool `json:"payloadBase64"`
 }
 
 // ConnectionStatus は接続の現在状態を表す。

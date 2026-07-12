@@ -14,6 +14,7 @@ export interface ConnectionStatus {
 export interface MqttMessage {
   topic: string;
   payload: string;
+  payloadBase64: boolean;
   qos: 0 | 1 | 2;
   timestamp: Date;
 }

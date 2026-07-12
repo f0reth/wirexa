@@ -115,7 +115,7 @@ func (p *pahoClient) Publish(topic string, qos byte, retained bool, payload stri
 
 func (p *pahoClient) Subscribe(topic string, qos byte, handler domain.MessageHandler) error {
 	pahoHandler := func(_ pahomqtt.Client, msg pahomqtt.Message) {
-		handler(msg.Topic(), string(msg.Payload()), msg.Qos(), msg.Retained())
+		handler(msg.Topic(), msg.Payload(), msg.Qos(), msg.Retained())
 	}
 	token := p.client.Subscribe(topic, qos, pahoHandler)
 	if !token.WaitTimeout(p.tokenTimeout) {

@@ -3,8 +3,10 @@ package mqttapp
 
 import (
 	"context"
+	"encoding/base64"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -162,15 +164,23 @@ func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
 		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
 	}
 	return s.withConn(connectionID, func(conn *connection) error {
-		handler := func(msgTopic, msgPayload string, msgQoS byte, retained bool) {
+		handler := func(msgTopic string, msgPayload []byte, msgQoS byte, retained bool) {
 			s.logger.Info("MQTT message received", "source", "mqtt", "connection_id", connectionID, "topic", msgTopic, "payload_bytes", len(msgPayload))
+			// 非 UTF-8 のバイナリペイロードは string 変換で壊れるため base64 で渡す。
+			payloadStr := string(msgPayload)
+			payloadBase64 := false
+			if !utf8.Valid(msgPayload) {
+				payloadStr = base64.StdEncoding.EncodeToString(msgPayload)
+				payloadBase64 = true
+			}
 			s.emitter.Emit(eventMessage, domain.MqttMessage{
-				ConnectionID: connectionID,
-				Topic:        msgTopic,
-				Payload:      msgPayload,
-				QoS:          msgQoS,
-				Retained:     retained,
-				Timestamp:    time.Now().UnixMilli(),
+				ConnectionID:  connectionID,
+				Topic:         msgTopic,
+				Payload:       payloadStr,
+				PayloadBase64: payloadBase64,
+				QoS:           msgQoS,
+				Retained:      retained,
+				Timestamp:     time.Now().UnixMilli(),
 			})
 		}
 		return conn.client.Subscribe(topic, qos, handler)

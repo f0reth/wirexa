@@ -7,6 +7,7 @@ import {
   useMqttMessages,
   useMqttSubscribe,
 } from "../../../providers/mqtt-provider";
+import { base64ByteLength } from "../../shared/hex-view";
 import styles from "../mqtt.module.css";
 import { formatTime, getTopicColor } from "../utils";
 
@@ -177,7 +178,11 @@ export function MessagesPanel() {
                           {formatTime(msg().timestamp)}
                         </span>
                       </div>
-                      <p class={styles.messagePayload}>{msg().payload}</p>
+                      <p class={styles.messagePayload}>
+                        {msg().payloadBase64
+                          ? `[binary ${base64ByteLength(msg().payload)} bytes]`
+                          : msg().payload}
+                      </p>
                     </button>
                   </div>
                 );

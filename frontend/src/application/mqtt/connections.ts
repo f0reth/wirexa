@@ -65,6 +65,7 @@ interface RawMessage {
   connectionId: string;
   topic: string;
   payload: string;
+  payloadBase64?: boolean;
   qos: number;
   timestamp: number;
 }
@@ -187,6 +188,7 @@ export function createConnectionsState(
               id: `${data.timestamp}-${Math.random().toString(36).slice(2, 8)}`,
               topic: data.topic,
               payload: data.payload,
+              payloadBase64: data.payloadBase64 ?? false,
               qos: data.qos as 0 | 1 | 2,
               timestamp: new Date(data.timestamp),
               direction: "incoming",

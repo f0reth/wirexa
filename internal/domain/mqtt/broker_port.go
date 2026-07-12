@@ -2,7 +2,8 @@
 package mqttdomain
 
 // MessageHandler はサブスクライブしたトピックのメッセージ受信時に呼ばれるコールバック。
-type MessageHandler func(topic, payload string, qos byte, retained bool)
+// payload は生バイト列で渡す（バイナリペイロードを application 層まで保持するため）。
+type MessageHandler func(topic string, payload []byte, qos byte, retained bool)
 
 // BrokerClient は MQTT ブローカー接続のトランスポート抽象。
 // 実装は infrastructure 層 (例: Paho) が提供する。

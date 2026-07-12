@@ -2,6 +2,7 @@ import { Check, Copy } from "lucide-solid";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { Badge } from "../../../../components/ui/badge";
 import { useMqttMessages } from "../../../providers/mqtt-provider";
+import { HexView } from "../../shared/hex-view";
 import styles from "../mqtt.module.css";
 import { formatPayload, formatTime } from "../utils";
 
@@ -60,9 +61,16 @@ export function MessageDetail() {
                   </button>
                 </div>
               </div>
-              <pre class={styles.messageDetailPayload}>
-                {formattedPayload()}
-              </pre>
+              <Show
+                when={msg().payloadBase64}
+                fallback={
+                  <pre class={styles.messageDetailPayload}>
+                    {formattedPayload()}
+                  </pre>
+                }
+              >
+                <HexView base64={msg().payload} />
+              </Show>
             </>
           );
         }}

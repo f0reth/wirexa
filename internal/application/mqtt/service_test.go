@@ -1,6 +1,7 @@
 package mqttapp
 
 import (
+	"encoding/base64"
 	"errors"
 	"sync"
 	"testing"
@@ -388,11 +389,73 @@ func TestMqttService_Subscribe_MessageHandlerEmitsEvent(t *testing.T) {
 	if capturedHandler == nil {
 		t.Fatal("handler not set")
 	}
-	capturedHandler("sensors/temp", "25.5", 0, false)
+	capturedHandler("sensors/temp", []byte("25.5"), 0, false)
 	waitForEvent(t, msgCh, time.Second, "message event timeout")
 	if !emitter.hasEvent(eventMessage) {
 		t.Error("expected mqtt:message event")
 	}
+	if msg := lastMessage(t, emitter); msg.PayloadBase64 || msg.Payload != "25.5" {
+		t.Errorf("expected UTF-8 payload passthrough, got %+v", msg)
+	}
+}
+
+func TestMqttService_Subscribe_BinaryPayloadBase64(t *testing.T) {
+	done := make(chan struct{})
+	var capturedHandler domain.MessageHandler
+	client := &mockBrokerClient{
+		connectFn: func() error { close(done); return nil },
+		subscribeFn: func(_ string, _ byte, handler domain.MessageHandler) error {
+			capturedHandler = handler
+			return nil
+		},
+	}
+	msgCh := make(chan struct{})
+	emitter := &mockEmitterWithChan{ch: msgCh, targetEvent: eventMessage}
+	svc := NewMqttService(emitter, factoryWith(client), testutil.NoopLogger{})
+	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	waitForEvent(t, done, time.Second, "connect goroutine timeout")
+
+	if err := svc.Subscribe(id, "sensors/#", 0); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	if capturedHandler == nil {
+		t.Fatal("handler not set")
+	}
+
+	// 不正な UTF-8 を含むバイナリペイロード
+	binary := []byte{0x00, 0xff, 0xfe, 0x80}
+	capturedHandler("sensors/raw", binary, 0, false)
+	waitForEvent(t, msgCh, time.Second, "message event timeout")
+
+	msg := lastMessage(t, emitter)
+	if !msg.PayloadBase64 {
+		t.Fatal("expected PayloadBase64=true for non-UTF-8 payload")
+	}
+	got, err := base64.StdEncoding.DecodeString(msg.Payload)
+	if err != nil {
+		t.Fatalf("payload is not valid base64: %v", err)
+	}
+	if string(got) != string(binary) {
+		t.Errorf("decoded payload mismatch: got %v want %v", got, binary)
+	}
+}
+
+// lastMessage は emitter に記録された最後の mqtt:message イベントの MqttMessage を返す。
+func lastMessage(t *testing.T, e *mockEmitterWithChan) domain.MqttMessage {
+	t.Helper()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for i := len(e.events) - 1; i >= 0; i-- {
+		if e.events[i].event == eventMessage {
+			msg, ok := e.events[i].data.(domain.MqttMessage)
+			if !ok {
+				t.Fatalf("message event data is not MqttMessage: %T", e.events[i].data)
+			}
+			return msg
+		}
+	}
+	t.Fatal("no mqtt:message event recorded")
+	return domain.MqttMessage{}
 }
 
 // ------- Unsubscribe -------
