@@ -1,5 +1,5 @@
 import { createSignal, onCleanup } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createStore, reconcile } from "solid-js/store";
 import { UDP_MAX_MESSAGES } from "../../config/limits";
 import type {
   PayloadEncoding,
@@ -30,6 +30,17 @@ export function createUdpReceiveState(api: UdpReceiveApi) {
   });
   onCleanup(cancelMessage);
 
+  // 起動時にバックエンドの実リスニングセッションを復元する。
+  // webview リロード後もバックエンドは受信を継続しているため、UI 状態を実状態に同期する。
+  async function refreshListeners(): Promise<void> {
+    try {
+      const list = await api.getListeners();
+      setSessions(reconcile(list));
+    } catch (err: unknown) {
+      notify.error("Failed to restore listeners", errorMessage(err));
+    }
+  }
+
   async function startListen(): Promise<void> {
     setLoading(true);
     setError(null);
@@ -54,6 +65,8 @@ export function createUdpReceiveState(api: UdpReceiveApi) {
     setMessages([]);
   }
 
+  refreshListeners();
+
   return {
     sessions,
     messages,
@@ -66,5 +79,6 @@ export function createUdpReceiveState(api: UdpReceiveApi) {
     startListen,
     stopListen,
     clearMessages,
+    refreshListeners,
   };
 }
