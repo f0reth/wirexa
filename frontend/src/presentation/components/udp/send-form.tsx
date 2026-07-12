@@ -1,4 +1,5 @@
 import { createMemo, For, Show } from "solid-js";
+import { notify } from "../../../application/ui/notifications";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
@@ -11,6 +12,7 @@ import {
   PAYLOAD_ENCODINGS,
   type PayloadEncoding,
 } from "../../../domain/udp/types";
+import { errorMessage } from "../../../shared/error";
 import { useUdpSend } from "../../providers/udp-provider";
 import styles from "./udp.module.css";
 
@@ -311,7 +313,7 @@ export function SendForm() {
         disabled={loading()}
         onClick={() => {
           send().catch((err: unknown) => {
-            console.error("UDP send failed:", err);
+            notify.error("Failed to send packet", errorMessage(err));
           });
         }}
       >

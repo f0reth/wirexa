@@ -6,6 +6,8 @@ import type {
   UdpListenSession,
   UdpReceivedMessage,
 } from "../../domain/udp/types";
+import { errorMessage } from "../../shared/error";
+import { notify } from "../ui/notifications";
 
 export interface UdpReceiveApi {
   startListen(port: number, encoding: string): Promise<UdpListenSession>;
@@ -35,7 +37,9 @@ export function createUdpReceiveState(api: UdpReceiveApi) {
       const session = await api.startListen(listenPort(), listenEncoding());
       setSessions((prev) => [...prev, session]);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      const msg = errorMessage(err);
+      setError(msg);
+      notify.error("Failed to start listening", msg);
     } finally {
       setLoading(false);
     }

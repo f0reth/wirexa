@@ -1,5 +1,6 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { Logger } from "../../application/logger";
+import { notify } from "../../application/ui/notifications";
 import type {
   HttpMethod,
   HttpRequest,
@@ -11,6 +12,7 @@ import type {
 } from "../../domain/http/types";
 import { DEFAULT_SETTINGS } from "../../domain/http/types";
 import { withLoading } from "../../shared/async-op";
+import { errorMessage } from "../../shared/error";
 
 export interface RequestApi {
   sendRequest(req: HttpRequest): Promise<HttpResponse>;
@@ -106,7 +108,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
 
   function loadRequest(req: HttpRequest, collectionId: string): void {
     saveCurrentRequest().catch((err) =>
-      console.error("Failed to save current request", err),
+      notify.error("Failed to save request", errorMessage(err)),
     );
     setMethod(req.method);
     setUrl(req.url);
@@ -122,7 +124,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
 
   function newRequest(): void {
     saveCurrentRequest().catch((err) =>
-      console.error("Failed to save current request", err),
+      notify.error("Failed to save request", errorMessage(err)),
     );
     setMethod("GET");
     setUrl("");
@@ -217,7 +219,9 @@ export function createAutoSaveEffect(
     const timer = setTimeout(() => {
       if (version !== saveVersion) return;
       state.saveCurrentRequest().catch((err) => {
-        console.error("Auto-save failed:", err);
+        notify.error("Failed to auto-save request", errorMessage(err), {
+          key: "http-autosave",
+        });
       });
     }, debounceMs);
 

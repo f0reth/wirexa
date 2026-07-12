@@ -8,6 +8,7 @@ import {
   Show,
 } from "solid-js";
 import { Portal } from "solid-js/web";
+import { notify } from "../../../application/ui/notifications";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { ScrollArea } from "../../../components/ui/scroll-area";
@@ -15,6 +16,7 @@ import {
   DEFAULT_SETTINGS,
   ROOT_COLLECTION_ID,
 } from "../../../domain/http/types";
+import { errorMessage } from "../../../shared/error";
 import {
   useHttpCollections,
   useHttpRequest,
@@ -75,7 +77,7 @@ export function CollectionTree() {
       });
       if (item?.id) setRenamingItemId(item.id);
     } catch (err) {
-      console.error("Failed to add root request:", err);
+      notify.error("Failed to add request", errorMessage(err));
     }
   };
 
@@ -87,7 +89,7 @@ export function CollectionTree() {
         setRenamingCollectionId(collection.id);
       }
     } catch (err) {
-      console.error("Failed to create collection:", err);
+      notify.error("Failed to create collection", errorMessage(err));
     }
   };
 
@@ -97,7 +99,7 @@ export function CollectionTree() {
     try {
       await collectionsCtx.renameCollection(id, trimmed);
     } catch (err) {
-      console.error("Failed to rename collection:", err);
+      notify.error("Failed to rename collection", errorMessage(err));
     }
   };
 
@@ -105,7 +107,7 @@ export function CollectionTree() {
     try {
       await collectionsCtx.deleteCollection(id);
     } catch (err) {
-      console.error("Failed to delete collection:", err);
+      notify.error("Failed to delete collection", errorMessage(err));
     }
   };
 
@@ -120,7 +122,7 @@ export function CollectionTree() {
         setRenamingItemId(item.id);
       }
     } catch (err) {
-      console.error("Failed to add folder:", err);
+      notify.error("Failed to add folder", errorMessage(err));
     }
   };
 
@@ -142,7 +144,7 @@ export function CollectionTree() {
         setRenamingItemId(item.id);
       }
     } catch (err) {
-      console.error("Failed to add request:", err);
+      notify.error("Failed to add request", errorMessage(err));
     }
   };
 
@@ -150,7 +152,7 @@ export function CollectionTree() {
     try {
       await collectionsCtx.deleteItem(collectionId, itemId);
     } catch (err) {
-      console.error("Failed to delete item:", err);
+      notify.error("Failed to delete item", errorMessage(err));
     }
   };
 
@@ -164,7 +166,7 @@ export function CollectionTree() {
     try {
       await collectionsCtx.renameItem(collectionId, itemId, trimmed);
     } catch (err) {
-      console.error("Failed to rename item:", err);
+      notify.error("Failed to rename item", errorMessage(err));
     }
   };
 
@@ -191,7 +193,7 @@ export function CollectionTree() {
         }
       }
     } catch (err) {
-      console.error("Failed to drop to sidebar:", err);
+      notify.error("Failed to move item", errorMessage(err));
     }
   };
 
@@ -211,7 +213,7 @@ export function CollectionTree() {
         position,
       );
     } catch (err) {
-      console.error("Failed to move item:", err);
+      notify.error("Failed to move item", errorMessage(err));
     }
   };
 

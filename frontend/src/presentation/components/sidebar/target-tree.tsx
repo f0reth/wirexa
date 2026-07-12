@@ -2,11 +2,13 @@ import { clsx } from "clsx";
 import { GripVertical, Plus, Settings, Trash2 } from "lucide-solid";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import { notify } from "../../../application/ui/notifications";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { Input } from "../../../components/ui/input";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import type { UdpTarget } from "../../../domain/udp/types";
+import { errorMessage } from "../../../shared/error";
 import { useUdpSend, useUdpTargets } from "../../providers/udp-provider";
 import styles from "./sidebar.module.css";
 
@@ -339,7 +341,7 @@ export function TargetTree() {
               message={`Are you sure you want to delete "${t().name}"? This action cannot be undone.`}
               onConfirm={() => {
                 deleteTarget(t().id).catch((err: unknown) => {
-                  console.error("Failed to delete target:", err);
+                  notify.error("Failed to delete target", errorMessage(err));
                 });
                 setDeletingTarget(null);
               }}

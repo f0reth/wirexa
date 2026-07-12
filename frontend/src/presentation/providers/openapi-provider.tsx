@@ -7,6 +7,7 @@ import {
   createFilesState,
   type FilesState,
 } from "../../application/openapi/files";
+import { notify } from "../../application/ui/notifications";
 import type { ActiveDoc } from "../../domain/openapi/types";
 import {
   openFilePicker,
@@ -15,6 +16,7 @@ import {
   writeFile,
 } from "../../infrastructure/openapi/file-io";
 import { parseSpec } from "../../infrastructure/openapi/parser";
+import { errorMessage } from "../../shared/error";
 
 interface OpenApiFilesContextValue extends FilesState {
   openFile: () => Promise<void>;
@@ -54,7 +56,7 @@ export function OpenApiProvider(props: { children: JSX.Element }) {
       filesState.setActiveDoc({ kind: "file", path, name: basename(path) });
       editorState.loadContent(content, parseSpec);
     } catch (err) {
-      console.error("Failed to open file:", err);
+      notify.error("Failed to open file", errorMessage(err));
     }
   }
 
@@ -69,7 +71,7 @@ export function OpenApiProvider(props: { children: JSX.Element }) {
       });
       editorState.loadContent(content, parseSpec);
     } catch (err) {
-      console.error("Failed to read file:", err);
+      notify.error("Failed to open file", errorMessage(err));
     }
   }
 
@@ -87,7 +89,7 @@ export function OpenApiProvider(props: { children: JSX.Element }) {
       await filesState.refreshRecents();
       filesState.setActiveDoc({ kind: "file", path, name: basename(path) });
     } catch (err) {
-      console.error("Failed to save file:", err);
+      notify.error("Failed to save file", errorMessage(err));
     }
   }
 

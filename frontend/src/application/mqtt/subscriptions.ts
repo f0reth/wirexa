@@ -1,7 +1,9 @@
 import { createSignal } from "solid-js";
 import type { Logger } from "../../application/logger";
+import { notify } from "../../application/ui/notifications";
 import { compilePattern } from "../../domain/mqtt/topic";
 import type { Subscription } from "../../domain/mqtt/types";
+import { errorMessage } from "../../shared/error";
 import type { ConnectionStateExt } from "./connections";
 
 export interface SubscriptionApi {
@@ -50,7 +52,7 @@ export function createSubscriptionsState(
           topic: t,
           error: String(err),
         });
-        console.error(`[MQTT] Subscribe failed for ${t}:`, err);
+        notify.error(`Failed to subscribe to ${t}`, errorMessage(err));
         return;
       }
       const isWildcard = t.includes("+") || t.includes("#");
@@ -88,7 +90,10 @@ export function createSubscriptionsState(
           topic: sub.topic,
           error: String(err),
         });
-        console.error(`[MQTT] Unsubscribe failed for ${sub.topic}:`, err);
+        notify.error(
+          `Failed to unsubscribe from ${sub.topic}`,
+          errorMessage(err),
+        );
       }
     }
     updateConnection(connId, (state) => ({
@@ -115,7 +120,7 @@ export function createSubscriptionsState(
       try {
         await api.subscribe(connId, "#", 0);
       } catch (err) {
-        console.error("[MQTT] Failed to subscribe to #:", err);
+        notify.error("Failed to start topic scan", errorMessage(err));
         updateConnection(connId, (state) => ({ ...state, isScanning: false }));
       }
     } else {

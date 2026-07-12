@@ -7,6 +7,7 @@ import {
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import type { Logger } from "../../application/logger";
+import { notify } from "../../application/ui/notifications";
 import type { ConnectionPersistence } from "../../domain/mqtt/ports";
 import { topicMatchesParts } from "../../domain/mqtt/topic";
 import type {
@@ -17,6 +18,7 @@ import type {
   Subscription,
   Tab,
 } from "../../domain/mqtt/types";
+import { errorMessage } from "../../shared/error";
 
 export type { ConnectionPersistence };
 
@@ -259,6 +261,7 @@ export function createConnectionsState(
       error: string;
     };
     console.error("[MQTT] Connection lost:", error);
+    notify.error("MQTT connection lost", error, { key: connectionId });
     updateConnection(connectionId, (state) => {
       if (state.type !== "online") return state;
       return { ...state, connected: false };
@@ -271,6 +274,7 @@ export function createConnectionsState(
       error: string;
     };
     console.error("[MQTT] Connection failed:", error);
+    notify.error("MQTT connection failed", error, { key: connectionId });
     updateConnection(connectionId, (state) => {
       if (state.type !== "online") return state;
       return { ...state, connected: false, isScanning: false };
@@ -369,7 +373,7 @@ export function createConnectionsState(
         broker: profile.broker,
         error: String(err),
       });
-      console.error("[MQTT] Connect failed:", err);
+      notify.error("Failed to connect", errorMessage(err));
     }
   };
 
@@ -384,7 +388,7 @@ export function createConnectionsState(
         connection_id: connId,
         error: String(err),
       });
-      console.error("[MQTT] Disconnect failed:", err);
+      notify.error("Failed to disconnect", errorMessage(err));
     }
     updateConnection(connId, (state) => {
       if (state.type !== "online") return state;
@@ -423,14 +427,14 @@ export function createConnectionsState(
         await api
           .subscribe(newConnId, sub.topic, sub.qos)
           .catch((err) =>
-            console.error(
-              `[MQTT] Failed to re-subscribe to ${sub.topic}:`,
-              err,
+            notify.error(
+              `Failed to re-subscribe to ${sub.topic}`,
+              errorMessage(err),
             ),
           );
       }
     } catch (err) {
-      console.error("[MQTT] Reconnect failed:", err);
+      notify.error("Failed to reconnect", errorMessage(err));
     }
   };
 
@@ -439,7 +443,9 @@ export function createConnectionsState(
     if (conn?.type === "online" && conn.connected) {
       api
         .disconnect(connectionId)
-        .catch((err) => console.error("[MQTT] Disconnect failed:", err));
+        .catch((err) =>
+          notify.error("Failed to disconnect", errorMessage(err)),
+        );
     }
     setConnections(
       produce((s) => {

@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import { notify } from "../../../application/ui/notifications";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import {
@@ -12,6 +13,7 @@ import {
   PAYLOAD_ENCODINGS,
   type PayloadEncoding,
 } from "../../../domain/udp/types";
+import { errorMessage } from "../../../shared/error";
 import { useUdpReceive } from "../../providers/udp-provider";
 import styles from "./udp.module.css";
 
@@ -84,7 +86,7 @@ export function ListenForm() {
                 size="sm"
                 onClick={() => {
                   stopListen(session.id).catch((err: unknown) => {
-                    console.error("UDP stop listen failed:", err);
+                    notify.error("Failed to stop listening", errorMessage(err));
                   });
                 }}
               >

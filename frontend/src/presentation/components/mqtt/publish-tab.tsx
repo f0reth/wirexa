@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 import { GripVertical, Plus, Send, Trash2 } from "lucide-solid";
 import { batch, createEffect, createSignal, For, on, Show } from "solid-js";
+import { notify } from "../../../application/ui/notifications";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -11,6 +12,7 @@ import {
 } from "../../../components/ui/resizable";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Textarea } from "../../../components/ui/textarea";
+import { errorMessage } from "../../../shared/error";
 import {
   useMqttConnection,
   useMqttPublish,
@@ -229,7 +231,7 @@ function PublishForm(props: {
         props.publishQos(),
       );
     } catch (err) {
-      console.error("[MQTT] Publish failed:", err);
+      notify.error("Failed to publish message", errorMessage(err));
     }
   };
 
