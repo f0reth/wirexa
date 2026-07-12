@@ -49,7 +49,7 @@ function makeWailsResponse(overrides: Record<string, unknown> = {}) {
   return {
     statusCode: 200,
     statusText: "OK",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": ["application/json"] },
     body: '{"ok":true}',
     contentType: "application/json",
     size: 11,
@@ -132,7 +132,7 @@ describe("sendRequest", () => {
     expect(result).toEqual({
       statusCode: 200,
       statusText: "OK",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": ["application/json"] },
       body: '{"ok":true}',
       contentType: "application/json",
       size: 11,
@@ -142,6 +142,24 @@ describe("sendRequest", () => {
       tempFilePath: "",
       bodyBase64: false,
     });
+  });
+
+  it("keeps every value of a multi-value response header", async () => {
+    vi.mocked(Handler.SendRequest).mockResolvedValue(
+      makeWailsResponse({
+        headers: {
+          "Content-Type": ["application/json"],
+          "Set-Cookie": ["a=1; Path=/", "b=2; Path=/"],
+        },
+      }) as never,
+    );
+
+    const result = await sendRequest(makeDomainRequest());
+
+    expect(result.headers["Set-Cookie"]).toEqual([
+      "a=1; Path=/",
+      "b=2; Path=/",
+    ]);
   });
 
   it("maps bodyTruncated and tempFilePath correctly when set", async () => {

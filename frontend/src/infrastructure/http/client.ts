@@ -106,6 +106,7 @@ function fromWailsHttpRequest(req: httpdomain.HttpRequest): HttpRequest {
 function fromWailsHttpResponse(res: httpdomain.HttpResponse): HttpResponse {
   return {
     ...res,
+    headers: res.headers ?? {},
     bodyTruncated: res.bodyTruncated ?? false,
     tempFilePath: res.tempFilePath ?? "",
     bodyBase64: res.bodyBase64 ?? false,

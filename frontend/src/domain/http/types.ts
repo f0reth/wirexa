@@ -72,7 +72,8 @@ export interface HttpRequest {
 export interface HttpResponse {
   statusCode: number;
   statusText: string;
-  headers: Record<string, string>;
+  // Set-Cookie など複数値ヘッダーを落とさないよう、キーごとに全値を保持する。
+  headers: Record<string, string[]>;
   body: string;
   contentType: string;
   size: number;

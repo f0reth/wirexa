@@ -233,7 +233,7 @@ export namespace httpdomain {
 	}
 	
 	export class HttpResponse {
-	    headers: Record<string, string>;
+	    headers: Record<string, Array<string>>;
 	    statusText: string;
 	    body: string;
 	    contentType: string;

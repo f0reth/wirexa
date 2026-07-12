@@ -283,15 +283,19 @@ export function ResponseViewer() {
                     <ScrollArea class={styles.responseScrollArea}>
                       <div class={styles.responseHeaders}>
                         <For each={Object.entries(resp().headers)}>
-                          {([key, value]) => (
-                            <div class={styles.responseHeaderRow}>
-                              <span class={styles.responseHeaderKey}>
-                                {key}
-                              </span>
-                              <span class={styles.responseHeaderValue}>
-                                {value}
-                              </span>
-                            </div>
+                          {([key, values]) => (
+                            <For each={values}>
+                              {(value) => (
+                                <div class={styles.responseHeaderRow}>
+                                  <span class={styles.responseHeaderKey}>
+                                    {key}
+                                  </span>
+                                  <span class={styles.responseHeaderValue}>
+                                    {value}
+                                  </span>
+                                </div>
+                              )}
+                            </For>
                           )}
                         </For>
                       </div>

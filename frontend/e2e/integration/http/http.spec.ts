@@ -24,6 +24,12 @@ test.beforeAll(async () => {
         "X-Custom-Header": "test-value",
       });
       res.end(JSON.stringify({ message: "hello", status: "ok" }));
+    } else if (req.url === "/multi-header") {
+      res.writeHead(200, {
+        "Content-Type": "text/plain",
+        "Set-Cookie": ["a=1; Path=/", "b=2; Path=/"],
+      });
+      res.end("ok");
     } else {
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not found");
@@ -120,6 +126,26 @@ test("response viewer headers tab shows response headers", async ({ page }) => {
   // レスポンスヘッダーが表示される
   await expect(page.getByText("content-type")).toBeVisible({ timeout: 5000 });
   await expect(page.getByText("x-custom-header")).toBeVisible({ timeout: 5000 });
+});
+
+test("response viewer headers tab shows every value of a multi-value header", async ({
+  page,
+}) => {
+  await getUrlInput(page).fill(
+    `http://127.0.0.1:${testServerPort}/multi-header`,
+  );
+  await getSendButton(page).click();
+
+  await expect(page.getByText("200", { exact: true })).toBeVisible({
+    timeout: 10000,
+  });
+
+  await page.getByRole("tab", { name: "Headers" }).nth(1).click();
+
+  // Set-Cookie は値ごとに 1 行ずつ描画される
+  await expect(page.getByText("set-cookie")).toHaveCount(2, { timeout: 5000 });
+  await expect(page.getByText("a=1; Path=/")).toBeVisible();
+  await expect(page.getByText("b=2; Path=/")).toBeVisible();
 });
 
 // ── 観点I-6: コレクションへの保存・読み込み ──────────────────────────────────
