@@ -17,17 +17,21 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:     "Wirexa",
-		Width:     1280,
-		Height:    800,
-		MinWidth:  800,
-		MinHeight: 600,
+		Width:     defaultWindowWidth,
+		Height:    defaultWindowHeight,
+		MinWidth:  minWindowWidth,
+		MinHeight: minWindowHeight,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
-		OnBeforeClose:    app.beforeClose,
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId:               "wirexa-single-instance-lock",
+			OnSecondInstanceLaunch: app.onSecondInstanceLaunch,
+		},
+		OnStartup:     app.startup,
+		OnShutdown:    app.shutdown,
+		OnBeforeClose: app.beforeClose,
 		Bind: []any{
 			app,
 			app.mqttHandler,
