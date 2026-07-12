@@ -238,9 +238,7 @@ describe("getCollections", () => {
       makeWailsCollection() as never,
     ]);
     const result = await getCollections();
-    expect(result).toEqual([
-      { id: "col-1", name: "My Collection", items: [] },
-    ]);
+    expect(result).toEqual([{ id: "col-1", name: "My Collection", items: [] }]);
   });
 
   it("maps proxyMode 'none' correctly via fromWailsRequestSettings", async () => {
@@ -749,7 +747,6 @@ describe("getRootItems", () => {
     await expect(getRootItems()).rejects.toThrow("fetch failed");
   });
 });
-
 
 describe("moveItem", () => {
   it("calls MoveItem with all five arguments", async () => {
