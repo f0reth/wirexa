@@ -51,6 +51,32 @@ func (c *NetClient) ConsumeTempFilePath(requestID string) string {
 	return ""
 }
 
+// Cleanup は tempFiles に残る打ち切りレスポンスの一時ファイルを全削除する。
+// フロントへ未受け渡し (ConsumeTempFilePath されていない) のまま終了したものを回収する。
+func (c *NetClient) Cleanup() {
+	c.tempFiles.Range(func(k, v any) bool {
+		if s, ok := v.(string); ok {
+			_ = os.Remove(s) //nolint:errcheck // best-effort cleanup
+		}
+		c.tempFiles.Delete(k)
+		return true
+	})
+}
+
+// SweepStaleTempFiles は前回セッションで残った wirexa-response-* を削除する。
+// 単一インスタンスロックにより同時起動が無いため、全一致を安全に削除できる。
+// フロントへ渡されたまま保存されなかったファイルは tempFiles で追跡できないため、
+// 次回起動時のこの掃除が唯一の回収経路になる。
+func SweepStaleTempFiles() {
+	matches, err := filepath.Glob(filepath.Join(os.TempDir(), "wirexa-response-*"))
+	if err != nil {
+		return
+	}
+	for _, p := range matches {
+		_ = os.Remove(p) //nolint:errcheck // best-effort cleanup
+	}
+}
+
 // Do は HttpRequest を実行して HttpResponse を返す。
 func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.HttpResponse, error) {
 	parsedURL, err := url.Parse(req.URL)
@@ -173,6 +199,12 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		}
 		_ = f.Close() //nolint:errcheck // best-effort cleanup
 		bodyTruncated = true
+		// 同一 req.ID の再送で旧パスを上書きするとオーファン化するため、先に回収削除する。
+		if old, ok := c.tempFiles.LoadAndDelete(req.ID); ok {
+			if s, ok := old.(string); ok {
+				_ = os.Remove(s) //nolint:errcheck // best-effort cleanup
+			}
+		}
 		c.tempFiles.Store(req.ID, tmpName)
 	}
 
