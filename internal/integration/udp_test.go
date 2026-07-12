@@ -578,7 +578,8 @@ func TestUDP_Concurrent_StartStopListen(t *testing.T) {
 	}
 }
 
-// TestUDP_CorruptStorage はストレージの JSON ファイルが不正な状態で NewTargetService がエラーを返すことを確認する。
+// TestUDP_CorruptStorage はストレージの JSON ファイルが不正でも起動を継続し、
+// 破損ファイルが退避されることを確認する。
 func TestUDP_CorruptStorage(t *testing.T) {
 	dir := t.TempDir()
 
@@ -588,13 +589,20 @@ func TestUDP_CorruptStorage(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	// NewTargetService の Load() が失敗することを確認する
+	// 破損ファイルは退避・スキップされ、NewTargetService は成功する
 	repo, err := infra.NewJSONStore(dir, func(tgt *udpdomain.UdpTarget) string { return tgt.ID })
 	if err != nil {
 		t.Fatalf("NewJSONStore: %v", err)
 	}
-	_, err = udpapp.NewTargetService(repo)
-	if err == nil {
-		t.Error("expected error for corrupt storage, got nil")
+	if _, err = udpapp.NewTargetService(repo); err != nil {
+		t.Fatalf("NewTargetService should tolerate corrupt storage: %v", err)
+	}
+
+	// 破損ファイルは .corrupt へ退避されている
+	if _, statErr := os.Stat(corruptFile); !os.IsNotExist(statErr) {
+		t.Error("corrupt.json should have been quarantined")
+	}
+	if _, statErr := os.Stat(corruptFile + ".corrupt"); statErr != nil {
+		t.Errorf("corrupt.json.corrupt should exist: %v", statErr)
 	}
 }

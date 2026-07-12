@@ -174,9 +174,58 @@ func TestJSONStore_Load_CorruptedJSON(t *testing.T) {
 		t.Fatalf("write bad.json: %v", err)
 	}
 
-	_, err := store.Load()
-	if err == nil {
-		t.Error("expected error for corrupted JSON, got nil")
+	// 破損ファイルはエラーにせず退避してスキップし、起動を継続する
+	items, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load should not fail on corrupt file: %v", err)
+	}
+	if len(items) != 0 {
+		t.Errorf("expected 0 items (corrupt skipped), got %d", len(items))
+	}
+
+	// 元の bad.json は退避されている
+	if _, statErr := os.Stat(filepath.Join(dir, "bad.json")); !os.IsNotExist(statErr) {
+		t.Error("bad.json should have been renamed away")
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "bad.json.corrupt")); statErr != nil {
+		t.Errorf("bad.json.corrupt should exist: %v", statErr)
+	}
+}
+
+func TestJSONStore_Load_SkipsCorruptKeepsValid(t *testing.T) {
+	store := newTestStore(t)
+	dir := store.dir
+
+	// 有効なアイテムを1つ保存
+	valid := testItem{ID: "good", Name: "Valid"}
+	if err := store.Save(&valid); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	// 破損ファイルを混在させる
+	if err := os.WriteFile(filepath.Join(dir, "broken.json"), []byte("{{{"), 0o600); err != nil {
+		t.Fatalf("write broken.json: %v", err)
+	}
+
+	items, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 valid item, got %d", len(items))
+	}
+	if items[0].ID != "good" {
+		t.Errorf("loaded item ID = %q, want good", items[0].ID)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "broken.json.corrupt")); statErr != nil {
+		t.Errorf("broken.json.corrupt should exist: %v", statErr)
+	}
+	// 退避後の再ロードは .corrupt を無視して同じ結果になる
+	items2, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load (second): %v", err)
+	}
+	if len(items2) != 1 {
+		t.Errorf("expected 1 item on reload, got %d", len(items2))
 	}
 }
 

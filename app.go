@@ -3,9 +3,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/f0reth/Wirexa/internal/adapters"
 	httpapp "github.com/f0reth/Wirexa/internal/application/http"
@@ -35,6 +38,7 @@ type App struct {
 	udpHandler     *adapters.UdpHandler
 	logHandler     *adapters.LogHandler
 	openAPIHandler *adapters.OpenAPIHandler
+	ready          bool
 }
 
 func NewApp() *App {
@@ -48,14 +52,32 @@ func NewApp() *App {
 }
 
 func (a *App) startup(ctx context.Context) {
+	if err := a.initialize(ctx); err != nil {
+		// GUI アプリではコンソールが無いため、致命的エラーはダイアログで提示してから終了する。
+		log.Printf("startup failed: %v", err) // stderr へのベストエフォート
+		_, _ = runtime.MessageDialog(ctx, runtime.MessageDialogOptions{
+			Type:    runtime.ErrorDialog,
+			Title:   "Wirexa - 起動に失敗しました",
+			Message: fmt.Sprintf("アプリケーションを起動できませんでした。\n\n%v", err),
+		})
+		runtime.Quit(ctx)
+		return
+	}
+	a.ready = true
+}
+
+// initialize は各サービスの構築を行い、失敗時はエラーを返す。
+// 破損した JSON ファイルは JSONStore.Load 側で退避・スキップされるため、
+// ここでの失敗は設定ディレクトリが作れない等の継続不能なケースに限られる。
+func (a *App) initialize(ctx context.Context) error {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		log.Fatalf("startup: failed to get user config dir: %v", err)
+		return fmt.Errorf("設定ディレクトリの取得に失敗しました: %w", err)
 	}
 
 	logger, err := infra.NewFileLogger(filepath.Join(configDir, wirexaConfigDir, "logs"))
 	if err != nil {
-		log.Fatalf("startup: failed to create logger: %v", err)
+		return fmt.Errorf("ロガーの初期化に失敗しました: %w", err)
 	}
 	adapters.SetupLogHandler(a.logHandler, logger)
 
@@ -68,11 +90,12 @@ func (a *App) startup(ctx context.Context) {
 		func(p *mqttdomain.BrokerProfile) string { return p.ID },
 	)
 	if err != nil {
-		log.Fatalf("startup: failed to create profile repository: %v", err)
+		return fmt.Errorf("MQTT プロファイルの保存先を作成できませんでした: %w", err)
 	}
+	profileRepo.SetLogger(logger)
 	profileSvc, err := mqttapp.NewProfileService(profileRepo)
 	if err != nil {
-		log.Fatalf("startup: failed to create profile service: %v", err)
+		return fmt.Errorf("MQTT プロファイルの読み込みに失敗しました: %w", err)
 	}
 	adapters.SetupMqttHandler(a.mqttHandler, mqttSvc, profileSvc)
 
@@ -81,12 +104,13 @@ func (a *App) startup(ctx context.Context) {
 		func(c *httpdomain.Collection) string { return c.ID },
 	)
 	if err != nil {
-		log.Fatalf("startup: failed to create collection repository: %v", err)
+		return fmt.Errorf("コレクションの保存先を作成できませんでした: %w", err)
 	}
+	collRepo.SetLogger(logger)
 	layoutRepo := httpinfra.NewSidebarLayoutRepository(filepath.Join(configDir, wirexaConfigDir, "sidebar_layout.json"))
 	collSvc, err := httpapp.NewCollectionService(collRepo, layoutRepo)
 	if err != nil {
-		log.Fatalf("startup: failed to initialize collections: %v", err)
+		return fmt.Errorf("コレクションの初期化に失敗しました: %w", err)
 	}
 	netClient := httpinfra.NewNetClient()
 	reqSvc := httpapp.NewHTTPRequestService(netClient, logger)
@@ -97,11 +121,12 @@ func (a *App) startup(ctx context.Context) {
 		func(t *udpdomain.UdpTarget) string { return t.ID },
 	)
 	if err != nil {
-		log.Fatalf("startup: failed to create target repository: %v", err)
+		return fmt.Errorf("UDP ターゲットの保存先を作成できませんでした: %w", err)
 	}
+	targetRepo.SetLogger(logger)
 	targetSvc, err := udpapp.NewTargetService(targetRepo)
 	if err != nil {
-		log.Fatalf("startup: failed to create target service: %v", err)
+		return fmt.Errorf("UDP ターゲットの読み込みに失敗しました: %w", err)
 	}
 	udpSocket := udpinfra.NewNetSocket()
 	sendSvc := udpapp.NewUdpSendService(udpSocket, logger)
@@ -111,9 +136,15 @@ func (a *App) startup(ctx context.Context) {
 
 	adapters.SetupOpenAPIHandler(ctx, a.openAPIHandler,
 		filepath.Join(configDir, wirexaConfigDir, "openapi-recents.json"))
+
+	return nil
 }
 
 func (a *App) shutdown(_ context.Context) {
+	// 初期化に失敗した場合はハンドラーのサービスが未設定 (nil) なので何もしない。
+	if !a.ready {
+		return
+	}
 	a.mqttHandler.Shutdown()
 	a.udpHandler.Shutdown()
 }

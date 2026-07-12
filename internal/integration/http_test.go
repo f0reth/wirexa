@@ -788,7 +788,8 @@ func TestHTTP_AddRequest_AfterDeleteCollection(t *testing.T) {
 	}
 }
 
-// TestHTTP_CorruptStorage はストレージの JSON ファイルが不正な状態で newHTTPHandlerWithDir を呼ぶとエラーになることを確認する。
+// TestHTTP_CorruptStorage はストレージの JSON ファイルが不正でも起動を継続し、
+// 破損ファイルが退避されることを確認する。
 func TestHTTP_CorruptStorage(t *testing.T) {
 	dir := t.TempDir()
 
@@ -798,14 +799,21 @@ func TestHTTP_CorruptStorage(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	// NewCollectionService の Load() が失敗することを確認する（DI を手動で組み立てる）
+	// 破損ファイルは退避・スキップされ、NewCollectionService は成功する（DI を手動で組み立てる）
 	repo, err := infra.NewJSONStore(dir, func(c *httpdomain.Collection) string { return c.ID })
 	if err != nil {
 		t.Fatalf("NewJSONStore: %v", err)
 	}
 	layoutRepo := httpinfra.NewSidebarLayoutRepository(filepath.Join(dir, "layout.json"))
-	_, err = httpapp.NewCollectionService(repo, layoutRepo)
-	if err == nil {
-		t.Error("expected error for corrupt storage, got nil")
+	if _, err = httpapp.NewCollectionService(repo, layoutRepo); err != nil {
+		t.Fatalf("NewCollectionService should tolerate corrupt storage: %v", err)
+	}
+
+	// 破損ファイルは .corrupt へ退避されている
+	if _, statErr := os.Stat(corruptFile); !os.IsNotExist(statErr) {
+		t.Error("corrupt.json should have been quarantined")
+	}
+	if _, statErr := os.Stat(corruptFile + ".corrupt"); statErr != nil {
+		t.Errorf("corrupt.json.corrupt should exist: %v", statErr)
 	}
 }
