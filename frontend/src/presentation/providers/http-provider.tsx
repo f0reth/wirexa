@@ -82,7 +82,6 @@ export interface CollectionsContextValue {
     name: string,
   ) => Promise<void>;
   deleteItem: (collectionId: string, itemId: string) => Promise<void>;
-  moveCollection: (collectionId: string, position: number) => Promise<void>;
   moveItem: (
     sourceCollectionId: string,
     itemId: string,

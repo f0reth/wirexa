@@ -201,7 +201,6 @@ export namespace httpdomain {
 	    id: string;
 	    name: string;
 	    items: TreeItem[];
-	    order: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Collection(source);
@@ -212,7 +211,6 @@ export namespace httpdomain {
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.items = this.convertValues(source["items"], TreeItem);
-	        this.order = source["order"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

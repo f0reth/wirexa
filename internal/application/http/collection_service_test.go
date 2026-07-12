@@ -492,29 +492,6 @@ func TestNewCollectionService_RepoLoadError(t *testing.T) {
 	}
 }
 
-func TestNewCollectionService_OrderInitialization(t *testing.T) {
-	// 全コレクションの Order がゼロの場合、名前順で振り直される。
-	cols := map[string]*domain.Collection{
-		"c1": {ID: "c1", Name: testColNameZebra, Items: []*domain.TreeItem{}, Order: 0},
-		"c2": {ID: "c2", Name: testColNameApple, Items: []*domain.TreeItem{}, Order: 0},
-		"c3": {ID: "c3", Name: testColNameMango, Items: []*domain.TreeItem{}, Order: 0},
-	}
-	svc, err := NewCollectionService(&inMemoryRepo{collections: cols}, &inMemoryLayoutRepo{})
-	if err != nil {
-		t.Fatalf("NewCollectionService: %v", err)
-	}
-	result := svc.GetCollections()
-	if len(result) != 3 {
-		t.Fatalf("expected 3, got %d", len(result))
-	}
-	if result[0].Name != testColNameApple || result[1].Name != testColNameMango || result[2].Name != testColNameZebra {
-		t.Errorf("unexpected order: %v %v %v", result[0].Name, result[1].Name, result[2].Name)
-	}
-	if result[0].Order != 0 || result[1].Order != 1 || result[2].Order != 2 {
-		t.Errorf("unexpected Order values: %d %d %d", result[0].Order, result[1].Order, result[2].Order)
-	}
-}
-
 // --- GetRootItems ---
 
 func TestCollectionService_GetRootItems_Empty(t *testing.T) {
@@ -552,47 +529,6 @@ func TestCollectionService_CreateCollection_RepoError(t *testing.T) {
 	_, err = svc.CreateCollection("ShouldFail")
 	if err == nil {
 		t.Error("expected error from repo.Save, got nil")
-	}
-}
-
-// --- MoveCollection ---
-
-func TestCollectionService_MoveCollection_NotFound(t *testing.T) {
-	svc := newSvc(t)
-	if err := svc.MoveCollection("nonexistent", 0); err == nil {
-		t.Error("expected error, got nil")
-	}
-}
-
-func TestCollectionService_MoveCollection_ToPosition(t *testing.T) {
-	svc := newSvc(t)
-	mustCreate(t, svc, "Alpha")
-	b := mustCreate(t, svc, "Beta")
-	mustCreate(t, svc, "Gamma")
-
-	// 初期順序は Alpha(0), Beta(1), Gamma(2)。Beta を 0 に移動。
-	if err := svc.MoveCollection(b.ID, 0); err != nil {
-		t.Fatalf("MoveCollection: %v", err)
-	}
-	cols := svc.GetCollections()
-	if cols[0].Name != "Beta" {
-		t.Errorf("expected Beta first, got %v", cols[0].Name)
-	}
-}
-
-func TestCollectionService_MoveCollection_ToEnd(t *testing.T) {
-	svc := newSvc(t)
-	a := mustCreate(t, svc, "Alpha")
-	mustCreate(t, svc, "Beta")
-	mustCreate(t, svc, "Gamma")
-
-	// position が範囲外 → 末尾へ。
-	if err := svc.MoveCollection(a.ID, 99); err != nil {
-		t.Fatalf("MoveCollection: %v", err)
-	}
-	cols := svc.GetCollections()
-	if cols[len(cols)-1].Name != "Alpha" {
-		t.Errorf("expected Alpha last, got %v", cols[len(cols)-1].Name)
 	}
 }
 
@@ -717,11 +653,11 @@ func TestCollectionService_GetSidebarLayout_ExistingLayout(t *testing.T) {
 }
 
 func TestCollectionService_GetSidebarLayout_FirstCall(t *testing.T) {
-	// Order が付いた複数コレクションを持つ状態で初回 GetSidebarLayout を呼ぶと
-	// Order 順にコレクションがレイアウトに並ぶことを確認する。
+	// 複数コレクションを持つ状態で初回 GetSidebarLayout を呼ぶと
+	// 名前順にコレクションがレイアウトに並ぶことを確認する。
 	cols := map[string]*domain.Collection{
-		"c1": {ID: "c1", Name: "B", Items: []*domain.TreeItem{}, Order: 1},
-		"c2": {ID: "c2", Name: "A", Items: []*domain.TreeItem{}, Order: 0},
+		"c1": {ID: "c1", Name: "B", Items: []*domain.TreeItem{}},
+		"c2": {ID: "c2", Name: "A", Items: []*domain.TreeItem{}},
 	}
 	svc, err := NewCollectionService(&inMemoryRepo{collections: cols}, &inMemoryLayoutRepo{})
 	if err != nil {
@@ -742,7 +678,7 @@ func TestCollectionService_GetSidebarLayout_FirstCall(t *testing.T) {
 		t.Fatalf("expected at least 2 collection entries, got %d", len(collectionEntries))
 	}
 	if collectionEntries[0].ID != "c2" || collectionEntries[1].ID != "c1" {
-		t.Errorf("expected c2(Order=0) before c1(Order=1), got %v", collectionEntries)
+		t.Errorf("expected c2(Name=A) before c1(Name=B), got %v", collectionEntries)
 	}
 }
 
@@ -881,35 +817,6 @@ func TestCollectionService_DeleteItem_FromRootCollection_UpdatesLayout(t *testin
 		if e.Kind == sidebarKindItem && e.ID == "r1" {
 			t.Error("r1 should be removed from layout after DeleteItem")
 		}
-	}
-}
-
-// --- MoveCollection: RootCollectionID ---
-
-func TestCollectionService_MoveCollection_RootCollectionID_ReturnsValidationError(t *testing.T) {
-	svc := newSvc(t)
-	err := svc.MoveCollection(domain.RootCollectionID, 0)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	var ve *cmn.ValidationError
-	if !errors.As(err, &ve) {
-		t.Errorf("expected ValidationError, got %T", err)
-	}
-}
-
-func TestCollectionService_MoveCollection_NegativePosition_AppendsToEnd(t *testing.T) {
-	svc := newSvc(t)
-	a := mustCreate(t, svc, "Alpha")
-	mustCreate(t, svc, "Beta")
-	mustCreate(t, svc, "Gamma")
-
-	if err := svc.MoveCollection(a.ID, -1); err != nil {
-		t.Fatalf("MoveCollection: %v", err)
-	}
-	cols := svc.GetCollections()
-	if cols[len(cols)-1].Name != "Alpha" {
-		t.Errorf("expected Alpha last, got %v", cols[len(cols)-1].Name)
 	}
 }
 

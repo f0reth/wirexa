@@ -357,36 +357,6 @@ func TestHTTP_GetRootItems(t *testing.T) {
 	}
 }
 
-// TestHTTP_MoveCollection は 2 コレクション作成後に MoveCollection で Order が変わることを確認する。
-func TestHTTP_MoveCollection(t *testing.T) {
-	h := newHTTPHandler(t)
-
-	col1, _ := h.CreateCollection("Alpha")
-	col2, _ := h.CreateCollection("Beta")
-
-	// 名前順: [Alpha, Beta] が初期順序
-	cols := h.GetCollections()
-	if len(cols) != 2 {
-		t.Fatalf("expected 2 collections, got %d", len(cols))
-	}
-
-	// Beta を position 0 に移動 → [Beta, Alpha]
-	if err := h.MoveCollection(col2.ID, 0); err != nil {
-		t.Fatalf("MoveCollection: %v", err)
-	}
-
-	cols = h.GetCollections()
-	if len(cols) != 2 {
-		t.Fatalf("expected 2 collections after move, got %d", len(cols))
-	}
-	if cols[0].ID != col2.ID {
-		t.Errorf("first collection = %q, want col2 (%q)", cols[0].ID, col2.ID)
-	}
-	if cols[1].ID != col1.ID {
-		t.Errorf("second collection = %q, want col1 (%q)", cols[1].ID, col1.ID)
-	}
-}
-
 // TestHTTP_MoveItem は AddRequest → MoveItem（コレクション間移動）が正しく動くことを確認する。
 func TestHTTP_MoveItem(t *testing.T) {
 	h := newHTTPHandler(t)

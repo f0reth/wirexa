@@ -56,30 +56,6 @@ func NewCollectionService(repo domain.CollectionRepository, layoutRepo domain.Si
 		svc.cache[root.ID] = root
 	}
 
-	// 既存データに Order がない場合（ゼロ値が集中する）は名前順で振り直す。
-	nonRoot := make([]*domain.Collection, 0)
-	for _, c := range svc.cache {
-		if c.ID != domain.RootCollectionID {
-			nonRoot = append(nonRoot, c)
-		}
-	}
-	allZero := true
-	for _, c := range nonRoot {
-		if c.Order != 0 {
-			allZero = false
-			break
-		}
-	}
-	if allZero && len(nonRoot) > 0 {
-		sort.Slice(nonRoot, func(i, j int) bool { return nonRoot[i].Name < nonRoot[j].Name })
-		for i, c := range nonRoot {
-			c.Order = i
-			if err := repo.Save(c); err != nil {
-				return nil, fmt.Errorf("failed to initialize collection order: %w", err)
-			}
-		}
-	}
-
 	if _, err := svc.GetSidebarLayout(); err != nil {
 		return nil, fmt.Errorf("failed to initialize sidebar layout: %w", err)
 	}
@@ -87,7 +63,7 @@ func NewCollectionService(repo domain.CollectionRepository, layoutRepo domain.Si
 	return svc, nil
 }
 
-// GetCollections は全コレクションを Order 順で返す（__root__ を除く）。
+// GetCollections は全コレクションを名前順で返す（__root__ を除く）。
 func (s *CollectionService) GetCollections() []domain.Collection {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -99,9 +75,6 @@ func (s *CollectionService) GetCollections() []domain.Collection {
 		result = append(result, *c)
 	}
 	sort.Slice(result, func(i, j int) bool {
-		if result[i].Order != result[j].Order {
-			return result[i].Order < result[j].Order
-		}
 		return result[i].Name < result[j].Name
 	})
 	return result
@@ -124,7 +97,6 @@ func (s *CollectionService) CreateCollection(name string) (domain.Collection, er
 		ID:    uuid.New().String(),
 		Name:  name,
 		Items: []*domain.TreeItem{},
-		Order: 0,
 	}
 	if err := s.repo.Save(&c); err != nil {
 		return domain.Collection{}, fmt.Errorf("failed to save collection: %w", err)
@@ -173,63 +145,6 @@ func (s *CollectionService) RenameCollection(id, name string) error {
 	c.Name = name
 	if err := s.repo.Save(c); err != nil {
 		return fmt.Errorf("failed to save collection: %w", err)
-	}
-	return nil
-}
-
-// MoveCollection はコレクションを指定の位置に並び替える。
-// position は 0 始まりの挿入先インデックス。
-func (s *CollectionService) MoveCollection(collectionID string, position int) error {
-	if collectionID == domain.RootCollectionID {
-		return &cmn.ValidationError{Field: "collectionID", Message: "cannot move root collection"}
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, ok := s.cache[collectionID]; !ok {
-		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: collectionID}
-	}
-
-	// Order 順で並べたスライスを作る。
-	cols := make([]*domain.Collection, 0, len(s.cache))
-	for _, c := range s.cache {
-		if c.ID != domain.RootCollectionID {
-			cols = append(cols, c)
-		}
-	}
-	sort.Slice(cols, func(i, j int) bool {
-		if cols[i].Order != cols[j].Order {
-			return cols[i].Order < cols[j].Order
-		}
-		return cols[i].Name < cols[j].Name
-	})
-
-	// 対象を現在位置から削除。
-	srcIdx := -1
-	for i, c := range cols {
-		if c.ID == collectionID {
-			srcIdx = i
-			break
-		}
-	}
-	item := cols[srcIdx]
-	cols = append(cols[:srcIdx], cols[srcIdx+1:]...)
-
-	// 指定位置に挿入。
-	if position < 0 || position >= len(cols) {
-		cols = append(cols, item)
-	} else {
-		cols = append(cols, nil)
-		copy(cols[position+1:], cols[position:])
-		cols[position] = item
-	}
-
-	// Order を振り直して保存。
-	for i, c := range cols {
-		c.Order = i
-		if err := s.repo.Save(c); err != nil {
-			return fmt.Errorf("failed to save collection order: %w", err)
-		}
 	}
 	return nil
 }
@@ -420,7 +335,7 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 }
 
 // GetSidebarLayout はサイドバーレイアウトを返す。
-// ファイルが存在しない場合は既存コレクションを Order 順で並べた初期値を生成して保存する。
+// ファイルが存在しない場合は既存コレクションを名前順で並べた初期値を生成して保存する。
 // 初期値計算（mu.RLock）はレイアウトロックを保持していない状態で行われるため、
 // 2つのロックがネストせずデッドロックの危険がない。
 func (s *CollectionService) GetSidebarLayout() ([]domain.SidebarEntry, error) {
@@ -440,9 +355,6 @@ func (s *CollectionService) computeInitialLayout() []domain.SidebarEntry {
 	s.mu.RUnlock()
 
 	sort.Slice(cols, func(i, j int) bool {
-		if cols[i].Order != cols[j].Order {
-			return cols[i].Order < cols[j].Order
-		}
 		return cols[i].Name < cols[j].Name
 	})
 

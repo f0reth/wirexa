@@ -8,7 +8,6 @@ import {
   GetCollections,
   GetRootItems,
   GetSidebarLayout,
-  MoveCollection,
   MoveItem,
   MoveItemToSidebar,
   MoveSidebarEntry,
@@ -131,7 +130,6 @@ function fromWailsCollection(col: httpdomain.Collection): Collection {
     id: col.id,
     name: col.name,
     items: col.items.map(fromWailsTreeItem),
-    order: col.order ?? 0,
   };
 }
 
@@ -214,13 +212,6 @@ export async function deleteItem(
   itemId: string,
 ): Promise<void> {
   return DeleteItem(collectionId, itemId);
-}
-
-export async function moveCollection(
-  collectionId: string,
-  position: number,
-): Promise<void> {
-  return MoveCollection(collectionId, position);
 }
 
 export async function moveItem(

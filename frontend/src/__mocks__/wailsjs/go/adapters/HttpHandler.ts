@@ -25,9 +25,6 @@ export function GetRootItems(): Promise<unknown[]> {
 export function GetSidebarLayout(): Promise<unknown[]> {
   return Promise.resolve([]);
 }
-export function MoveCollection(_arg1: unknown, _arg2: unknown): Promise<void> {
-  return Promise.resolve();
-}
 export function MoveItem(_arg1: unknown, _arg2: unknown, _arg3: unknown, _arg4: unknown, _arg5: unknown): Promise<void> {
   return Promise.resolve();
 }

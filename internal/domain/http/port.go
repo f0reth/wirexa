@@ -35,7 +35,6 @@ type CollectionUseCase interface {
 	CreateCollection(name string) (Collection, error)
 	DeleteCollection(id string) error
 	RenameCollection(id, name string) error
-	MoveCollection(collectionID string, position int) error
 	GetSidebarLayout() ([]SidebarEntry, error)
 	MoveSidebarEntry(kind, id string, position int) error
 	MoveItemToSidebar(sourceCollectionID, itemID string, sidebarPosition int) error

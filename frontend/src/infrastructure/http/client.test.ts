@@ -10,7 +10,6 @@ vi.mock("../../../wailsjs/go/adapters/HttpHandler", () => ({
   GetCollections: vi.fn(),
   GetRootItems: vi.fn(),
   GetSidebarLayout: vi.fn(),
-  MoveCollection: vi.fn(),
   MoveItem: vi.fn(),
   MoveItemToSidebar: vi.fn(),
   MoveSidebarEntry: vi.fn(),
@@ -33,7 +32,6 @@ import {
   getCollections,
   getRootItems,
   getSidebarLayout,
-  moveCollection,
   moveItem,
   moveItemToSidebar,
   moveSidebarEntry,
@@ -241,16 +239,8 @@ describe("getCollections", () => {
     ]);
     const result = await getCollections();
     expect(result).toEqual([
-      { id: "col-1", name: "My Collection", items: [], order: 0 },
+      { id: "col-1", name: "My Collection", items: [] },
     ]);
-  });
-
-  it("preserves non-zero collection order", async () => {
-    vi.mocked(Handler.GetCollections).mockResolvedValue([
-      makeWailsCollection({ order: 5 }) as never,
-    ]);
-    const result = await getCollections();
-    expect(result[0].order).toBe(5);
   });
 
   it("maps proxyMode 'none' correctly via fromWailsRequestSettings", async () => {
@@ -539,7 +529,6 @@ describe("createCollection", () => {
       id: "col-99",
       name: "New Col",
       items: [],
-      order: 0,
     });
   });
 
@@ -761,20 +750,6 @@ describe("getRootItems", () => {
   });
 });
 
-describe("moveCollection", () => {
-  it("calls MoveCollection with the correct id and position", async () => {
-    vi.mocked(Handler.MoveCollection).mockResolvedValue(undefined);
-    await moveCollection("col-1", 2);
-    expect(Handler.MoveCollection).toHaveBeenCalledWith("col-1", 2);
-  });
-
-  it("propagates rejection from the backend", async () => {
-    vi.mocked(Handler.MoveCollection).mockRejectedValue(
-      new Error("move failed"),
-    );
-    await expect(moveCollection("col-1", 0)).rejects.toThrow("move failed");
-  });
-});
 
 describe("moveItem", () => {
   it("calls MoveItem with all five arguments", async () => {

@@ -40,7 +40,7 @@ function wailsMockPlugin(): Plugin {
                   AddFolder: _noopNull, AddRequest: _noopNull, CancelRequest: _noopVoid,
                   CreateCollection: _noopNull, DeleteCollection: _noopVoid, DeleteItem: _noopVoid,
                   GetCollections: _noopArr, GetRootItems: _noopArr, GetSidebarLayout: _noopArr,
-                  MoveCollection: _noopVoid, MoveItem: _noopVoid, MoveItemToSidebar: _noopVoid,
+                  MoveItem: _noopVoid, MoveItemToSidebar: _noopVoid,
                   MoveSidebarEntry: _noopVoid, OpenFilePicker: () => Promise.resolve(""),
                   RenameCollection: _noopVoid, RenameItem: _noopVoid,
                   SaveResponseBase64: _noopVoid, SaveResponseBody: _noopVoid,

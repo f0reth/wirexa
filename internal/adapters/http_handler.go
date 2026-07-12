@@ -154,11 +154,6 @@ func (h *HttpHandler) DeleteItem(collectionID, itemID string) error {
 	return h.itemSvc.DeleteItem(collectionID, itemID)
 }
 
-// MoveCollection はコレクションを指定の位置に並び替える。
-func (h *HttpHandler) MoveCollection(collectionID string, position int) error {
-	return h.collSvc.MoveCollection(collectionID, position)
-}
-
 // MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。
 // targetParentID が空文字の場合はターゲットコレクションルートへ移動する。
 // position は挿入先インデックス（削除後）。-1 の場合は末尾に追加する。

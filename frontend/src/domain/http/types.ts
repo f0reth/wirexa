@@ -87,7 +87,6 @@ export interface Collection {
   id: string;
   name: string;
   items: TreeItem[];
-  order: number;
 }
 
 export interface TreeItem {
