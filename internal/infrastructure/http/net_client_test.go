@@ -1,6 +1,7 @@
 package httpinfra
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -57,7 +58,7 @@ func TestNetClient_BinaryBody_Base64(t *testing.T) {
 	if err != nil {
 		t.Fatalf("body is not valid base64: %v", err)
 	}
-	if string(got) != string(binary) {
+	if !bytes.Equal(got, binary) {
 		t.Fatalf("decoded body mismatch: got %v want %v", got, binary)
 	}
 }
