@@ -30,8 +30,8 @@ export function EditorPanel() {
   const linterExtension = linter(() => editorCtx.parseErrors() as Diagnostic[]);
 
   onMount(() => {
-    const activeFile = filesCtx.getActiveFile();
-    const lang = getLangExtension(activeFile?.name ?? "spec.yaml");
+    const doc = filesCtx.activeDoc();
+    const lang = getLangExtension(doc?.name ?? "spec.yaml");
 
     view = new EditorView({
       doc: editorCtx.editorContent(),

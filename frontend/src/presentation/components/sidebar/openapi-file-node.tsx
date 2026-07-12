@@ -76,13 +76,13 @@ export function makeDragHandlers(
 export function OpenApiFileNode(props: {
   file: OpenApiFile;
   isActive: boolean;
-  onSelect: (id: string) => void;
-  onRemove: (id: string) => void;
-  onDragStart: (id: string, x: number, y: number) => void;
+  onSelect: (path: string) => void;
+  onRemove: (path: string) => void;
+  onDragStart: (path: string, x: number, y: number) => void;
 }) {
   const suppressRef = { suppress: false };
   const { handleMouseDown } = makeDragHandlers(
-    props.file.id,
+    props.file.path,
     suppressRef,
     props.onDragStart,
   );
@@ -104,7 +104,7 @@ export function OpenApiFileNode(props: {
             suppressRef.suppress = false;
             return;
           }
-          props.onSelect(props.file.id);
+          props.onSelect(props.file.path);
         }}
       >
         <FileCode size={12} style={{ "flex-shrink": "0" }} />
@@ -114,7 +114,7 @@ export function OpenApiFileNode(props: {
         type="button"
         class={clsx(styles.treeActionBtn, styles.treeActionBtnDanger)}
         onMouseDown={(e) => e.stopPropagation()}
-        onClick={() => props.onRemove(props.file.id)}
+        onClick={() => props.onRemove(props.file.path)}
         title="Remove from history"
       >
         <Trash2 size={10} />

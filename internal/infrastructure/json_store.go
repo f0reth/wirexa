@@ -54,21 +54,7 @@ func (s *JSONStore[T]) Save(item *T) error {
 		return err
 	}
 	dest := filepath.Join(s.dir, s.getID(item)+".json")
-	tmp, err := os.CreateTemp(s.dir, ".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err = tmp.Write(data); err != nil {
-		_ = tmp.Close()        //nolint:errcheck // best-effort cleanup
-		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
-		return err
-	}
-	if err = tmp.Close(); err != nil {
-		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
-		return err
-	}
-	return os.Rename(tmpName, dest)
+	return AtomicWriteFile(dest, data, 0o600)
 }
 
 // Delete はアイテムの JSON ファイルを削除する。

@@ -109,7 +109,8 @@ func (a *App) startup(ctx context.Context) {
 	listenSvc := udpapp.NewUdpListenerService(udpSocket, udpEmitter, logger)
 	adapters.SetupUdpHandler(a.udpHandler, sendSvc, targetSvc, listenSvc)
 
-	adapters.SetupOpenAPIHandler(ctx, a.openAPIHandler)
+	adapters.SetupOpenAPIHandler(ctx, a.openAPIHandler,
+		filepath.Join(configDir, wirexaConfigDir, "openapi-recents.json"))
 }
 
 func (a *App) shutdown(_ context.Context) {

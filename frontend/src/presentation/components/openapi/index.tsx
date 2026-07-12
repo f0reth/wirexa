@@ -30,19 +30,48 @@ export function OpenApiClient() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   });
 
-  const activeFile = () => filesCtx.getActiveFile();
+  const activeDoc = () => filesCtx.activeDoc();
+  const displayLabel = () => {
+    const doc = activeDoc();
+    if (!doc) return "No file opened — use the sidebar to open or paste a spec";
+    return doc.kind === "file" ? doc.path : `${doc.name} (untitled)`;
+  };
+
+  // OpenAPI ファイルの D&D: HTML5 drop で内容を直接読み込み無題文書として開く。
+  // Wails ネイティブ file-drop は使わない（wails:file-drop は JS から偽装可能なため）。
+  const handleDragOver = (e: DragEvent) => {
+    if (e.dataTransfer?.types.includes("Files")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    }
+  };
+  const handleDrop = async (e: DragEvent) => {
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    e.preventDefault();
+    try {
+      const content = await file.text();
+      filesCtx.openDropped(content, file.name);
+    } catch (err) {
+      console.error("Failed to read dropped file:", err);
+    }
+  };
 
   return (
-    <div class={styles.container}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: file drop target
+    <div
+      class={styles.container}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       {/* Top bar */}
       <div class={styles.topBar}>
         <span
-          class={clsx(styles.fileName, activeFile() && styles.fileNameActive)}
+          class={clsx(styles.fileName, activeDoc() && styles.fileNameActive)}
         >
-          {activeFile()?.path ??
-            "No file opened — use the sidebar to open a file"}
+          {displayLabel()}
         </span>
-        <Show when={activeFile()}>
+        <Show when={activeDoc()}>
           <button
             type="button"
             class={styles.toggleBtn}

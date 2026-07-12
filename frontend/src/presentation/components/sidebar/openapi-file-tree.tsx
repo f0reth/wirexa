@@ -1,4 +1,4 @@
-import { FolderOpen } from "lucide-solid";
+import { FilePlus, FolderOpen } from "lucide-solid";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Button } from "../../../components/ui/button";
@@ -15,7 +15,7 @@ import styles from "./sidebar.module.css";
 export function OpenApiFileTree() {
   const filesCtx = useOpenApiFiles();
 
-  const [dragFileId, setDragFileId] = createSignal<string | null>(null);
+  const [dragFilePath, setDragFilePath] = createSignal<string | null>(null);
   const [dropIndex, setDropIndex] = createSignal<number | null>(null);
   const [ghostPos, setGhostPos] = createSignal<{ x: number; y: number } | null>(
     null,
@@ -23,7 +23,7 @@ export function OpenApiFileTree() {
 
   onMount(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!dragFileId()) return;
+      if (!dragFilePath()) return;
       setGhostPos({ x: e.clientX, y: e.clientY });
 
       const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -42,12 +42,14 @@ export function OpenApiFileTree() {
     };
 
     const handleMouseUp = () => {
-      const id = dragFileId();
+      const path = dragFilePath();
       const idx = dropIndex();
-      if (id !== null && idx !== null) {
-        filesCtx.moveFile(id, idx);
+      if (path !== null && idx !== null) {
+        filesCtx.moveFile(path, idx).catch((err) => {
+          console.error("Failed to reorder file:", err);
+        });
       }
-      setDragFileId(null);
+      setDragFilePath(null);
       setDropIndex(null);
       setGhostPos(null);
     };
@@ -63,10 +65,24 @@ export function OpenApiFileTree() {
   const sortedFiles = () =>
     [...filesCtx.files()].sort((a, b) => a.order - b.order);
 
+  const activeFilePath = () => {
+    const doc = filesCtx.activeDoc();
+    return doc?.kind === "file" ? doc.path : null;
+  };
+
   return (
     <div class={styles.collectionTree}>
       <div class={styles.collectionHeader}>
         <span class={styles.collectionTitle}>OpenAPI Files</span>
+        <Button
+          variant="ghost"
+          size="icon"
+          class={styles.collectionAction}
+          onClick={() => filesCtx.newUntitled()}
+          title="New (paste a spec)"
+        >
+          <FilePlus size={14} />
+        </Button>
         <Button
           variant="ghost"
           size="icon"
@@ -86,15 +102,15 @@ export function OpenApiFileTree() {
                 <OpenApiInsertionZone
                   index={index()}
                   isActive={dropIndex() === index()}
-                  isDragging={dragFileId() !== null}
+                  isDragging={dragFilePath() !== null}
                 />
                 <OpenApiFileNode
                   file={file}
-                  isActive={filesCtx.activeFileId() === file.id}
-                  onSelect={(id) => filesCtx.selectFile(id)}
-                  onRemove={(id) => filesCtx.removeFile(id)}
-                  onDragStart={(id, x, y) => {
-                    setDragFileId(id);
+                  isActive={activeFilePath() === file.path}
+                  onSelect={(path) => filesCtx.selectFile(path)}
+                  onRemove={(path) => filesCtx.removeFile(path)}
+                  onDragStart={(path, x, y) => {
+                    setDragFilePath(path);
                     setGhostPos({ x, y });
                   }}
                 />
@@ -105,7 +121,7 @@ export function OpenApiFileTree() {
             <OpenApiInsertionZone
               index={sortedFiles().length}
               isActive={dropIndex() === sortedFiles().length}
-              isDragging={dragFileId() !== null}
+              isDragging={dragFilePath() !== null}
             />
           </Show>
 
@@ -118,7 +134,9 @@ export function OpenApiFileTree() {
       <Portal>
         <Show when={ghostPos()}>
           {(pos) => {
-            const file = filesCtx.files().find((f) => f.id === dragFileId());
+            const file = filesCtx
+              .files()
+              .find((f) => f.path === dragFilePath());
             return (
               <div
                 class={styles.dragGhost}

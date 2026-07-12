@@ -18,6 +18,24 @@ export namespace adapters {
 	        this.message = source["message"];
 	    }
 	}
+	export class OpenApiRecent {
+	    path: string;
+	    name: string;
+	    order: number;
+	    lastOpenedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new OpenApiRecent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.name = source["name"];
+	        this.order = source["order"];
+	        this.lastOpenedAt = source["lastOpenedAt"];
+	    }
+	}
 
 }
 
