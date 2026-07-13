@@ -11,7 +11,7 @@ import type {
   RequestSettings,
 } from "../../domain/http/types";
 import { DEFAULT_SETTINGS } from "../../domain/http/types";
-import { withLoading } from "../../shared/async-op";
+import { generateId } from "../../infrastructure/id/generator";
 import { errorMessage } from "../../shared/error";
 
 export interface RequestApi {
@@ -41,7 +41,10 @@ export function createRequestState(api: RequestApi, logger: Logger) {
   });
   const [doc, setDoc] = createSignal("");
   const [response, setResponse] = createSignal<HttpResponse | null>(null);
-  const [loading, setLoading] = createSignal(false);
+  // 実行中リクエストの send ID。保存用 ID とは別に送信ごとに採番するため、
+  // 同じリクエストを連続送信してもバックエンドの cancels マップでキーが衝突しない。
+  const [inFlight, setInFlight] = createSignal<readonly string[]>([]);
+  const loading = () => inFlight().length > 0;
   const [activeRequestId, setActiveRequestId] = createSignal<string | null>(
     null,
   );
@@ -53,23 +56,23 @@ export function createRequestState(api: RequestApi, logger: Logger) {
   async function sendRequest(): Promise<void> {
     const m = method();
     const u = url();
+    const sendId = generateId();
     setResponse(null);
+    setInFlight((ids) => [...ids, sendId]);
     logger.info("HTTP request sent", { method: m, url: u });
     try {
-      const res = await withLoading(setLoading, () =>
-        api.sendRequest({
-          id: activeRequestId() ?? "",
-          name: "",
-          method: m,
-          url: u,
-          headers: headers(),
-          params: params(),
-          body: body(),
-          auth: auth(),
-          settings: settings(),
-          doc: doc(),
-        }),
-      );
+      const res = await api.sendRequest({
+        id: sendId,
+        name: "",
+        method: m,
+        url: u,
+        headers: headers(),
+        params: params(),
+        body: body(),
+        auth: auth(),
+        settings: settings(),
+        doc: doc(),
+      });
       setResponse(res);
       logger.info("HTTP response received", {
         method: m,
@@ -97,13 +100,15 @@ export function createRequestState(api: RequestApi, logger: Logger) {
         url: u,
         error: errorMsg,
       });
+    } finally {
+      setInFlight((ids) => ids.filter((id) => id !== sendId));
     }
   }
 
   async function cancelRequest(): Promise<void> {
-    const id = activeRequestId();
-    if (!id) return;
-    await api.cancelRequest(id);
+    const ids = inFlight();
+    if (ids.length === 0) return;
+    await Promise.all(ids.map((id) => api.cancelRequest(id)));
   }
 
   function loadRequest(req: HttpRequest, collectionId: string): void {
