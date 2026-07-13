@@ -1,4 +1,5 @@
-import { type Page, expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "../../fixtures/ui";
 
 const VALID_YAML = [
   "openapi: 3.0.0",
@@ -20,9 +21,6 @@ async function fillEditor(page: Page, content: string) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
   await page.getByRole("button", { name: "OpenAPI", exact: true }).click();
   await expect(page.locator(".cm-editor")).toBeVisible();
 });

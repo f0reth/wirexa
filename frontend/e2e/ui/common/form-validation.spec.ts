@@ -1,9 +1,6 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "../../fixtures/ui";
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
   await page.getByRole("button", { name: "HTTP", exact: true }).click();
   await expect(
     page.getByPlaceholder("https://api.example.com/endpoint"),
@@ -146,4 +143,34 @@ test("can toggle enabled state of a key-value editor row", async ({ page }) => {
 
   await checkbox.check();
   await expect(checkbox).toBeChecked();
+});
+
+// ── 観点D-8: 空白のみの入力でリネームがキャンセルされる ───────────────────────
+
+test("rename input with whitespace-only value keeps original name", async ({
+  page,
+  app,
+}) => {
+  await app.createCollection();
+
+  // ダブルクリックでリネームモードへ入り、空白のみを入力して確定する
+  await page
+    .locator("span")
+    .filter({ hasText: /^New Collection$/ })
+    .first()
+    .dblclick();
+  await app.confirmRename("   ");
+
+  await expect(app.collection("New Collection")).toBeVisible();
+  await expect(app.renameInput).toBeHidden();
+});
+
+// ── 観点D-9: 特殊文字・Unicode のコレクション名 ──────────────────────────────
+
+test("collection name supports unicode and special characters", async ({
+  page,
+  app,
+}) => {
+  await app.createCollection("API テスト コレクション");
+  await expect(page.getByText("API テスト コレクション")).toBeVisible();
 });

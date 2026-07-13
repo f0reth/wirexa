@@ -54,6 +54,33 @@ jobs:
       - run: bun run test
         working-directory: frontend
 
+  test-frontend-e2e:
+    name: Frontend E2E (UI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install
+        working-directory: frontend
+
+      # UI e2e は e2e/fake-backend が window.go を差し替えるため Go も wails dev も要らない。
+      # 実バックエンドを使う fullstack スイート (playwright.integration.config.ts) は
+      # Windows の GUI 環境に依存するのでローカル実行のまま。
+      - run: bunx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - run: bun run test:e2e
+        working-directory: frontend
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
   bindings-fresh:
     name: Wails Bindings Freshness
     runs-on: ubuntu-latest

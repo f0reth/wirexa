@@ -1,23 +1,14 @@
-import * as http from "node:http";
-import * as net from "node:net";
-import { type Page, test, expect } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { startTestServer, type TestServer } from "../../fixtures/http-server";
+import { expect, test } from "../../fixtures/integration";
 
-let testServer: http.Server;
-let testServerPort: number;
+// 実 Go バックエンドから実サーバーへ HTTP を投げる。保存先は一時 APPDATA へ隔離済みなので
+// コレクションの後始末は不要。
 
-async function findFreePort(): Promise<number> {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.listen(0, () => {
-      const port = (server.address() as net.AddressInfo).port;
-      server.close(() => resolve(port));
-    });
-  });
-}
+let server: TestServer;
 
 test.beforeAll(async () => {
-  testServerPort = await findFreePort();
-  testServer = http.createServer((req, res) => {
+  server = await startTestServer((req, res) => {
     if (req.url === "/json") {
       res.writeHead(200, {
         "Content-Type": "application/json",
@@ -35,115 +26,83 @@ test.beforeAll(async () => {
       res.end("Not found");
     }
   });
-  await new Promise<void>((resolve) =>
-    testServer.listen(testServerPort, "127.0.0.1", resolve),
-  );
 });
 
 test.afterAll(async () => {
-  await new Promise<void>((resolve) => testServer.close(() => resolve()));
+  await server.close();
 });
 
-const getUrlInput = (page: Page) =>
-  page.getByPlaceholder("https://api.example.com/endpoint");
-const getSendButton = (page: Page) =>
-  page.getByRole("button", { name: "Send", exact: true });
+const jsonUrl = () => `http://127.0.0.1:${server.port}/json`;
 
-const deleteCollection = async (page: Page, name: string) => {
-  const btn = page.getByRole("button", { name, exact: true }).first();
-  await btn.hover();
-  await page.getByRole("button", { name: "Delete collection" }).first().click();
-  await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
-};
-
-test.afterEach(async ({ page }) => {
-  const names = ["HTTP Test Collection"];
-  for (const name of names) {
-    try {
-      const visible = await page
-        .getByRole("button", { name, exact: true })
-        .first()
-        .isVisible({ timeout: 500 });
-      if (visible) {
-        await deleteCollection(page, name);
+/** バックエンドに保存されているリクエストの URL を読む (自動保存の完了判定に使う)。 */
+const savedUrl = (page: Page, requestName: RegExp) =>
+  page.evaluate(async (name) => {
+    // biome-ignore lint/suspicious/noExplicitAny: Wails が注入する window.go に型は無い
+    const handler = (window as any).go.adapters.HttpHandler;
+    const collections = await handler.GetCollections();
+    for (const c of collections) {
+      for (const item of c.items ?? []) {
+        if (new RegExp(name).test(item.name)) return item.request?.url ?? "";
       }
-    } catch {
-      // 削除対象が存在しない場合は無視
     }
-  }
-});
+    return undefined;
+  }, requestName.source);
 
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => localStorage.clear());
-  await page.goto("/");
-  await page.getByRole("button", { name: "HTTP", exact: true }).click();
-  await expect(page.getByText("Collections", { exact: true })).toBeVisible();
+test.beforeEach(async ({ app }) => {
+  await app.switchTo("HTTP");
 });
 
 // ── 観点I-2: URL入力とリクエスト送信 ─────────────────────────────────────────
 
 test("entering a URL and clicking send initiates a request", async ({
   page,
+  app,
 }) => {
-  await getUrlInput(page).fill(`http://127.0.0.1:${testServerPort}/json`);
-  await getSendButton(page).click();
+  await app.urlInput.fill(jsonUrl());
+  await app.sendButton.click();
 
-  // レスポンスが表示される
-  await expect(page.getByText("200", { exact: true })).toBeVisible({
-    timeout: 10000,
-  });
-  // 送信ボタンが戻る（リクエスト完了）
-  await expect(getSendButton(page)).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("200", { exact: true })).toBeVisible();
+  await expect(app.sendButton).toBeVisible();
 });
 
 // ── 観点I-5: レスポンス表示（ステータス・ボディ・ヘッダー） ───────────────────
 
-test("response viewer shows status code and body", async ({ page }) => {
-  await getUrlInput(page).fill(`http://127.0.0.1:${testServerPort}/json`);
-  await getSendButton(page).click();
+test("response viewer shows status code and body", async ({ page, app }) => {
+  await app.urlInput.fill(jsonUrl());
+  await app.sendButton.click();
 
-  await expect(page.getByText("200", { exact: true })).toBeVisible({
-    timeout: 10000,
-  });
-
-  // ボディタブにJSONが表示される
-  await expect(page.getByText('"hello"', { exact: true })).toBeVisible({
-    timeout: 5000,
-  });
+  await expect(page.getByText("200", { exact: true })).toBeVisible();
+  await expect(page.getByText('"hello"', { exact: true })).toBeVisible();
 });
 
-test("response viewer headers tab shows response headers", async ({ page }) => {
-  await getUrlInput(page).fill(`http://127.0.0.1:${testServerPort}/json`);
-  await getSendButton(page).click();
+test("response viewer headers tab shows response headers", async ({
+  page,
+  app,
+}) => {
+  await app.urlInput.fill(jsonUrl());
+  await app.sendButton.click();
 
-  await expect(page.getByText("200", { exact: true })).toBeVisible({
-    timeout: 10000,
-  });
+  await expect(page.getByText("200", { exact: true })).toBeVisible();
 
-  // Headers タブに切り替え
   await page.getByRole("tab", { name: "Headers" }).nth(1).click();
 
-  // レスポンスヘッダーが表示される
-  await expect(page.getByText("content-type")).toBeVisible({ timeout: 5000 });
-  await expect(page.getByText("x-custom-header")).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("content-type")).toBeVisible();
+  await expect(page.getByText("x-custom-header")).toBeVisible();
 });
 
 test("response viewer headers tab shows every value of a multi-value header", async ({
   page,
+  app,
 }) => {
-  await getUrlInput(page).fill(
-    `http://127.0.0.1:${testServerPort}/multi-header`,
-  );
-  await getSendButton(page).click();
+  await app.urlInput.fill(`http://127.0.0.1:${server.port}/multi-header`);
+  await app.sendButton.click();
 
-  await expect(page.getByText("200", { exact: true })).toBeVisible({
-    timeout: 10000,
-  });
+  await expect(page.getByText("200", { exact: true })).toBeVisible();
 
   await page.getByRole("tab", { name: "Headers" }).nth(1).click();
 
   // Set-Cookie は値ごとに 1 行ずつ描画される
-  await expect(page.getByText("set-cookie")).toHaveCount(2, { timeout: 5000 });
+  await expect(page.getByText("set-cookie")).toHaveCount(2);
   await expect(page.getByText("a=1; Path=/")).toBeVisible();
   await expect(page.getByText("b=2; Path=/")).toBeVisible();
 });
@@ -152,68 +111,28 @@ test("response viewer headers tab shows every value of a multi-value header", as
 
 test("saved request URL is restored when request is re-opened", async ({
   page,
+  app,
 }) => {
-  // コレクションを作成する
-  await page.locator('[aria-label="Add"]').click();
-  await page.getByRole("button", { name: "New Collection" }).first().click();
-  const collInput = page.getByTestId("rename-input");
-  await expect(collInput).toBeVisible();
-  await collInput.click();
-  await page.keyboard.press("Control+a");
-  await page.keyboard.type("HTTP Test Collection");
-  await page.keyboard.press("Enter");
-  await expect(
-    page.getByRole("button", { name: "HTTP Test Collection", exact: true }).first(),
-  ).toBeVisible({ timeout: 10000 });
+  await app.createCollection("HTTP Test Collection");
+  await app.addRequest("HTTP Test Collection", "First Request");
 
-  // リクエストを追加する
-  await page
-    .getByRole("button", { name: "HTTP Test Collection", exact: true })
-    .first()
-    .hover();
-  await page.getByRole("button", { name: "Add request" }).first().click();
-  const reqInput = page.getByTestId("rename-input");
-  await expect(reqInput).toBeVisible();
-  await reqInput.press("Enter");
+  const first = app.request(/First Request/);
+  await first.click();
+  await expect(first).toHaveAttribute("aria-current", "true");
 
-  const reqBtn = page
-    .getByRole("button", { name: /New Request/ })
-    .first();
-  await expect(reqBtn).toBeVisible({ timeout: 10000 });
-  await reqBtn.click();
-  await expect(reqBtn).toHaveAttribute("aria-current", "true");
+  await app.urlInput.fill(jsonUrl());
+  // デバウンスされた自動保存がバックエンドに届くまで待つ (固定 sleep の代わり)。
+  await expect.poll(() => savedUrl(page, /First Request/)).toBe(jsonUrl());
 
-  // URL を設定する
-  const testUrl = `http://127.0.0.1:${testServerPort}/json`;
-  await getUrlInput(page).fill(testUrl);
-  await expect(getUrlInput(page)).toHaveValue(testUrl);
+  // 別のリクエストを選択して元のリクエストを非アクティブにする
+  await app.addRequest("HTTP Test Collection", "Second Request");
+  await app.request(/Second Request/).click();
+  await expect(app.urlInput).toHaveValue("");
 
-  // 自動保存を待つ（500ms + バッファ）
-  await page.waitForTimeout(1500);
-
-  // 別のリクエストを作成して選択し、元のリクエストを非アクティブにする
-  await page
-    .getByRole("button", { name: "HTTP Test Collection", exact: true })
-    .first()
-    .hover();
-  await page.getByRole("button", { name: "Add request" }).first().click();
-  const req2Input = page.getByTestId("rename-input");
-  await expect(req2Input).toBeVisible();
-  await req2Input.press("Enter");
-
-  const req2Btn = page.getByRole("button", { name: /New Request/ }).nth(1);
-  await expect(req2Btn).toBeVisible({ timeout: 10000 });
-  await req2Btn.click();
-
-  // URL 入力が空になることを確認（新しいリクエスト）
-  await expect(getUrlInput(page)).toHaveValue("");
-
-  // 元のリクエストを再度クリック
-  await reqBtn.click();
-  await expect(reqBtn).toHaveAttribute("aria-current", "true");
-
-  // URL が保持されていることを確認
-  await expect(getUrlInput(page)).toHaveValue(testUrl, { timeout: 5000 });
+  // 元のリクエストを再度開くと URL が復元されている
+  await first.click();
+  await expect(first).toHaveAttribute("aria-current", "true");
+  await expect(app.urlInput).toHaveValue(jsonUrl());
 });
 
 // ── 観点I-8: レスポンスのクリップボードコピー ────────────────────────────────
@@ -221,22 +140,19 @@ test("saved request URL is restored when request is re-opened", async ({
 test("copy button writes response body to clipboard", async ({
   page,
   context,
+  app,
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
-  await getUrlInput(page).fill(`http://127.0.0.1:${testServerPort}/json`);
-  await getSendButton(page).click();
+  await app.urlInput.fill(jsonUrl());
+  await app.sendButton.click();
 
-  await expect(page.getByText("200", { exact: true })).toBeVisible({
-    timeout: 10000,
-  });
+  await expect(page.getByText("200", { exact: true })).toBeVisible();
 
-  // Copy body ボタンが表示される（エラーなし・切り捨てなし）
   const copyBtn = page.getByRole("button", { name: "Copy body" });
-  await expect(copyBtn).toBeVisible({ timeout: 5000 });
+  await expect(copyBtn).toBeVisible();
   await copyBtn.click();
 
-  // クリップボードに JSON ボディが書き込まれる
   const clipboardText = await page.evaluate(() =>
     navigator.clipboard.readText(),
   );

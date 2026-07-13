@@ -2,69 +2,17 @@ import type { Plugin } from "vite";
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 
-function wailsMockPlugin(): Plugin {
+// 偽バックエンド (e2e/fake-backend/install.ts) をアプリ本体より先に実行させる。
+// module script は文書順に実行されるため、head の先頭に挿せば main.tsx より前に window.go が生える。
+function fakeBackendPlugin(): Plugin {
   return {
-    name: "wails-mock",
+    name: "wirexa-fake-backend",
     transformIndexHtml() {
       return [
         {
           tag: "script",
           injectTo: "head-prepend",
-          children: `
-            const _noopVoid = () => Promise.resolve();
-            const _noopNull = () => Promise.resolve(null);
-            const _noopArr  = () => Promise.resolve([]);
-            window.runtime = {
-              EventsOnMultiple: () => () => {},
-              EventsOff: () => {},
-              EventsOffAll: () => {},
-              EventsEmit: () => {},
-              LogPrint: () => {}, LogTrace: () => {}, LogDebug: () => {},
-              LogInfo: () => {}, LogWarning: () => {}, LogError: () => {}, LogFatal: () => {},
-              ClipboardGetText: () => Promise.resolve(""),
-              ClipboardSetText: () => Promise.resolve(true),
-            };
-            window.go = {
-              adapters: {
-                UdpHandler: {
-                  DeleteTarget: _noopVoid,
-                  GetListeners: _noopArr,
-                  GetTargets: _noopArr,
-                  SaveTarget: _noopNull,
-                  Send: () => Promise.resolve({ bytesSent: 0 }),
-                  Shutdown: _noopVoid,
-                  StartListen: () => Promise.resolve({ id: "", port: 0, encoding: "ascii" }),
-                  StopListen: _noopVoid,
-                },
-                HttpHandler: {
-                  AddFolder: _noopNull, AddRequest: _noopNull, CancelRequest: _noopVoid,
-                  CreateCollection: _noopNull, DeleteCollection: _noopVoid, DeleteItem: _noopVoid,
-                  GetCollections: _noopArr, GetRootItems: _noopArr, GetSidebarLayout: _noopArr,
-                  MoveItem: _noopVoid, MoveItemToSidebar: _noopVoid,
-                  MoveSidebarEntry: _noopVoid, OpenFilePicker: () => Promise.resolve(""),
-                  RenameCollection: _noopVoid, RenameItem: _noopVoid,
-                  SaveResponseBase64: _noopVoid, SaveResponseBody: _noopVoid,
-                  SendRequest: _noopNull, UpdateRequest: _noopVoid,
-                },
-                MqttHandler: {
-                  Connect: _noopVoid, DeleteProfile: _noopVoid, Disconnect: _noopVoid,
-                  GetConnections: _noopArr, GetProfiles: _noopArr,
-                  Publish: _noopVoid, SaveProfile: _noopNull, Shutdown: _noopVoid,
-                  Subscribe: _noopVoid, Unsubscribe: _noopVoid,
-                },
-                OpenAPIHandler: {
-                  OpenFilePicker: () => Promise.resolve(""),
-                  ReadFile: () => Promise.resolve(""),
-                  WriteFile: _noopVoid,
-                  SaveFileAs: () => Promise.resolve(""),
-                  GetRecents: _noopArr,
-                  RemoveRecent: _noopVoid,
-                  MoveRecent: _noopVoid,
-                },
-                LogHandler: { Log: _noopVoid },
-              },
-            };
-          `,
+          attrs: { type: "module", src: "/e2e/fake-backend/install.ts" },
         },
       ];
     },
@@ -72,7 +20,7 @@ function wailsMockPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [wailsMockPlugin(), solid()],
+  plugins: [fakeBackendPlugin(), solid()],
   resolve: {
     dedupe: ["@codemirror/state", "@codemirror/view"],
   },

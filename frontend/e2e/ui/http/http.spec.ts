@@ -1,9 +1,6 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "../../fixtures/ui";
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
   await page.getByRole("button", { name: "HTTP", exact: true }).click();
   await expect(
     page.getByPlaceholder("https://api.example.com/endpoint"),

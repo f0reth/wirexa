@@ -1,10 +1,4 @@
-import { test, expect } from "@playwright/test";
-
-test.beforeEach(async ({ page }) => {
-  await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
-});
+import { expect, test } from "../../fixtures/ui";
 
 // ── 観点F-1: ダーク/ライトテーマ切り替えの永続化 ─────────────────────────────
 

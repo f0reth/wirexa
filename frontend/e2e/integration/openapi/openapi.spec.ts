@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../../fixtures/integration";
 
 const VALID_YAML = [
   "openapi: 3.0.0",
@@ -9,7 +9,6 @@ const VALID_YAML = [
 ].join("\n");
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/");
   await page.getByRole("button", { name: "OpenAPI", exact: true }).click();
 });
 
