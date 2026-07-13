@@ -139,33 +139,45 @@ func TestMqttService_Connect_ReturnsNonEmptyID(t *testing.T) {
 	waitForEvent(t, done, time.Second, "timeout waiting for connect goroutine")
 }
 
-func TestMqttService_Connect_AutoGeneratesClientID(t *testing.T) {
-	var capturedConfig domain.ConnectionConfig
-	factory := func(cfg domain.ConnectionConfig, _ func(), _ func(error)) domain.BrokerClient {
-		capturedConfig = cfg
+// capturingFactory は factory に渡された設定をチャンネル経由で返す。
+// factory は Connect が起動したゴルーチンから呼ばれるため、変数への直接代入だと
+// 読み出し側とデータ競合になる (時間で待つ必要も出る)。
+func capturingFactory() (domain.BrokerClientFactory, <-chan domain.ConnectionConfig) {
+	ch := make(chan domain.ConnectionConfig, 1)
+	return func(cfg domain.ConnectionConfig, _ func(), _ func(error)) domain.BrokerClient {
+		ch <- cfg
 		return &mockBrokerClient{}
+	}, ch
+}
+
+func waitForConfig(t *testing.T, ch <-chan domain.ConnectionConfig) domain.ConnectionConfig {
+	t.Helper()
+	select {
+	case cfg := <-ch:
+		return cfg
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for factory call")
+		return domain.ConnectionConfig{}
 	}
+}
+
+func TestMqttService_Connect_AutoGeneratesClientID(t *testing.T) {
+	factory, configs := capturingFactory()
 	svc := NewMqttService(&mockEmitter{}, factory, testutil.NoopLogger{})
 	svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883", ClientID: ""})
 
-	time.Sleep(10 * time.Millisecond) // allow factory call to complete
-	if capturedConfig.ClientID == "" {
+	if cfg := waitForConfig(t, configs); cfg.ClientID == "" {
 		t.Error("expected auto-generated ClientID, got empty")
 	}
 }
 
 func TestMqttService_Connect_UsesProvidedClientID(t *testing.T) {
-	var capturedConfig domain.ConnectionConfig
-	factory := func(cfg domain.ConnectionConfig, _ func(), _ func(error)) domain.BrokerClient {
-		capturedConfig = cfg
-		return &mockBrokerClient{}
-	}
+	factory, configs := capturingFactory()
 	svc := NewMqttService(&mockEmitter{}, factory, testutil.NoopLogger{})
 	svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883", ClientID: "my-client"})
 
-	time.Sleep(10 * time.Millisecond)
-	if capturedConfig.ClientID != "my-client" {
-		t.Errorf("ClientID = %q, want %q", capturedConfig.ClientID, "my-client")
+	if cfg := waitForConfig(t, configs); cfg.ClientID != "my-client" {
+		t.Errorf("ClientID = %q, want %q", cfg.ClientID, "my-client")
 	}
 }
 
