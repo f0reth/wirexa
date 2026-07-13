@@ -103,7 +103,9 @@ func (a *App) initialize(ctx context.Context) error {
 	}
 	adapters.SetupLogHandler(a.logHandler, logger)
 
+	// MQTT / UDP の両サービスで共有する (ctx を保持するだけのステートレスな型)。
 	emitter := infra.NewWailsEmitter(ctx)
+
 	clientFactory := mqttinfra.NewPahoClientFactory(mqttinfra.MqttClientConfig{})
 	mqttSvc := mqttapp.NewMqttService(emitter, clientFactory, logger)
 
@@ -152,8 +154,7 @@ func (a *App) initialize(ctx context.Context) error {
 	}
 	udpSocket := udpinfra.NewNetSocket()
 	sendSvc := udpapp.NewUdpSendService(udpSocket, logger)
-	udpEmitter := infra.NewWailsEmitter(ctx)
-	listenSvc := udpapp.NewUdpListenerService(udpSocket, udpEmitter, logger)
+	listenSvc := udpapp.NewUdpListenerService(udpSocket, emitter, logger)
 	adapters.SetupUdpHandler(a.udpHandler, sendSvc, targetSvc, listenSvc)
 
 	adapters.SetupOpenAPIHandler(ctx, a.openAPIHandler,
