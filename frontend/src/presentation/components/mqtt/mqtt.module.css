@@ -684,6 +684,17 @@
   font-size: 0.8125rem;
 }
 
+.retainCheckboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-foreground);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .publishPayload {
   flex: 1;
   resize: none;

@@ -125,3 +125,24 @@ test("can select QoS level 0, 1, and 2", async ({ page }) => {
   await page.getByRole("button", { name: "QoS 0" }).click();
   await expect(qosTrigger).toContainText("0");
 });
+
+// ── 観点H-6: Publish の retain フラグ ────────────────────────────────────────
+
+test("can toggle the retain flag and it is stored on the selected preset", async ({
+  page,
+}) => {
+  await createBrokerProfile(page, "Retain Test Broker");
+  await page.getByRole("tab", { name: "Publish" }).click();
+
+  const retain = page.getByRole("checkbox", { name: "Retain" });
+  await expect(retain).not.toBeChecked();
+
+  // ON にすると選択中プリセットに反映され、一覧に Retained バッジが出る
+  await retain.check();
+  await expect(retain).toBeChecked();
+  await expect(page.getByText("Retained")).toBeVisible();
+
+  await retain.uncheck();
+  await expect(retain).not.toBeChecked();
+  await expect(page.getByText("Retained")).not.toBeVisible();
+});

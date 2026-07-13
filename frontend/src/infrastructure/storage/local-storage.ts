@@ -19,9 +19,16 @@ export function createLastProfileStorage(): ConnectionPersistence {
   };
 }
 
+// retain を導入する前に保存されたプリセットには retain フィールドが無い。
+type StoredPreset = Omit<PublishPreset, "retain"> & { retain?: boolean };
+
 export function createPresetsStorage(): PresetStorage {
   return {
-    load: () => loadFromStorage<PublishPreset[]>(MQTT_PRESETS_KEY, []),
+    load: () =>
+      loadFromStorage<StoredPreset[]>(MQTT_PRESETS_KEY, []).map((p) => ({
+        ...p,
+        retain: p.retain ?? false,
+      })),
     save: (presets) => saveToStorage(MQTT_PRESETS_KEY, presets),
   };
 }

@@ -174,6 +174,9 @@ function PresetsPanel(props: { addPreset: () => void }) {
                           </Show>
                           <span class={styles.presetTopic}>{preset.topic}</span>
                           <Badge variant="secondary">QoS {preset.qos}</Badge>
+                          <Show when={preset.retain}>
+                            <Badge variant="outline">Retained</Badge>
+                          </Show>
                         </div>
                         <Button
                           variant="ghost"
@@ -214,6 +217,8 @@ function PublishForm(props: {
   setPublishPayload: (v: string) => void;
   publishQos: () => number;
   setPublishQos: (v: number) => void;
+  publishRetain: () => boolean;
+  setPublishRetain: (v: boolean) => void;
 }) {
   const { activeConnection } = useMqttConnection();
   const { publish } = useMqttPublish();
@@ -223,12 +228,15 @@ function PublishForm(props: {
   };
 
   const handlePublish = async () => {
-    if (!props.publishTopic().trim() || !props.publishPayload().trim()) return;
+    if (!props.publishTopic().trim()) return;
+    // retain 付きの空ペイロードは retained メッセージの削除を意味するので許可する。
+    if (!props.publishRetain() && !props.publishPayload().trim()) return;
     try {
       await publish(
         props.publishTopic(),
         props.publishPayload(),
         props.publishQos(),
+        props.publishRetain(),
       );
     } catch (err) {
       notify.error("Failed to publish message", errorMessage(err));
@@ -252,6 +260,15 @@ function PublishForm(props: {
             value={props.publishQos()}
             onChange={props.setPublishQos}
           />
+          <label class={styles.retainCheckboxLabel} for="publish-retain">
+            <input
+              id="publish-retain"
+              type="checkbox"
+              checked={props.publishRetain()}
+              onChange={(e) => props.setPublishRetain(e.currentTarget.checked)}
+            />
+            Retain
+          </label>
         </div>
 
         <Textarea
@@ -274,6 +291,7 @@ export function PublishTab() {
   const [publishTopic, setPublishTopic] = createSignal("");
   const [publishPayload, setPublishPayload] = createSignal("");
   const [publishQos, setPublishQos] = createSignal<number>(0);
+  const [publishRetain, setPublishRetain] = createSignal(false);
 
   const { presets, addPreset, updatePreset, selectedPresetId } =
     useMqttPublish();
@@ -289,6 +307,7 @@ export function PublishTab() {
           setPublishTopic(preset.topic);
           setPublishPayload(preset.payload);
           setPublishQos(preset.qos);
+          setPublishRetain(preset.retain);
         });
       },
       { defer: true },
@@ -297,8 +316,8 @@ export function PublishTab() {
 
   createEffect(
     on(
-      [publishTopic, publishPayload, publishQos],
-      ([topic, payload, qos]) => {
+      [publishTopic, publishPayload, publishQos, publishRetain],
+      ([topic, payload, qos, retain]) => {
         const id = selectedPresetId();
         if (!id) return;
         const current = presets().find((p) => p.id === id);
@@ -306,10 +325,11 @@ export function PublishTab() {
           current &&
           current.topic === topic &&
           current.payload === payload &&
-          current.qos === qos
+          current.qos === qos &&
+          current.retain === retain
         )
           return;
-        updatePreset(id, { topic, payload, qos: qos as 0 | 1 | 2 });
+        updatePreset(id, { topic, payload, qos: qos as 0 | 1 | 2, retain });
       },
       { defer: true },
     ),
@@ -329,6 +349,8 @@ export function PublishTab() {
           setPublishPayload={setPublishPayload}
           publishQos={publishQos}
           setPublishQos={setPublishQos}
+          publishRetain={publishRetain}
+          setPublishRetain={setPublishRetain}
         />
       </ResizablePanel>
     </ResizablePanelGroup>

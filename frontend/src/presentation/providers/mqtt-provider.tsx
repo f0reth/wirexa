@@ -90,7 +90,12 @@ export interface PublishContextValue {
   reorderPresets: (fromIndex: number, toIndex: number) => void;
   selectedPresetId: Accessor<string | null>;
   setSelectedPresetId: Setter<string | null>;
-  publish: (topic: string, payload: string, qos: number) => Promise<void>;
+  publish: (
+    topic: string,
+    payload: string,
+    qos: number,
+    retain: boolean,
+  ) => Promise<void>;
 }
 
 type MqttContextValue = ConnectionContextValue &
@@ -145,10 +150,11 @@ export function MqttProvider(props: { children: JSX.Element }) {
     topic: string,
     payload: string,
     qos: number,
+    retain: boolean,
   ): Promise<void> => {
     const connId = connState.activeConnectionId();
     if (!connId) return;
-    await mqttClient.publish(connId, topic, payload, qos, false);
+    await mqttClient.publish(connId, topic, payload, qos, retain);
   };
 
   return (

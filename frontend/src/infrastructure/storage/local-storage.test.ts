@@ -76,6 +76,26 @@ describe("createPresetsStorage", () => {
     storage.save([preset2]);
     expect(storage.load()).toEqual([preset2]);
   });
+
+  it("defaults retain to false for presets saved before the field existed", () => {
+    localStorage.setItem(
+      "mqtt:presets",
+      JSON.stringify([
+        { id: "p1", name: "Legacy", topic: "a/b", payload: "msg", qos: 0 },
+      ]),
+    );
+    const storage = createPresetsStorage();
+    expect(storage.load()).toEqual([
+      {
+        id: "p1",
+        name: "Legacy",
+        topic: "a/b",
+        payload: "msg",
+        qos: 0,
+        retain: false,
+      },
+    ]);
+  });
 });
 
 describe("createThemeStorage", () => {

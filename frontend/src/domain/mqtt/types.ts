@@ -50,6 +50,7 @@ export interface PublishPreset {
   topic: string;
   payload: string;
   qos: 0 | 1 | 2;
+  retain: boolean;
 }
 
 interface BaseConnectionState {

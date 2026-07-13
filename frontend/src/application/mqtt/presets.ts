@@ -50,6 +50,7 @@ export function createPresetsState(storage: PresetStorage) {
       topic: "",
       payload: "",
       qos: 0,
+      retain: false,
     };
     setPresets((prev) => {
       const next = [...prev, newPreset];
