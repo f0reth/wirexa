@@ -20,6 +20,7 @@ function makeResponse(): HttpResponse {
     bodyTruncated: false,
     tempFilePath: "",
     bodyBase64: false,
+    bodyCapped: false,
   };
 }
 

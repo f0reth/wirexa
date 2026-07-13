@@ -19,6 +19,9 @@ const TABS = [
 
 const HIGHLIGHT_SIZE_LIMIT = 1024 * 1024; // 1 MB
 
+// バックエンド (net_client.go の defaultMaxTempBytes) が受信を打ち切る絶対上限の表示用ラベル。
+const HARD_LIMIT_LABEL = "1 GB";
+
 function statusVariant(code: number): "default" | "secondary" | "destructive" {
   if (code >= 200 && code < 300) return "default";
   if (code >= 400) return "destructive";
@@ -185,6 +188,14 @@ export function ResponseViewer() {
                               ⚠ Response body exceeds the size limit. The body
                               was not fully loaded to prevent memory issues.
                             </p>
+                            <Show when={resp().bodyCapped}>
+                              <p>
+                                The response also exceeded the{" "}
+                                {HARD_LIMIT_LABEL} hard limit, so the download
+                                was cut short — even the saved file will be
+                                incomplete.
+                              </p>
+                            </Show>
                             <div class={styles.responseBodyLimitActions}>
                               <button
                                 type="button"
@@ -210,8 +221,19 @@ export function ResponseViewer() {
                         >
                           <Show when={resp().bodyTruncated}>
                             <div class={styles.responseBodyTruncatedBanner}>
-                              ⚠ Showing truncated body. The full body was not
-                              loaded.
+                              <Show
+                                when={resp().bodyCapped}
+                                fallback={
+                                  <>
+                                    ⚠ Showing truncated body. The full body was
+                                    not loaded.
+                                  </>
+                                }
+                              >
+                                ⚠ Showing truncated body. The response exceeded
+                                the {HARD_LIMIT_LABEL} hard limit and was cut
+                                short, so the full body is unavailable.
+                              </Show>
                             </div>
                           </Show>
 

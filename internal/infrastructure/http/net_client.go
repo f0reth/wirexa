@@ -29,6 +29,9 @@ const (
 	// maxCachedTransports は transports の上限。ProxyURL はユーザー入力のため
 	// キーが際限なく増えうるので、上限に達したらまとめて破棄して作り直す。
 	maxCachedTransports = 16
+	// defaultMaxTempBytes は temp ファイルへ退避するレスポンスの絶対上限。
+	// これが無いと、長いタイムアウト設定 + 巨大レスポンスで受信できるだけディスクを消費する。
+	defaultMaxTempBytes int64 = 1 << 30 // 1 GiB
 )
 
 var _ domain.HttpTransport = (*NetClient)(nil)
@@ -46,11 +49,16 @@ type NetClient struct {
 	transports map[transportKey]*http.Transport
 	tempFiles  sync.Map // requestID → tempFilePath (string)
 	mu         sync.Mutex
+	// maxTempBytes は 1 レスポンスあたり temp ファイルへ書く絶対上限。テストで差し替える。
+	maxTempBytes int64
 }
 
 // NewNetClient は NetClient を生成する。
 func NewNetClient() *NetClient {
-	return &NetClient{transports: make(map[transportKey]*http.Transport)}
+	return &NetClient{
+		transports:   make(map[transportKey]*http.Transport),
+		maxTempBytes: defaultMaxTempBytes,
+	}
 }
 
 // ConsumeTempFilePath は指定リクエストIDのテンポラリファイルパスを返し、マップから削除する。
@@ -180,7 +188,7 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	}
 
 	client := c.buildHTTPClient(req.Settings)
-	maxBody := resolveMaxResponseBody(req.Settings)
+	maxBody := c.resolveMaxResponseBody(req.Settings)
 
 	start := time.Now()
 	resp, err := client.Do(httpReq)
@@ -196,60 +204,43 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // best-effort cleanup
 
-	// ボディをテンポラリファイルへストリーミング（メモリを圧迫しない）
-	tmpFile, err := os.CreateTemp("", "wirexa-response-*")
+	// 表示用の maxBody 分だけを先にメモリへ読む。ここに収まるのが大多数のリクエストで、
+	// その場合はテンポラリファイルを一切作らない。
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
-		return domain.HttpResponse{}, fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpName := tmpFile.Name()
-
-	if _, err = io.Copy(tmpFile, resp.Body); err != nil {
-		_ = tmpFile.Close()    //nolint:errcheck // best-effort cleanup
-		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
 		if errors.Is(err, context.DeadlineExceeded) {
 			return domain.HttpResponse{}, fmt.Errorf("request timed out after %s", timeout)
 		}
 		return domain.HttpResponse{}, fmt.Errorf("failed to read response: %w", err)
 	}
-	_ = tmpFile.Close() //nolint:errcheck // best-effort cleanup
 
-	info, err := os.Stat(tmpName)
-	if err != nil {
-		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
-		return domain.HttpResponse{}, fmt.Errorf("failed to stat temp file: %w", err)
-	}
-
-	var body []byte
+	size := int64(len(body))
 	bodyTruncated := false
-	if info.Size() <= maxBody {
-		// 上限以内: メモリへ読み込み、テンポラリファイルを削除
-		body, err = os.ReadFile(tmpName) //nolint:gosec // path is app-generated temp file
-		_ = os.Remove(tmpName)           //nolint:errcheck // best-effort cleanup
-		if err != nil {
-			return domain.HttpResponse{}, fmt.Errorf("failed to read temp file: %w", err)
-		}
-	} else {
-		// 上限超過: 先頭 maxBody バイトのみ読み込み、テンポラリファイルは保持
-		f, err := os.Open(tmpName) //nolint:gosec // path is app-generated temp file
-		if err != nil {
-			_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
-			return domain.HttpResponse{}, fmt.Errorf("failed to open temp file: %w", err)
-		}
-		body = make([]byte, maxBody)
-		if _, err = io.ReadFull(f, body); err != nil {
-			_ = f.Close()          //nolint:errcheck // best-effort cleanup
-			_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
-			return domain.HttpResponse{}, fmt.Errorf("failed to read temp file: %w", err)
-		}
-		_ = f.Close() //nolint:errcheck // best-effort cleanup
-		bodyTruncated = true
-		// 同一 req.ID の再送で旧パスを上書きするとオーファン化するため、先に回収削除する。
-		if old, ok := c.tempFiles.LoadAndDelete(req.ID); ok {
-			if s, ok := old.(string); ok {
-				_ = os.Remove(s) //nolint:errcheck // best-effort cleanup
+	bodyCapped := false
+
+	// maxBody 丁度で読み終えたときだけ、続きがあるかを 1 バイト先読みして確かめる。
+	if size == maxBody {
+		var peek [1]byte
+		n, rerr := io.ReadFull(resp.Body, peek[:])
+		if rerr != nil && !errors.Is(rerr, io.EOF) && !errors.Is(rerr, io.ErrUnexpectedEOF) {
+			if errors.Is(rerr, context.DeadlineExceeded) {
+				return domain.HttpResponse{}, fmt.Errorf("request timed out after %s", timeout)
 			}
+			return domain.HttpResponse{}, fmt.Errorf("failed to read response: %w", rerr)
 		}
-		c.tempFiles.Store(req.ID, tmpName)
+		if n > 0 {
+			// 上限超過: 全文をテンポラリファイルへ退避し、Body は先頭 maxBody バイトのまま返す。
+			bodyTruncated = true
+			written, capped, serr := c.spillToTempFile(req.ID, body, peek[:n], resp.Body)
+			if serr != nil {
+				if errors.Is(serr, context.DeadlineExceeded) {
+					return domain.HttpResponse{}, fmt.Errorf("request timed out after %s", timeout)
+				}
+				return domain.HttpResponse{}, serr
+			}
+			size = written
+			bodyCapped = capped
+		}
 	}
 
 	headers := make(map[string][]string, len(resp.Header))
@@ -272,11 +263,88 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		Headers:       headers,
 		Body:          bodyStr,
 		ContentType:   respContentType,
-		Size:          info.Size(),
+		Size:          size,
 		TimingMs:      elapsed,
 		BodyTruncated: bodyTruncated,
 		BodyBase64:    bodyBase64,
+		BodyCapped:    bodyCapped,
 	}, nil
+}
+
+// tempLimit は temp ファイルへ書く絶対上限を返す。maxTempBytes 未設定の NetClient でも
+// 既定値で動くようにし、「上限 0 = 常に打ち切り」に化けるのを防ぐ。
+func (c *NetClient) tempLimit() int64 {
+	if c.maxTempBytes > 0 {
+		return c.maxTempBytes
+	}
+	return defaultMaxTempBytes
+}
+
+// spillToTempFile は上限超過したレスポンスの全文をテンポラリファイルへ退避し、
+// 書き出したバイト数と、絶対上限に達して打ち切ったか (capped) を返す。
+// head と peek は既に resp.Body から読み終えている先頭バイト列。
+func (c *NetClient) spillToTempFile(requestID string, head, peek []byte, rest io.Reader) (written int64, capped bool, err error) {
+	tmpFile, err := os.CreateTemp("", "wirexa-response-*")
+	if err != nil {
+		return 0, false, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpName := tmpFile.Name()
+
+	discard := func() {
+		_ = tmpFile.Close()    //nolint:errcheck // best-effort cleanup
+		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
+	}
+
+	for _, chunk := range [][]byte{head, peek} {
+		n, werr := tmpFile.Write(chunk)
+		written += int64(n)
+		if werr != nil {
+			discard()
+			return 0, false, fmt.Errorf("failed to write temp file: %w", werr)
+		}
+	}
+
+	// 残りは絶対上限まで。上限に達したら、さらに続きがあるかを先読みして capped を判定する。
+	limit := c.tempLimit()
+	if remaining := limit - written; remaining > 0 {
+		n, cerr := io.Copy(tmpFile, io.LimitReader(rest, remaining))
+		written += n
+		if cerr != nil {
+			discard()
+			return 0, false, fmt.Errorf("failed to read response: %w", cerr)
+		}
+	}
+	if written >= limit {
+		var probe [1]byte
+		//nolint:errcheck // 続きが 1 バイトでもあるかだけが知りたいので、読み取りエラーは capped=false として扱う
+		if n, _ := io.ReadFull(rest, probe[:]); n > 0 {
+			capped = true
+		}
+		// maxBody == limit のときだけ、先読みした 1 バイトで上限を超えうる。切り戻す。
+		if written > limit {
+			if terr := tmpFile.Truncate(limit); terr != nil {
+				discard()
+				return 0, false, fmt.Errorf("failed to write temp file: %w", terr)
+			}
+			written = limit
+			capped = true
+		}
+	}
+
+	if err = tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
+		return 0, false, fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	// 同一 requestID の再送で旧パスを上書きするとオーファン化するため、先に回収削除する。
+	if old, ok := c.tempFiles.LoadAndDelete(requestID); ok {
+		if s, ok := old.(string); ok {
+			_ = os.Remove(s) //nolint:errcheck // best-effort cleanup
+		}
+	}
+	c.tempFiles.Store(requestID, tmpName)
+
+	return written, capped, nil
 }
 
 // buildHTTPClient はリクエスト設定に対応する http.Client を組み立てる。
@@ -356,9 +424,12 @@ func resolveProxy(s domain.RequestSettings) func(*http.Request) (*url.URL, error
 	}
 }
 
-func resolveMaxResponseBody(s domain.RequestSettings) int64 {
+// resolveMaxResponseBody はメモリへ読み込むボディの上限を返す。
+// MaxResponseBodyMB は UI から自由に入力できるため、絶対上限でクランプする。
+func (c *NetClient) resolveMaxResponseBody(s domain.RequestSettings) int64 {
+	maxBody := int64(defaultMaxResponseMB) * 1024 * 1024
 	if s.MaxResponseBodyMB > 0 {
-		return int64(s.MaxResponseBodyMB) * 1024 * 1024
+		maxBody = int64(s.MaxResponseBodyMB) * 1024 * 1024
 	}
-	return int64(defaultMaxResponseMB) * 1024 * 1024
+	return min(maxBody, c.tempLimit())
 }

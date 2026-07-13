@@ -141,6 +141,7 @@ describe("sendRequest", () => {
       bodyTruncated: false,
       tempFilePath: "",
       bodyBase64: false,
+      bodyCapped: false,
     });
   });
 
@@ -172,6 +173,19 @@ describe("sendRequest", () => {
     const result = await sendRequest(makeDomainRequest());
     expect(result.bodyTruncated).toBe(true);
     expect(result.tempFilePath).toBe("/tmp/response.bin");
+    expect(result.bodyCapped).toBe(false);
+  });
+
+  it("maps bodyCapped when the backend hits the absolute size limit", async () => {
+    vi.mocked(Handler.SendRequest).mockResolvedValue(
+      makeWailsResponse({
+        bodyTruncated: true,
+        bodyCapped: true,
+        tempFilePath: "/tmp/response.bin",
+      }) as never,
+    );
+    const result = await sendRequest(makeDomainRequest());
+    expect(result.bodyCapped).toBe(true);
   });
 
   it("maps bodyBase64 when the backend flags a binary body", async () => {

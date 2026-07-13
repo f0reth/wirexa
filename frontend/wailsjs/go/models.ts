@@ -244,6 +244,7 @@ export namespace httpdomain {
 	    timingMs: number;
 	    bodyTruncated: boolean;
 	    bodyBase64: boolean;
+	    bodyCapped: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new HttpResponse(source);
@@ -262,6 +263,7 @@ export namespace httpdomain {
 	        this.timingMs = source["timingMs"];
 	        this.bodyTruncated = source["bodyTruncated"];
 	        this.bodyBase64 = source["bodyBase64"];
+	        this.bodyCapped = source["bodyCapped"];
 	    }
 	}
 	

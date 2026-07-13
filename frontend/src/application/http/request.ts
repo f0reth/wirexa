@@ -94,6 +94,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
         bodyTruncated: false,
         tempFilePath: "",
         bodyBase64: false,
+        bodyCapped: false,
       });
       logger.error("HTTP request failed", {
         method: m,

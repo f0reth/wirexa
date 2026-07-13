@@ -76,12 +76,15 @@ export interface HttpResponse {
   headers: Record<string, string[]>;
   body: string;
   contentType: string;
+  // 実際に受信したバイト数。bodyCapped の場合はレスポンス全長と一致しない。
   size: number;
   timingMs: number;
   error: string;
   bodyTruncated: boolean;
   tempFilePath: string;
   bodyBase64: boolean;
+  // 絶対上限に達して受信を打ち切った。tempFilePath のファイルも全文ではない。
+  bodyCapped: boolean;
 }
 
 export interface Collection {

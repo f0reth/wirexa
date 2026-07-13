@@ -110,6 +110,7 @@ function fromWailsHttpResponse(res: httpdomain.HttpResponse): HttpResponse {
     bodyTruncated: res.bodyTruncated ?? false,
     tempFilePath: res.tempFilePath ?? "",
     bodyBase64: res.bodyBase64 ?? false,
+    bodyCapped: res.bodyCapped ?? false,
   };
 }
 
