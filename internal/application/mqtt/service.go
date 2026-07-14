@@ -34,7 +34,6 @@ var _ domain.MqttUseCase = (*MqttService)(nil)
 
 type connection struct {
 	client domain.BrokerClient
-	id     string
 	config domain.ConnectionConfig
 	// subs は現在購読中のトピック→QoS。リロード後の状態復元のためサーバー側で保持する。
 	// s.mu は接続 map の保護用で、購読 map の変更は withConn(RLock 保持) 中に起きるため
@@ -96,7 +95,7 @@ func (s *MqttService) Connect(config domain.ConnectionConfig) (string, error) {
 	)
 
 	s.mu.Lock()
-	s.conns[connID] = &connection{id: connID, client: client, config: config, subs: make(map[string]byte)}
+	s.conns[connID] = &connection{client: client, config: config, subs: make(map[string]byte)}
 	s.mu.Unlock()
 
 	s.connWg.Go(func() {
