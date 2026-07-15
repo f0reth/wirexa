@@ -3,7 +3,7 @@ import { createStore, produce } from "solid-js/store";
 import type { Logger } from "../../application/logger";
 import { notify } from "../../application/ui/notifications";
 import type { ConnectionPersistence } from "../../domain/mqtt/ports";
-import { compilePattern, topicMatchesParts } from "../../domain/mqtt/topic";
+import { topicMatchesParts } from "../../domain/mqtt/topic";
 import type {
   BrokerProfile,
   ConnectionStatus,
@@ -11,10 +11,11 @@ import type {
   OfflineConnectionState,
   OnlineConnectionState,
   Subscription,
-  SubscriptionInfo,
   Tab,
 } from "../../domain/mqtt/types";
+import { generateId } from "../../infrastructure/id/generator";
 import { errorMessage } from "../../shared/error";
+import { makeSubscription } from "./subscription";
 
 export type { ConnectionPersistence };
 
@@ -87,19 +88,6 @@ function makeOfflineState(profile: BrokerProfile): OfflineStateExt {
     brokerTopics: [],
     brokerTopicsSet: new Set(),
     isScanning: false,
-  };
-}
-
-// バックエンドの購読情報を UI 表示用の Subscription へ変換する。
-// subscriptions.ts の addSubscription と同一のロジック。
-function toSubscription(info: SubscriptionInfo): Subscription {
-  const isWildcard = info.topic.includes("+") || info.topic.includes("#");
-  return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    topic: info.topic,
-    qos: info.qos as 0 | 1 | 2,
-    patternParts: isWildcard ? compilePattern(info.topic) : undefined,
-    muted: false,
   };
 }
 
@@ -210,7 +198,7 @@ export function createConnectionsState(
           );
           if (matchingSub && !matchingSub.muted) {
             pendingMessages.push({
-              id: `${data.timestamp}-${Math.random().toString(36).slice(2, 8)}`,
+              id: generateId(),
               topic: data.topic,
               payload: data.payload,
               payloadBase64: data.payloadBase64 ?? false,
@@ -340,7 +328,9 @@ export function createConnectionsState(
             synthesizeProfile(status);
           const st = makeOnlineState(status.id, profile);
           st.connected = status.connected;
-          st.subscriptions = status.subscriptions.map(toSubscription);
+          st.subscriptions = status.subscriptions.map((s) =>
+            makeSubscription(s.topic, s.qos),
+          );
           s[status.id] = st;
           onlineProfileIds.add(profile.id);
         }

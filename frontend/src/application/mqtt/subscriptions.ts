@@ -1,10 +1,9 @@
 import { createSignal } from "solid-js";
 import type { Logger } from "../../application/logger";
 import { notify } from "../../application/ui/notifications";
-import { compilePattern } from "../../domain/mqtt/topic";
-import type { Subscription } from "../../domain/mqtt/types";
 import { errorMessage } from "../../shared/error";
 import type { ConnectionStateExt } from "./connections";
+import { makeSubscription } from "./subscription";
 
 export interface SubscriptionApi {
   subscribe(connectionId: string, topic: string, qos: number): Promise<void>;
@@ -55,14 +54,7 @@ export function createSubscriptionsState(
         notify.error(`Failed to subscribe to ${t}`, errorMessage(err));
         return;
       }
-      const isWildcard = t.includes("+") || t.includes("#");
-      const newSub: Subscription = {
-        id: Date.now().toString(),
-        topic: t,
-        qos: q as 0 | 1 | 2,
-        patternParts: isWildcard ? compilePattern(t) : undefined,
-        muted: false,
-      };
+      const newSub = makeSubscription(t, q);
       updateConnection(connId, (state) => ({
         ...state,
         subscriptions: [...state.subscriptions, newSub],

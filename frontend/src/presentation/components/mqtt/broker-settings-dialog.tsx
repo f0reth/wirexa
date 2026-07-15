@@ -3,6 +3,7 @@ import { Button } from "../../../components/ui/button";
 import { createFocusTrap } from "../../../components/ui/focus-trap";
 import { Input } from "../../../components/ui/input";
 import type { BrokerProfile } from "../../../domain/mqtt/types";
+import { generateId } from "../../../infrastructure/id/generator";
 import styles from "./mqtt.module.css";
 
 function defaultPort(scheme: string): string {
@@ -36,7 +37,7 @@ function composeBrokerUrl(scheme: string, host: string, port: string): string {
 
 function createEmptyProfile(): BrokerProfile {
   return {
-    id: Date.now().toString(),
+    id: generateId(),
     name: "",
     broker: "mqtt://localhost:1883",
     clientId: "",
