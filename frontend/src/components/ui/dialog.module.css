@@ -1,0 +1,37 @@
+/* ── 共有モーダルダイアログ ─────────────────────────────
+ * confirm-dialog / broker 設定 / target 設定 で共有するオーバーレイとカードの外観。
+ * フォーム本体などコンポーネント固有の要素は各モジュール側に置く。 */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--overlay);
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.15s ease-out;
+}
+
+.card {
+  width: 24rem;
+  background-color: var(--surface-3);
+  border: 1px solid var(--border-prominent);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-xl), var(--inner-glow-strong);
+  animation: scaleIn 0.2s ease-out;
+}
+
+.title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-foreground);
+  margin: 0 0 1rem;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}

@@ -2,6 +2,7 @@ import { createSignal, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { notify } from "../../../application/ui/notifications";
 import { Button } from "../../../components/ui/button";
+import dialog from "../../../components/ui/dialog.module.css";
 import { createFocusTrap } from "../../../components/ui/focus-trap";
 import { Input } from "../../../components/ui/input";
 import type { UdpTarget } from "../../../domain/udp/types";
@@ -58,15 +59,15 @@ function TargetDialog(props: TargetDialogProps) {
   );
 
   return (
-    <div class={styles.dialogOverlay}>
+    <div class={dialog.overlay}>
       <div
         ref={dialogRef}
-        class={styles.dialog}
+        class={dialog.card}
         role="dialog"
         aria-modal="true"
         onKeyDown={onKeyDown}
       >
-        <h3 class={styles.dialogTitle}>
+        <h3 class={dialog.title}>
           {props.initial ? "Edit Target" : "New Target"}
         </h3>
         <div class={styles.dialogForm}>
@@ -101,7 +102,7 @@ function TargetDialog(props: TargetDialogProps) {
             />
           </label>
         </div>
-        <div class={styles.dialogActions}>
+        <div class={dialog.actions}>
           <Button variant="ghost" onClick={props.onClose}>
             Cancel
           </Button>

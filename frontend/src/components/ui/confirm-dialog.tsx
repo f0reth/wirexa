@@ -1,6 +1,7 @@
 import { Show } from "solid-js";
 import { Button } from "./button";
 import styles from "./confirm-dialog.module.css";
+import dialog from "./dialog.module.css";
 import { createFocusTrap } from "./focus-trap";
 
 export function ConfirmDialog(props: {
@@ -25,18 +26,18 @@ export function ConfirmDialog(props: {
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard handling (Escape, Tab) managed in dialog card
     // biome-ignore lint/a11y/noStaticElementInteractions: dialog overlay backdrop
-    <div class={styles.overlay} onClick={() => props.onCancel()}>
+    <div class={dialog.overlay} onClick={() => props.onCancel()}>
       <div
         ref={cardRef}
-        class={styles.card}
+        class={dialog.card}
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
       >
-        <h3 class={styles.title}>{props.title}</h3>
+        <h3 class={dialog.title}>{props.title}</h3>
         <p class={styles.message}>{props.message}</p>
-        <div class={styles.actions}>
+        <div class={dialog.actions}>
           <Button variant="outline" size="sm" onClick={() => props.onCancel()}>
             Cancel
           </Button>

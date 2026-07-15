@@ -416,33 +416,7 @@
 }
 
 /* ── Target dialog ─────────────────────────────────────── */
-.dialogOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: var(--overlay);
-  backdrop-filter: blur(4px);
-}
-
-.dialog {
-  width: 22rem;
-  background-color: var(--surface-3);
-  border: 1px solid var(--border-prominent);
-  border-radius: 0.75rem;
-  padding: 1.25rem;
-  box-shadow: var(--shadow-lg);
-}
-
-.dialogTitle {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--color-foreground);
-  margin: 0 0 1rem;
-}
-
+/* オーバーレイ/カード/タイトル/アクションは共有 dialog.module.css を使用。 */
 .dialogForm {
   display: flex;
   flex-direction: column;
@@ -454,12 +428,6 @@
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--color-muted-foreground);
-}
-
-.dialogActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
 }
 
 /* ── Drag-and-drop ─────────────────────────────────────── */
