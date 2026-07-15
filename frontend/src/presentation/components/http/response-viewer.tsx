@@ -1,5 +1,5 @@
 import { Check, Copy } from "lucide-solid";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import { createCopyButton } from "../../../components/ui/copy-button";
 import { ScrollArea } from "../../../components/ui/scroll-area";
@@ -9,6 +9,7 @@ import {
   saveResponseBody,
 } from "../../../infrastructure/http/client";
 import { useHttpRequest } from "../../providers/http-provider";
+import { highlightJson } from "../../utils/json-highlight";
 import { HexView } from "../shared/hex-view";
 import styles from "./http.module.css";
 
@@ -75,7 +76,17 @@ export function ResponseViewer() {
     } catch {
       return { text: body, html: null as string | null };
     }
-    return { text: formatted, html: highlightFormatted(formatted) };
+    return { text: formatted, html: highlightJson(formatted) };
+  });
+
+  // body の表示種別。切り捨て/空などの直交状態は別途 Show で扱う。
+  const bodyKind = createMemo<"image" | "binary" | "json" | "text">(() => {
+    const resp = response();
+    if (!resp) return "text";
+    if (isImageContentType(resp.contentType)) return "image";
+    if (resp.bodyBase64) return "binary";
+    if (bodyDisplay().html !== null) return "json";
+    return "text";
   });
 
   return (
@@ -233,65 +244,52 @@ export function ResponseViewer() {
                             </div>
                           </Show>
 
-                          <Show
-                            when={isImageContentType(resp().contentType)}
-                            fallback={
+                          <Switch>
+                            <Match when={bodyKind() === "image"}>
+                              <div class={styles.responseImageContainer}>
+                                <img
+                                  src={`data:${resp().contentType.split(";")[0]};base64,${resp().body}`}
+                                  alt="Response"
+                                  class={styles.responseImage}
+                                />
+                              </div>
+                            </Match>
+                            <Match when={bodyKind() === "binary"}>
+                              {/* 非 UTF-8 バイナリ: hex ダンプ + 保存ボタン */}
+                              <div class={styles.responseBodyLimitActions}>
+                                <button
+                                  type="button"
+                                  class={styles.responseBodyLimitBtn}
+                                  onClick={handleSaveToFile}
+                                >
+                                  Save body to file
+                                </button>
+                              </div>
+                              <HexView base64={resp().body} />
+                            </Match>
+                            <Match when={bodyKind() === "json"}>
+                              <pre
+                                class={styles.responseBody}
+                                innerHTML={bodyDisplay().html ?? ""}
+                              />
+                            </Match>
+                            <Match when={bodyKind() === "text"}>
                               <Show
-                                when={resp().bodyBase64}
-                                fallback={
-                                  <>
-                                    <Show
-                                      when={
-                                        isJsonContentType(resp().contentType) &&
-                                        resp().body.length >
-                                          HIGHLIGHT_SIZE_LIMIT
-                                      }
-                                    >
-                                      <div
-                                        class={styles.responseHighlightBanner}
-                                      >
-                                        ℹ Syntax highlighting is disabled for
-                                        large responses (&gt; 1 MB).
-                                      </div>
-                                    </Show>
-                                    <Show
-                                      when={bodyDisplay().html !== null}
-                                      fallback={
-                                        <pre class={styles.responseBody}>
-                                          {bodyDisplay().text}
-                                        </pre>
-                                      }
-                                    >
-                                      <pre
-                                        class={styles.responseBody}
-                                        innerHTML={bodyDisplay().html ?? ""}
-                                      />
-                                    </Show>
-                                  </>
+                                when={
+                                  isJsonContentType(resp().contentType) &&
+                                  resp().body.length > HIGHLIGHT_SIZE_LIMIT
                                 }
                               >
-                                {/* 非 UTF-8 バイナリ: hex ダンプ + 保存ボタン */}
-                                <div class={styles.responseBodyLimitActions}>
-                                  <button
-                                    type="button"
-                                    class={styles.responseBodyLimitBtn}
-                                    onClick={handleSaveToFile}
-                                  >
-                                    Save body to file
-                                  </button>
+                                <div class={styles.responseHighlightBanner}>
+                                  ℹ Syntax highlighting is disabled for large
+                                  responses (&gt; 1 MB).
                                 </div>
-                                <HexView base64={resp().body} />
                               </Show>
-                            }
-                          >
-                            <div class={styles.responseImageContainer}>
-                              <img
-                                src={`data:${resp().contentType.split(";")[0]};base64,${resp().body}`}
-                                alt="Response"
-                                class={styles.responseImage}
-                              />
-                            </div>
-                          </Show>
+                              <pre class={styles.responseBody}>
+                                {bodyDisplay().text}
+                              </pre>
+                            </Match>
+                          </Switch>
                         </Show>
                       </Show>
                     </ScrollArea>
@@ -352,35 +350,4 @@ function isImageContentType(contentType: string): boolean {
 
 function isJsonContentType(contentType: string): boolean {
   return contentType?.includes("json") ?? false;
-}
-
-function escapeHtml(str: string): string {
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-const JSON_TOKEN_RE =
-  /("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(?:\s*:)?|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g;
-
-function getTokenClass(token: string): string {
-  if (token.startsWith('"')) {
-    return token.trimEnd().endsWith(":") ? "json-key" : "json-string";
-  }
-  if (token === "true" || token === "false") return "json-boolean";
-  if (token === "null") return "json-null";
-  return "json-number";
-}
-
-// フォーマット済み文字列に対してregexを走らせるだけ（JSON.parseは呼ばない）
-function highlightFormatted(formatted: string): string {
-  let result = "";
-  let lastIndex = 0;
-  for (const match of formatted.matchAll(JSON_TOKEN_RE)) {
-    const start = match.index;
-    result += escapeHtml(formatted.slice(lastIndex, start));
-    const token = match[0];
-    result += `<span class="${getTokenClass(token)}">${escapeHtml(token)}</span>`;
-    lastIndex = start + token.length;
-  }
-  result += escapeHtml(formatted.slice(lastIndex));
-  return result;
 }
