@@ -4,6 +4,7 @@ import {
   loadFromStorage,
   saveToStorage,
 } from "../../infrastructure/storage/local-storage";
+import { moveItem } from "../../shared/array";
 import { applyOrder } from "../shared/order";
 
 const PROFILE_ORDER_KEY = "mqtt:profileOrder";
@@ -53,16 +54,8 @@ export function createProfilesState(api: ProfileApi) {
 
   function reorderProfiles(fromIndex: number, toIndex: number): void {
     setProfiles((prev) => {
-      if (
-        fromIndex < 0 ||
-        fromIndex >= prev.length ||
-        toIndex < 0 ||
-        toIndex >= prev.length
-      )
-        return prev;
-      const next = [...prev];
-      const [item] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, item);
+      const next = moveItem(prev, fromIndex, toIndex);
+      if (!next) return prev;
       saveToStorage(
         PROFILE_ORDER_KEY,
         next.map((p) => p.id),

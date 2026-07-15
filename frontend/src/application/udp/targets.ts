@@ -4,6 +4,7 @@ import {
   loadFromStorage,
   saveToStorage,
 } from "../../infrastructure/storage/local-storage";
+import { moveItem } from "../../shared/array";
 import { applyOrder } from "../shared/order";
 
 const TARGET_ORDER_KEY = "udp:targetOrder";
@@ -24,16 +25,8 @@ export function createTargetsState(api: UdpTargetApi) {
   }
 
   function reorderTargets(fromIndex: number, toIndex: number): void {
-    const next = [...targets];
-    if (
-      fromIndex < 0 ||
-      fromIndex >= next.length ||
-      toIndex < 0 ||
-      toIndex >= next.length
-    )
-      return;
-    const [item] = next.splice(fromIndex, 1);
-    next.splice(toIndex, 0, item);
+    const next = moveItem(targets, fromIndex, toIndex);
+    if (!next) return;
     saveToStorage(
       TARGET_ORDER_KEY,
       next.map((t) => t.id),

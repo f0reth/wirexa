@@ -2,6 +2,7 @@ import { createSignal } from "solid-js";
 import type { PresetStorage } from "../../domain/mqtt/ports";
 import type { PublishPreset } from "../../domain/mqtt/types";
 import { generateId } from "../../infrastructure/id/generator";
+import { moveItem } from "../../shared/array";
 
 export type { PresetStorage };
 
@@ -61,12 +62,9 @@ export function createPresetsState(storage: PresetStorage) {
   }
 
   function reorderPresets(fromIndex: number, toIndex: number): void {
-    if (fromIndex < 0 || toIndex < 0) return;
     setPresets((prev) => {
-      if (fromIndex >= prev.length || toIndex >= prev.length) return prev;
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
+      const next = moveItem(prev, fromIndex, toIndex);
+      if (!next) return prev;
       storage.save(next);
       return next;
     });
