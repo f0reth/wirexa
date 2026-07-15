@@ -1,5 +1,6 @@
-import { createMemo, createSignal, onMount, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { Button } from "../../../components/ui/button";
+import { createFocusTrap } from "../../../components/ui/focus-trap";
 import { Input } from "../../../components/ui/input";
 import type { BrokerProfile } from "../../../domain/mqtt/types";
 import styles from "./mqtt.module.css";
@@ -103,41 +104,10 @@ export function BrokerSettingsDialog(props: {
     });
   };
 
-  const getFocusable = () =>
-    Array.from(
-      cardRef?.querySelectorAll<HTMLElement>(
-        "input:not([disabled]), select:not([disabled]), button:not([disabled])",
-      ) ?? [],
-    );
-
-  const handleCardKeyDown = (e: KeyboardEvent) => {
-    e.stopPropagation();
-    if (e.key === "Escape") {
-      props.onClose();
-      return;
-    }
-    if (e.key === "Tab") {
-      const focusable = getFocusable();
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-  };
-
-  onMount(() => {
-    getFocusable()[0]?.focus();
-  });
+  const { onKeyDown } = createFocusTrap(
+    () => cardRef,
+    () => props.onClose(),
+  );
 
   return (
     <>
@@ -157,7 +127,7 @@ export function BrokerSettingsDialog(props: {
           aria-modal="true"
           aria-label={props.profile ? "Edit Profile" : "New Profile"}
           onClick={(e) => e.stopPropagation()}
-          onKeyDown={handleCardKeyDown}
+          onKeyDown={onKeyDown}
         >
           <h3 class={styles.dialogTitle}>
             {props.profile ? "Edit Profile" : "New Profile"}

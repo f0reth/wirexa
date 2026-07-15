@@ -2,6 +2,7 @@ import { createSignal, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { notify } from "../../../application/ui/notifications";
 import { Button } from "../../../components/ui/button";
+import { createFocusTrap } from "../../../components/ui/focus-trap";
 import { Input } from "../../../components/ui/input";
 import type { UdpTarget } from "../../../domain/udp/types";
 import { errorMessage } from "../../../shared/error";
@@ -51,41 +52,10 @@ function TargetDialog(props: TargetDialogProps) {
     });
   };
 
-  const getFocusable = () =>
-    Array.from(
-      dialogRef?.querySelectorAll<HTMLElement>(
-        "input:not([disabled]), button:not([disabled])",
-      ) ?? [],
-    );
-
-  const handleKeyDown = (e: KeyboardEvent) => {
-    e.stopPropagation();
-    if (e.key === "Escape") {
-      props.onClose();
-      return;
-    }
-    if (e.key === "Tab") {
-      const focusable = getFocusable();
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-  };
-
-  onMount(() => {
-    getFocusable()[0]?.focus();
-  });
+  const { onKeyDown } = createFocusTrap(
+    () => dialogRef,
+    () => props.onClose(),
+  );
 
   return (
     <div class={styles.dialogOverlay}>
@@ -94,7 +64,7 @@ function TargetDialog(props: TargetDialogProps) {
         class={styles.dialog}
         role="dialog"
         aria-modal="true"
-        onKeyDown={handleKeyDown}
+        onKeyDown={onKeyDown}
       >
         <h3 class={styles.dialogTitle}>
           {props.initial ? "Edit Target" : "New Target"}
