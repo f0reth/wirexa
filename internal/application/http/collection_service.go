@@ -157,31 +157,8 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 		Name:     name,
 		Children: []*domain.TreeItem{},
 	}
-
-	s.mu.Lock()
-
-	c, ok := s.cache[collectionID]
-	if !ok {
-		s.mu.Unlock()
-		return nil, &cmn.NotFoundError{Resource: sidebarKindCollection, ID: collectionID}
-	}
-
-	if !c.AppendItem(parentID, item) {
-		s.mu.Unlock()
-		return nil, &cmn.NotFoundError{Resource: resourceParent, ID: parentID}
-	}
-
-	if err := s.repo.Save(c); err != nil {
-		s.mu.Unlock()
-		return nil, fmt.Errorf("failed to save collection: %w", err)
-	}
-	s.mu.Unlock()
-
-	// root コレクションのルート直下に追加した場合、サイドバーレイアウトにも追加する。
-	if collectionID == domain.RootCollectionID && parentID == "" {
-		if err := s.layout.Append(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID}); err != nil {
-			return nil, fmt.Errorf("failed to update sidebar layout: %w", err)
-		}
+	if err := s.addItem(collectionID, parentID, item); err != nil {
+		return nil, err
 	}
 	return item, nil
 }
@@ -198,33 +175,44 @@ func (s *CollectionService) AddRequest(collectionID, parentID string, req domain
 		Request:  &req,
 		Children: []*domain.TreeItem{},
 	}
-
-	s.mu.Lock()
-
-	c, ok := s.cache[collectionID]
-	if !ok {
-		s.mu.Unlock()
-		return nil, &cmn.NotFoundError{Resource: sidebarKindCollection, ID: collectionID}
+	if err := s.addItem(collectionID, parentID, item); err != nil {
+		return nil, err
 	}
+	return item, nil
+}
 
-	if !c.AppendItem(parentID, item) {
-		s.mu.Unlock()
-		return nil, &cmn.NotFoundError{Resource: resourceParent, ID: parentID}
+// addItem は組み立て済みの TreeItem をコレクションへ追加し、必要ならサイドバーにも反映する。
+// キャッシュ更新はロック区間内で完結させ、レイアウト追加はロック解放後に委譲する
+// (レイアウトロックとのネストによるデッドロックを避けるため)。
+func (s *CollectionService) addItem(collectionID, parentID string, item *domain.TreeItem) error {
+	if err := s.appendItemToCache(collectionID, parentID, item); err != nil {
+		return err
 	}
-
-	if err := s.repo.Save(c); err != nil {
-		s.mu.Unlock()
-		return nil, fmt.Errorf("failed to save collection: %w", err)
-	}
-	s.mu.Unlock()
-
 	// root コレクションのルート直下に追加した場合、サイドバーレイアウトにも追加する。
 	if collectionID == domain.RootCollectionID && parentID == "" {
 		if err := s.layout.Append(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID}); err != nil {
-			return nil, fmt.Errorf("failed to update sidebar layout: %w", err)
+			return fmt.Errorf("failed to update sidebar layout: %w", err)
 		}
 	}
-	return item, nil
+	return nil
+}
+
+// appendItemToCache はロックを取り、キャッシュへ item を追加して永続化する。
+func (s *CollectionService) appendItemToCache(collectionID, parentID string, item *domain.TreeItem) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	c, ok := s.cache[collectionID]
+	if !ok {
+		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: collectionID}
+	}
+	if !c.AppendItem(parentID, item) {
+		return &cmn.NotFoundError{Resource: resourceParent, ID: parentID}
+	}
+	if err := s.repo.Save(c); err != nil {
+		return fmt.Errorf("failed to save collection: %w", err)
+	}
+	return nil
 }
 
 // UpdateRequest はコレクション内のリクエストを更新する。
