@@ -1,6 +1,12 @@
 import Resizable from "@corvu/resizable";
-import { createEffect, createSignal, Show } from "solid-js";
-import { Portal } from "solid-js/web";
+import {
+  type Component,
+  createEffect,
+  createSignal,
+  For,
+  Show,
+} from "solid-js";
+import { Dynamic, Portal } from "solid-js/web";
 import styles from "./App.module.css";
 import { createThemeStore } from "./application/ui/theme";
 import {
@@ -23,6 +29,13 @@ import { HttpProvider } from "./presentation/providers/http-provider";
 import { MqttProvider } from "./presentation/providers/mqtt-provider";
 import { OpenApiProvider } from "./presentation/providers/openapi-provider";
 import { UdpProvider } from "./presentation/providers/udp-provider";
+
+const PANELS: { protocol: Protocol; component: Component }[] = [
+  { protocol: "mqtt", component: MqttClient },
+  { protocol: "http", component: HttpClient },
+  { protocol: "udp", component: UdpClient },
+  { protocol: "openapi", component: OpenApiClient },
+];
 
 function SidebarCollapseController(props: { sidebarOpen: () => boolean }) {
   const panelCtx = Resizable.usePanelContext();
@@ -103,50 +116,22 @@ function App() {
                 <ResizableHandle withHandle />
                 <ResizablePanel defaultSize={85}>
                   <main class={styles.main}>
-                    <Show when={visited().has("mqtt")}>
-                      <div
-                        data-testid="mqtt-panel"
-                        class={styles.panel}
-                        style={{
-                          display: protocol() === "mqtt" ? "flex" : "none",
-                        }}
-                      >
-                        <MqttClient />
-                      </div>
-                    </Show>
-                    <Show when={visited().has("http")}>
-                      <div
-                        data-testid="http-panel"
-                        class={styles.panel}
-                        style={{
-                          display: protocol() === "http" ? "flex" : "none",
-                        }}
-                      >
-                        <HttpClient />
-                      </div>
-                    </Show>
-                    <Show when={visited().has("udp")}>
-                      <div
-                        data-testid="udp-panel"
-                        class={styles.panel}
-                        style={{
-                          display: protocol() === "udp" ? "flex" : "none",
-                        }}
-                      >
-                        <UdpClient />
-                      </div>
-                    </Show>
-                    <Show when={visited().has("openapi")}>
-                      <div
-                        data-testid="openapi-panel"
-                        class={styles.panel}
-                        style={{
-                          display: protocol() === "openapi" ? "flex" : "none",
-                        }}
-                      >
-                        <OpenApiClient />
-                      </div>
-                    </Show>
+                    <For each={PANELS}>
+                      {(p) => (
+                        <Show when={visited().has(p.protocol)}>
+                          <div
+                            data-testid={`${p.protocol}-panel`}
+                            class={styles.panel}
+                            style={{
+                              display:
+                                protocol() === p.protocol ? "flex" : "none",
+                            }}
+                          >
+                            <Dynamic component={p.component} />
+                          </div>
+                        </Show>
+                      )}
+                    </For>
                   </main>
                 </ResizablePanel>
               </ResizablePanelGroup>
