@@ -8,7 +8,8 @@ import {
   useMqttSubscribe,
 } from "../../../providers/mqtt-provider";
 import { base64ByteLength } from "../../shared/hex-view";
-import styles from "../mqtt.module.css";
+import styles from "../messages.module.css";
+import base from "../mqtt.module.css";
 import { formatTime, getTopicColor } from "../utils";
 
 export function MessagesPanel() {
@@ -94,9 +95,9 @@ export function MessagesPanel() {
 
   return (
     <div class={styles.messagesPanel}>
-      <div class={styles.sectionHeader}>
-        <h3 class={styles.sectionTitle}>Messages</h3>
-        <div class={styles.sectionHeaderActions}>
+      <div class={base.sectionHeader}>
+        <h3 class={base.sectionTitle}>Messages</h3>
+        <div class={base.sectionHeaderActions}>
           <select
             class={styles.topicFilterSelect}
             value={topicFilter()}
@@ -111,8 +112,8 @@ export function MessagesPanel() {
           <button
             type="button"
             class={clsx(
-              styles.headerAction,
-              autoFollow() && styles.headerActionActive,
+              base.headerAction,
+              autoFollow() && base.headerActionActive,
             )}
             onClick={() => setAutoFollow((v) => !v)}
             title="Auto-follow latest message"
@@ -122,7 +123,7 @@ export function MessagesPanel() {
           </button>
           <button
             type="button"
-            class={styles.headerAction}
+            class={base.headerAction}
             onClick={clearMessages}
             title="Clear all messages"
           >
@@ -141,8 +142,8 @@ export function MessagesPanel() {
         <Show
           when={filteredMessages().length > 0}
           fallback={
-            <div class={styles.listPadding}>
-              <p class={styles.emptyText}>No messages yet</p>
+            <div class={base.listPadding}>
+              <p class={base.emptyText}>No messages yet</p>
             </div>
           }
         >

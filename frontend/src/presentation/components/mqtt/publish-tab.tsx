@@ -9,6 +9,7 @@ import {
   createListReorder,
   InsertionZone,
 } from "../../../components/ui/list-reorder";
+import reorderStyles from "../../../components/ui/list-reorder.module.css";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -20,7 +21,8 @@ import {
   useMqttConnection,
   useMqttPublish,
 } from "../../providers/mqtt-provider";
-import styles from "./mqtt.module.css";
+import base from "./mqtt.module.css";
+import styles from "./publish.module.css";
 import { QosSelect } from "./qos-select";
 
 function PresetsPanel(props: { addPreset: () => void }) {
@@ -38,20 +40,20 @@ function PresetsPanel(props: { addPreset: () => void }) {
 
   return (
     <div class={styles.presetsPanel}>
-      <div class={styles.sectionHeader}>
-        <h3 class={styles.sectionTitle}>Messages</h3>
+      <div class={base.sectionHeader}>
+        <h3 class={base.sectionTitle}>Messages</h3>
         <Button variant="ghost" size="icon" onClick={() => props.addPreset()}>
           <Plus size={16} />
         </Button>
       </div>
 
-      <ScrollArea class={styles.subscriptionScrollArea}>
-        <div class={styles.listPadding}>
+      <ScrollArea class={base.subscriptionScrollArea}>
+        <div class={base.listPadding}>
           <Show
             when={presets().length > 0}
-            fallback={<p class={styles.emptyText}>No saved presets</p>}
+            fallback={<p class={base.emptyText}>No saved presets</p>}
           >
-            <div class={styles.itemList}>
+            <div class={base.itemList}>
               <For each={presets()}>
                 {(preset, index) => {
                   const isSelected = () => selectedPresetId() === preset.id;
@@ -95,7 +97,10 @@ function PresetsPanel(props: { addPreset: () => void }) {
                             setSelectedPresetId(preset.id);
                         }}
                       >
-                        <GripVertical size={14} class={styles.dragHandle} />
+                        <GripVertical
+                          size={14}
+                          class={reorderStyles.dragHandle}
+                        />
                         <div class={styles.presetItemBody}>
                           <Show
                             when={isSelected()}
@@ -138,7 +143,7 @@ function PresetsPanel(props: { addPreset: () => void }) {
                             e.stopPropagation();
                             removePreset(preset.id);
                           }}
-                          class={styles.deleteButton}
+                          class={base.deleteButton}
                         >
                           <Trash2 size={16} />
                         </Button>
@@ -192,8 +197,8 @@ function PublishForm(props: {
 
   return (
     <div class={styles.publishPanel}>
-      <div class={styles.sectionHeader}>
-        <h3 class={styles.sectionTitle}>Publish</h3>
+      <div class={base.sectionHeader}>
+        <h3 class={base.sectionTitle}>Publish</h3>
       </div>
       <div class={styles.publishForm}>
         <div class={styles.publishTopicRow}>
@@ -283,7 +288,7 @@ export function PublishTab() {
   );
 
   return (
-    <ResizablePanelGroup direction="horizontal" class={styles.tabContent}>
+    <ResizablePanelGroup direction="horizontal" class={base.tabContent}>
       <ResizablePanel defaultSize={30} minSize={20}>
         <PresetsPanel addPreset={addPreset} />
       </ResizablePanel>

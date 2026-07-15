@@ -1,4 +1,4 @@
-import clsx from "clsx";
+import { clsx } from "clsx";
 import { Wifi, WifiOff, Zap } from "lucide-solid";
 import { createSignal, Show } from "solid-js";
 import {
@@ -10,7 +10,7 @@ import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { isConnected } from "../../../domain/mqtt/types";
 import { useMqttConnection } from "../../providers/mqtt-provider";
-import styles from "./mqtt.module.css";
+import styles from "./broker.module.css";
 
 export function BrokerManager() {
   const {

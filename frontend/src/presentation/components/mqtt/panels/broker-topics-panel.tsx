@@ -3,7 +3,8 @@ import { Plus, ScanSearch, Square } from "lucide-solid";
 import { createMemo, For, Show } from "solid-js";
 import { ScrollArea } from "../../../../components/ui/scroll-area";
 import { useMqttSubscribe } from "../../../providers/mqtt-provider";
-import styles from "../mqtt.module.css";
+import base from "../mqtt.module.css";
+import styles from "../subscribe.module.css";
 import { getTopicColor } from "../utils";
 
 function BrokerTopicItem(props: {
@@ -49,13 +50,13 @@ export function BrokerTopicsPanel() {
 
   return (
     <div class={styles.brokerTopicsPanel}>
-      <div class={styles.sectionHeader}>
-        <h3 class={styles.sectionTitle}>Broker Topics</h3>
+      <div class={base.sectionHeader}>
+        <h3 class={base.sectionTitle}>Broker Topics</h3>
         <button
           type="button"
           class={clsx(
-            styles.headerAction,
-            isScanning() && styles.headerActionActive,
+            base.headerAction,
+            isScanning() && base.headerActionActive,
           )}
           onClick={() => setIsScanning((v) => !v)}
           title={isScanning() ? "Stop scanning" : "Start scanning"}
@@ -67,17 +68,17 @@ export function BrokerTopicsPanel() {
         </button>
       </div>
 
-      <ScrollArea class={styles.subscriptionScrollArea}>
-        <div class={styles.listPadding}>
+      <ScrollArea class={base.subscriptionScrollArea}>
+        <div class={base.listPadding}>
           <Show
             when={brokerTopics().length > 0}
             fallback={
-              <p class={styles.emptyText}>
+              <p class={base.emptyText}>
                 {isScanning() ? "Scanning..." : "No topics found"}
               </p>
             }
           >
-            <div class={styles.itemList}>
+            <div class={base.itemList}>
               <For each={brokerTopics()}>
                 {(topic) => (
                   <BrokerTopicItem

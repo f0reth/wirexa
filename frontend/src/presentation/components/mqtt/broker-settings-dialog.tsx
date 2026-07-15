@@ -1,10 +1,12 @@
+import { clsx } from "clsx";
 import { createMemo, createSignal, Show } from "solid-js";
 import { Button } from "../../../components/ui/button";
+import dialog from "../../../components/ui/dialog.module.css";
 import { createFocusTrap } from "../../../components/ui/focus-trap";
 import { Input } from "../../../components/ui/input";
 import type { BrokerProfile } from "../../../domain/mqtt/types";
 import { generateId } from "../../../infrastructure/id/generator";
-import styles from "./mqtt.module.css";
+import styles from "./broker.module.css";
 
 function defaultPort(scheme: string): string {
   const map: Record<string, string> = {
@@ -114,7 +116,7 @@ export function BrokerSettingsDialog(props: {
     <>
       {/* biome-ignore lint/a11y/useSemanticElements: overlay backdrop requires block-level display; button element cannot serve as full-screen backdrop */}
       <div
-        class={styles.dialogOverlay}
+        class={dialog.overlay}
         role="button"
         tabIndex={-1}
         aria-label="Close dialog"
@@ -123,14 +125,14 @@ export function BrokerSettingsDialog(props: {
       >
         <div
           ref={cardRef}
-          class={styles.dialogCard}
+          class={dialog.card}
           role="dialog"
           aria-modal="true"
           aria-label={props.profile ? "Edit Profile" : "New Profile"}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={onKeyDown}
         >
-          <h3 class={styles.dialogTitle}>
+          <h3 class={dialog.title}>
             {props.profile ? "Edit Profile" : "New Profile"}
           </h3>
 
@@ -223,7 +225,7 @@ export function BrokerSettingsDialog(props: {
             </label>
           </div>
 
-          <div class={styles.dialogActions}>
+          <div class={clsx(dialog.actions, styles.dialogActions)}>
             <Button variant="outline" onClick={() => props.onClose()}>
               Cancel
             </Button>

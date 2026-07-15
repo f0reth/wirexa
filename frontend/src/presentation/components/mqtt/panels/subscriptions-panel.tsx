@@ -1,3 +1,4 @@
+import { clsx } from "clsx";
 import { Bell, BellOff, Plus, Trash2 } from "lucide-solid";
 import { For, Show } from "solid-js";
 import { Badge } from "../../../../components/ui/badge";
@@ -8,8 +9,9 @@ import {
   useMqttConnection,
   useMqttSubscribe,
 } from "../../../providers/mqtt-provider";
-import styles from "../mqtt.module.css";
+import base from "../mqtt.module.css";
 import { QosSelect } from "../qos-select";
+import styles from "../subscribe.module.css";
 
 export function SubscriptionsPanel() {
   const {
@@ -30,8 +32,8 @@ export function SubscriptionsPanel() {
 
   return (
     <div class={styles.subscriptionsPanel}>
-      <div class={styles.sectionHeader}>
-        <h3 class={styles.sectionTitle}>Subscriptions</h3>
+      <div class={base.sectionHeader}>
+        <h3 class={base.sectionTitle}>Subscriptions</h3>
       </div>
 
       <div class={styles.addSubscriptionSection}>
@@ -60,19 +62,22 @@ export function SubscriptionsPanel() {
         </div>
       </div>
 
-      <ScrollArea class={styles.subscriptionScrollArea}>
-        <div class={styles.listPadding}>
+      <ScrollArea class={base.subscriptionScrollArea}>
+        <div class={base.listPadding}>
           <Show
             when={subscriptions().length > 0}
-            fallback={<p class={styles.emptyText}>No subscriptions</p>}
+            fallback={<p class={base.emptyText}>No subscriptions</p>}
           >
-            <div class={styles.itemList}>
+            <div class={base.itemList}>
               <For each={subscriptions()}>
                 {(sub) => (
                   <div class={styles.subscriptionItem}>
                     <div class={styles.subscriptionInfo}>
                       <span
-                        class={`${styles.subscriptionTopic}${sub.muted ? ` ${styles.subscriptionTopicMuted}` : ""}`}
+                        class={clsx(
+                          styles.subscriptionTopic,
+                          sub.muted && styles.subscriptionTopicMuted,
+                        )}
                       >
                         {sub.topic}
                       </span>
@@ -83,7 +88,10 @@ export function SubscriptionsPanel() {
                         variant="ghost"
                         size="icon"
                         onClick={() => toggleMute(sub.id)}
-                        class={`${styles.muteButton}${sub.muted ? ` ${styles.muteButtonActive}` : ""}`}
+                        class={clsx(
+                          styles.muteButton,
+                          sub.muted && styles.muteButtonActive,
+                        )}
                         title={sub.muted ? "Unmute" : "Mute"}
                       >
                         {sub.muted ? <BellOff size={15} /> : <Bell size={15} />}
@@ -92,7 +100,7 @@ export function SubscriptionsPanel() {
                         variant="ghost"
                         size="icon"
                         onClick={() => removeSubscription(sub.id)}
-                        class={styles.deleteButton}
+                        class={base.deleteButton}
                       >
                         <Trash2 size={16} />
                       </Button>

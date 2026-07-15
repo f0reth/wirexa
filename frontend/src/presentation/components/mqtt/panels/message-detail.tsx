@@ -4,7 +4,8 @@ import { Badge } from "../../../../components/ui/badge";
 import { createCopyButton } from "../../../../components/ui/copy-button";
 import { useMqttMessages } from "../../../providers/mqtt-provider";
 import { HexView } from "../../shared/hex-view";
-import styles from "../mqtt.module.css";
+import styles from "../messages.module.css";
+import base from "../mqtt.module.css";
 import { formatPayload, formatTime } from "../utils";
 
 export function MessageDetail() {
@@ -15,7 +16,7 @@ export function MessageDetail() {
       <Show
         when={selectedMessage()}
         fallback={
-          <p class={styles.emptyText}>Select a message to view details</p>
+          <p class={base.emptyText}>Select a message to view details</p>
         }
       >
         {(msg) => {
