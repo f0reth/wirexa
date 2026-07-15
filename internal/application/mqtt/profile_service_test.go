@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 )
 
@@ -164,10 +165,47 @@ func TestProfileService_DeleteProfile_Existing(t *testing.T) {
 }
 
 func TestProfileService_DeleteProfile_NonExistentID(t *testing.T) {
-	// IDが存在しない場合はエラーなく完了する
+	// IDが存在しない場合は NotFoundError を返す
 	svc, _ := NewProfileService(newProfileRepo())
-	if err := svc.DeleteProfile("nonexistent"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	err := svc.DeleteProfile("nonexistent")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var nfe *cmn.NotFoundError
+	if !errors.As(err, &nfe) {
+		t.Errorf("expected NotFoundError, got %T", err)
+	}
+}
+
+func TestProfileService_DeleteProfile_DoesNotCallRepoForMissingID(t *testing.T) {
+	// ProfileService は in-memory で存在確認するので、repo.Delete は呼ばれない
+	repo := newProfileRepo()
+	repo.delErr = errors.New("should not be called")
+	svc, _ := NewProfileService(repo)
+
+	err := svc.DeleteProfile("nonexistent")
+	// repo.Delete は呼ばれないので、NotFoundError を返す（repo エラーではない）
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var nfe *cmn.NotFoundError
+	if !errors.As(err, &nfe) {
+		t.Errorf("expected NotFoundError (not repo error), got %T: %v", err, err)
+	}
+}
+
+func TestProfileService_SaveProfile_GeneratesIDWhenEmpty(t *testing.T) {
+	// ID が空の場合は自動採番される（SaveProfile は error のみ返すため GetProfiles 経由で確認）
+	svc, _ := NewProfileService(newProfileRepo())
+	if err := svc.SaveProfile(domain.BrokerProfile{Name: "NoID", Broker: "tcp://localhost:1883"}); err != nil {
+		t.Fatalf("SaveProfile: %v", err)
+	}
+	profiles := svc.GetProfiles()
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile, got %d", len(profiles))
+	}
+	if profiles[0].ID == "" {
+		t.Error("expected auto-generated ID, got empty")
 	}
 }
 

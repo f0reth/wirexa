@@ -2,9 +2,7 @@
 package mqttapp
 
 import (
-	"fmt"
-	"sync"
-
+	"github.com/f0reth/Wirexa/internal/application/store"
 	domain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 )
 
@@ -13,53 +11,34 @@ var _ domain.ProfileUseCase = (*ProfileService)(nil)
 
 // ProfileService は MQTT ブローカープロファイルの CRUD を管理するアプリケーションサービス。
 type ProfileService struct {
-	repo     domain.ProfileRepository
-	profiles map[string]domain.BrokerProfile
-	mu       sync.RWMutex
+	store *store.CachedStore[domain.BrokerProfile]
 }
 
 // NewProfileService はリポジトリからプロファイルをロードして ProfileService を生成する。
 func NewProfileService(repo domain.ProfileRepository) (*ProfileService, error) {
-	loaded, err := repo.Load()
+	cs, err := store.NewCachedStore[domain.BrokerProfile](
+		"profile", repo,
+		func(p domain.BrokerProfile) string { return p.ID },
+		func(p *domain.BrokerProfile, id string) { p.ID = id },
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load profiles: %w", err)
+		return nil, err
 	}
-	profiles := make(map[string]domain.BrokerProfile, len(loaded))
-	for i := range loaded {
-		profiles[loaded[i].ID] = loaded[i]
-	}
-	return &ProfileService{repo: repo, profiles: profiles}, nil
+	return &ProfileService{store: cs}, nil
 }
 
 // GetProfiles は全プロファイルのコピーを返す。
 func (s *ProfileService) GetProfiles() []domain.BrokerProfile {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	result := make([]domain.BrokerProfile, 0, len(s.profiles))
-	for k := range s.profiles {
-		result = append(result, s.profiles[k])
-	}
-	return result
+	return s.store.GetAll()
 }
 
 // SaveProfile はプロファイルを保存（追加または更新）する。
 func (s *ProfileService) SaveProfile(profile domain.BrokerProfile) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.repo.Save(&profile); err != nil {
-		return fmt.Errorf("failed to save profile: %w", err)
-	}
-	s.profiles[profile.ID] = profile
-	return nil
+	_, err := s.store.Save(profile)
+	return err
 }
 
-// DeleteProfile はプロファイルを削除する。
+// DeleteProfile はプロファイルを削除する。存在しない ID の場合は NotFoundError を返す。
 func (s *ProfileService) DeleteProfile(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.repo.Delete(id); err != nil {
-		return fmt.Errorf("failed to delete profile: %w", err)
-	}
-	delete(s.profiles, id)
-	return nil
+	return s.store.Delete(id)
 }
