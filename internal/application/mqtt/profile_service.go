@@ -3,6 +3,7 @@ package mqttapp
 
 import (
 	"github.com/f0reth/Wirexa/internal/application/store"
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 )
 
@@ -17,7 +18,7 @@ type ProfileService struct {
 // NewProfileService はリポジトリからプロファイルをロードして ProfileService を生成する。
 func NewProfileService(repo domain.ProfileRepository) (*ProfileService, error) {
 	cs, err := store.NewCachedStore[domain.BrokerProfile](
-		"profile", repo,
+		cmn.ResourceProfile, repo,
 		func(p domain.BrokerProfile) string { return p.ID },
 		func(p *domain.BrokerProfile, id string) { p.ID = id },
 	)

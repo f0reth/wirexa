@@ -61,7 +61,7 @@ func (l *SidebarLayoutService) Move(kind, id string, position int) error {
 		return err
 	}
 	if len(layout) == 0 {
-		return &cmn.NotFoundError{Resource: "sidebar entry", ID: id}
+		return &cmn.NotFoundError{Resource: cmn.ResourceSidebarEntry, ID: id}
 	}
 	srcIdx := -1
 	for i, e := range layout {
@@ -71,7 +71,7 @@ func (l *SidebarLayoutService) Move(kind, id string, position int) error {
 		}
 	}
 	if srcIdx == -1 {
-		return &cmn.NotFoundError{Resource: "sidebar entry", ID: id}
+		return &cmn.NotFoundError{Resource: cmn.ResourceSidebarEntry, ID: id}
 	}
 	entry := layout[srcIdx]
 	layout = append(layout[:srcIdx], layout[srcIdx+1:]...)

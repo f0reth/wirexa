@@ -4,6 +4,7 @@ package httpapp
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -12,10 +13,11 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
+// サイドバーレイアウトのエントリ種別。cmn.Resource* と値は同じだが、
+// レイアウトの Kind フィールド用途を明示するため別名で保持する。
 const (
-	sidebarKindCollection = "collection"
-	sidebarKindItem       = "item"
-	resourceParent        = "parent"
+	sidebarKindCollection = cmn.ResourceCollection
+	sidebarKindItem       = cmn.ResourceItem
 )
 
 // CollectionService はコレクション管理ユースケースを提供する。
@@ -91,10 +93,13 @@ func (s *CollectionService) GetRootItems() []*domain.TreeItem {
 	return root.Items
 }
 
-// CreateCollection は新規コレクションを作成する。
+// CreateCollection は新規コレクションを作成する。名前が空の場合は ValidationError を返す。
 func (s *CollectionService) CreateCollection(name string) (domain.Collection, error) {
+	if strings.TrimSpace(name) == "" {
+		return domain.Collection{}, &cmn.ValidationError{Field: "name", Message: cmn.MsgRequired}
+	}
 	c := domain.Collection{
-		ID:    uuid.New().String(),
+		ID:    uuid.NewString(),
 		Name:  name,
 		Items: []*domain.TreeItem{},
 	}
@@ -153,7 +158,7 @@ func (s *CollectionService) RenameCollection(id, name string) error {
 func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*domain.TreeItem, error) {
 	item := &domain.TreeItem{
 		Type:     domain.ItemTypeFolder,
-		ID:       uuid.New().String(),
+		ID:       uuid.NewString(),
 		Name:     name,
 		Children: []*domain.TreeItem{},
 	}
@@ -164,9 +169,9 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 }
 
 // AddRequest はコレクションにリクエストを追加する。
-func (s *CollectionService) AddRequest(collectionID, parentID string, req domain.HttpRequest) (*domain.TreeItem, error) {
+func (s *CollectionService) AddRequest(collectionID, parentID string, req domain.HTTPRequest) (*domain.TreeItem, error) {
 	if req.ID == "" {
-		req.ID = uuid.New().String()
+		req.ID = uuid.NewString()
 	}
 	item := &domain.TreeItem{
 		Type:     domain.ItemTypeRequest,
@@ -207,7 +212,7 @@ func (s *CollectionService) appendItemToCache(collectionID, parentID string, ite
 		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: collectionID}
 	}
 	if !c.AppendItem(parentID, item) {
-		return &cmn.NotFoundError{Resource: resourceParent, ID: parentID}
+		return &cmn.NotFoundError{Resource: cmn.ResourceParent, ID: parentID}
 	}
 	if err := s.repo.Save(c); err != nil {
 		return fmt.Errorf("failed to save collection: %w", err)
@@ -216,7 +221,7 @@ func (s *CollectionService) appendItemToCache(collectionID, parentID string, ite
 }
 
 // UpdateRequest はコレクション内のリクエストを更新する。
-func (s *CollectionService) UpdateRequest(collectionID string, req domain.HttpRequest) error {
+func (s *CollectionService) UpdateRequest(collectionID string, req domain.HTTPRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -227,7 +232,7 @@ func (s *CollectionService) UpdateRequest(collectionID string, req domain.HttpRe
 
 	node, _, ok := c.FindNode(req.ID)
 	if !ok || node.Type != domain.ItemTypeRequest {
-		return &cmn.NotFoundError{Resource: "request", ID: req.ID}
+		return &cmn.NotFoundError{Resource: cmn.ResourceRequest, ID: req.ID}
 	}
 
 	req.Name = node.Name
@@ -290,11 +295,11 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 	if targetParentID != "" {
 		parent, _, ok := dst.FindNode(targetParentID)
 		if !ok || parent.Type != domain.ItemTypeFolder {
-			return &cmn.NotFoundError{Resource: resourceParent, ID: targetParentID}
+			return &cmn.NotFoundError{Resource: cmn.ResourceParent, ID: targetParentID}
 		}
 		// 自身のサブツリー内へは移動できない（RemoveNode で親ごと消えるため）。
 		if item.Contains(targetParentID) {
-			return &cmn.ValidationError{Field: resourceParent, Message: "cannot move an item into its own subtree"}
+			return &cmn.ValidationError{Field: cmn.ResourceParent, Message: "cannot move an item into its own subtree"}
 		}
 	}
 
@@ -320,7 +325,7 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 	src.RemoveNode(itemID)
 
 	if !dst.InsertItem(targetParentID, item, position) {
-		return &cmn.NotFoundError{Resource: resourceParent, ID: targetParentID}
+		return &cmn.NotFoundError{Resource: cmn.ResourceParent, ID: targetParentID}
 	}
 
 	if sourceCollectionID != targetCollectionID {

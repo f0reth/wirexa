@@ -23,9 +23,9 @@ import (
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
 
-// newHTTPHandlerWithDir は指定ディレクトリから HttpHandler を組み立てる（永続化テスト用）。
+// newHTTPHandlerWithDir は指定ディレクトリから HTTPHandler を組み立てる（永続化テスト用）。
 // コレクションは dir/collections/ サブディレクトリに保存し、sidebar_layout.json と混在させない。
-func newHTTPHandlerWithDir(t *testing.T, dir string) *adapters.HttpHandler {
+func newHTTPHandlerWithDir(t *testing.T, dir string) *adapters.HTTPHandler {
 	t.Helper()
 	collDir := filepath.Join(dir, "collections")
 	repo, err := infra.NewJSONStore(collDir, func(c *httpdomain.Collection) string { return c.ID })
@@ -38,13 +38,13 @@ func newHTTPHandlerWithDir(t *testing.T, dir string) *adapters.HttpHandler {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
 	reqSvc := httpapp.NewHTTPRequestService(httpinfra.NewNetClient(), testutil.NoopLogger{})
-	h := &adapters.HttpHandler{}
+	h := &adapters.HTTPHandler{}
 	adapters.SetupHTTPHandler(context.Background(), h, reqSvc, collSvc, collSvc, nil)
 	return h
 }
 
-// newHTTPHandler は統合テスト用に HttpHandler を DI で組み立てる。
-func newHTTPHandler(t *testing.T) *adapters.HttpHandler {
+// newHTTPHandler は統合テスト用に HTTPHandler を DI で組み立てる。
+func newHTTPHandler(t *testing.T) *adapters.HTTPHandler {
 	t.Helper()
 	return newHTTPHandlerWithDir(t, t.TempDir())
 }
@@ -99,7 +99,7 @@ func TestHTTP_FolderAndRequestTree(t *testing.T) {
 	}
 
 	// フォルダ内にリクエストを追加
-	req := httpdomain.HttpRequest{Name: "GET example", Method: "GET", URL: "http://example.com"}
+	req := httpdomain.HTTPRequest{Name: "GET example", Method: "GET", URL: "http://example.com"}
 	item, err := h.AddRequest(col.ID, folder.ID, req)
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
@@ -140,7 +140,7 @@ func TestHTTP_SendRequest_2xx(t *testing.T) {
 
 	for _, method := range []string{"GET", "POST"} {
 		t.Run(method, func(t *testing.T) {
-			resp, err := h.SendRequest(httpdomain.HttpRequest{
+			resp, err := h.SendRequest(httpdomain.HTTPRequest{
 				Method: method,
 				URL:    srv.URL,
 			})
@@ -157,7 +157,7 @@ func TestHTTP_SendRequest_2xx(t *testing.T) {
 	}
 }
 
-// TestHTTP_SendRequest_4xx5xx はエラーステータスが HttpResponse.StatusCode に反映されることを確認する。
+// TestHTTP_SendRequest_4xx5xx はエラーステータスが HTTPResponse.StatusCode に反映されることを確認する。
 func TestHTTP_SendRequest_4xx5xx(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -174,7 +174,7 @@ func TestHTTP_SendRequest_4xx5xx(t *testing.T) {
 			defer srv.Close()
 
 			h := newHTTPHandler(t)
-			resp, err := h.SendRequest(httpdomain.HttpRequest{
+			resp, err := h.SendRequest(httpdomain.HTTPRequest{
 				Method: "GET",
 				URL:    srv.URL,
 			})
@@ -199,7 +199,7 @@ func TestHTTP_SendRequest_HeadersAndParams(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HttpRequest{
+	_, err := h.SendRequest(httpdomain.HTTPRequest{
 		Method: "GET",
 		URL:    srv.URL,
 		Headers: []httpdomain.KeyValuePair{
@@ -230,7 +230,7 @@ func TestHTTP_SendRequest_DuplicateRequestHeaders(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HttpRequest{
+	_, err := h.SendRequest(httpdomain.HTTPRequest{
 		Method: "GET",
 		URL:    srv.URL,
 		Headers: []httpdomain.KeyValuePair{
@@ -258,7 +258,7 @@ func TestHTTP_SendRequest_MultiValueResponseHeaders(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	resp, err := h.SendRequest(httpdomain.HttpRequest{Method: "GET", URL: srv.URL})
+	resp, err := h.SendRequest(httpdomain.HTTPRequest{Method: "GET", URL: srv.URL})
 	if err != nil {
 		t.Fatalf("SendRequest: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestHTTP_CancelRequest(t *testing.T) {
 	h := newHTTPHandler(t)
 	done := make(chan error, 1)
 	go func() {
-		_, err := h.SendRequest(httpdomain.HttpRequest{
+		_, err := h.SendRequest(httpdomain.HTTPRequest{
 			Method: "GET",
 			URL:    srv.URL,
 		})
@@ -311,12 +311,12 @@ func TestHTTP_UpdateRequest(t *testing.T) {
 	h := newHTTPHandler(t)
 	col, _ := h.CreateCollection("C")
 
-	item, err := h.AddRequest(col.ID, "", httpdomain.HttpRequest{Name: "Req", Method: "GET", URL: "http://old.example.com"})
+	item, err := h.AddRequest(col.ID, "", httpdomain.HTTPRequest{Name: "Req", Method: "GET", URL: "http://old.example.com"})
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
 
-	if err := h.UpdateRequest(col.ID, httpdomain.HttpRequest{ID: item.ID, Name: "Req", Method: "POST", URL: "http://new.example.com"}); err != nil {
+	if err := h.UpdateRequest(col.ID, httpdomain.HTTPRequest{ID: item.ID, Name: "Req", Method: "POST", URL: "http://new.example.com"}); err != nil {
 		t.Fatalf("UpdateRequest: %v", err)
 	}
 
@@ -338,7 +338,7 @@ func TestHTTP_RenameItem(t *testing.T) {
 	h := newHTTPHandler(t)
 	col, _ := h.CreateCollection("C")
 
-	item, err := h.AddRequest(col.ID, "", httpdomain.HttpRequest{Name: "OldName", Method: "GET", URL: "http://example.com"})
+	item, err := h.AddRequest(col.ID, "", httpdomain.HTTPRequest{Name: "OldName", Method: "GET", URL: "http://example.com"})
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestHTTP_DeleteItem(t *testing.T) {
 	h := newHTTPHandler(t)
 	col, _ := h.CreateCollection("C")
 
-	item, err := h.AddRequest(col.ID, "", httpdomain.HttpRequest{Name: "Req", Method: "GET", URL: "http://example.com"})
+	item, err := h.AddRequest(col.ID, "", httpdomain.HTTPRequest{Name: "Req", Method: "GET", URL: "http://example.com"})
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestHTTP_MoveItem(t *testing.T) {
 	col1, _ := h.CreateCollection("Source")
 	col2, _ := h.CreateCollection("Target")
 
-	item, err := h.AddRequest(col1.ID, "", httpdomain.HttpRequest{Name: "Req", Method: "GET", URL: "http://example.com"})
+	item, err := h.AddRequest(col1.ID, "", httpdomain.HTTPRequest{Name: "Req", Method: "GET", URL: "http://example.com"})
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
@@ -475,7 +475,7 @@ func TestHTTP_SidebarLayout(t *testing.T) {
 	}
 
 	// MoveItemToSidebar: col2 にリクエストを追加し、サイドバー先頭に移動
-	item, err := h.AddRequest(col2.ID, "", httpdomain.HttpRequest{Name: "R", Method: "GET", URL: "http://example.com"})
+	item, err := h.AddRequest(col2.ID, "", httpdomain.HTTPRequest{Name: "R", Method: "GET", URL: "http://example.com"})
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
@@ -521,7 +521,7 @@ func TestHTTP_PersistenceRoundTrip(t *testing.T) {
 	if err := h1.RenameCollection(col.ID, "RenamedCol"); err != nil {
 		t.Fatalf("RenameCollection: %v", err)
 	}
-	if _, err := h1.AddRequest(col.ID, "", httpdomain.HttpRequest{Name: "Req", Method: "GET", URL: "http://example.com"}); err != nil {
+	if _, err := h1.AddRequest(col.ID, "", httpdomain.HTTPRequest{Name: "Req", Method: "GET", URL: "http://example.com"}); err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
 
@@ -557,7 +557,7 @@ func TestHTTP_SendRequest_DisabledHeaderExcluded(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HttpRequest{
+	_, err := h.SendRequest(httpdomain.HTTPRequest{
 		Method: "GET",
 		URL:    srv.URL,
 		Headers: []httpdomain.KeyValuePair{
@@ -587,7 +587,7 @@ func TestHTTP_SendRequest_DisabledParamExcluded(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HttpRequest{
+	_, err := h.SendRequest(httpdomain.HTTPRequest{
 		Method: "GET",
 		URL:    srv.URL,
 		Params: []httpdomain.KeyValuePair{
@@ -609,7 +609,7 @@ func TestHTTP_SendRequest_DisabledParamExcluded(t *testing.T) {
 // TestHTTP_SendRequest_InvalidMethod は無効な HTTP メソッドで ValidationError が返ることを確認する。
 func TestHTTP_SendRequest_InvalidMethod(t *testing.T) {
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HttpRequest{
+	_, err := h.SendRequest(httpdomain.HTTPRequest{
 		Method: "INVALID",
 		URL:    "http://example.com",
 	})
@@ -630,7 +630,7 @@ func TestHTTP_SendRequest_Auth(t *testing.T) {
 		defer srv.Close()
 
 		h := newHTTPHandler(t)
-		_, err := h.SendRequest(httpdomain.HttpRequest{
+		_, err := h.SendRequest(httpdomain.HTTPRequest{
 			Method: "GET",
 			URL:    srv.URL,
 			Auth:   httpdomain.RequestAuth{Type: "basic", Username: "user", Password: "pass"},
@@ -655,7 +655,7 @@ func TestHTTP_SendRequest_Auth(t *testing.T) {
 		defer srv.Close()
 
 		h := newHTTPHandler(t)
-		_, err := h.SendRequest(httpdomain.HttpRequest{
+		_, err := h.SendRequest(httpdomain.HTTPRequest{
 			Method: "GET",
 			URL:    srv.URL,
 			Auth:   httpdomain.RequestAuth{Type: "bearer", Token: "mytoken123"},
@@ -672,9 +672,9 @@ func TestHTTP_SendRequest_Auth(t *testing.T) {
 // TestHTTP_SendRequest_BodyTypes は各ボディタイプで Content-Type ヘッダーが自動付与されることを確認する。
 func TestHTTP_SendRequest_BodyTypes(t *testing.T) {
 	tests := []struct {
-		bodyType    string
-		content     string
-		wantCT      string
+		bodyType string
+		content  string
+		wantCT   string
 	}{
 		{"json", `{"k":"v"}`, "application/json"},
 		{"text", "hello text", "text/plain"},
@@ -691,7 +691,7 @@ func TestHTTP_SendRequest_BodyTypes(t *testing.T) {
 			defer srv.Close()
 
 			h := newHTTPHandler(t)
-			_, err := h.SendRequest(httpdomain.HttpRequest{
+			_, err := h.SendRequest(httpdomain.HTTPRequest{
 				Method: "POST",
 				URL:    srv.URL,
 				Body: httpdomain.RequestBody{
@@ -717,7 +717,7 @@ func TestHTTP_SendRequest_UnreachableServer(t *testing.T) {
 	srv.Close() // サーバーを先に閉じる
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HttpRequest{
+	_, err := h.SendRequest(httpdomain.HTTPRequest{
 		Method: "GET",
 		URL:    srv.URL,
 	})
@@ -738,7 +738,7 @@ func TestHTTP_SendRequest_Timeout(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HttpRequest{
+	_, err := h.SendRequest(httpdomain.HTTPRequest{
 		Method:   "GET",
 		URL:      srv.URL,
 		Settings: httpdomain.RequestSettings{TimeoutSec: 1},
@@ -764,7 +764,7 @@ func TestHTTP_SendRequest_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := h.SendRequest(httpdomain.HttpRequest{
+			_, err := h.SendRequest(httpdomain.HTTPRequest{
 				Method: "GET",
 				URL:    srv.URL,
 			})
@@ -801,7 +801,7 @@ func TestHTTP_AddRequest_AfterDeleteCollection(t *testing.T) {
 		t.Fatalf("DeleteCollection: %v", err)
 	}
 
-	_, err = h.AddRequest(col.ID, "", httpdomain.HttpRequest{Name: "R", Method: "GET", URL: "http://example.com"})
+	_, err = h.AddRequest(col.ID, "", httpdomain.HTTPRequest{Name: "R", Method: "GET", URL: "http://example.com"})
 	if err == nil {
 		t.Error("expected error after collection deleted, got nil")
 	}

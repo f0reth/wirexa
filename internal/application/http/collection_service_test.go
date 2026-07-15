@@ -247,7 +247,7 @@ func TestCollectionService_AddFolder_ParentNotFound(t *testing.T) {
 func TestCollectionService_AddFolder_ParentIsRequest(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HttpRequest{ID: "r1", Name: testReqName}
+	req := domain.HTTPRequest{ID: "r1", Name: testReqName}
 	item, _ := svc.AddRequest(col.ID, "", req)
 
 	_, err := svc.AddFolder(col.ID, item.ID, "Folder")
@@ -259,7 +259,7 @@ func TestCollectionService_AddFolder_ParentIsRequest(t *testing.T) {
 func TestCollectionService_AddRequest_ToRoot(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HttpRequest{ID: "req1", Name: "GET /api", Method: "GET", URL: "http://example.com"}
+	req := domain.HTTPRequest{ID: "req1", Name: "GET /api", Method: "GET", URL: "http://example.com"}
 	item, err := svc.AddRequest(col.ID, "", req)
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
@@ -275,7 +275,7 @@ func TestCollectionService_AddRequest_ToRoot(t *testing.T) {
 func TestCollectionService_AddRequest_AutoGeneratesID(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HttpRequest{Name: "No ID"}
+	req := domain.HTTPRequest{Name: "No ID"}
 	item, err := svc.AddRequest(col.ID, "", req)
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
@@ -287,7 +287,7 @@ func TestCollectionService_AddRequest_AutoGeneratesID(t *testing.T) {
 
 func TestCollectionService_AddRequest_CollectionNotFound(t *testing.T) {
 	svc := newSvc(t)
-	req := domain.HttpRequest{Name: testReqName}
+	req := domain.HTTPRequest{Name: testReqName}
 	_, err := svc.AddRequest("nonexistent", "", req)
 	if err == nil {
 		t.Error("expected error, got nil")
@@ -298,7 +298,7 @@ func TestCollectionService_AddRequest_ToFolder(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
 	folder, _ := svc.AddFolder(col.ID, "", "Folder")
-	req := domain.HttpRequest{ID: "r1", Name: testReqName}
+	req := domain.HTTPRequest{ID: "r1", Name: testReqName}
 
 	item, err := svc.AddRequest(col.ID, folder.ID, req)
 	if err != nil {
@@ -314,7 +314,7 @@ func TestCollectionService_AddRequest_ToFolder(t *testing.T) {
 func TestCollectionService_AddRequest_ParentNotFound(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HttpRequest{Name: testReqName}
+	req := domain.HTTPRequest{Name: testReqName}
 	_, err := svc.AddRequest(col.ID, "nonexistent", req)
 	if err == nil {
 		t.Error("expected error, got nil")
@@ -324,10 +324,10 @@ func TestCollectionService_AddRequest_ParentNotFound(t *testing.T) {
 func TestCollectionService_UpdateRequest_Success(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HttpRequest{ID: "r1", Name: "Old", Method: "GET", URL: "http://old.com"}
+	req := domain.HTTPRequest{ID: "r1", Name: "Old", Method: "GET", URL: "http://old.com"}
 	svc.AddRequest(col.ID, "", req)
 
-	updated := domain.HttpRequest{ID: "r1", Name: "New", Method: "POST", URL: "http://new.com"}
+	updated := domain.HTTPRequest{ID: "r1", Name: "New", Method: "POST", URL: "http://new.com"}
 	if err := svc.UpdateRequest(col.ID, updated); err != nil {
 		t.Fatalf("UpdateRequest: %v", err)
 	}
@@ -348,10 +348,10 @@ func TestCollectionService_UpdateRequest_Success(t *testing.T) {
 func TestCollectionService_UpdateRequest_PreservesNameWhenEmpty(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HttpRequest{ID: "r1", Name: testColNameMyAPI, Method: "GET", URL: "http://old.com"}
+	req := domain.HTTPRequest{ID: "r1", Name: testColNameMyAPI, Method: "GET", URL: "http://old.com"}
 	svc.AddRequest(col.ID, "", req)
 
-	updated := domain.HttpRequest{ID: "r1", Name: "", Method: "POST", URL: "http://new.com"}
+	updated := domain.HTTPRequest{ID: "r1", Name: "", Method: "POST", URL: "http://new.com"}
 	if err := svc.UpdateRequest(col.ID, updated); err != nil {
 		t.Fatalf("UpdateRequest: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestCollectionService_UpdateRequest_PreservesNameWhenEmpty(t *testing.T) {
 
 func TestCollectionService_UpdateRequest_CollectionNotFound(t *testing.T) {
 	svc := newSvc(t)
-	err := svc.UpdateRequest("nonexistent", domain.HttpRequest{ID: "r1"})
+	err := svc.UpdateRequest("nonexistent", domain.HTTPRequest{ID: "r1"})
 	if err == nil {
 		t.Error("expected error, got nil")
 	}
@@ -374,7 +374,7 @@ func TestCollectionService_UpdateRequest_CollectionNotFound(t *testing.T) {
 func TestCollectionService_UpdateRequest_RequestNotFound(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	err := svc.UpdateRequest(col.ID, domain.HttpRequest{ID: "nonexistent"})
+	err := svc.UpdateRequest(col.ID, domain.HTTPRequest{ID: "nonexistent"})
 	if err == nil {
 		t.Error("expected error, got nil")
 	}
@@ -397,7 +397,7 @@ func TestCollectionService_RenameItem_Folder(t *testing.T) {
 func TestCollectionService_RenameItem_Request(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HttpRequest{ID: "r1", Name: "OldReq"}
+	req := domain.HTTPRequest{ID: "r1", Name: "OldReq"}
 	svc.AddRequest(col.ID, "", req)
 
 	if err := svc.RenameItem(col.ID, "r1", "NewReq"); err != nil {
@@ -431,7 +431,7 @@ func TestCollectionService_RenameItem_ItemNotFound(t *testing.T) {
 func TestCollectionService_DeleteItem_Success(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HttpRequest{ID: "r1", Name: testReqName}
+	req := domain.HTTPRequest{ID: "r1", Name: testReqName}
 	svc.AddRequest(col.ID, "", req)
 
 	if err := svc.DeleteItem(col.ID, "r1"); err != nil {
@@ -516,7 +516,7 @@ func TestCollectionService_GetRootItems_Empty(t *testing.T) {
 
 func TestCollectionService_GetRootItems_WithItems(t *testing.T) {
 	svc := newSvc(t)
-	req := domain.HttpRequest{ID: "r1", Name: testReqName}
+	req := domain.HTTPRequest{ID: "r1", Name: testReqName}
 	if _, err := svc.AddRequest(domain.RootCollectionID, "", req); err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
@@ -541,6 +541,24 @@ func TestCollectionService_CreateCollection_RepoError(t *testing.T) {
 	_, err = svc.CreateCollection("ShouldFail")
 	if err == nil {
 		t.Error("expected error from repo.Save, got nil")
+	}
+}
+
+func TestCollectionService_CreateCollection_EmptyNameReturnsValidationError(t *testing.T) {
+	for _, name := range []string{"", "   ", "\t\n"} {
+		repo := &inMemoryRepo{collections: map[string]*domain.Collection{}}
+		svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
+		if err != nil {
+			t.Fatalf("NewCollectionService: %v", err)
+		}
+		_, err = svc.CreateCollection(name)
+		var ve *cmn.ValidationError
+		if !errors.As(err, &ve) {
+			t.Fatalf("CreateCollection(%q): expected ValidationError, got %T (%v)", name, err, err)
+		}
+		if len(svc.GetCollections()) != 0 {
+			t.Errorf("CreateCollection(%q): expected no collection created", name)
+		}
 	}
 }
 
@@ -576,8 +594,8 @@ func TestCollectionService_MoveItem_ItemNotFound(t *testing.T) {
 func TestCollectionService_MoveItem_TargetParentNotFolder(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	r1, _ := svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
-	r2, _ := svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r2", Name: "R2"})
+	r1, _ := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
+	r2, _ := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r2", Name: "R2"})
 
 	// r1 をターゲット親として移動しようとする（r1 はリクエストなのでエラー）。
 	err := svc.MoveItem(col.ID, r2.ID, col.ID, r1.ID, 0)
@@ -593,7 +611,7 @@ func TestCollectionService_MoveItem_TargetParentNotFolder(t *testing.T) {
 func TestCollectionService_MoveItem_TargetParentNotFound_PreservesItem(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
 
 	// 存在しない親を指定した移動はエラーになり、アイテムは残る (#6)。
 	err := svc.MoveItem(col.ID, "r1", col.ID, "nonexistent-parent", 0)
@@ -610,7 +628,7 @@ func TestCollectionService_MoveItem_IntoOwnSubtree_Rejected(t *testing.T) {
 	col := mustCreate(t, svc, "Col")
 	f, _ := svc.AddFolder(col.ID, "", "F")
 	f2, _ := svc.AddFolder(col.ID, f.ID, "F2")
-	svc.AddRequest(col.ID, f.ID, domain.HttpRequest{ID: "r1", Name: "R1"})
+	svc.AddRequest(col.ID, f.ID, domain.HTTPRequest{ID: "r1", Name: "R1"})
 
 	// フォルダ F を自身へ移動 → 拒否。
 	if err := svc.MoveItem(col.ID, f.ID, col.ID, f.ID, 0); err == nil {
@@ -640,8 +658,8 @@ func TestCollectionService_MoveItem_IntoOwnSubtree_Rejected(t *testing.T) {
 func TestCollectionService_MoveItem_SameCollection(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
-	svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r2", Name: "R2"})
+	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
+	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r2", Name: "R2"})
 
 	// r2 (index 1) を position 0 に移動 → [r2, r1]
 	if err := svc.MoveItem(col.ID, "r2", col.ID, "", 0); err != nil {
@@ -658,7 +676,7 @@ func TestCollectionService_MoveItem_AcrossCollections(t *testing.T) {
 	svc := newSvc(t)
 	col1 := mustCreate(t, svc, "Col1")
 	col2 := mustCreate(t, svc, "Col2")
-	svc.AddRequest(col1.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+	svc.AddRequest(col1.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
 
 	if err := svc.MoveItem(col1.ID, "r1", col2.ID, "", 0); err != nil {
 		t.Fatalf("MoveItem across collections: %v", err)
@@ -681,7 +699,7 @@ func TestCollectionService_MoveItem_ToFolder(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
 	folder, _ := svc.AddFolder(col.ID, "", "Folder")
-	svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
 
 	if err := svc.MoveItem(col.ID, "r1", col.ID, folder.ID, 0); err != nil {
 		t.Fatalf("MoveItem to folder: %v", err)
@@ -783,7 +801,7 @@ func TestCollectionService_MoveSidebarEntry_Success(t *testing.T) {
 func TestCollectionService_MoveItemToSidebar_Success(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
 
 	if err := svc.MoveItemToSidebar(col.ID, "r1", 0); err != nil {
 		t.Fatalf("MoveItemToSidebar: %v", err)
@@ -836,7 +854,7 @@ func TestCollectionService_AddFolder_ToRootCollection_UpdatesLayout(t *testing.T
 
 func TestCollectionService_AddRequest_ToRootCollection_UpdatesLayout(t *testing.T) {
 	svc := newSvc(t)
-	item, err := svc.AddRequest(domain.RootCollectionID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+	item, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
@@ -890,7 +908,7 @@ func TestCollectionService_UpdateRequest_NodeIsFolder_ReturnsNotFound(t *testing
 	col := mustCreate(t, svc, "Col")
 	folder, _ := svc.AddFolder(col.ID, "", "Folder")
 
-	err := svc.UpdateRequest(col.ID, domain.HttpRequest{ID: folder.ID, Name: "Renamed"})
+	err := svc.UpdateRequest(col.ID, domain.HTTPRequest{ID: folder.ID, Name: "Renamed"})
 	if err == nil {
 		t.Fatal("expected error when updating a folder node, got nil")
 	}
@@ -927,7 +945,7 @@ func TestCollectionService_AddRequest_RepoSaveError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
-	_, err = svc.AddRequest(domain.RootCollectionID, "", domain.HttpRequest{Name: "R"})
+	_, err = svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{Name: "R"})
 	if err == nil {
 		t.Error("expected error from repo.Save, got nil")
 	}
@@ -1026,7 +1044,7 @@ func TestCollectionService_MoveItemToSidebar_ItemNotFound(t *testing.T) {
 func TestCollectionService_MoveItemToSidebar_NegativePosition_AppendsToEnd(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	svc.AddRequest(col.ID, "", domain.HttpRequest{ID: "r1", Name: "R1"})
+	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
 
 	if err := svc.MoveItemToSidebar(col.ID, "r1", -1); err != nil {
 		t.Fatalf("MoveItemToSidebar: %v", err)

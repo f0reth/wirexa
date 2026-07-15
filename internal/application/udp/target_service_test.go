@@ -10,14 +10,14 @@ import (
 
 // inMemoryTargetRepo は TargetRepository のインメモリモック。
 type inMemoryTargetRepo struct {
-	targets map[string]*domain.UdpTarget
+	targets map[string]*domain.UDPTarget
 	loadErr error
 	saveErr error
 	delErr  error
 }
 
-func newTargetRepo(targets ...domain.UdpTarget) *inMemoryTargetRepo {
-	r := &inMemoryTargetRepo{targets: make(map[string]*domain.UdpTarget)}
+func newTargetRepo(targets ...domain.UDPTarget) *inMemoryTargetRepo {
+	r := &inMemoryTargetRepo{targets: make(map[string]*domain.UDPTarget)}
 	for i := range targets {
 		t := targets[i]
 		r.targets[t.ID] = &t
@@ -25,18 +25,18 @@ func newTargetRepo(targets ...domain.UdpTarget) *inMemoryTargetRepo {
 	return r
 }
 
-func (r *inMemoryTargetRepo) Load() ([]domain.UdpTarget, error) {
+func (r *inMemoryTargetRepo) Load() ([]domain.UDPTarget, error) {
 	if r.loadErr != nil {
 		return nil, r.loadErr
 	}
-	result := make([]domain.UdpTarget, 0, len(r.targets))
+	result := make([]domain.UDPTarget, 0, len(r.targets))
 	for _, t := range r.targets {
 		result = append(result, *t)
 	}
 	return result, nil
 }
 
-func (r *inMemoryTargetRepo) Save(target *domain.UdpTarget) error {
+func (r *inMemoryTargetRepo) Save(target *domain.UDPTarget) error {
 	if r.saveErr != nil {
 		return r.saveErr
 	}
@@ -55,8 +55,8 @@ func (r *inMemoryTargetRepo) Delete(id string) error {
 
 func TestTargetService_NewTargetService_LoadsTargets(t *testing.T) {
 	repo := newTargetRepo(
-		domain.UdpTarget{ID: "t1", Name: "Local", Host: "127.0.0.1", Port: 9000},
-		domain.UdpTarget{ID: "t2", Name: "Remote", Host: "192.168.1.1", Port: 8080},
+		domain.UDPTarget{ID: "t1", Name: "Local", Host: "127.0.0.1", Port: 9000},
+		domain.UDPTarget{ID: "t2", Name: "Remote", Host: "192.168.1.1", Port: 8080},
 	)
 	svc, err := NewTargetService(repo)
 	if err != nil {
@@ -69,7 +69,7 @@ func TestTargetService_NewTargetService_LoadsTargets(t *testing.T) {
 
 func TestTargetService_NewTargetService_RepoLoadError(t *testing.T) {
 	repo := &inMemoryTargetRepo{
-		targets: map[string]*domain.UdpTarget{},
+		targets: map[string]*domain.UDPTarget{},
 		loadErr: errors.New("read error"),
 	}
 	_, err := NewTargetService(repo)
@@ -86,7 +86,7 @@ func TestTargetService_GetTargets_Empty(t *testing.T) {
 }
 
 func TestTargetService_GetTargets_ReturnsCopy(t *testing.T) {
-	repo := newTargetRepo(domain.UdpTarget{ID: "t1", Name: "Original", Host: "localhost", Port: 9000})
+	repo := newTargetRepo(domain.UDPTarget{ID: "t1", Name: "Original", Host: "localhost", Port: 9000})
 	svc, _ := NewTargetService(repo)
 
 	targets := svc.GetTargets()
@@ -100,7 +100,7 @@ func TestTargetService_GetTargets_ReturnsCopy(t *testing.T) {
 
 func TestTargetService_SaveTarget_NewWithoutID(t *testing.T) {
 	svc, _ := NewTargetService(newTargetRepo())
-	target, err := svc.SaveTarget(domain.UdpTarget{Name: "NoID", Host: "localhost", Port: 9000})
+	target, err := svc.SaveTarget(domain.UDPTarget{Name: "NoID", Host: "localhost", Port: 9000})
 	if err != nil {
 		t.Fatalf("SaveTarget: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestTargetService_SaveTarget_NewWithoutID(t *testing.T) {
 
 func TestTargetService_SaveTarget_NewWithID(t *testing.T) {
 	svc, _ := NewTargetService(newTargetRepo())
-	target, err := svc.SaveTarget(domain.UdpTarget{ID: "t99", Name: "WithID", Host: "host", Port: 1234})
+	target, err := svc.SaveTarget(domain.UDPTarget{ID: "t99", Name: "WithID", Host: "host", Port: 1234})
 	if err != nil {
 		t.Fatalf("SaveTarget: %v", err)
 	}
@@ -124,10 +124,10 @@ func TestTargetService_SaveTarget_NewWithID(t *testing.T) {
 }
 
 func TestTargetService_SaveTarget_UpdateExisting(t *testing.T) {
-	original := domain.UdpTarget{ID: "t1", Name: "Old", Host: "old-host", Port: 9000}
+	original := domain.UDPTarget{ID: "t1", Name: "Old", Host: "old-host", Port: 9000}
 	svc, _ := NewTargetService(newTargetRepo(original))
 
-	updated, err := svc.SaveTarget(domain.UdpTarget{ID: "t1", Name: "New", Host: "new-host", Port: 8080})
+	updated, err := svc.SaveTarget(domain.UDPTarget{ID: "t1", Name: "New", Host: "new-host", Port: 8080})
 	if err != nil {
 		t.Fatalf("SaveTarget: %v", err)
 	}
@@ -148,14 +148,41 @@ func TestTargetService_SaveTarget_RepoError(t *testing.T) {
 	repo.saveErr = errors.New("write error")
 	svc, _ := NewTargetService(repo)
 
-	_, err := svc.SaveTarget(domain.UdpTarget{Name: "X", Host: "h", Port: 9000})
+	_, err := svc.SaveTarget(domain.UDPTarget{Name: "X", Host: "h", Port: 9000})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
 
+func TestTargetService_SaveTarget_InvalidReturnsValidationError(t *testing.T) {
+	cases := []struct {
+		name   string
+		target domain.UDPTarget
+	}{
+		{"empty host", domain.UDPTarget{Name: "X", Host: "", Port: 9000}},
+		{"port too low", domain.UDPTarget{Name: "X", Host: "h", Port: 0}},
+		{"port too high", domain.UDPTarget{Name: "X", Host: "h", Port: 70000}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newTargetRepo()
+			svc, _ := NewTargetService(repo)
+
+			_, err := svc.SaveTarget(tc.target)
+			var ve *cmn.ValidationError
+			if !errors.As(err, &ve) {
+				t.Fatalf("expected ValidationError, got %T (%v)", err, err)
+			}
+			// 不正入力は永続化されない。
+			if len(svc.GetTargets()) != 0 {
+				t.Errorf("expected 0 targets after invalid save, got %d", len(svc.GetTargets()))
+			}
+		})
+	}
+}
+
 func TestTargetService_DeleteTarget_Success(t *testing.T) {
-	repo := newTargetRepo(domain.UdpTarget{ID: "t1", Name: "ToDelete", Host: "h", Port: 9000})
+	repo := newTargetRepo(domain.UDPTarget{ID: "t1", Name: "ToDelete", Host: "h", Port: 9000})
 	svc, _ := NewTargetService(repo)
 
 	if err := svc.DeleteTarget("t1"); err != nil {

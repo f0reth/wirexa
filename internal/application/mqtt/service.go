@@ -3,6 +3,7 @@ package mqttapp
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -15,20 +16,11 @@ import (
 const shutdownTimeout = 5 * time.Second
 
 const (
-	eventConnected        = "mqtt:connected"
-	eventDisconnected     = "mqtt:disconnected"
-	eventConnectionLost   = "mqtt:connection-lost"
-	eventConnectionFailed = "mqtt:connection-failed"
-	eventMessage          = "mqtt:message"
-)
-
-const (
-	msgIsRequired   = "is required"
 	keyConnectionID = "connectionId"
 	fieldTopic      = "topic"
 )
 
-var _ domain.MqttUseCase = (*MqttService)(nil)
+var _ domain.MQTTUseCase = (*MQTTService)(nil)
 
 type connection struct {
 	client domain.BrokerClient
@@ -40,8 +32,8 @@ type connection struct {
 	subs  map[string]byte
 }
 
-// MqttService は複数の MQTT 接続を管理するアプリケーションサービス。
-type MqttService struct {
+// MQTTService は複数の MQTT 接続を管理するアプリケーションサービス。
+type MQTTService struct {
 	emitter       cmn.Emitter
 	logger        cmn.Logger
 	clientFactory domain.BrokerClientFactory
@@ -50,9 +42,9 @@ type MqttService struct {
 	mu            sync.RWMutex
 }
 
-// NewMqttService は MqttService を生成する。
-func NewMqttService(emitter cmn.Emitter, clientFactory domain.BrokerClientFactory, logger cmn.Logger) *MqttService {
-	return &MqttService{
+// NewMQTTService は MQTTService を生成する。
+func NewMQTTService(emitter cmn.Emitter, clientFactory domain.BrokerClientFactory, logger cmn.Logger) *MQTTService {
+	return &MQTTService{
 		emitter:       emitter,
 		clientFactory: clientFactory,
 		logger:        logger,
@@ -61,12 +53,12 @@ func NewMqttService(emitter cmn.Emitter, clientFactory domain.BrokerClientFactor
 }
 
 // Connect は MQTT ブローカーへ接続し、接続 ID を返す。
-func (s *MqttService) Connect(config domain.ConnectionConfig) (string, error) {
+func (s *MQTTService) Connect(config domain.ConnectionConfig) (string, error) {
 	if config.Broker == "" {
-		return "", &cmn.ValidationError{Field: "broker URL", Message: msgIsRequired}
+		return "", &cmn.ValidationError{Field: "broker URL", Message: cmn.MsgRequired}
 	}
 
-	connID := uuid.New().String()
+	connID := uuid.NewString()
 
 	// ClientID が未指定の場合は自動生成
 	if config.ClientID == "" {
@@ -79,13 +71,13 @@ func (s *MqttService) Connect(config domain.ConnectionConfig) (string, error) {
 		config,
 		func() {
 			s.logger.Info("MQTT connected", "source", "mqtt", "connection_id", connID, "broker", config.Broker)
-			s.emitter.Emit(eventConnected, map[string]any{
+			s.emitter.Emit(cmn.EventMQTTConnected, map[string]any{
 				keyConnectionID: connID,
 			})
 		},
 		func(err error) {
 			s.logger.Error("MQTT connection lost", "source", "mqtt", "connection_id", connID, "error", err)
-			s.emitter.Emit(eventConnectionLost, map[string]any{
+			s.emitter.Emit(cmn.EventMQTTConnectionLost, map[string]any{
 				keyConnectionID: connID,
 				"error":         err.Error(),
 			})
@@ -102,7 +94,7 @@ func (s *MqttService) Connect(config domain.ConnectionConfig) (string, error) {
 			delete(s.conns, connID)
 			s.mu.Unlock()
 			s.logger.Error("MQTT connection failed", "source", "mqtt", "connection_id", connID, "error", err)
-			s.emitter.Emit(eventConnectionFailed, map[string]any{
+			s.emitter.Emit(cmn.EventMQTTConnectionFailed, map[string]any{
 				keyConnectionID: connID,
 				"error":         err.Error(),
 			})
@@ -113,12 +105,12 @@ func (s *MqttService) Connect(config domain.ConnectionConfig) (string, error) {
 }
 
 // Disconnect は指定した接続を切断する。
-func (s *MqttService) Disconnect(connectionID string) error {
+func (s *MQTTService) Disconnect(connectionID string) error {
 	s.mu.Lock()
 	conn, ok := s.conns[connectionID]
 	if !ok {
 		s.mu.Unlock()
-		return &cmn.NotFoundError{Resource: "connection", ID: connectionID}
+		return &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: connectionID}
 	}
 	delete(s.conns, connectionID)
 	s.mu.Unlock()
@@ -126,7 +118,7 @@ func (s *MqttService) Disconnect(connectionID string) error {
 	conn.client.Disconnect(1000)
 
 	s.logger.Info("MQTT disconnected", "source", "mqtt", "connection_id", connectionID)
-	s.emitter.Emit(eventDisconnected, map[string]any{
+	s.emitter.Emit(cmn.EventMQTTDisconnected, map[string]any{
 		keyConnectionID: connectionID,
 	})
 	return nil
@@ -134,33 +126,36 @@ func (s *MqttService) Disconnect(connectionID string) error {
 
 // withConn はロックを保持したまま接続を取得し、fn を呼び出す。
 // ロック解放後に接続が削除される TOCTOU 競合を防ぐ。
-func (s *MqttService) withConn(id string, fn func(conn *connection) error) error {
+func (s *MQTTService) withConn(id string, fn func(conn *connection) error) error {
 	s.mu.RLock()
 	conn, ok := s.conns[id]
 	s.mu.RUnlock()
 	if !ok {
-		return &cmn.NotFoundError{Resource: "connection", ID: id}
+		return &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: id}
 	}
 	return fn(conn)
 }
 
 // Publish は指定トピックへメッセージを送信する。
-func (s *MqttService) Publish(connectionID, topic, payload string, qos byte, retain bool) error {
+func (s *MQTTService) Publish(connectionID, topic, payload string, qos byte, retain bool) error {
 	if topic == "" {
-		return &cmn.ValidationError{Field: fieldTopic, Message: msgIsRequired}
+		return &cmn.ValidationError{Field: fieldTopic, Message: cmn.MsgRequired}
 	}
 	if qos > 2 {
 		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
 	}
 	return s.withConn(connectionID, func(conn *connection) error {
-		return conn.client.Publish(topic, qos, retain, payload)
+		if err := conn.client.Publish(topic, qos, retain, payload); err != nil {
+			return fmt.Errorf("failed to publish: %w", err)
+		}
+		return nil
 	})
 }
 
 // Subscribe は指定トピックの購読を開始する。
-func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
+func (s *MQTTService) Subscribe(connectionID, topic string, qos byte) error {
 	if topic == "" {
-		return &cmn.ValidationError{Field: fieldTopic, Message: msgIsRequired}
+		return &cmn.ValidationError{Field: fieldTopic, Message: cmn.MsgRequired}
 	}
 	if qos > 2 {
 		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
@@ -170,7 +165,7 @@ func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
 			s.logger.Info("MQTT message received", "source", "mqtt", "connection_id", connectionID, "topic", msgTopic, "payload_bytes", len(msgPayload))
 			// 非 UTF-8 のバイナリペイロードは string 変換で壊れるため base64 で渡す。
 			payloadStr, payloadBase64 := cmn.EncodeMaybeBase64(msgPayload)
-			s.emitter.Emit(eventMessage, domain.MqttMessage{
+			s.emitter.Emit(cmn.EventMQTTMessage, domain.MQTTMessage{
 				ConnectionID:  connectionID,
 				Topic:         msgTopic,
 				Payload:       payloadStr,
@@ -181,7 +176,7 @@ func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
 			})
 		}
 		if err := conn.client.Subscribe(topic, qos, handler); err != nil {
-			return err
+			return fmt.Errorf("failed to subscribe: %w", err)
 		}
 		conn.subMu.Lock()
 		conn.subs[topic] = qos
@@ -191,13 +186,13 @@ func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
 }
 
 // Unsubscribe は指定トピックの購読を解除する。
-func (s *MqttService) Unsubscribe(connectionID, topic string) error {
+func (s *MQTTService) Unsubscribe(connectionID, topic string) error {
 	if topic == "" {
-		return &cmn.ValidationError{Field: fieldTopic, Message: msgIsRequired}
+		return &cmn.ValidationError{Field: fieldTopic, Message: cmn.MsgRequired}
 	}
 	return s.withConn(connectionID, func(conn *connection) error {
 		if err := conn.client.Unsubscribe(topic); err != nil {
-			return err
+			return fmt.Errorf("failed to unsubscribe: %w", err)
 		}
 		conn.subMu.Lock()
 		delete(conn.subs, topic)
@@ -207,7 +202,7 @@ func (s *MqttService) Unsubscribe(connectionID, topic string) error {
 }
 
 // GetConnections は全接続の現在状態を返す。
-func (s *MqttService) GetConnections() []domain.ConnectionStatus {
+func (s *MQTTService) GetConnections() []domain.ConnectionStatus {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -233,7 +228,7 @@ func (s *MqttService) GetConnections() []domain.ConnectionStatus {
 
 // Shutdown は全接続を切断してサービスを終了する。
 // 接続goroutineの完了を最大 shutdownTimeout 待つ。
-func (s *MqttService) Shutdown() {
+func (s *MQTTService) Shutdown() {
 	done := make(chan struct{})
 	go func() {
 		s.connWg.Wait()

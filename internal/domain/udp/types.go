@@ -56,12 +56,24 @@ const (
 	EndiannessLittle Endianness = "little"
 )
 
-// UdpTarget は保存可能な送信先プリセットを表す。
-type UdpTarget struct {
+// UDPTarget は保存可能な送信先プリセットを表す。
+type UDPTarget struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Host string `json:"host"`
 	Port int    `json:"port"`
+}
+
+// Validate は UDPTarget のドメイン不変条件を検証する。
+// UDPSendRequest.Validate と同じ host/port 規則を適用する。
+func (t *UDPTarget) Validate() error {
+	if t.Host == "" {
+		return &cmn.ValidationError{Field: "host", Message: cmn.MsgRequired}
+	}
+	if t.Port < 1 || t.Port > 65535 {
+		return &cmn.ValidationError{Field: "port", Message: "must be 1-65535"}
+	}
+	return nil
 }
 
 // FixedLengthField は固定長フィールドを表す。
@@ -77,8 +89,8 @@ type FixedLengthPayload struct {
 	Fields []FixedLengthField `json:"fields"`
 }
 
-// UdpSendRequest は UDP 送信リクエストを表す。
-type UdpSendRequest struct {
+// UDPSendRequest は UDP 送信リクエストを表す。
+type UDPSendRequest struct {
 	Host               string             `json:"host"`
 	Encoding           PayloadEncoding    `json:"encoding"`
 	Payload            string             `json:"payload"`
@@ -88,15 +100,15 @@ type UdpSendRequest struct {
 	MessageLength      int                `json:"messageLength"`
 }
 
-// UdpSendResult は UDP 送信結果を表す。
-type UdpSendResult struct {
+// UDPSendResult は UDP 送信結果を表す。
+type UDPSendResult struct {
 	BytesSent int `json:"bytesSent"`
 }
 
-// Validate は UdpSendRequest のドメイン不変条件を検証する。
-func (r *UdpSendRequest) Validate() error {
+// Validate は UDPSendRequest のドメイン不変条件を検証する。
+func (r *UDPSendRequest) Validate() error {
 	if r.Host == "" {
-		return &cmn.ValidationError{Field: "host", Message: "required"}
+		return &cmn.ValidationError{Field: "host", Message: cmn.MsgRequired}
 	}
 	if r.Port < 1 || r.Port > 65535 {
 		return &cmn.ValidationError{Field: "port", Message: "must be 1-65535"}
@@ -104,15 +116,15 @@ func (r *UdpSendRequest) Validate() error {
 	return nil
 }
 
-// UdpListenSession はアクティブなリスニングセッションを表す。
-type UdpListenSession struct {
+// UDPListenSession はアクティブなリスニングセッションを表す。
+type UDPListenSession struct {
 	ID       string          `json:"id"`
 	Encoding PayloadEncoding `json:"encoding"`
 	Port     int             `json:"port"`
 }
 
-// UdpReceivedMessage は受信した UDP パケットを表す。
-type UdpReceivedMessage struct {
+// UDPReceivedMessage は受信した UDP パケットを表す。
+type UDPReceivedMessage struct {
 	SessionID  string          `json:"sessionId"`
 	RemoteAddr string          `json:"remoteAddr"`
 	Payload    string          `json:"payload"`

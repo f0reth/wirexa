@@ -2,37 +2,38 @@ package httpapp
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
-var _ domain.RequestUseCase = (*HttpRequestService)(nil)
+var _ domain.RequestUseCase = (*HTTPRequestService)(nil)
 
 var validMethods = map[string]bool{
 	"GET": true, "POST": true, "PUT": true, "DELETE": true,
 	"PATCH": true, "HEAD": true, "OPTIONS": true,
 }
 
-// HttpRequestService は HTTP リクエスト送信ユースケースを提供する。
-type HttpRequestService struct {
-	transport domain.HttpTransport
+// HTTPRequestService は HTTP リクエスト送信ユースケースを提供する。
+type HTTPRequestService struct {
+	transport domain.HTTPTransport
 	logger    cmn.Logger
 	cancels   map[string]context.CancelFunc
 	mu        sync.Mutex
 }
 
-// NewHTTPRequestService は HttpRequestService を生成する。
-func NewHTTPRequestService(transport domain.HttpTransport, logger cmn.Logger) *HttpRequestService {
-	return &HttpRequestService{transport: transport, logger: logger, cancels: make(map[string]context.CancelFunc)}
+// NewHTTPRequestService は HTTPRequestService を生成する。
+func NewHTTPRequestService(transport domain.HTTPTransport, logger cmn.Logger) *HTTPRequestService {
+	return &HTTPRequestService{transport: transport, logger: logger, cancels: make(map[string]context.CancelFunc)}
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
 // ネットワーク障害・入力不正は error を返す。HTTP 4xx/5xx は正常レスポンスとして扱う。
-func (s *HttpRequestService) SendRequest(req domain.HttpRequest) (domain.HttpResponse, error) {
+func (s *HTTPRequestService) SendRequest(req domain.HTTPRequest) (domain.HTTPResponse, error) {
 	if !validMethods[req.Method] {
-		return domain.HttpResponse{}, &cmn.ValidationError{Field: "method", Message: req.Method}
+		return domain.HTTPResponse{}, &cmn.ValidationError{Field: "method", Message: req.Method}
 	}
 	s.logger.Info("HTTP request sent", "source", "http", "method", req.Method, "url", req.URL, "body_bytes", len(req.Body.Contents[req.Body.Type]))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -48,14 +49,14 @@ func (s *HttpRequestService) SendRequest(req domain.HttpRequest) (domain.HttpRes
 	resp, err := s.transport.Do(ctx, req)
 	if err != nil {
 		s.logger.Error("HTTP request failed", "source", "http", "method", req.Method, "url", req.URL, "error", err)
-		return resp, err
+		return resp, fmt.Errorf("failed to send request: %w", err)
 	}
 	s.logger.Info("HTTP response received", "source", "http", "method", req.Method, "url", req.URL, "status", resp.StatusCode, "latency_ms", resp.TimingMs)
 	return resp, nil
 }
 
 // CancelRequest は指定 ID の実行中 HTTP リクエストをキャンセルする。
-func (s *HttpRequestService) CancelRequest(id string) {
+func (s *HTTPRequestService) CancelRequest(id string) {
 	s.mu.Lock()
 	cancel, ok := s.cancels[id]
 	s.mu.Unlock()

@@ -11,28 +11,26 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/udp"
 )
 
-const eventMessage = "udp:message"
-
-var _ domain.ListenUseCase = (*UdpListenerService)(nil)
+var _ domain.ListenUseCase = (*UDPListenerService)(nil)
 
 // listenSession はアクティブなリスニングセッションの内部状態を保持する。
 type listenSession struct {
-	conn    domain.UdpConn
-	session domain.UdpListenSession
+	conn    domain.UDPConn
+	session domain.UDPListenSession
 }
 
-// UdpListenerService は UDP 受信ユースケースの実装。
-type UdpListenerService struct {
-	socket   domain.UdpSocket
+// UDPListenerService は UDP 受信ユースケースの実装。
+type UDPListenerService struct {
+	socket   domain.UDPSocket
 	emitter  cmn.Emitter
 	logger   cmn.Logger
 	sessions map[string]*listenSession
 	mu       sync.Mutex
 }
 
-// NewUdpListenerService は UdpListenerService を生成する。
-func NewUdpListenerService(socket domain.UdpSocket, emitter cmn.Emitter, logger cmn.Logger) *UdpListenerService {
-	return &UdpListenerService{
+// NewUDPListenerService は UDPListenerService を生成する。
+func NewUDPListenerService(socket domain.UDPSocket, emitter cmn.Emitter, logger cmn.Logger) *UDPListenerService {
+	return &UDPListenerService{
 		socket:   socket,
 		emitter:  emitter,
 		logger:   logger,
@@ -41,9 +39,9 @@ func NewUdpListenerService(socket domain.UdpSocket, emitter cmn.Emitter, logger 
 }
 
 // StartListen は指定ポートでリスニングを開始し、セッションを返す。
-func (s *UdpListenerService) StartListen(port int, encoding domain.PayloadEncoding) (domain.UdpListenSession, error) {
+func (s *UDPListenerService) StartListen(port int, encoding domain.PayloadEncoding) (domain.UDPListenSession, error) {
 	if port < 1 || port > 65535 {
-		return domain.UdpListenSession{}, &cmn.ValidationError{Field: "port", Message: "must be 1-65535"}
+		return domain.UDPListenSession{}, &cmn.ValidationError{Field: "port", Message: "must be 1-65535"}
 	}
 
 	// ポート衝突チェックと登録をロック保持のままアトミックに行い TOCTOU 競合を防ぐ。
@@ -51,17 +49,17 @@ func (s *UdpListenerService) StartListen(port int, encoding domain.PayloadEncodi
 	for _, ls := range s.sessions {
 		if ls.session.Port == port {
 			s.mu.Unlock()
-			return domain.UdpListenSession{}, &cmn.ValidationError{Field: "port", Message: fmt.Sprintf("port %d is already listening", port)}
+			return domain.UDPListenSession{}, &cmn.ValidationError{Field: "port", Message: fmt.Sprintf("port %d is already listening", port)}
 		}
 	}
 
 	conn, err := s.socket.Listen(port)
 	if err != nil {
 		s.mu.Unlock()
-		return domain.UdpListenSession{}, fmt.Errorf("failed to listen on port %d: %w", port, err)
+		return domain.UDPListenSession{}, fmt.Errorf("failed to listen on port %d: %w", port, err)
 	}
 
-	session := domain.UdpListenSession{
+	session := domain.UDPListenSession{
 		ID:       uuid.NewString(),
 		Port:     port,
 		Encoding: encoding,
@@ -77,12 +75,12 @@ func (s *UdpListenerService) StartListen(port int, encoding domain.PayloadEncodi
 }
 
 // StopListen は指定セッションのリスニングを停止する。
-func (s *UdpListenerService) StopListen(sessionID string) error {
+func (s *UDPListenerService) StopListen(sessionID string) error {
 	s.mu.Lock()
 	ls, ok := s.sessions[sessionID]
 	if !ok {
 		s.mu.Unlock()
-		return &cmn.NotFoundError{Resource: "session", ID: sessionID}
+		return &cmn.NotFoundError{Resource: cmn.ResourceSession, ID: sessionID}
 	}
 	delete(s.sessions, sessionID)
 	s.mu.Unlock()
@@ -92,11 +90,11 @@ func (s *UdpListenerService) StopListen(sessionID string) error {
 }
 
 // GetListeners はアクティブなセッション一覧を返す。
-func (s *UdpListenerService) GetListeners() []domain.UdpListenSession {
+func (s *UDPListenerService) GetListeners() []domain.UDPListenSession {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	result := make([]domain.UdpListenSession, 0, len(s.sessions))
+	result := make([]domain.UDPListenSession, 0, len(s.sessions))
 	for _, ls := range s.sessions {
 		result = append(result, ls.session)
 	}
@@ -104,7 +102,7 @@ func (s *UdpListenerService) GetListeners() []domain.UdpListenSession {
 }
 
 // StopAll は全セッションを停止する。
-func (s *UdpListenerService) StopAll() {
+func (s *UDPListenerService) StopAll() {
 	s.mu.Lock()
 	sessions := make([]*listenSession, 0, len(s.sessions))
 	for _, ls := range s.sessions {
@@ -119,7 +117,7 @@ func (s *UdpListenerService) StopAll() {
 }
 
 // receiveLoop は指定セッションのパケット受信ループ。
-func (s *UdpListenerService) receiveLoop(ls *listenSession) {
+func (s *UDPListenerService) receiveLoop(ls *listenSession) {
 	buf := make([]byte, 65535)
 	for {
 		n, addr, err := ls.conn.ReadFrom(buf)
@@ -131,7 +129,7 @@ func (s *UdpListenerService) receiveLoop(ls *listenSession) {
 		s.logger.Info("UDP packet received", "source", "udp", "port", ls.session.Port, "remote", addr, "bytes", n)
 		payload := domain.EncodePayload(buf[:n], ls.session.Encoding)
 
-		msg := domain.UdpReceivedMessage{
+		msg := domain.UDPReceivedMessage{
 			SessionID:  ls.session.ID,
 			Port:       ls.session.Port,
 			RemoteAddr: addr,
@@ -140,6 +138,6 @@ func (s *UdpListenerService) receiveLoop(ls *listenSession) {
 			Timestamp:  time.Now().UnixMilli(),
 		}
 
-		s.emitter.Emit(eventMessage, msg)
+		s.emitter.Emit(cmn.EventUDPMessage, msg)
 	}
 }

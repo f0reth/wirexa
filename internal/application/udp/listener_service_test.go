@@ -11,7 +11,7 @@ import (
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
 
-// mockUDPConn は domain.UdpConn のモック。
+// mockUDPConn は domain.UDPConn のモック。
 // packets に登録されたデータを順番に返し、なくなると done チャンネルが閉じられるまでブロックする。
 type mockUDPConn struct {
 	done    chan struct{}
@@ -62,34 +62,34 @@ func (m *mockUDPConn) Close() error {
 
 // listenerEmitter は "udp:message" イベントをチャンネルで通知するモック。
 type listenerEmitter struct {
-	msgCh chan domain.UdpReceivedMessage
+	msgCh chan domain.UDPReceivedMessage
 }
 
 func newListenerEmitter() *listenerEmitter {
-	return &listenerEmitter{msgCh: make(chan domain.UdpReceivedMessage, 10)}
+	return &listenerEmitter{msgCh: make(chan domain.UDPReceivedMessage, 10)}
 }
 
 func (e *listenerEmitter) Emit(event string, data any) {
-	if event == "udp:message" {
-		if msg, ok := data.(domain.UdpReceivedMessage); ok {
+	if event == cmn.EventUDPMessage {
+		if msg, ok := data.(domain.UDPReceivedMessage); ok {
 			e.msgCh <- msg
 		}
 	}
 }
 
-func newListenerSvc(socket domain.UdpSocket, emitter cmn.Emitter) *UdpListenerService {
+func newListenerSvc(socket domain.UDPSocket, emitter cmn.Emitter) *UDPListenerService {
 	if socket == nil {
 		socket = &mockUDPSocket{}
 	}
 	if emitter == nil {
 		emitter = newListenerEmitter()
 	}
-	return NewUdpListenerService(socket, emitter, testutil.NoopLogger{})
+	return NewUDPListenerService(socket, emitter, testutil.NoopLogger{})
 }
 
 // ------- StartListen -------
 
-func TestUdpListenerService_StartListen_InvalidPort(t *testing.T) {
+func TestUDPListenerService_StartListen_InvalidPort(t *testing.T) {
 	svc := newListenerSvc(nil, nil)
 	for _, port := range []int{0, -1, 65536, 99999} {
 		_, err := svc.StartListen(port, domain.EncodingText)
@@ -103,11 +103,11 @@ func TestUdpListenerService_StartListen_InvalidPort(t *testing.T) {
 	}
 }
 
-func TestUdpListenerService_StartListen_ValidPorts(t *testing.T) {
+func TestUDPListenerService_StartListen_ValidPorts(t *testing.T) {
 	for _, port := range []int{1, 1024, 65535} {
 		conn := newMockConn()
 		socket := &mockUDPSocket{
-			listenFn: func(_ int) (domain.UdpConn, error) {
+			listenFn: func(_ int) (domain.UDPConn, error) {
 				return conn, nil
 			},
 		}
@@ -124,10 +124,10 @@ func TestUdpListenerService_StartListen_ValidPorts(t *testing.T) {
 	}
 }
 
-func TestUdpListenerService_StartListen_DuplicatePort(t *testing.T) {
+func TestUDPListenerService_StartListen_DuplicatePort(t *testing.T) {
 	conn := newMockConn()
 	socket := &mockUDPSocket{
-		listenFn: func(_ int) (domain.UdpConn, error) {
+		listenFn: func(_ int) (domain.UDPConn, error) {
 			return conn, nil
 		},
 	}
@@ -147,9 +147,9 @@ func TestUdpListenerService_StartListen_DuplicatePort(t *testing.T) {
 	conn.Close()
 }
 
-func TestUdpListenerService_StartListen_SocketError(t *testing.T) {
+func TestUDPListenerService_StartListen_SocketError(t *testing.T) {
 	socket := &mockUDPSocket{
-		listenFn: func(_ int) (domain.UdpConn, error) {
+		listenFn: func(_ int) (domain.UDPConn, error) {
 			return nil, errors.New("address already in use")
 		},
 	}
@@ -160,10 +160,10 @@ func TestUdpListenerService_StartListen_SocketError(t *testing.T) {
 	}
 }
 
-func TestUdpListenerService_StartListen_SessionHasCorrectFields(t *testing.T) {
+func TestUDPListenerService_StartListen_SessionHasCorrectFields(t *testing.T) {
 	conn := newMockConn()
 	socket := &mockUDPSocket{
-		listenFn: func(_ int) (domain.UdpConn, error) { return conn, nil },
+		listenFn: func(_ int) (domain.UDPConn, error) { return conn, nil },
 	}
 	svc := newListenerSvc(socket, nil)
 	session, err := svc.StartListen(5555, domain.EncodingText)
@@ -185,7 +185,7 @@ func TestUdpListenerService_StartListen_SessionHasCorrectFields(t *testing.T) {
 
 // ------- StopListen -------
 
-func TestUdpListenerService_StopListen_NotFound(t *testing.T) {
+func TestUDPListenerService_StopListen_NotFound(t *testing.T) {
 	svc := newListenerSvc(nil, nil)
 	err := svc.StopListen("nonexistent")
 	if err == nil {
@@ -197,10 +197,10 @@ func TestUdpListenerService_StopListen_NotFound(t *testing.T) {
 	}
 }
 
-func TestUdpListenerService_StopListen_Success(t *testing.T) {
+func TestUDPListenerService_StopListen_Success(t *testing.T) {
 	conn := newMockConn()
 	socket := &mockUDPSocket{
-		listenFn: func(_ int) (domain.UdpConn, error) { return conn, nil },
+		listenFn: func(_ int) (domain.UDPConn, error) { return conn, nil },
 	}
 	svc := newListenerSvc(socket, nil)
 	session, _ := svc.StartListen(9000, domain.EncodingText)
@@ -218,20 +218,20 @@ func TestUdpListenerService_StopListen_Success(t *testing.T) {
 
 // ------- GetListeners -------
 
-func TestUdpListenerService_GetListeners_Empty(t *testing.T) {
+func TestUDPListenerService_GetListeners_Empty(t *testing.T) {
 	svc := newListenerSvc(nil, nil)
 	if listeners := svc.GetListeners(); len(listeners) != 0 {
 		t.Errorf("expected 0 listeners, got %d", len(listeners))
 	}
 }
 
-func TestUdpListenerService_GetListeners_WithSessions(t *testing.T) {
+func TestUDPListenerService_GetListeners_WithSessions(t *testing.T) {
 	conn1 := newMockConn()
 	conn2 := newMockConn()
 	callCount := 0
 	conns := []*mockUDPConn{conn1, conn2}
 	socket := &mockUDPSocket{
-		listenFn: func(_ int) (domain.UdpConn, error) {
+		listenFn: func(_ int) (domain.UDPConn, error) {
 			c := conns[callCount]
 			callCount++
 			return c, nil
@@ -251,13 +251,13 @@ func TestUdpListenerService_GetListeners_WithSessions(t *testing.T) {
 
 // ------- StopAll -------
 
-func TestUdpListenerService_StopAll_ClosesAllConns(t *testing.T) {
+func TestUDPListenerService_StopAll_ClosesAllConns(t *testing.T) {
 	conn1 := newMockConn()
 	conn2 := newMockConn()
 	callCount := 0
 	conns := []*mockUDPConn{conn1, conn2}
 	socket := &mockUDPSocket{
-		listenFn: func(_ int) (domain.UdpConn, error) {
+		listenFn: func(_ int) (domain.UDPConn, error) {
 			c := conns[callCount]
 			callCount++
 			return c, nil
@@ -280,7 +280,7 @@ func TestUdpListenerService_StopAll_ClosesAllConns(t *testing.T) {
 	}
 }
 
-func TestUdpListenerService_StopAll_NoSessions(_ *testing.T) {
+func TestUDPListenerService_StopAll_NoSessions(_ *testing.T) {
 	svc := newListenerSvc(nil, nil)
 	// panic しないことを確認
 	svc.StopAll()
@@ -288,7 +288,7 @@ func TestUdpListenerService_StopAll_NoSessions(_ *testing.T) {
 
 // ------- receiveLoop: message emission -------
 
-func TestUdpListenerService_ReceiveLoop_EmitsMessage(t *testing.T) {
+func TestUDPListenerService_ReceiveLoop_EmitsMessage(t *testing.T) {
 	pkt := struct {
 		addr string
 		data []byte
@@ -296,10 +296,10 @@ func TestUdpListenerService_ReceiveLoop_EmitsMessage(t *testing.T) {
 	conn := newMockConn(pkt)
 
 	socket := &mockUDPSocket{
-		listenFn: func(_ int) (domain.UdpConn, error) { return conn, nil },
+		listenFn: func(_ int) (domain.UDPConn, error) { return conn, nil },
 	}
 	emitter := newListenerEmitter()
-	svc := NewUdpListenerService(socket, emitter, testutil.NoopLogger{})
+	svc := NewUDPListenerService(socket, emitter, testutil.NoopLogger{})
 
 	session, err := svc.StartListen(9000, domain.EncodingText)
 	if err != nil {
@@ -332,10 +332,10 @@ func TestUdpListenerService_ReceiveLoop_EmitsMessage(t *testing.T) {
 	}
 }
 
-func TestUdpListenerService_ReceiveLoop_StopsOnClose(t *testing.T) {
+func TestUDPListenerService_ReceiveLoop_StopsOnClose(t *testing.T) {
 	conn := newMockConn() // パケットなし、Close() を待つ
 	socket := &mockUDPSocket{
-		listenFn: func(_ int) (domain.UdpConn, error) { return conn, nil },
+		listenFn: func(_ int) (domain.UDPConn, error) { return conn, nil },
 	}
 	svc := newListenerSvc(socket, nil)
 	session, _ := svc.StartListen(9000, domain.EncodingText)

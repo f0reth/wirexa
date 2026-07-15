@@ -110,8 +110,8 @@ func waitForEvent(t *testing.T, ch <-chan struct{}, timeout time.Duration, msg s
 
 // ------- Connect -------
 
-func TestMqttService_Connect_EmptyBroker(t *testing.T) {
-	svc := NewMqttService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
+func TestMQTTService_Connect_EmptyBroker(t *testing.T) {
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
 	_, err := svc.Connect(domain.ConnectionConfig{Broker: ""})
 	if err == nil {
 		t.Fatal("expected error for empty broker, got nil")
@@ -122,12 +122,12 @@ func TestMqttService_Connect_EmptyBroker(t *testing.T) {
 	}
 }
 
-func TestMqttService_Connect_ReturnsNonEmptyID(t *testing.T) {
+func TestMQTTService_Connect_ReturnsNonEmptyID(t *testing.T) {
 	done := make(chan struct{})
 	client := &mockBrokerClient{
 		connectFn: func() error { close(done); return nil },
 	}
-	svc := NewMqttService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 
 	id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	if err != nil {
@@ -161,9 +161,9 @@ func waitForConfig(t *testing.T, ch <-chan domain.ConnectionConfig) domain.Conne
 	}
 }
 
-func TestMqttService_Connect_AutoGeneratesClientID(t *testing.T) {
+func TestMQTTService_Connect_AutoGeneratesClientID(t *testing.T) {
 	factory, configs := capturingFactory()
-	svc := NewMqttService(&mockEmitter{}, factory, testutil.NoopLogger{})
+	svc := NewMQTTService(&mockEmitter{}, factory, testutil.NoopLogger{})
 	svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883", ClientID: ""})
 
 	if cfg := waitForConfig(t, configs); cfg.ClientID == "" {
@@ -171,9 +171,9 @@ func TestMqttService_Connect_AutoGeneratesClientID(t *testing.T) {
 	}
 }
 
-func TestMqttService_Connect_UsesProvidedClientID(t *testing.T) {
+func TestMQTTService_Connect_UsesProvidedClientID(t *testing.T) {
 	factory, configs := capturingFactory()
-	svc := NewMqttService(&mockEmitter{}, factory, testutil.NoopLogger{})
+	svc := NewMQTTService(&mockEmitter{}, factory, testutil.NoopLogger{})
 	svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883", ClientID: "my-client"})
 
 	if cfg := waitForConfig(t, configs); cfg.ClientID != "my-client" {
@@ -181,14 +181,14 @@ func TestMqttService_Connect_UsesProvidedClientID(t *testing.T) {
 	}
 }
 
-func TestMqttService_Connect_FailureRemovesConnection(t *testing.T) {
+func TestMQTTService_Connect_FailureRemovesConnection(t *testing.T) {
 	failedCh := make(chan struct{})
-	emitter2 := &mockEmitterWithChan{mockEmitter: mockEmitter{}, ch: failedCh, targetEvent: eventConnectionFailed}
+	emitter2 := &mockEmitterWithChan{mockEmitter: mockEmitter{}, ch: failedCh, targetEvent: cmn.EventMQTTConnectionFailed}
 
 	client := &mockBrokerClient{
 		connectFn: func() error { return errors.New("connection refused") },
 	}
-	svc := NewMqttService(emitter2, factoryWith(client), testutil.NoopLogger{})
+	svc := NewMQTTService(emitter2, factoryWith(client), testutil.NoopLogger{})
 	id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
@@ -223,8 +223,8 @@ func (e *mockEmitterWithChan) Emit(event string, data any) {
 
 // ------- Disconnect -------
 
-func TestMqttService_Disconnect_NotFound(t *testing.T) {
-	svc := NewMqttService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
+func TestMQTTService_Disconnect_NotFound(t *testing.T) {
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
 	err := svc.Disconnect("nonexistent")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -235,16 +235,16 @@ func TestMqttService_Disconnect_NotFound(t *testing.T) {
 	}
 }
 
-func TestMqttService_Disconnect_Success(t *testing.T) {
+func TestMQTTService_Disconnect_Success(t *testing.T) {
 	done := make(chan struct{})
 	client := &mockBrokerClient{
 		connectFn: func() error { close(done); return nil },
 	}
 	emitter := &mockEmitterWithChan{
 		ch:          make(chan struct{}),
-		targetEvent: eventDisconnected,
+		targetEvent: cmn.EventMQTTDisconnected,
 	}
-	svc := NewMqttService(emitter, factoryWith(client), testutil.NoopLogger{})
+	svc := NewMQTTService(emitter, factoryWith(client), testutil.NoopLogger{})
 
 	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	waitForEvent(t, done, time.Second, "connect goroutine timeout")
@@ -261,8 +261,8 @@ func TestMqttService_Disconnect_Success(t *testing.T) {
 
 // ------- Publish -------
 
-func TestMqttService_Publish_EmptyTopic(t *testing.T) {
-	svc := NewMqttService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
+func TestMQTTService_Publish_EmptyTopic(t *testing.T) {
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
 	err := svc.Publish("connid", "", "payload", 0, false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -273,8 +273,8 @@ func TestMqttService_Publish_EmptyTopic(t *testing.T) {
 	}
 }
 
-func TestMqttService_Publish_InvalidQoS(t *testing.T) {
-	svc := NewMqttService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
+func TestMQTTService_Publish_InvalidQoS(t *testing.T) {
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
 	err := svc.Publish("connid", "topic", "payload", 3, false)
 	if err == nil {
 		t.Fatal("expected error for qos=3, got nil")
@@ -285,8 +285,8 @@ func TestMqttService_Publish_InvalidQoS(t *testing.T) {
 	}
 }
 
-func TestMqttService_Publish_ConnectionNotFound(t *testing.T) {
-	svc := NewMqttService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
+func TestMQTTService_Publish_ConnectionNotFound(t *testing.T) {
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
 	err := svc.Publish("nonexistent", "topic", "payload", 0, false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -297,7 +297,7 @@ func TestMqttService_Publish_ConnectionNotFound(t *testing.T) {
 	}
 }
 
-func TestMqttService_Publish_Success(t *testing.T) {
+func TestMQTTService_Publish_Success(t *testing.T) {
 	done := make(chan struct{})
 	var publishedTopic, publishedPayload string
 	var publishedQoS byte
@@ -310,7 +310,7 @@ func TestMqttService_Publish_Success(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewMqttService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	waitForEvent(t, done, time.Second, "connect goroutine timeout")
 
@@ -328,13 +328,13 @@ func TestMqttService_Publish_Success(t *testing.T) {
 	}
 }
 
-func TestMqttService_Publish_ValidQoSValues(t *testing.T) {
+func TestMQTTService_Publish_ValidQoSValues(t *testing.T) {
 	done := make(chan struct{})
 	var once sync.Once
 	client := &mockBrokerClient{
 		connectFn: func() error { once.Do(func() { close(done) }); return nil },
 	}
-	svc := NewMqttService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	waitForEvent(t, done, time.Second, "connect goroutine timeout")
 
@@ -347,24 +347,24 @@ func TestMqttService_Publish_ValidQoSValues(t *testing.T) {
 
 // ------- Subscribe -------
 
-func TestMqttService_Subscribe_EmptyTopic(t *testing.T) {
-	svc := NewMqttService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
+func TestMQTTService_Subscribe_EmptyTopic(t *testing.T) {
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
 	err := svc.Subscribe("connid", "", 0)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
 
-func TestMqttService_Subscribe_InvalidQoS(t *testing.T) {
-	svc := NewMqttService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
+func TestMQTTService_Subscribe_InvalidQoS(t *testing.T) {
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
 	err := svc.Subscribe("connid", "topic", 3)
 	if err == nil {
 		t.Fatal("expected error for qos=3, got nil")
 	}
 }
 
-func TestMqttService_Subscribe_ConnectionNotFound(t *testing.T) {
-	svc := NewMqttService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
+func TestMQTTService_Subscribe_ConnectionNotFound(t *testing.T) {
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
 	err := svc.Subscribe("nonexistent", "topic", 0)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -375,7 +375,7 @@ func TestMqttService_Subscribe_ConnectionNotFound(t *testing.T) {
 	}
 }
 
-func TestMqttService_Subscribe_MessageHandlerEmitsEvent(t *testing.T) {
+func TestMQTTService_Subscribe_MessageHandlerEmitsEvent(t *testing.T) {
 	done := make(chan struct{})
 	var capturedHandler domain.MessageHandler
 	client := &mockBrokerClient{
@@ -388,9 +388,9 @@ func TestMqttService_Subscribe_MessageHandlerEmitsEvent(t *testing.T) {
 	msgCh := make(chan struct{})
 	emitter := &mockEmitterWithChan{
 		ch:          msgCh,
-		targetEvent: eventMessage,
+		targetEvent: cmn.EventMQTTMessage,
 	}
-	svc := NewMqttService(emitter, factoryWith(client), testutil.NoopLogger{})
+	svc := NewMQTTService(emitter, factoryWith(client), testutil.NoopLogger{})
 	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	waitForEvent(t, done, time.Second, "connect goroutine timeout")
 
@@ -403,7 +403,7 @@ func TestMqttService_Subscribe_MessageHandlerEmitsEvent(t *testing.T) {
 	}
 	capturedHandler("sensors/temp", []byte("25.5"), 0, false)
 	waitForEvent(t, msgCh, time.Second, "message event timeout")
-	if !emitter.hasEvent(eventMessage) {
+	if !emitter.hasEvent(cmn.EventMQTTMessage) {
 		t.Error("expected mqtt:message event")
 	}
 	if msg := lastMessage(t, emitter); msg.PayloadBase64 || msg.Payload != "25.5" {
@@ -411,7 +411,7 @@ func TestMqttService_Subscribe_MessageHandlerEmitsEvent(t *testing.T) {
 	}
 }
 
-func TestMqttService_Subscribe_BinaryPayloadBase64(t *testing.T) {
+func TestMQTTService_Subscribe_BinaryPayloadBase64(t *testing.T) {
 	done := make(chan struct{})
 	var capturedHandler domain.MessageHandler
 	client := &mockBrokerClient{
@@ -422,8 +422,8 @@ func TestMqttService_Subscribe_BinaryPayloadBase64(t *testing.T) {
 		},
 	}
 	msgCh := make(chan struct{})
-	emitter := &mockEmitterWithChan{ch: msgCh, targetEvent: eventMessage}
-	svc := NewMqttService(emitter, factoryWith(client), testutil.NoopLogger{})
+	emitter := &mockEmitterWithChan{ch: msgCh, targetEvent: cmn.EventMQTTMessage}
+	svc := NewMQTTService(emitter, factoryWith(client), testutil.NoopLogger{})
 	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	waitForEvent(t, done, time.Second, "connect goroutine timeout")
 
@@ -452,36 +452,36 @@ func TestMqttService_Subscribe_BinaryPayloadBase64(t *testing.T) {
 	}
 }
 
-// lastMessage は emitter に記録された最後の mqtt:message イベントの MqttMessage を返す。
-func lastMessage(t *testing.T, e *mockEmitterWithChan) domain.MqttMessage {
+// lastMessage は emitter に記録された最後の mqtt:message イベントの MQTTMessage を返す。
+func lastMessage(t *testing.T, e *mockEmitterWithChan) domain.MQTTMessage {
 	t.Helper()
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for i := len(e.events) - 1; i >= 0; i-- {
-		if e.events[i].event == eventMessage {
-			msg, ok := e.events[i].data.(domain.MqttMessage)
+		if e.events[i].event == cmn.EventMQTTMessage {
+			msg, ok := e.events[i].data.(domain.MQTTMessage)
 			if !ok {
-				t.Fatalf("message event data is not MqttMessage: %T", e.events[i].data)
+				t.Fatalf("message event data is not MQTTMessage: %T", e.events[i].data)
 			}
 			return msg
 		}
 	}
 	t.Fatal("no mqtt:message event recorded")
-	return domain.MqttMessage{}
+	return domain.MQTTMessage{}
 }
 
 // ------- Unsubscribe -------
 
-func TestMqttService_Unsubscribe_EmptyTopic(t *testing.T) {
-	svc := NewMqttService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
+func TestMQTTService_Unsubscribe_EmptyTopic(t *testing.T) {
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
 	err := svc.Unsubscribe("connid", "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
 
-func TestMqttService_Unsubscribe_ConnectionNotFound(t *testing.T) {
-	svc := NewMqttService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
+func TestMQTTService_Unsubscribe_ConnectionNotFound(t *testing.T) {
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
 	err := svc.Unsubscribe("nonexistent", "topic")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -492,7 +492,7 @@ func TestMqttService_Unsubscribe_ConnectionNotFound(t *testing.T) {
 	}
 }
 
-func TestMqttService_Unsubscribe_Success(t *testing.T) {
+func TestMQTTService_Unsubscribe_Success(t *testing.T) {
 	done := make(chan struct{})
 	var unsubscribedTopics []string
 	client := &mockBrokerClient{
@@ -502,7 +502,7 @@ func TestMqttService_Unsubscribe_Success(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewMqttService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	waitForEvent(t, done, time.Second, "connect goroutine timeout")
 
@@ -516,22 +516,22 @@ func TestMqttService_Unsubscribe_Success(t *testing.T) {
 
 // ------- GetConnections -------
 
-func TestMqttService_GetConnections_Empty(t *testing.T) {
-	svc := NewMqttService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
+func TestMQTTService_GetConnections_Empty(t *testing.T) {
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
 	conns := svc.GetConnections()
 	if len(conns) != 0 {
 		t.Errorf("expected 0 connections, got %d", len(conns))
 	}
 }
 
-func TestMqttService_GetConnections_ReflectsIsConnected(t *testing.T) {
+func TestMQTTService_GetConnections_ReflectsIsConnected(t *testing.T) {
 	done := make(chan struct{})
 	connected := true
 	client := &mockBrokerClient{
 		connectFn:     func() error { close(done); return nil },
 		isConnectedFn: func() bool { return connected },
 	}
-	svc := NewMqttService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 	svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883", Name: "TestConn"})
 	waitForEvent(t, done, time.Second, "connect goroutine timeout")
 
@@ -547,12 +547,12 @@ func TestMqttService_GetConnections_ReflectsIsConnected(t *testing.T) {
 	}
 }
 
-func TestMqttService_GetConnections_TracksProfileIDAndSubscriptions(t *testing.T) {
+func TestMQTTService_GetConnections_TracksProfileIDAndSubscriptions(t *testing.T) {
 	done := make(chan struct{})
 	client := &mockBrokerClient{
 		connectFn: func() error { close(done); return nil },
 	}
-	svc := NewMqttService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 	id, _ := svc.Connect(domain.ConnectionConfig{
 		Broker:    "tcp://localhost:1883",
 		ProfileID: "profile-123",
@@ -604,7 +604,7 @@ func TestMqttService_GetConnections_TracksProfileIDAndSubscriptions(t *testing.T
 
 // ------- Shutdown -------
 
-func TestMqttService_Shutdown_DisconnectsAll(t *testing.T) {
+func TestMQTTService_Shutdown_DisconnectsAll(t *testing.T) {
 	done := make(chan struct{})
 	disconnectCount := 0
 	var mu sync.Mutex
@@ -616,7 +616,7 @@ func TestMqttService_Shutdown_DisconnectsAll(t *testing.T) {
 			mu.Unlock()
 		},
 	}
-	svc := NewMqttService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 	svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	waitForEvent(t, done, time.Second, "connect goroutine timeout")
 
@@ -633,13 +633,13 @@ func TestMqttService_Shutdown_DisconnectsAll(t *testing.T) {
 	}
 }
 
-func TestMqttService_Shutdown_NoConnections(_ *testing.T) {
-	svc := NewMqttService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
+func TestMQTTService_Shutdown_NoConnections(_ *testing.T) {
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
 	// Should not panic or block
 	svc.Shutdown()
 }
 
-func TestMqttService_Shutdown_DisconnectsMultipleConnections(t *testing.T) {
+func TestMQTTService_Shutdown_DisconnectsMultipleConnections(t *testing.T) {
 	connCount := 2
 	dones := make([]chan struct{}, connCount)
 	for i := range dones {
@@ -664,7 +664,7 @@ func TestMqttService_Shutdown_DisconnectsMultipleConnections(t *testing.T) {
 			},
 		}
 	}
-	svc := NewMqttService(&mockEmitter{}, factory, testutil.NoopLogger{})
+	svc := NewMQTTService(&mockEmitter{}, factory, testutil.NoopLogger{})
 	for range connCount {
 		svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	}
@@ -687,14 +687,14 @@ func TestMqttService_Shutdown_DisconnectsMultipleConnections(t *testing.T) {
 
 // ------- Publish / Subscribe / Unsubscribe: client errors -------
 
-func TestMqttService_Publish_ClientError(t *testing.T) {
+func TestMQTTService_Publish_ClientError(t *testing.T) {
 	done := make(chan struct{})
 	wantErr := errors.New("publish failed")
 	client := &mockBrokerClient{
 		connectFn: func() error { close(done); return nil },
 		publishFn: func(_ string, _ byte, _ bool, _ string) error { return wantErr },
 	}
-	svc := NewMqttService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	waitForEvent(t, done, time.Second, "connect goroutine timeout")
 
@@ -704,14 +704,14 @@ func TestMqttService_Publish_ClientError(t *testing.T) {
 	}
 }
 
-func TestMqttService_Subscribe_ClientError(t *testing.T) {
+func TestMQTTService_Subscribe_ClientError(t *testing.T) {
 	done := make(chan struct{})
 	wantErr := errors.New("subscribe failed")
 	client := &mockBrokerClient{
 		connectFn:   func() error { close(done); return nil },
 		subscribeFn: func(_ string, _ byte, _ domain.MessageHandler) error { return wantErr },
 	}
-	svc := NewMqttService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	waitForEvent(t, done, time.Second, "connect goroutine timeout")
 
@@ -721,14 +721,14 @@ func TestMqttService_Subscribe_ClientError(t *testing.T) {
 	}
 }
 
-func TestMqttService_Unsubscribe_ClientError(t *testing.T) {
+func TestMQTTService_Unsubscribe_ClientError(t *testing.T) {
 	done := make(chan struct{})
 	wantErr := errors.New("unsubscribe failed")
 	client := &mockBrokerClient{
 		connectFn:     func() error { close(done); return nil },
 		unsubscribeFn: func(_ ...string) error { return wantErr },
 	}
-	svc := NewMqttService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	waitForEvent(t, done, time.Second, "connect goroutine timeout")
 
@@ -738,8 +738,8 @@ func TestMqttService_Unsubscribe_ClientError(t *testing.T) {
 	}
 }
 
-func TestMqttService_Subscribe_InvalidQoS_ReturnsValidationError(t *testing.T) {
-	svc := NewMqttService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
+func TestMQTTService_Subscribe_InvalidQoS_ReturnsValidationError(t *testing.T) {
+	svc := NewMQTTService(&mockEmitter{}, factoryWith(&mockBrokerClient{}), testutil.NoopLogger{})
 	err := svc.Subscribe("connid", "topic", 3)
 	if err == nil {
 		t.Fatal("expected error for qos=3, got nil")
