@@ -9,9 +9,9 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/udp"
 )
 
-var _ domain.UdpSocket = (*NetSocket)(nil)
+var _ domain.UDPSocket = (*NetSocket)(nil)
 
-// NetSocket は net パッケージを使った domain.UdpSocket の実装。
+// NetSocket は net パッケージを使った domain.UDPSocket の実装。
 type NetSocket struct{}
 
 // NewNetSocket は NetSocket を生成する。
@@ -30,8 +30,8 @@ func (s *NetSocket) Send(host string, port int, data []byte) (int, error) {
 	return conn.Write(data)
 }
 
-// Listen は指定ポートでリスニングを開始し、UdpConn を返す。
-func (s *NetSocket) Listen(port int) (domain.UdpConn, error) {
+// Listen は指定ポートでリスニングを開始し、UDPConn を返す。
+func (s *NetSocket) Listen(port int) (domain.UDPConn, error) {
 	conn, err := net.ListenPacket("udp4", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func (s *NetSocket) Listen(port int) (domain.UdpConn, error) {
 	return &netConn{conn: conn}, nil
 }
 
-// netConn は net.PacketConn を domain.UdpConn にアダプトする。
+// netConn は net.PacketConn を domain.UDPConn にアダプトする。
 type netConn struct {
 	conn net.PacketConn
 }

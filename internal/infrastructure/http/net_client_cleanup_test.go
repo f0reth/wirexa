@@ -87,7 +87,7 @@ func TestNetClient_WithinLimit_NoTempFile(t *testing.T) {
 	dir := isolateTempDir(t)
 	c := NewNetClient()
 
-	res, err := c.Do(context.Background(), domain.HttpRequest{
+	res, err := c.Do(context.Background(), domain.HTTPRequest{
 		ID:     "small",
 		Method: http.MethodGet,
 		URL:    serveBytes(t, []byte("hello")),
@@ -117,7 +117,7 @@ func TestNetClient_Truncated_TempFileHoldsFullBody(t *testing.T) {
 	full := bytes.Repeat([]byte("a"), maxBody+512)
 
 	c := NewNetClient()
-	res, err := c.Do(context.Background(), domain.HttpRequest{
+	res, err := c.Do(context.Background(), domain.HTTPRequest{
 		ID:       "big",
 		Method:   http.MethodGet,
 		URL:      serveBytes(t, full),
@@ -166,7 +166,7 @@ func TestNetClient_AbsoluteLimit_CapsBody(t *testing.T) {
 	c := NewNetClient()
 	c.maxTempBytes = hardLimit
 
-	res, err := c.Do(context.Background(), domain.HttpRequest{
+	res, err := c.Do(context.Background(), domain.HTTPRequest{
 		ID:     "huge",
 		Method: http.MethodGet,
 		URL:    serveBytes(t, full),
@@ -209,7 +209,7 @@ func TestNetClient_TruncatedResend_NoOrphan(t *testing.T) {
 	defer srv.Close()
 
 	c := NewNetClient()
-	req := domain.HttpRequest{
+	req := domain.HTTPRequest{
 		ID:       "same-id",
 		Method:   http.MethodGet,
 		URL:      srv.URL,

@@ -17,20 +17,20 @@ const (
 	defaultTokenTimeout   = 30 * time.Second
 )
 
-// MqttClientConfig は Paho MQTT クライアントの設定。
-type MqttClientConfig struct {
+// MQTTClientConfig は Paho MQTT クライアントの設定。
+type MQTTClientConfig struct {
 	ConnectTimeout time.Duration
 	TokenTimeout   time.Duration
 }
 
-func (c MqttClientConfig) connectTimeout() time.Duration {
+func (c MQTTClientConfig) connectTimeout() time.Duration {
 	if c.ConnectTimeout > 0 {
 		return c.ConnectTimeout
 	}
 	return defaultConnectTimeout
 }
 
-func (c MqttClientConfig) tokenTimeout() time.Duration {
+func (c MQTTClientConfig) tokenTimeout() time.Duration {
 	if c.TokenTimeout > 0 {
 		return c.TokenTimeout
 	}
@@ -57,7 +57,7 @@ func applyTLSScheme(broker string) string {
 }
 
 // NewPahoClientFactory は Paho MQTT を用いた domain.BrokerClientFactory を返す。
-func NewPahoClientFactory(cfg MqttClientConfig) domain.BrokerClientFactory {
+func NewPahoClientFactory(cfg MQTTClientConfig) domain.BrokerClientFactory {
 	return func(
 		config domain.ConnectionConfig,
 		onConnected func(),

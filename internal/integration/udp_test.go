@@ -21,15 +21,15 @@ import (
 
 // mockEmitter はテスト用の Emitter 実装。受信メッセージをチャンネルで収集する。
 type mockEmitter struct {
-	ch chan udpdomain.UdpReceivedMessage
+	ch chan udpdomain.UDPReceivedMessage
 }
 
 func newMockEmitter() *mockEmitter {
-	return &mockEmitter{ch: make(chan udpdomain.UdpReceivedMessage, 16)}
+	return &mockEmitter{ch: make(chan udpdomain.UDPReceivedMessage, 16)}
 }
 
 func (e *mockEmitter) Emit(_ string, data any) {
-	if msg, ok := data.(udpdomain.UdpReceivedMessage); ok {
+	if msg, ok := data.(udpdomain.UDPReceivedMessage); ok {
 		select {
 		case e.ch <- msg:
 		default:
@@ -38,21 +38,21 @@ func (e *mockEmitter) Emit(_ string, data any) {
 }
 
 // receiveMessage はタイムアウト付きでメッセージを待機する。
-func (e *mockEmitter) receiveMessage(t *testing.T, timeout time.Duration) udpdomain.UdpReceivedMessage {
+func (e *mockEmitter) receiveMessage(t *testing.T, timeout time.Duration) udpdomain.UDPReceivedMessage {
 	t.Helper()
 	select {
 	case msg := <-e.ch:
 		return msg
 	case <-time.After(timeout):
 		t.Fatal("timeout waiting for UDP message")
-		return udpdomain.UdpReceivedMessage{}
+		return udpdomain.UDPReceivedMessage{}
 	}
 }
 
-// newUDPHandlerWithDir は指定ディレクトリから UdpHandler を組み立てる（永続化テスト用）。
-func newUDPHandlerWithDir(t *testing.T, emitter cmndomain.Emitter, dir string) *adapters.UdpHandler {
+// newUDPHandlerWithDir は指定ディレクトリから UDPHandler を組み立てる（永続化テスト用）。
+func newUDPHandlerWithDir(t *testing.T, emitter cmndomain.Emitter, dir string) *adapters.UDPHandler {
 	t.Helper()
-	repo, err := infra.NewJSONStore(dir, func(tgt *udpdomain.UdpTarget) string { return tgt.ID })
+	repo, err := infra.NewJSONStore(dir, func(tgt *udpdomain.UDPTarget) string { return tgt.ID })
 	if err != nil {
 		t.Fatalf("NewJSONStore: %v", err)
 	}
@@ -61,15 +61,15 @@ func newUDPHandlerWithDir(t *testing.T, emitter cmndomain.Emitter, dir string) *
 		t.Fatalf("NewTargetService: %v", err)
 	}
 	socket := udpinfra.NewNetSocket()
-	sendSvc := udpapp.NewUdpSendService(socket, testutil.NoopLogger{})
-	listenSvc := udpapp.NewUdpListenerService(socket, emitter, testutil.NoopLogger{})
-	h := &adapters.UdpHandler{}
-	adapters.SetupUdpHandler(h, sendSvc, targetSvc, listenSvc)
+	sendSvc := udpapp.NewUDPSendService(socket, testutil.NoopLogger{})
+	listenSvc := udpapp.NewUDPListenerService(socket, emitter, testutil.NoopLogger{})
+	h := &adapters.UDPHandler{}
+	adapters.SetupUDPHandler(h, sendSvc, targetSvc, listenSvc)
 	return h
 }
 
-// newUDPHandler は統合テスト用に UdpHandler を DI で組み立てる。
-func newUDPHandler(t *testing.T, emitter cmndomain.Emitter) *adapters.UdpHandler {
+// newUDPHandler は統合テスト用に UDPHandler を DI で組み立てる。
+func newUDPHandler(t *testing.T, emitter cmndomain.Emitter) *adapters.UDPHandler {
 	t.Helper()
 	return newUDPHandlerWithDir(t, emitter, t.TempDir())
 }
@@ -86,7 +86,7 @@ func TestUDP_SendRaw(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = h.StopListen(sess.ID) })
 
-	result, err := h.Send(udpdomain.UdpSendRequest{
+	result, err := h.Send(udpdomain.UDPSendRequest{
 		Host:     "127.0.0.1",
 		Port:     port,
 		Encoding: udpdomain.EncodingText,
@@ -124,7 +124,7 @@ func TestUDP_SendFixed(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = h.StopListen(sess.ID) })
 
-	result, err := h.Send(udpdomain.UdpSendRequest{
+	result, err := h.Send(udpdomain.UDPSendRequest{
 		Host:     "127.0.0.1",
 		Port:     port,
 		Encoding: udpdomain.EncodingFixed,
@@ -219,7 +219,7 @@ func TestUDP_TargetCRUD(t *testing.T) {
 	}
 
 	// 新規保存
-	target, err := h.SaveTarget(udpdomain.UdpTarget{
+	target, err := h.SaveTarget(udpdomain.UDPTarget{
 		Name: "TestTarget",
 		Host: "192.168.1.1",
 		Port: 5000,
@@ -286,7 +286,7 @@ func TestUDP_TargetPersistenceRoundTrip(t *testing.T) {
 
 	// 1 回目: ターゲットを保存
 	h1 := newUDPHandlerWithDir(t, emitter, dir)
-	target, err := h1.SaveTarget(udpdomain.UdpTarget{
+	target, err := h1.SaveTarget(udpdomain.UDPTarget{
 		Name: "PersistTarget",
 		Host: "192.168.1.100",
 		Port: 9999,
@@ -356,7 +356,7 @@ func TestUDP_Send_EmptyHost(t *testing.T) {
 	emitter := newMockEmitter()
 	h := newUDPHandler(t, emitter)
 
-	_, err := h.Send(udpdomain.UdpSendRequest{
+	_, err := h.Send(udpdomain.UDPSendRequest{
 		Host:     "",
 		Port:     5000,
 		Encoding: udpdomain.EncodingText,
@@ -373,7 +373,7 @@ func TestUDP_Send_InvalidPort(t *testing.T) {
 	h := newUDPHandler(t, emitter)
 
 	for _, port := range []int{0, 65536, -1} {
-		_, err := h.Send(udpdomain.UdpSendRequest{
+		_, err := h.Send(udpdomain.UDPSendRequest{
 			Host:     "127.0.0.1",
 			Port:     port,
 			Encoding: udpdomain.EncodingText,
@@ -427,7 +427,7 @@ func TestUDP_Send_UnreachableHost(t *testing.T) {
 	h := newUDPHandler(t, emitter)
 
 	// 解決不能なホスト名を使い DNS 失敗を確実に引き起こす
-	_, err := h.Send(udpdomain.UdpSendRequest{
+	_, err := h.Send(udpdomain.UDPSendRequest{
 		Host:     "invalid.hostname.that.does.not.exist.wirexa-test.invalid",
 		Port:     5000,
 		Encoding: udpdomain.EncodingText,
@@ -451,7 +451,7 @@ func TestUDP_SendJSON(t *testing.T) {
 	t.Cleanup(func() { _ = h.StopListen(sess.ID) })
 
 	payload := `{"key":"value"}`
-	result, err := h.Send(udpdomain.UdpSendRequest{
+	result, err := h.Send(udpdomain.UDPSendRequest{
 		Host:     "127.0.0.1",
 		Port:     port,
 		Encoding: udpdomain.EncodingText,
@@ -485,7 +485,7 @@ func TestUDP_EncodingMismatch(t *testing.T) {
 	t.Cleanup(func() { _ = h.StopListen(sess.ID) })
 
 	// 送信は Fixed エンコード
-	_, err = h.Send(udpdomain.UdpSendRequest{
+	_, err = h.Send(udpdomain.UDPSendRequest{
 		Host:     "127.0.0.1",
 		Port:     port,
 		Encoding: udpdomain.EncodingFixed,
@@ -527,7 +527,7 @@ func TestUDP_StopListen_RaceWithSend(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		_, _ = h.Send(udpdomain.UdpSendRequest{
+		_, _ = h.Send(udpdomain.UDPSendRequest{
 			Host:     "127.0.0.1",
 			Port:     port,
 			Encoding: udpdomain.EncodingText,
@@ -590,7 +590,7 @@ func TestUDP_CorruptStorage(t *testing.T) {
 	}
 
 	// 破損ファイルは退避・スキップされ、NewTargetService は成功する
-	repo, err := infra.NewJSONStore(dir, func(tgt *udpdomain.UdpTarget) string { return tgt.ID })
+	repo, err := infra.NewJSONStore(dir, func(tgt *udpdomain.UDPTarget) string { return tgt.ID })
 	if err != nil {
 		t.Fatalf("NewJSONStore: %v", err)
 	}

@@ -19,8 +19,8 @@ type RequestSettings struct {
 	DisableRedirects   bool   `json:"disableRedirects"`
 }
 
-// HttpRequest は HTTP リクエストを表す。
-type HttpRequest struct {
+// HTTPRequest は HTTP リクエストを表す。
+type HTTPRequest struct {
 	Body     RequestBody     `json:"body"`
 	Auth     RequestAuth     `json:"auth"`
 	ID       string          `json:"id"`
@@ -46,8 +46,8 @@ type RequestBody struct {
 	Type     string            `json:"type"`
 }
 
-// HttpResponse は HTTP レスポンスを表す。
-type HttpResponse struct {
+// HTTPResponse は HTTP レスポンスを表す。
+type HTTPResponse struct {
 	// Headers は Set-Cookie などの複数値ヘッダを落とさないよう、キーごとに全値を保持する。
 	Headers     map[string][]string `json:"headers"`
 	StatusText  string              `json:"statusText"`
@@ -79,7 +79,7 @@ type Collection struct {
 
 // TreeItem はコレクション内のフォルダまたはリクエストアイテムを表す。
 type TreeItem struct {
-	Request  *HttpRequest `json:"request,omitempty"`
+	Request  *HTTPRequest `json:"request,omitempty"`
 	Type     string       `json:"type"`
 	ID       string       `json:"id"`
 	Name     string       `json:"name"`

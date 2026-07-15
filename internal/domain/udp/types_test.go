@@ -35,55 +35,55 @@ func TestFieldTypeByteSize_AllTypes(t *testing.T) {
 	}
 }
 
-func TestUdpSendRequest_Validate(t *testing.T) {
+func TestUDPSendRequest_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
 		field   string
-		req     UdpSendRequest
+		req     UDPSendRequest
 		wantErr bool
 	}{
 		{
 			name:    "valid request",
-			req:     UdpSendRequest{Host: "localhost", Port: 9000},
+			req:     UDPSendRequest{Host: "localhost", Port: 9000},
 			wantErr: false,
 		},
 		{
 			name:    "port 1 (min valid)",
-			req:     UdpSendRequest{Host: "127.0.0.1", Port: 1},
+			req:     UDPSendRequest{Host: "127.0.0.1", Port: 1},
 			wantErr: false,
 		},
 		{
 			name:    "port 65535 (max valid)",
-			req:     UdpSendRequest{Host: "127.0.0.1", Port: 65535},
+			req:     UDPSendRequest{Host: "127.0.0.1", Port: 65535},
 			wantErr: false,
 		},
 		{
 			name:    "empty host",
-			req:     UdpSendRequest{Host: "", Port: 9000},
+			req:     UDPSendRequest{Host: "", Port: 9000},
 			wantErr: true,
 			field:   "host",
 		},
 		{
 			name:    "port 0",
-			req:     UdpSendRequest{Host: "localhost", Port: 0},
+			req:     UDPSendRequest{Host: "localhost", Port: 0},
 			wantErr: true,
 			field:   "port",
 		},
 		{
 			name:    "port negative",
-			req:     UdpSendRequest{Host: "localhost", Port: -1},
+			req:     UDPSendRequest{Host: "localhost", Port: -1},
 			wantErr: true,
 			field:   "port",
 		},
 		{
 			name:    "port 65536",
-			req:     UdpSendRequest{Host: "localhost", Port: 65536},
+			req:     UDPSendRequest{Host: "localhost", Port: 65536},
 			wantErr: true,
 			field:   "port",
 		},
 		{
 			name:    "port very large",
-			req:     UdpSendRequest{Host: "localhost", Port: 99999},
+			req:     UDPSendRequest{Host: "localhost", Port: 99999},
 			wantErr: true,
 			field:   "port",
 		},

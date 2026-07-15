@@ -8,23 +8,23 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/udp"
 )
 
-var _ domain.SendUseCase = (*UdpSendService)(nil)
+var _ domain.SendUseCase = (*UDPSendService)(nil)
 
-// UdpSendService は UDP パケット送信ユースケースの実装。
-type UdpSendService struct {
-	socket domain.UdpSocket
+// UDPSendService は UDP パケット送信ユースケースの実装。
+type UDPSendService struct {
+	socket domain.UDPSocket
 	logger cmn.Logger
 }
 
-// NewUdpSendService は UdpSendService を生成する。
-func NewUdpSendService(socket domain.UdpSocket, logger cmn.Logger) *UdpSendService {
-	return &UdpSendService{socket: socket, logger: logger}
+// NewUDPSendService は UDPSendService を生成する。
+func NewUDPSendService(socket domain.UDPSocket, logger cmn.Logger) *UDPSendService {
+	return &UDPSendService{socket: socket, logger: logger}
 }
 
 // Send は UDP パケットを送信して結果を返す。
-func (s *UdpSendService) Send(req domain.UdpSendRequest) (domain.UdpSendResult, error) {
+func (s *UDPSendService) Send(req domain.UDPSendRequest) (domain.UDPSendResult, error) {
 	if err := req.Validate(); err != nil {
-		return domain.UdpSendResult{}, err
+		return domain.UDPSendResult{}, err
 	}
 
 	var data []byte
@@ -37,15 +37,15 @@ func (s *UdpSendService) Send(req domain.UdpSendRequest) (domain.UdpSendResult, 
 	}
 
 	if err != nil {
-		return domain.UdpSendResult{}, err
+		return domain.UDPSendResult{}, err
 	}
 
 	n, err := s.socket.Send(req.Host, req.Port, data)
 	if err != nil {
 		s.logger.Error("UDP send failed", "source", "udp", "host", req.Host, "port", req.Port, "error", err)
-		return domain.UdpSendResult{}, fmt.Errorf("failed to send UDP packet: %w", err)
+		return domain.UDPSendResult{}, fmt.Errorf("failed to send UDP packet: %w", err)
 	}
 
 	s.logger.Info("UDP packet sent", "source", "udp", "host", req.Host, "port", req.Port, "bytes", n)
-	return domain.UdpSendResult{BytesSent: n}, nil
+	return domain.UDPSendResult{BytesSent: n}, nil
 }

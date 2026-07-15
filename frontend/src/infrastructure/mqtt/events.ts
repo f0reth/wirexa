@@ -1,11 +1,7 @@
 import { EventsOn } from "../../../wailsjs/runtime/runtime";
+import type { MqttEventName } from "../../shared/wails-events";
 
-export type MqttEventName =
-  | "mqtt:connected"
-  | "mqtt:disconnected"
-  | "mqtt:connection-lost"
-  | "mqtt:connection-failed"
-  | "mqtt:message";
+export type { MqttEventName };
 
 // クリーンアップ関数を返す
 export function onMqttEvent(

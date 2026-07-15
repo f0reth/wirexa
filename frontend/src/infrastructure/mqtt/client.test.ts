@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../wailsjs/go/adapters/MqttHandler", () => ({
+vi.mock("../../../wailsjs/go/adapters/MQTTHandler", () => ({
   Connect: vi.fn(),
   DeleteProfile: vi.fn(),
   Disconnect: vi.fn(),
@@ -12,7 +12,7 @@ vi.mock("../../../wailsjs/go/adapters/MqttHandler", () => ({
   Unsubscribe: vi.fn(),
 }));
 
-import * as Handler from "../../../wailsjs/go/adapters/MqttHandler";
+import * as Handler from "../../../wailsjs/go/adapters/MQTTHandler";
 import {
   connect,
   deleteProfile,

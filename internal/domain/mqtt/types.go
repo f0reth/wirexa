@@ -18,8 +18,8 @@ type SubscriptionInfo struct {
 	QoS   byte   `json:"qos"`
 }
 
-// MqttMessage は受信した MQTT メッセージを表す。
-type MqttMessage struct {
+// MQTTMessage は受信した MQTT メッセージを表す。
+type MQTTMessage struct {
 	ConnectionID string `json:"connectionId"`
 	Topic        string `json:"topic"`
 	Payload      string `json:"payload"`

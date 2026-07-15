@@ -18,14 +18,14 @@ export namespace adapters {
 	        this.message = source["message"];
 	    }
 	}
-	export class OpenApiRecent {
+	export class OpenAPIRecent {
 	    path: string;
 	    name: string;
 	    order: number;
 	    lastOpenedAt: string;
 	
 	    static createFrom(source: any = {}) {
-	        return new OpenApiRecent(source);
+	        return new OpenAPIRecent(source);
 	    }
 	
 	    constructor(source: any = {}) {
@@ -111,7 +111,7 @@ export namespace httpdomain {
 	        this.type = source["type"];
 	    }
 	}
-	export class HttpRequest {
+	export class HTTPRequest {
 	    body: RequestBody;
 	    auth: RequestAuth;
 	    id: string;
@@ -124,7 +124,7 @@ export namespace httpdomain {
 	    settings: RequestSettings;
 	
 	    static createFrom(source: any = {}) {
-	        return new HttpRequest(source);
+	        return new HTTPRequest(source);
 	    }
 	
 	    constructor(source: any = {}) {
@@ -160,7 +160,7 @@ export namespace httpdomain {
 		}
 	}
 	export class TreeItem {
-	    request?: HttpRequest;
+	    request?: HTTPRequest;
 	    type: string;
 	    id: string;
 	    name: string;
@@ -172,7 +172,7 @@ export namespace httpdomain {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.request = this.convertValues(source["request"], HttpRequest);
+	        this.request = this.convertValues(source["request"], HTTPRequest);
 	        this.type = source["type"];
 	        this.id = source["id"];
 	        this.name = source["name"];
@@ -232,7 +232,7 @@ export namespace httpdomain {
 		}
 	}
 	
-	export class HttpResponse {
+	export class HTTPResponse {
 	    headers: Record<string, Array<string>>;
 	    statusText: string;
 	    body: string;
@@ -247,7 +247,7 @@ export namespace httpdomain {
 	    bodyCapped: boolean;
 	
 	    static createFrom(source: any = {}) {
-	        return new HttpResponse(source);
+	        return new HTTPResponse(source);
 	    }
 	
 	    constructor(source: any = {}) {
@@ -444,13 +444,13 @@ export namespace udpdomain {
 		    return a;
 		}
 	}
-	export class UdpListenSession {
+	export class UDPListenSession {
 	    id: string;
 	    encoding: string;
 	    port: number;
 	
 	    static createFrom(source: any = {}) {
-	        return new UdpListenSession(source);
+	        return new UDPListenSession(source);
 	    }
 	
 	    constructor(source: any = {}) {
@@ -460,7 +460,7 @@ export namespace udpdomain {
 	        this.port = source["port"];
 	    }
 	}
-	export class UdpSendRequest {
+	export class UDPSendRequest {
 	    host: string;
 	    encoding: string;
 	    payload: string;
@@ -470,7 +470,7 @@ export namespace udpdomain {
 	    messageLength: number;
 	
 	    static createFrom(source: any = {}) {
-	        return new UdpSendRequest(source);
+	        return new UDPSendRequest(source);
 	    }
 	
 	    constructor(source: any = {}) {
@@ -502,11 +502,11 @@ export namespace udpdomain {
 		    return a;
 		}
 	}
-	export class UdpSendResult {
+	export class UDPSendResult {
 	    bytesSent: number;
 	
 	    static createFrom(source: any = {}) {
-	        return new UdpSendResult(source);
+	        return new UDPSendResult(source);
 	    }
 	
 	    constructor(source: any = {}) {
@@ -514,14 +514,14 @@ export namespace udpdomain {
 	        this.bytesSent = source["bytesSent"];
 	    }
 	}
-	export class UdpTarget {
+	export class UDPTarget {
 	    id: string;
 	    name: string;
 	    host: string;
 	    port: number;
 	
 	    static createFrom(source: any = {}) {
-	        return new UdpTarget(source);
+	        return new UDPTarget(source);
 	    }
 	
 	    constructor(source: any = {}) {

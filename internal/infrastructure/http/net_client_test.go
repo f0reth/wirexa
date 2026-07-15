@@ -16,7 +16,7 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
-func doGet(t *testing.T, body []byte, contentType string) domain.HttpResponse {
+func doGet(t *testing.T, body []byte, contentType string) domain.HTTPResponse {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if contentType != "" {
@@ -26,7 +26,7 @@ func doGet(t *testing.T, body []byte, contentType string) domain.HttpResponse {
 	}))
 	defer srv.Close()
 
-	res, err := NewNetClient().Do(context.Background(), domain.HttpRequest{
+	res, err := NewNetClient().Do(context.Background(), domain.HTTPRequest{
 		ID:     "test",
 		Method: http.MethodGet,
 		URL:    srv.URL,
@@ -84,7 +84,7 @@ func TestNetClient_ReusesConnection(t *testing.T) {
 	c := NewNetClient()
 	defer c.Cleanup()
 	for i := range 3 {
-		if _, err := c.Do(context.Background(), domain.HttpRequest{
+		if _, err := c.Do(context.Background(), domain.HTTPRequest{
 			ID:     fmt.Sprintf("req-%d", i),
 			Method: http.MethodGet,
 			URL:    srv.URL,
@@ -158,7 +158,7 @@ func TestNetClient_Timeout(t *testing.T) {
 
 	c := NewNetClient()
 	defer c.Cleanup()
-	_, err := c.Do(context.Background(), domain.HttpRequest{
+	_, err := c.Do(context.Background(), domain.HTTPRequest{
 		ID:       "timeout",
 		Method:   http.MethodGet,
 		URL:      srv.URL,

@@ -32,7 +32,7 @@ export async function saveFileAs(
   return SaveFileAs(defaultName, content);
 }
 
-export async function getRecents(): Promise<adapters.OpenApiRecent[]> {
+export async function getRecents(): Promise<adapters.OpenAPIRecent[]> {
   return GetRecents();
 }
 

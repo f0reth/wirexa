@@ -1,9 +1,9 @@
 // Package mqttdomain は MQTT ドメイン層のポートインターフェースを定義する。
 package mqttdomain
 
-// MqttUseCase は MQTT 接続管理のユースケース入力ポート。
+// MQTTUseCase は MQTT 接続管理のユースケース入力ポート。
 // Wails RPC アダプター (ports 層) はこのインターフェースのみに依存する。
-type MqttUseCase interface {
+type MQTTUseCase interface {
 	Connect(config ConnectionConfig) (string, error)
 	Disconnect(connectionID string) error
 	Publish(connectionID, topic, payload string, qos byte, retain bool) error

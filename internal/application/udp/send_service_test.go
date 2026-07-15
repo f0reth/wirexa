@@ -9,10 +9,10 @@ import (
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
 
-// mockUDPSocket は domain.UdpSocket のインメモリモック。
+// mockUDPSocket は domain.UDPSocket のインメモリモック。
 type mockUDPSocket struct {
 	sendFn   func(host string, port int, data []byte) (int, error)
-	listenFn func(port int) (domain.UdpConn, error)
+	listenFn func(port int) (domain.UDPConn, error)
 }
 
 func (m *mockUDPSocket) Send(host string, port int, data []byte) (int, error) {
@@ -22,23 +22,23 @@ func (m *mockUDPSocket) Send(host string, port int, data []byte) (int, error) {
 	return len(data), nil
 }
 
-func (m *mockUDPSocket) Listen(port int) (domain.UdpConn, error) {
+func (m *mockUDPSocket) Listen(port int) (domain.UDPConn, error) {
 	if m.listenFn != nil {
 		return m.listenFn(port)
 	}
 	return nil, errors.New("Listen not implemented in mock")
 }
 
-func newSendSvc(socket domain.UdpSocket) *UdpSendService {
+func newSendSvc(socket domain.UDPSocket) *UDPSendService {
 	if socket == nil {
 		socket = &mockUDPSocket{}
 	}
-	return NewUdpSendService(socket, testutil.NoopLogger{})
+	return NewUDPSendService(socket, testutil.NoopLogger{})
 }
 
-func TestUdpSendService_Send_EmptyHost(t *testing.T) {
+func TestUDPSendService_Send_EmptyHost(t *testing.T) {
 	svc := newSendSvc(nil)
-	_, err := svc.Send(domain.UdpSendRequest{Host: "", Port: 9000, Encoding: domain.EncodingText, Payload: "hi"})
+	_, err := svc.Send(domain.UDPSendRequest{Host: "", Port: 9000, Encoding: domain.EncodingText, Payload: "hi"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -48,19 +48,19 @@ func TestUdpSendService_Send_EmptyHost(t *testing.T) {
 	}
 }
 
-func TestUdpSendService_Send_InvalidPort(t *testing.T) {
+func TestUDPSendService_Send_InvalidPort(t *testing.T) {
 	svc := newSendSvc(nil)
 	for _, port := range []int{0, -1, 65536} {
-		_, err := svc.Send(domain.UdpSendRequest{Host: "localhost", Port: port, Encoding: domain.EncodingText})
+		_, err := svc.Send(domain.UDPSendRequest{Host: "localhost", Port: port, Encoding: domain.EncodingText})
 		if err == nil {
 			t.Errorf("expected error for port=%d, got nil", port)
 		}
 	}
 }
 
-func TestUdpSendService_Send_InvalidJSON(t *testing.T) {
+func TestUDPSendService_Send_InvalidJSON(t *testing.T) {
 	svc := newSendSvc(nil)
-	_, err := svc.Send(domain.UdpSendRequest{
+	_, err := svc.Send(domain.UDPSendRequest{
 		Host:     "localhost",
 		Port:     9000,
 		Encoding: domain.EncodingJSON,
@@ -71,7 +71,7 @@ func TestUdpSendService_Send_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestUdpSendService_Send_SocketError(t *testing.T) {
+func TestUDPSendService_Send_SocketError(t *testing.T) {
 	wantErr := errors.New("network unreachable")
 	socket := &mockUDPSocket{
 		sendFn: func(_ string, _ int, _ []byte) (int, error) {
@@ -79,7 +79,7 @@ func TestUdpSendService_Send_SocketError(t *testing.T) {
 		},
 	}
 	svc := newSendSvc(socket)
-	_, err := svc.Send(domain.UdpSendRequest{
+	_, err := svc.Send(domain.UDPSendRequest{
 		Host:     "localhost",
 		Port:     9000,
 		Encoding: domain.EncodingText,
@@ -90,7 +90,7 @@ func TestUdpSendService_Send_SocketError(t *testing.T) {
 	}
 }
 
-func TestUdpSendService_Send_TextEncoding(t *testing.T) {
+func TestUDPSendService_Send_TextEncoding(t *testing.T) {
 	var sentData []byte
 	socket := &mockUDPSocket{
 		sendFn: func(_ string, _ int, data []byte) (int, error) {
@@ -99,7 +99,7 @@ func TestUdpSendService_Send_TextEncoding(t *testing.T) {
 		},
 	}
 	svc := newSendSvc(socket)
-	result, err := svc.Send(domain.UdpSendRequest{
+	result, err := svc.Send(domain.UDPSendRequest{
 		Host:     "127.0.0.1",
 		Port:     9000,
 		Encoding: domain.EncodingText,
@@ -116,7 +116,7 @@ func TestUdpSendService_Send_TextEncoding(t *testing.T) {
 	}
 }
 
-func TestUdpSendService_Send_FixedLengthEncoding(t *testing.T) {
+func TestUDPSendService_Send_FixedLengthEncoding(t *testing.T) {
 	var sentData []byte
 	socket := &mockUDPSocket{
 		sendFn: func(_ string, _ int, data []byte) (int, error) {
@@ -125,7 +125,7 @@ func TestUdpSendService_Send_FixedLengthEncoding(t *testing.T) {
 		},
 	}
 	svc := newSendSvc(socket)
-	_, err := svc.Send(domain.UdpSendRequest{
+	_, err := svc.Send(domain.UDPSendRequest{
 		Host:     "localhost",
 		Port:     9000,
 		Encoding: domain.EncodingFixed,
@@ -151,9 +151,9 @@ func TestUdpSendService_Send_FixedLengthEncoding(t *testing.T) {
 	}
 }
 
-func TestUdpSendService_Send_FixedLengthEncoding_InvalidPayload(t *testing.T) {
+func TestUDPSendService_Send_FixedLengthEncoding_InvalidPayload(t *testing.T) {
 	svc := newSendSvc(nil)
-	_, err := svc.Send(domain.UdpSendRequest{
+	_, err := svc.Send(domain.UDPSendRequest{
 		Host:               "localhost",
 		Port:               9000,
 		Encoding:           domain.EncodingFixed,
@@ -164,14 +164,14 @@ func TestUdpSendService_Send_FixedLengthEncoding_InvalidPayload(t *testing.T) {
 	}
 }
 
-func TestUdpSendService_Send_BytesSentMatchesSocketReturn(t *testing.T) {
+func TestUDPSendService_Send_BytesSentMatchesSocketReturn(t *testing.T) {
 	socket := &mockUDPSocket{
 		sendFn: func(_ string, _ int, _ []byte) (int, error) {
 			return 3, nil // 実際に送信されたバイト数
 		},
 	}
 	svc := newSendSvc(socket)
-	result, err := svc.Send(domain.UdpSendRequest{
+	result, err := svc.Send(domain.UDPSendRequest{
 		Host:     "localhost",
 		Port:     9000,
 		Encoding: domain.EncodingText,

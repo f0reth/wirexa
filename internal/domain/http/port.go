@@ -3,10 +3,10 @@ package httpdomain
 
 import "context"
 
-// HttpTransport はHTTPリクエスト実行を担うポート。
+// HTTPTransport はHTTPリクエスト実行を担うポート。
 // Application層はこのインターフェースを通じてネットワークI/Oを行う。
-type HttpTransport interface {
-	Do(ctx context.Context, req HttpRequest) (HttpResponse, error)
+type HTTPTransport interface {
+	Do(ctx context.Context, req HTTPRequest) (HTTPResponse, error)
 }
 
 // CollectionRepository はコレクションの永続化抽象。
@@ -24,7 +24,7 @@ type SidebarLayoutRepository interface {
 
 // RequestUseCase は HTTP リクエスト送信のユースケース入力ポート。
 type RequestUseCase interface {
-	SendRequest(req HttpRequest) (HttpResponse, error)
+	SendRequest(req HTTPRequest) (HTTPResponse, error)
 	CancelRequest(id string)
 }
 
@@ -43,8 +43,8 @@ type CollectionUseCase interface {
 // CollectionItemUseCase はコレクション内ツリーアイテム管理のユースケース入力ポート。
 type CollectionItemUseCase interface {
 	AddFolder(collectionID, parentID, name string) (*TreeItem, error)
-	AddRequest(collectionID, parentID string, req HttpRequest) (*TreeItem, error)
-	UpdateRequest(collectionID string, req HttpRequest) error
+	AddRequest(collectionID, parentID string, req HTTPRequest) (*TreeItem, error)
+	UpdateRequest(collectionID string, req HTTPRequest) error
 	RenameItem(collectionID, itemID, name string) error
 	DeleteItem(collectionID, itemID string) error
 	// MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。

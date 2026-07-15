@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../wailsjs/go/adapters/HttpHandler", () => ({
+vi.mock("../../../wailsjs/go/adapters/HTTPHandler", () => ({
   AddFolder: vi.fn(),
   AddRequest: vi.fn(),
   CancelRequest: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock("../../../wailsjs/go/adapters/HttpHandler", () => ({
   UpdateRequest: vi.fn(),
 }));
 
-import * as Handler from "../../../wailsjs/go/adapters/HttpHandler";
+import * as Handler from "../../../wailsjs/go/adapters/HTTPHandler";
 import {
   addFolder,
   addRequest,

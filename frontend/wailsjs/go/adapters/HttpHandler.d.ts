@@ -4,7 +4,7 @@ import {httpdomain} from '../models';
 
 export function AddFolder(arg1:string,arg2:string,arg3:string):Promise<httpdomain.TreeItem>;
 
-export function AddRequest(arg1:string,arg2:string,arg3:httpdomain.HttpRequest):Promise<httpdomain.TreeItem>;
+export function AddRequest(arg1:string,arg2:string,arg3:httpdomain.HTTPRequest):Promise<httpdomain.TreeItem>;
 
 export function CancelRequest(arg1:string):Promise<void>;
 
@@ -36,6 +36,6 @@ export function SaveResponseBase64(arg1:string,arg2:string):Promise<void>;
 
 export function SaveResponseBody(arg1:string,arg2:string):Promise<void>;
 
-export function SendRequest(arg1:httpdomain.HttpRequest):Promise<httpdomain.HttpResponse>;
+export function SendRequest(arg1:httpdomain.HTTPRequest):Promise<httpdomain.HTTPResponse>;
 
-export function UpdateRequest(arg1:string,arg2:httpdomain.HttpRequest):Promise<void>;
+export function UpdateRequest(arg1:string,arg2:httpdomain.HTTPRequest):Promise<void>;

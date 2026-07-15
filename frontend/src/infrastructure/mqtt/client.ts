@@ -8,7 +8,7 @@ import {
   SaveProfile,
   Subscribe,
   Unsubscribe,
-} from "../../../wailsjs/go/adapters/MqttHandler";
+} from "../../../wailsjs/go/adapters/MQTTHandler";
 import type { BrokerProfile, ConnectionStatus } from "../../domain/mqtt/types";
 
 export type { ConnectionStatus };

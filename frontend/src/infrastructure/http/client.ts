@@ -18,7 +18,7 @@ import {
   SaveResponseBody,
   SendRequest,
   UpdateRequest,
-} from "../../../wailsjs/go/adapters/HttpHandler";
+} from "../../../wailsjs/go/adapters/HTTPHandler";
 import { httpdomain } from "../../../wailsjs/go/models";
 import {
   type Collection,
@@ -37,8 +37,8 @@ import {
 } from "../../domain/http/types";
 
 // domain → Wails
-function toWailsRequest(req: HttpRequest): httpdomain.HttpRequest {
-  return httpdomain.HttpRequest.createFrom(req);
+function toWailsRequest(req: HttpRequest): httpdomain.HTTPRequest {
+  return httpdomain.HTTPRequest.createFrom(req);
 }
 
 // Wails → domain
@@ -85,7 +85,7 @@ function fromWailsRequestBody(body: httpdomain.RequestBody): RequestBody {
   };
 }
 
-function fromWailsHttpRequest(req: httpdomain.HttpRequest): HttpRequest {
+function fromWailsHttpRequest(req: httpdomain.HTTPRequest): HttpRequest {
   if (!isHttpMethod(req.method)) {
     throw new Error(`Unknown HTTP method: ${req.method}`);
   }
@@ -103,7 +103,7 @@ function fromWailsHttpRequest(req: httpdomain.HttpRequest): HttpRequest {
   };
 }
 
-function fromWailsHttpResponse(res: httpdomain.HttpResponse): HttpResponse {
+function fromWailsHttpResponse(res: httpdomain.HTTPResponse): HttpResponse {
   return {
     ...res,
     headers: res.headers ?? {},

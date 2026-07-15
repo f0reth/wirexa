@@ -10,6 +10,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 )
 
@@ -32,10 +33,10 @@ type OpenAPIHandler struct {
 
 // SetupOpenAPIHandler は既存の OpenAPIHandler インスタンスに ctx と recents ストアを
 // 注入し、永続化された recents のパスを許可リストへ seed する。
-func SetupOpenAPIHandler(ctx context.Context, h *OpenAPIHandler, recentsPath string) {
+func SetupOpenAPIHandler(ctx context.Context, h *OpenAPIHandler, recentsPath string, logger cmn.Logger) {
 	h.ctx = ctx
 	h.granted = make(map[string]struct{})
-	h.recents = newOpenapiRecentStore(recentsPath)
+	h.recents = newOpenapiRecentStore(recentsPath, logger)
 	for _, p := range h.recents.paths() {
 		h.granted[filepath.Clean(p)] = struct{}{}
 	}
@@ -118,7 +119,7 @@ func (h *OpenAPIHandler) WriteFile(path, content string) error {
 }
 
 // GetRecents は最近使ったファイル一覧を order 昇順で返す。
-func (h *OpenAPIHandler) GetRecents() []OpenApiRecent {
+func (h *OpenAPIHandler) GetRecents() []OpenAPIRecent {
 	return h.recents.list()
 }
 

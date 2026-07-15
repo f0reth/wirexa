@@ -33,7 +33,7 @@ const (
 	defaultMaxTempBytes int64 = 1 << 30 // 1 GiB
 )
 
-var _ domain.HttpTransport = (*NetClient)(nil)
+var _ domain.HTTPTransport = (*NetClient)(nil)
 
 // transportKey は Transport の挙動を決める設定のみを抜き出したキャッシュキー。
 // Timeout / CheckRedirect は http.Client 側の責務なので含めない。
@@ -43,7 +43,7 @@ type transportKey struct {
 	insecureSkipVerify bool
 }
 
-// NetClient は net/http を使った domain.HttpTransport の実装。
+// NetClient は net/http を使った domain.HTTPTransport の実装。
 type NetClient struct {
 	transports map[transportKey]*http.Transport
 	tempFiles  sync.Map // requestID → tempFilePath (string)
@@ -112,8 +112,8 @@ func SweepStaleTempFiles() {
 	}
 }
 
-// Do は HttpRequest を実行して HttpResponse を返す。
-func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.HttpResponse, error) {
+// Do は HTTPRequest を実行して HTTPResponse を返す。
+func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) {
 	timeout := resolveTimeout(req.Settings)
 	// タイムアウトは http.Client.Timeout ではなく context で表現し、
 	// RequestUseCase 側のキャンセルと同じ経路に一本化する。
@@ -122,7 +122,7 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 
 	parsedURL, err := url.Parse(req.URL)
 	if err != nil {
-		return domain.HttpResponse{}, fmt.Errorf("invalid URL: %w", err)
+		return domain.HTTPResponse{}, fmt.Errorf("invalid URL: %w", err)
 	}
 
 	q := parsedURL.Query()
@@ -153,7 +153,7 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 			var fileData []byte
 			fileData, err = os.ReadFile(bodyContent) //nolint:gosec // user-selected file path
 			if err != nil {
-				return domain.HttpResponse{}, fmt.Errorf("failed to read file: %w", err)
+				return domain.HTTPResponse{}, fmt.Errorf("failed to read file: %w", err)
 			}
 			bodyReader = bytes.NewReader(fileData)
 			if ct := mime.TypeByExtension(filepath.Ext(bodyContent)); ct != "" {
@@ -166,7 +166,7 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 
 	httpReq, err := http.NewRequestWithContext(ctx, req.Method, parsedURL.String(), bodyReader)
 	if err != nil {
-		return domain.HttpResponse{}, fmt.Errorf("failed to create request: %w", err)
+		return domain.HTTPResponse{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// Add で積む。同名ヘッダを複数行入力できる UI なので、Set で潰すと入力が黙って消える。
@@ -197,9 +197,9 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		// context 由来のタイムアウトは "context deadline exceeded" としか出ないため、
 		// ユーザーに意味の伝わる文言へ置き換える。
 		if terr := wrapTimeout(err, timeout); terr != nil {
-			return domain.HttpResponse{}, terr
+			return domain.HTTPResponse{}, terr
 		}
-		return domain.HttpResponse{}, fmt.Errorf("request failed: %w", err)
+		return domain.HTTPResponse{}, fmt.Errorf("request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // best-effort cleanup
 
@@ -208,9 +208,9 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
 		if terr := wrapTimeout(err, timeout); terr != nil {
-			return domain.HttpResponse{}, terr
+			return domain.HTTPResponse{}, terr
 		}
-		return domain.HttpResponse{}, fmt.Errorf("failed to read response: %w", err)
+		return domain.HTTPResponse{}, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	size := int64(len(body))
@@ -223,9 +223,9 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		n, rerr := io.ReadFull(resp.Body, peek[:])
 		if rerr != nil && !errors.Is(rerr, io.EOF) && !errors.Is(rerr, io.ErrUnexpectedEOF) {
 			if terr := wrapTimeout(rerr, timeout); terr != nil {
-				return domain.HttpResponse{}, terr
+				return domain.HTTPResponse{}, terr
 			}
-			return domain.HttpResponse{}, fmt.Errorf("failed to read response: %w", rerr)
+			return domain.HTTPResponse{}, fmt.Errorf("failed to read response: %w", rerr)
 		}
 		if n > 0 {
 			// 上限超過: 全文をテンポラリファイルへ退避し、Body は先頭 maxBody バイトのまま返す。
@@ -233,9 +233,9 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 			written, capped, serr := c.spillToTempFile(req.ID, body, peek[:n], resp.Body)
 			if serr != nil {
 				if terr := wrapTimeout(serr, timeout); terr != nil {
-					return domain.HttpResponse{}, terr
+					return domain.HTTPResponse{}, terr
 				}
-				return domain.HttpResponse{}, serr
+				return domain.HTTPResponse{}, serr
 			}
 			size = written
 			bodyCapped = capped
@@ -251,7 +251,7 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	// 非 UTF-8 のバイナリボディは string 変換で壊れるため base64 で渡す。
 	bodyStr, bodyBase64 := cmn.EncodeMaybeBase64(body)
 
-	return domain.HttpResponse{
+	return domain.HTTPResponse{
 		StatusCode:    resp.StatusCode,
 		StatusText:    resp.Status,
 		Headers:       headers,

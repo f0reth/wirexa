@@ -287,11 +287,11 @@ func TestTreeItem_Contains(t *testing.T) {
 		id   string
 		want bool
 	}{
-		{"f1", true},          // 自身
-		{"r1", true},          // 直下の子
-		{"f2", true},          // 直下の子フォルダ
-		{"r2", true},          // 孫（f2 の子）
-		{"r3", false},         // f1 の外
+		{"f1", true},           // 自身
+		{"r1", true},           // 直下の子
+		{"f2", true},           // 直下の子フォルダ
+		{"r2", true},           // 孫（f2 の子）
+		{"r3", false},          // f1 の外
 		{"nonexistent", false}, // 存在しない
 	}
 	for _, tt := range tests {

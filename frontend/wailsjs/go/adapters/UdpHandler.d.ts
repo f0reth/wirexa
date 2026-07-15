@@ -4,16 +4,16 @@ import {udpdomain} from '../models';
 
 export function DeleteTarget(arg1:string):Promise<void>;
 
-export function GetListeners():Promise<Array<udpdomain.UdpListenSession>>;
+export function GetListeners():Promise<Array<udpdomain.UDPListenSession>>;
 
-export function GetTargets():Promise<Array<udpdomain.UdpTarget>>;
+export function GetTargets():Promise<Array<udpdomain.UDPTarget>>;
 
-export function SaveTarget(arg1:udpdomain.UdpTarget):Promise<udpdomain.UdpTarget>;
+export function SaveTarget(arg1:udpdomain.UDPTarget):Promise<udpdomain.UDPTarget>;
 
-export function Send(arg1:udpdomain.UdpSendRequest):Promise<udpdomain.UdpSendResult>;
+export function Send(arg1:udpdomain.UDPSendRequest):Promise<udpdomain.UDPSendResult>;
 
 export function Shutdown():Promise<void>;
 
-export function StartListen(arg1:number,arg2:string):Promise<udpdomain.UdpListenSession>;
+export function StartListen(arg1:number,arg2:string):Promise<udpdomain.UDPListenSession>;
 
 export function StopListen(arg1:string):Promise<void>;

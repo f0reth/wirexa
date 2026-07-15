@@ -7,15 +7,16 @@ import (
 	"sync"
 	"time"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 )
 
 // openapiMaxRecents は保持する最近使ったファイルの最大件数。
 const openapiMaxRecents = 50
 
-// OpenApiRecent は最近開いた OpenAPI ファイルの参照。
+// OpenAPIRecent は最近開いた OpenAPI ファイルの参照。
 // path を一意キーとして扱う (id は持たない)。
-type OpenApiRecent struct {
+type OpenAPIRecent struct {
 	Path         string `json:"path"`
 	Name         string `json:"name"`
 	Order        int    `json:"order"`
@@ -25,29 +26,45 @@ type OpenApiRecent struct {
 // openapiRecentStore は最近使ったファイル一覧を設定ディレクトリの JSON に永続化する。
 // 追加はダイアログ / 保存ハンドラ経由でのみ行われ、JS からは汚染できない。
 type openapiRecentStore struct {
-	mu    sync.Mutex
-	path  string
-	items []OpenApiRecent
+	mu     sync.Mutex
+	logger cmn.Logger
+	path   string
+	items  []OpenAPIRecent
 }
 
 // newOpenapiRecentStore は指定パスの JSON をロードしてストアを返す。
-// 読み込み・パースに失敗した場合は空で開始する (起動は止めない)。
-func newOpenapiRecentStore(path string) *openapiRecentStore {
-	s := &openapiRecentStore{path: path}
-	if data, err := os.ReadFile(path); err == nil {
-		var items []OpenApiRecent
-		if err := json.Unmarshal(data, &items); err == nil {
-			s.items = items
+// 読み込み・パースに失敗した場合は空で開始する (起動は止めない) が、
+// JSONStore.Load と同様に握り潰さずログへ残す。logger は nil でもよい。
+func newOpenapiRecentStore(path string, logger cmn.Logger) *openapiRecentStore {
+	s := &openapiRecentStore{path: path, logger: logger}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			s.logf("openapi_recents: failed to read file, starting empty", "path", path, "error", err)
 		}
+		return s
 	}
+	var items []OpenAPIRecent
+	if err := json.Unmarshal(data, &items); err != nil {
+		s.logf("openapi_recents: failed to parse file, starting empty", "path", path, "error", err)
+		return s
+	}
+	s.items = items
 	return s
 }
 
+// logf は logger が設定されていればエラーとして記録する。
+func (s *openapiRecentStore) logf(msg string, args ...any) {
+	if s.logger != nil {
+		s.logger.Error(msg, args...)
+	}
+}
+
 // list は order 昇順でコピーを返す。
-func (s *openapiRecentStore) list() []OpenApiRecent {
+func (s *openapiRecentStore) list() []OpenAPIRecent {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]OpenApiRecent, len(s.items))
+	out := make([]OpenAPIRecent, len(s.items))
 	copy(out, s.items)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Order < out[j].Order })
 	return out
@@ -80,7 +97,7 @@ func (s *openapiRecentStore) add(path, name string) error {
 		}
 	}
 	if !found {
-		s.items = append(s.items, OpenApiRecent{
+		s.items = append(s.items, OpenAPIRecent{
 			Path:         path,
 			Name:         name,
 			Order:        len(s.items),
@@ -137,7 +154,7 @@ func (s *openapiRecentStore) move(path string, index int) error {
 	if index > len(s.items) {
 		index = len(s.items)
 	}
-	s.items = append(s.items, OpenApiRecent{})
+	s.items = append(s.items, OpenAPIRecent{})
 	copy(s.items[index+1:], s.items[index:])
 	s.items[index] = item
 	s.reindexLocked()

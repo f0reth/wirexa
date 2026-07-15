@@ -74,7 +74,6 @@ linters:
     staticcheck:
       checks:
         - "all"
-        - "-ST1003" # Wails 公開 API が Http*/Udp* スタイルで安定しているため除外
     errcheck:
       check-type-assertions: true # 型アサーション時にokを使う
       check-blank: true # エラーを _ に捨てているのを報告
@@ -86,7 +85,6 @@ linters:
         - name: indent-error-flow
         - name: superfluous-else
         - name: var-naming
-          disabled: true # Wails 公開 API が Http*/Udp* スタイルで安定しているため除外
         - name: receiver-naming
         - name: blank-imports
         - name: early-return

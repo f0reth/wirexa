@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../wailsjs/go/adapters/UdpHandler", () => ({
+vi.mock("../../../wailsjs/go/adapters/UDPHandler", () => ({
   DeleteTarget: vi.fn(),
   GetListeners: vi.fn(),
   GetTargets: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock("../../../wailsjs/runtime/runtime", () => ({
   EventsOn: vi.fn(),
 }));
 
-import * as Handler from "../../../wailsjs/go/adapters/UdpHandler";
+import * as Handler from "../../../wailsjs/go/adapters/UDPHandler";
 import * as Runtime from "../../../wailsjs/runtime/runtime";
 import {
   deleteTarget,

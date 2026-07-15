@@ -7,13 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/f0reth/Wirexa/internal/testutil"
 )
 
 func newTestHandler(t *testing.T) (*OpenAPIHandler, string) {
 	t.Helper()
 	dir := t.TempDir()
 	h := &OpenAPIHandler{}
-	SetupOpenAPIHandler(context.Background(), h, filepath.Join(dir, "openapi-recents.json"))
+	SetupOpenAPIHandler(context.Background(), h, filepath.Join(dir, "openapi-recents.json"), testutil.NoopLogger{})
 	return h, dir
 }
 
@@ -89,14 +91,14 @@ func TestRecentsSeedGrantsOnStartup(t *testing.T) {
 
 	// recents JSON を事前に書き、再起動時 seed を模す。
 	recentsPath := filepath.Join(dir, "openapi-recents.json")
-	seed := []OpenApiRecent{{Path: target, Name: "seeded.yaml", Order: 0, LastOpenedAt: "2026-07-12T00:00:00Z"}}
+	seed := []OpenAPIRecent{{Path: target, Name: "seeded.yaml", Order: 0, LastOpenedAt: "2026-07-12T00:00:00Z"}}
 	data, _ := json.Marshal(seed)
 	if err := os.WriteFile(recentsPath, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	h := &OpenAPIHandler{}
-	SetupOpenAPIHandler(context.Background(), h, recentsPath)
+	SetupOpenAPIHandler(context.Background(), h, recentsPath, testutil.NoopLogger{})
 
 	if _, err := h.ReadFile(target); err != nil {
 		t.Fatalf("seeded recents path should be granted: %v", err)

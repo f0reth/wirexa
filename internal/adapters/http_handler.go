@@ -19,8 +19,8 @@ type TempFileProvider interface {
 	ConsumeTempFilePath(requestID string) string
 }
 
-// HttpHandler は Wails RPC アダプターとして HTTP ユースケースを公開する。
-type HttpHandler struct {
+// HTTPHandler は Wails RPC アダプターとして HTTP ユースケースを公開する。
+type HTTPHandler struct {
 	ctx       context.Context
 	reqSvc    httpdomain.RequestUseCase
 	collSvc   httpdomain.CollectionUseCase
@@ -28,9 +28,9 @@ type HttpHandler struct {
 	tempFiles TempFileProvider
 }
 
-// SetupHTTPHandler は既存の HttpHandler インスタンスにサービスを注入する。
+// SetupHTTPHandler は既存の HTTPHandler インスタンスにサービスを注入する。
 // Wails の Bind に渡す前に事前確保した空ハンドラーを startup() で初期化する際に使用する。
-func SetupHTTPHandler(ctx context.Context, h *HttpHandler, reqSvc httpdomain.RequestUseCase, collSvc httpdomain.CollectionUseCase, itemSvc httpdomain.CollectionItemUseCase, tempFiles TempFileProvider) {
+func SetupHTTPHandler(ctx context.Context, h *HTTPHandler, reqSvc httpdomain.RequestUseCase, collSvc httpdomain.CollectionUseCase, itemSvc httpdomain.CollectionItemUseCase, tempFiles TempFileProvider) {
 	h.ctx = ctx
 	h.reqSvc = reqSvc
 	h.collSvc = collSvc
@@ -39,17 +39,17 @@ func SetupHTTPHandler(ctx context.Context, h *HttpHandler, reqSvc httpdomain.Req
 }
 
 // OpenFilePicker はネイティブのファイル選択ダイアログを開き、選択されたファイルパスを返す。
-func (h *HttpHandler) OpenFilePicker() (string, error) {
+func (h *HTTPHandler) OpenFilePicker() (string, error) {
 	return runtime.OpenFileDialog(h.ctx, runtime.OpenDialogOptions{
 		Title: "Select File",
 	})
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
-func (h *HttpHandler) SendRequest(req httpdomain.HttpRequest) (httpdomain.HttpResponse, error) {
+func (h *HTTPHandler) SendRequest(req httpdomain.HTTPRequest) (httpdomain.HTTPResponse, error) {
 	res, err := h.reqSvc.SendRequest(req)
 	if err != nil {
-		return httpdomain.HttpResponse{}, err
+		return httpdomain.HTTPResponse{}, err
 	}
 	if res.BodyTruncated && h.tempFiles != nil {
 		res.TempFilePath = h.tempFiles.ConsumeTempFilePath(req.ID)
@@ -58,13 +58,13 @@ func (h *HttpHandler) SendRequest(req httpdomain.HttpRequest) (httpdomain.HttpRe
 }
 
 // CancelRequest は指定 ID の実行中 HTTP リクエストをキャンセルする。
-func (h *HttpHandler) CancelRequest(id string) {
+func (h *HTTPHandler) CancelRequest(id string) {
 	h.reqSvc.CancelRequest(id)
 }
 
 // SaveResponseBody はテンポラリファイルをOSのファイル保存ダイアログで指定先に保存する。
 // 保存後にテンポラリファイルを削除する。キャンセル時は何もしない。
-func (h *HttpHandler) SaveResponseBody(tempFilePath, contentType string) error {
+func (h *HTTPHandler) SaveResponseBody(tempFilePath, contentType string) error {
 	ext := contentTypeToExtension(contentType)
 	savePath, err := runtime.SaveFileDialog(h.ctx, runtime.SaveDialogOptions{
 		DefaultFilename: "response" + ext,
@@ -85,7 +85,7 @@ func (h *HttpHandler) SaveResponseBody(tempFilePath, contentType string) error {
 // SaveResponseBase64 は base64 エンコードされたバイナリボディをデコードし、
 // OSのファイル保存ダイアログで指定された先へ書き出す。キャンセル時は何もしない。
 // 切り詰められていない非 UTF-8 レスポンスの保存に使う（temp ファイルを介さない）。
-func (h *HttpHandler) SaveResponseBase64(base64Content, contentType string) error {
+func (h *HTTPHandler) SaveResponseBase64(base64Content, contentType string) error {
 	data, err := base64.StdEncoding.DecodeString(base64Content)
 	if err != nil {
 		return err
@@ -105,75 +105,75 @@ func (h *HttpHandler) SaveResponseBase64(base64Content, contentType string) erro
 }
 
 // GetRootItems はルートコレクションのアイテム一覧を返す。
-func (h *HttpHandler) GetRootItems() []*httpdomain.TreeItem {
+func (h *HTTPHandler) GetRootItems() []*httpdomain.TreeItem {
 	return h.collSvc.GetRootItems()
 }
 
 // GetCollections は全コレクションを返す。
-func (h *HttpHandler) GetCollections() []httpdomain.Collection {
+func (h *HTTPHandler) GetCollections() []httpdomain.Collection {
 	return h.collSvc.GetCollections()
 }
 
 // CreateCollection は新規コレクションを作成する。
-func (h *HttpHandler) CreateCollection(name string) (httpdomain.Collection, error) {
+func (h *HTTPHandler) CreateCollection(name string) (httpdomain.Collection, error) {
 	return h.collSvc.CreateCollection(name)
 }
 
 // DeleteCollection は ID でコレクションを削除する。
-func (h *HttpHandler) DeleteCollection(id string) error {
+func (h *HTTPHandler) DeleteCollection(id string) error {
 	return h.collSvc.DeleteCollection(id)
 }
 
 // RenameCollection はコレクション名を変更する。
-func (h *HttpHandler) RenameCollection(id, name string) error {
+func (h *HTTPHandler) RenameCollection(id, name string) error {
 	return h.collSvc.RenameCollection(id, name)
 }
 
 // AddFolder はコレクションにフォルダを追加する。
-func (h *HttpHandler) AddFolder(collectionID, parentID, name string) (*httpdomain.TreeItem, error) {
+func (h *HTTPHandler) AddFolder(collectionID, parentID, name string) (*httpdomain.TreeItem, error) {
 	return h.itemSvc.AddFolder(collectionID, parentID, name)
 }
 
 // AddRequest はコレクションにリクエストを追加する。
-func (h *HttpHandler) AddRequest(collectionID, parentID string, req httpdomain.HttpRequest) (*httpdomain.TreeItem, error) {
+func (h *HTTPHandler) AddRequest(collectionID, parentID string, req httpdomain.HTTPRequest) (*httpdomain.TreeItem, error) {
 	return h.itemSvc.AddRequest(collectionID, parentID, req)
 }
 
 // UpdateRequest はコレクション内のリクエストを更新する。
-func (h *HttpHandler) UpdateRequest(collectionID string, req httpdomain.HttpRequest) error {
+func (h *HTTPHandler) UpdateRequest(collectionID string, req httpdomain.HTTPRequest) error {
 	return h.itemSvc.UpdateRequest(collectionID, req)
 }
 
 // RenameItem はコレクション内のアイテム名を変更する。
-func (h *HttpHandler) RenameItem(collectionID, itemID, name string) error {
+func (h *HTTPHandler) RenameItem(collectionID, itemID, name string) error {
 	return h.itemSvc.RenameItem(collectionID, itemID, name)
 }
 
 // DeleteItem はコレクションからアイテムを削除する。
-func (h *HttpHandler) DeleteItem(collectionID, itemID string) error {
+func (h *HTTPHandler) DeleteItem(collectionID, itemID string) error {
 	return h.itemSvc.DeleteItem(collectionID, itemID)
 }
 
 // MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。
 // targetParentID が空文字の場合はターゲットコレクションルートへ移動する。
 // position は挿入先インデックス（削除後）。-1 の場合は末尾に追加する。
-func (h *HttpHandler) MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error {
+func (h *HTTPHandler) MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error {
 	return h.itemSvc.MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID, position)
 }
 
 // GetSidebarLayout はサイドバーレイアウトを返す。
-func (h *HttpHandler) GetSidebarLayout() ([]httpdomain.SidebarEntry, error) {
+func (h *HTTPHandler) GetSidebarLayout() ([]httpdomain.SidebarEntry, error) {
 	return h.collSvc.GetSidebarLayout()
 }
 
 // MoveSidebarEntry はサイドバー上のエントリを指定位置に移動する。
-func (h *HttpHandler) MoveSidebarEntry(kind, id string, position int) error {
+func (h *HTTPHandler) MoveSidebarEntry(kind, id string, position int) error {
 	return h.collSvc.MoveSidebarEntry(kind, id, position)
 }
 
 // MoveItemToSidebar はアイテムを指定コレクションから __root__ へ移動し、
 // サイドバーレイアウトの指定位置に挿入する。
-func (h *HttpHandler) MoveItemToSidebar(sourceCollectionID, itemID string, sidebarPosition int) error {
+func (h *HTTPHandler) MoveItemToSidebar(sourceCollectionID, itemID string, sidebarPosition int) error {
 	return h.collSvc.MoveItemToSidebar(sourceCollectionID, itemID, sidebarPosition)
 }
 
