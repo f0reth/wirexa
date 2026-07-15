@@ -347,8 +347,8 @@
   white-space: nowrap;
 }
 
-/* ── Broker items ─────────────────────────────────────── */
-.brokerItem {
+/* ── List items (brokers / targets) ───────────────────── */
+.listItem {
   display: flex;
   align-items: center;
   gap: 0.375rem;
@@ -358,47 +358,47 @@
   transition: background-color var(--transition-fast);
 }
 
-.brokerItem:hover {
+.listItem:hover {
   background-color: var(--hover-overlay);
 }
 
-.brokerItem .treeNodeActions {
+.listItem .treeNodeActions {
   visibility: visible;
   pointer-events: auto;
 }
 
-.brokerItemActive {
+.listItemActive {
   background-color: var(--selected-bg);
   box-shadow: var(--inner-glow);
 }
 
-.brokerItemActive:hover {
+.listItemActive:hover {
   background-color: var(--selected-bg);
 }
 
-.brokerDot {
+.statusDot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
-.brokerDotConnected {
+.statusDotConnected {
   background-color: var(--color-success);
 }
 
-.brokerDotDisconnected {
+.statusDotDisconnected {
   background-color: var(--color-muted-foreground);
 }
 
-.brokerInfo {
+.listInfo {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
 }
 
-.brokerName {
+.listName {
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--color-foreground);
@@ -407,7 +407,7 @@
   white-space: nowrap;
 }
 
-.brokerUrl {
+.listSub {
   font-size: 0.75rem;
   color: var(--color-muted-foreground);
   overflow: hidden;
@@ -525,7 +525,7 @@
   flex-shrink: 0;
 }
 
-.brokerItemDragging {
+.listItemDragging {
   opacity: 0.5;
 }
 

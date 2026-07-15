@@ -1,15 +1,12 @@
-import { clsx } from "clsx";
-import { GripVertical, Plus, Settings, Trash2 } from "lucide-solid";
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { notify } from "../../../application/ui/notifications";
 import { Button } from "../../../components/ui/button";
-import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { Input } from "../../../components/ui/input";
-import { ScrollArea } from "../../../components/ui/scroll-area";
 import type { UdpTarget } from "../../../domain/udp/types";
 import { errorMessage } from "../../../shared/error";
 import { useUdpSend, useUdpTargets } from "../../providers/udp-provider";
+import { ProfileList } from "./profile-list";
 import styles from "./sidebar.module.css";
 
 interface TargetFormState {
@@ -157,14 +154,6 @@ export function TargetTree() {
   const [editingTarget, setEditingTarget] = createSignal<
     UdpTarget | "new" | null
   >(null);
-  const [deletingTarget, setDeletingTarget] = createSignal<{
-    id: string;
-    name: string;
-  } | null>(null);
-  const [draggingIndex, setDraggingIndex] = createSignal<number | null>(null);
-  const [dropIndicatorIndex, setDropIndicatorIndex] = createSignal<
-    number | null
-  >(null);
 
   const handleSave = async (t: UdpTarget) => {
     await saveTarget(t);
@@ -172,152 +161,33 @@ export function TargetTree() {
   };
 
   return (
-    <div class={styles.collectionTree}>
-      <div class={styles.collectionHeader}>
-        <span class={styles.collectionTitle}>Targets</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          class={styles.collectionAction}
-          onClick={() => setEditingTarget("new")}
-          aria-label="New Target"
-          title="New Target"
-        >
-          <Plus size={14} aria-hidden="true" />
-        </Button>
-      </div>
-
-      <ScrollArea class={styles.treeScroll}>
-        <div class={styles.treeList}>
-          <For each={targets}>
-            {(target, index) => (
-              <>
-                <div
-                  class={clsx(
-                    styles.insertionZone,
-                    draggingIndex() !== null && styles.insertionZoneVisible,
-                    dropIndicatorIndex() === index() &&
-                      styles.insertionZoneActive,
-                  )}
-                />
-                {/* biome-ignore lint/a11y/useSemanticElements: contains nested action buttons; cannot use <button> with nested interactive elements */}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  class={clsx(
-                    styles.brokerItem,
-                    draggingIndex() === index() && styles.brokerItemDragging,
-                  )}
-                  draggable={true}
-                  onDragStart={(e) => {
-                    setDraggingIndex(index());
-                    e.dataTransfer?.setData("text/plain", String(index()));
-                  }}
-                  onDragEnd={() => {
-                    setTimeout(() => setDraggingIndex(null), 0);
-                    setDropIndicatorIndex(null);
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    const rect = (
-                      e.currentTarget as HTMLElement
-                    ).getBoundingClientRect();
-                    const mid = rect.top + rect.height / 2;
-                    setDropIndicatorIndex(
-                      e.clientY < mid ? index() : index() + 1,
-                    );
-                  }}
-                  onDragLeave={(e) => {
-                    if (
-                      !(e.currentTarget as HTMLElement).contains(
-                        e.relatedTarget as Node,
-                      )
-                    ) {
-                      setDropIndicatorIndex(null);
-                    }
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const from = parseInt(
-                      e.dataTransfer?.getData("text/plain") ?? "-1",
-                      10,
-                    );
-                    const p = dropIndicatorIndex();
-                    if (p !== null && from >= 0) {
-                      const to = p > from ? p - 1 : p;
-                      reorderTargets(from, to);
-                    }
-                    setDropIndicatorIndex(null);
-                  }}
-                  onClick={() => {
-                    if (draggingIndex() !== null) return;
-                    loadTarget(target);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") loadTarget(target);
-                  }}
-                >
-                  <GripVertical
-                    size={12}
-                    class={styles.dragHandle}
-                    aria-hidden="true"
-                  />
-                  <div class={styles.brokerInfo}>
-                    <span class={styles.brokerName}>{target.name}</span>
-                    <span class={styles.brokerUrl}>
-                      {target.host}:{target.port}
-                    </span>
-                  </div>
-                  <div class={styles.treeNodeActions}>
-                    <button
-                      type="button"
-                      class={styles.treeActionBtn}
-                      aria-label="Edit target"
-                      title="Edit"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingTarget(target);
-                      }}
-                    >
-                      <Settings size={12} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      class={clsx(
-                        styles.treeActionBtn,
-                        styles.treeActionBtnDanger,
-                      )}
-                      aria-label="Delete target"
-                      title="Delete"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeletingTarget({
-                          id: target.id,
-                          name: target.name,
-                        });
-                      }}
-                    >
-                      <Trash2 size={12} aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </For>
-          <div
-            class={clsx(
-              styles.insertionZone,
-              draggingIndex() !== null && styles.insertionZoneVisible,
-              dropIndicatorIndex() === targets.length &&
-                styles.insertionZoneActive,
-            )}
-          />
-
-          <Show when={targets.length === 0}>
-            <p class={styles.emptyTree}>No targets yet</p>
-          </Show>
-        </div>
-      </ScrollArea>
+    <>
+      <ProfileList
+        title="Targets"
+        addLabel="New Target"
+        emptyMessage="No targets yet"
+        items={targets}
+        onAdd={() => setEditingTarget("new")}
+        onItemClick={(t) => loadTarget(t)}
+        onEdit={(t) => setEditingTarget(t)}
+        onDelete={(t) => {
+          deleteTarget(t.id).catch((err: unknown) => {
+            notify.error("Failed to delete target", errorMessage(err));
+          });
+        }}
+        onReorder={reorderTargets}
+        editAriaLabel="Edit target"
+        deleteAriaLabel="Delete target"
+        deleteTitle="Delete target"
+        renderContent={(target) => (
+          <div class={styles.listInfo}>
+            <span class={styles.listName}>{target.name}</span>
+            <span class={styles.listSub}>
+              {target.host}:{target.port}
+            </span>
+          </div>
+        )}
+      />
 
       <Show when={editingTarget() !== null}>
         <Portal>
@@ -332,24 +202,6 @@ export function TargetTree() {
           />
         </Portal>
       </Show>
-
-      <Show when={deletingTarget()}>
-        {(t) => (
-          <Portal>
-            <ConfirmDialog
-              title="Delete target"
-              message={`Are you sure you want to delete "${t().name}"? This action cannot be undone.`}
-              onConfirm={() => {
-                deleteTarget(t().id).catch((err: unknown) => {
-                  notify.error("Failed to delete target", errorMessage(err));
-                });
-                setDeletingTarget(null);
-              }}
-              onCancel={() => setDeletingTarget(null)}
-            />
-          </Portal>
-        )}
-      </Show>
-    </div>
+    </>
   );
 }

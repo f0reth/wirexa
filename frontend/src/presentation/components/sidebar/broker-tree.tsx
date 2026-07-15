@@ -1,16 +1,13 @@
 import { clsx } from "clsx";
-import { GripVertical, Plus, Settings, Trash2 } from "lucide-solid";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { Portal } from "solid-js/web";
-import { Button } from "../../../components/ui/button";
-import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
-import { ScrollArea } from "../../../components/ui/scroll-area";
 import type {
   BrokerProfile,
   ConnectionState,
 } from "../../../domain/mqtt/types";
 import { useMqttConnection } from "../../providers/mqtt-provider";
 import { BrokerSettingsDialog } from "../mqtt/broker-settings-dialog";
+import { ProfileList } from "./profile-list";
 import styles from "./sidebar.module.css";
 
 export function BrokerTree() {
@@ -30,14 +27,6 @@ export function BrokerTree() {
 
   const [editingProfile, setEditingProfile] = createSignal<
     BrokerProfile | "new" | null
-  >(null);
-  const [deletingProfile, setDeletingProfile] = createSignal<{
-    id: string;
-    name: string;
-  } | null>(null);
-  const [draggingIndex, setDraggingIndex] = createSignal<number | null>(null);
-  const [dropIndicatorIndex, setDropIndicatorIndex] = createSignal<
-    number | null
   >(null);
 
   // Memoize profileId → ConnectionState index to avoid repeated object→Array conversions
@@ -101,166 +90,42 @@ export function BrokerTree() {
   };
 
   return (
-    <div class={styles.collectionTree}>
-      <div class={styles.collectionHeader}>
-        <span class={styles.collectionTitle}>Brokers</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          class={styles.collectionAction}
-          onClick={() => setEditingProfile("new")}
-          aria-label="New Broker"
-          title="New Broker"
-        >
-          <Plus size={14} aria-hidden="true" />
-        </Button>
-      </div>
-
-      <ScrollArea class={styles.treeScroll}>
-        <div class={styles.treeList}>
-          <For each={profiles()}>
-            {(profile, index) => (
-              <>
-                <div
-                  class={clsx(
-                    styles.insertionZone,
-                    draggingIndex() !== null && styles.insertionZoneVisible,
-                    dropIndicatorIndex() === index() &&
-                      styles.insertionZoneActive,
-                  )}
-                />
-                {/* biome-ignore lint/a11y/useSemanticElements: contains nested action buttons; cannot use <button> with nested interactive elements */}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  class={clsx(
-                    styles.brokerItem,
-                    isActive(profile.id) && styles.brokerItemActive,
-                    draggingIndex() === index() && styles.brokerItemDragging,
-                  )}
-                  draggable={true}
-                  onDragStart={(e) => {
-                    setDraggingIndex(index());
-                    e.dataTransfer?.setData("text/plain", String(index()));
-                  }}
-                  onDragEnd={() => {
-                    setTimeout(() => setDraggingIndex(null), 0);
-                    setDropIndicatorIndex(null);
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    const rect = (
-                      e.currentTarget as HTMLElement
-                    ).getBoundingClientRect();
-                    const mid = rect.top + rect.height / 2;
-                    setDropIndicatorIndex(
-                      e.clientY < mid ? index() : index() + 1,
-                    );
-                  }}
-                  onDragLeave={(e) => {
-                    if (
-                      !(e.currentTarget as HTMLElement).contains(
-                        e.relatedTarget as Node,
-                      )
-                    ) {
-                      setDropIndicatorIndex(null);
-                    }
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const from = parseInt(
-                      e.dataTransfer?.getData("text/plain") ?? "-1",
-                      10,
-                    );
-                    const p = dropIndicatorIndex();
-                    if (p !== null && from >= 0) {
-                      const to = p > from ? p - 1 : p;
-                      reorderProfiles(from, to);
-                    }
-                    setDropIndicatorIndex(null);
-                  }}
-                  onClick={() => {
-                    if (draggingIndex() !== null) return;
-                    handleProfileClick(profile.id);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ")
-                      handleProfileClick(profile.id);
-                  }}
-                >
-                  <GripVertical
-                    size={12}
-                    class={styles.dragHandle}
-                    aria-hidden="true"
-                  />
-                  <span
-                    class={clsx(
-                      styles.brokerDot,
-                      isProfileConnected(profile.id)
-                        ? styles.brokerDotConnected
-                        : styles.brokerDotDisconnected,
-                    )}
-                    title={
-                      isProfileConnected(profile.id)
-                        ? "Connected"
-                        : "Disconnected"
-                    }
-                    aria-hidden="true"
-                  />
-                  <div class={styles.brokerInfo}>
-                    <span class={styles.brokerName}>{profile.name}</span>
-                    <span class={styles.brokerUrl}>{profile.broker}</span>
-                  </div>
-                  <div class={styles.treeNodeActions}>
-                    <button
-                      type="button"
-                      class={styles.treeActionBtn}
-                      aria-label="Edit broker"
-                      title="Edit"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingProfile(profile);
-                      }}
-                    >
-                      <Settings size={12} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      class={clsx(
-                        styles.treeActionBtn,
-                        styles.treeActionBtnDanger,
-                      )}
-                      aria-label="Delete broker"
-                      title="Delete"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeletingProfile({
-                          id: profile.id,
-                          name: profile.name,
-                        });
-                      }}
-                    >
-                      <Trash2 size={12} aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </For>
-          <div
-            class={clsx(
-              styles.insertionZone,
-              draggingIndex() !== null && styles.insertionZoneVisible,
-              dropIndicatorIndex() === profiles().length &&
-                styles.insertionZoneActive,
-            )}
-          />
-
-          <Show when={profiles().length === 0}>
-            <p class={styles.emptyTree}>No brokers yet</p>
-          </Show>
-        </div>
-      </ScrollArea>
+    <>
+      <ProfileList
+        title="Brokers"
+        addLabel="New Broker"
+        emptyMessage="No brokers yet"
+        items={profiles()}
+        onAdd={() => setEditingProfile("new")}
+        onItemClick={(p) => handleProfileClick(p.id)}
+        onEdit={(p) => setEditingProfile(p)}
+        onDelete={(p) => handleProfileDelete(p.id)}
+        onReorder={reorderProfiles}
+        isActive={(p) => isActive(p.id)}
+        editAriaLabel="Edit broker"
+        deleteAriaLabel="Delete broker"
+        deleteTitle="Delete broker"
+        renderContent={(profile) => (
+          <>
+            <span
+              class={clsx(
+                styles.statusDot,
+                isProfileConnected(profile.id)
+                  ? styles.statusDotConnected
+                  : styles.statusDotDisconnected,
+              )}
+              title={
+                isProfileConnected(profile.id) ? "Connected" : "Disconnected"
+              }
+              aria-hidden="true"
+            />
+            <div class={styles.listInfo}>
+              <span class={styles.listName}>{profile.name}</span>
+              <span class={styles.listSub}>{profile.broker}</span>
+            </div>
+          </>
+        )}
+      />
 
       <Show when={editingProfile() !== null}>
         <Portal>
@@ -276,22 +141,6 @@ export function BrokerTree() {
           />
         </Portal>
       </Show>
-
-      <Show when={deletingProfile()}>
-        {(profile) => (
-          <Portal>
-            <ConfirmDialog
-              title="Delete broker"
-              message={`Are you sure you want to delete "${profile().name}"? This action cannot be undone.`}
-              onConfirm={() => {
-                handleProfileDelete(profile().id);
-                setDeletingProfile(null);
-              }}
-              onCancel={() => setDeletingProfile(null)}
-            />
-          </Portal>
-        )}
-      </Show>
-    </div>
+    </>
   );
 }

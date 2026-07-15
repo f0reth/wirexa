@@ -6,6 +6,10 @@ import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import {
+  createListReorder,
+  InsertionZone,
+} from "../../../components/ui/list-reorder";
+import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
@@ -30,10 +34,8 @@ function PresetsPanel(props: { addPreset: () => void }) {
     setSelectedPresetId,
   } = useMqttPublish();
 
-  const [draggingIndex, setDraggingIndex] = createSignal<number | null>(null);
-  const [dropIndicatorIndex, setDropIndicatorIndex] = createSignal<
-    number | null
-  >(null);
+  const { draggingIndex, dropIndicatorIndex, itemHandlers } =
+    createListReorder(reorderPresets);
 
   return (
     <div class={styles.presetsPanel}>
@@ -67,14 +69,9 @@ function PresetsPanel(props: { addPreset: () => void }) {
 
                   return (
                     <>
-                      <div
-                        class={clsx(
-                          styles.insertionZone,
-                          draggingIndex() !== null &&
-                            styles.insertionZoneVisible,
-                          dropIndicatorIndex() === index() &&
-                            styles.insertionZoneActive,
-                        )}
+                      <InsertionZone
+                        visible={draggingIndex() !== null}
+                        active={dropIndicatorIndex() === index()}
                       />
                       {/* biome-ignore lint/a11y/useSemanticElements: contains nested interactive elements (delete button, name input); button cannot contain button */}
                       <div
@@ -86,50 +83,7 @@ function PresetsPanel(props: { addPreset: () => void }) {
                         )}
                         role="button"
                         tabIndex={0}
-                        draggable={true}
-                        onDragStart={(e) => {
-                          setDraggingIndex(index());
-                          e.dataTransfer?.setData(
-                            "text/plain",
-                            String(index()),
-                          );
-                        }}
-                        onDragEnd={() => {
-                          setTimeout(() => setDraggingIndex(null), 0);
-                          setDropIndicatorIndex(null);
-                        }}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          const rect = (
-                            e.currentTarget as HTMLElement
-                          ).getBoundingClientRect();
-                          const mid = rect.top + rect.height / 2;
-                          setDropIndicatorIndex(
-                            e.clientY < mid ? index() : index() + 1,
-                          );
-                        }}
-                        onDragLeave={(e) => {
-                          if (
-                            !(e.currentTarget as HTMLElement).contains(
-                              e.relatedTarget as Node,
-                            )
-                          ) {
-                            setDropIndicatorIndex(null);
-                          }
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          const from = parseInt(
-                            e.dataTransfer?.getData("text/plain") ?? "-1",
-                            10,
-                          );
-                          const p = dropIndicatorIndex();
-                          if (p !== null && from >= 0) {
-                            const to = p > from ? p - 1 : p;
-                            reorderPresets(from, to);
-                          }
-                          setDropIndicatorIndex(null);
-                        }}
+                        {...itemHandlers(index)}
                         onClick={() => {
                           if (draggingIndex() !== null) return;
                           if (!isSelected()) setSelectedPresetId(preset.id);
@@ -194,13 +148,9 @@ function PresetsPanel(props: { addPreset: () => void }) {
                   );
                 }}
               </For>
-              <div
-                class={clsx(
-                  styles.insertionZone,
-                  draggingIndex() !== null && styles.insertionZoneVisible,
-                  dropIndicatorIndex() === presets().length &&
-                    styles.insertionZoneActive,
-                )}
+              <InsertionZone
+                visible={draggingIndex() !== null}
+                active={dropIndicatorIndex() === presets().length}
               />
             </div>
           </Show>
