@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import type { JSX } from "solid-js";
+import { type JSX, Show } from "solid-js";
 import styles from "./tabs.module.css";
 
 export interface TabItem<T extends string = string> {
@@ -35,20 +35,22 @@ export function TabList<T extends string>(props: {
   );
 }
 
-export function TabPanel(props: {
-  id: string;
-  labelledBy: string;
+export function TabPanel<T extends string>(props: {
+  value: T;
+  active: T;
   children: JSX.Element;
   class?: string;
 }) {
   return (
-    <div
-      role="tabpanel"
-      id={props.id}
-      aria-labelledby={props.labelledBy}
-      class={clsx(styles.tabPanel, props.class)}
-    >
-      {props.children}
-    </div>
+    <Show when={props.active === props.value}>
+      <div
+        role="tabpanel"
+        id={`tabpanel-${props.value}`}
+        aria-labelledby={`tab-${props.value}`}
+        class={props.class}
+      >
+        {props.children}
+      </div>
+    </Show>
   );
 }

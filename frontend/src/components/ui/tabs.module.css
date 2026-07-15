@@ -40,7 +40,3 @@
   color: var(--color-foreground);
   background-color: var(--surface-3);
 }
-
-.tabPanel {
-  display: contents;
-}
