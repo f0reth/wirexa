@@ -1,3 +1,4 @@
+import { clsx } from "clsx";
 import { createSignal, Show } from "solid-js";
 import { useUdpSend } from "../../providers/udp-provider";
 import { ListenForm } from "./listen-form";
@@ -26,14 +27,20 @@ export function UdpClient() {
         <div class={styles.tabBar}>
           <button
             type="button"
-            class={`${styles.tabButton} ${tab() === "send" ? styles.tabButtonActive : ""}`}
+            class={clsx(
+              styles.tabButton,
+              tab() === "send" && styles.tabButtonActive,
+            )}
             onClick={() => setTab("send")}
           >
             Send
           </button>
           <button
             type="button"
-            class={`${styles.tabButton} ${tab() === "listen" ? styles.tabButtonActive : ""}`}
+            class={clsx(
+              styles.tabButton,
+              tab() === "listen" && styles.tabButtonActive,
+            )}
             onClick={() => setTab("listen")}
           >
             Listen

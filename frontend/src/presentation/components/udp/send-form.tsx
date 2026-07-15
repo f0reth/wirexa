@@ -1,3 +1,4 @@
+import { clsx } from "clsx";
 import { createMemo, For, Show } from "solid-js";
 import { notify } from "../../../application/ui/notifications";
 import { Button } from "../../../components/ui/button";
@@ -262,14 +263,12 @@ export function SendForm() {
                         }
                         style={{
                           "border-color": !isValueValid()
-                            ? "#ef4444"
+                            ? "var(--color-destructive)"
                             : undefined,
                         }}
                       />
                     </div>
-                    <span
-                      class={`${styles.byteCountBadge} ${byteCountClass()}`}
-                    >
+                    <span class={clsx(styles.byteCountBadge, byteCountClass())}>
                       {byteCountLabel()}
                     </span>
                   </div>
@@ -290,7 +289,7 @@ export function SendForm() {
       </Show>
 
       <Show when={encoding() !== "fixed"}>
-        <div class={`${styles.formRow} ${styles.payloadRow}`}>
+        <div class={clsx(styles.formRow, styles.payloadRow)}>
           <span
             class={styles.formLabel}
             style={{ "align-self": "flex-start", "padding-top": "0.375rem" }}
