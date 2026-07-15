@@ -3,10 +3,8 @@ package mqttapp
 
 import (
 	"context"
-	"encoding/base64"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -171,12 +169,7 @@ func (s *MqttService) Subscribe(connectionID, topic string, qos byte) error {
 		handler := func(msgTopic string, msgPayload []byte, msgQoS byte, retained bool) {
 			s.logger.Info("MQTT message received", "source", "mqtt", "connection_id", connectionID, "topic", msgTopic, "payload_bytes", len(msgPayload))
 			// 非 UTF-8 のバイナリペイロードは string 変換で壊れるため base64 で渡す。
-			payloadStr := string(msgPayload)
-			payloadBase64 := false
-			if !utf8.Valid(msgPayload) {
-				payloadStr = base64.StdEncoding.EncodeToString(msgPayload)
-				payloadBase64 = true
-			}
+			payloadStr, payloadBase64 := cmn.EncodeMaybeBase64(msgPayload)
 			s.emitter.Emit(eventMessage, domain.MqttMessage{
 				ConnectionID:  connectionID,
 				Topic:         msgTopic,
