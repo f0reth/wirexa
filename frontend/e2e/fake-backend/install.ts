@@ -501,7 +501,14 @@ w.runtime = {
 };
 
 w.go = {
-  adapters: { HttpHandler, UdpHandler, MqttHandler, OpenAPIHandler, LogHandler },
+  // 生成される Wails バインディングのキーに合わせる (Http* → HTTP* リネーム後)。
+  adapters: {
+    HTTPHandler: HttpHandler,
+    UDPHandler: UdpHandler,
+    MQTTHandler: MqttHandler,
+    OpenAPIHandler,
+    LogHandler,
+  },
   main: { App },
 };
 
