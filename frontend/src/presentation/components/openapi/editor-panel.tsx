@@ -5,12 +5,12 @@ import {
   syntaxHighlighting,
 } from "@codemirror/language";
 import { type Diagnostic, linter } from "@codemirror/lint";
-import { basicSetup, EditorView } from "codemirror";
-import { createEffect, onCleanup, onMount } from "solid-js";
+import { basicSetup } from "codemirror";
 import {
   useOpenApiEditor,
   useOpenApiFiles,
 } from "../../providers/openapi-provider";
+import { createCodeMirror } from "../shared/codemirror";
 import { gutterTheme } from "../shared/editor-theme";
 import styles from "./openapi.module.css";
 
@@ -20,58 +20,24 @@ function getLangExtension(filename: string) {
 }
 
 export function EditorPanel() {
-  let containerRef: HTMLDivElement | undefined;
-  let view: EditorView | undefined;
-
   const editorCtx = useOpenApiEditor();
   const filesCtx = useOpenApiFiles();
 
+  const lang = getLangExtension(filesCtx.activeDoc()?.name ?? "spec.yaml");
   // Build a linter extension that reads current parseErrors signal
   const linterExtension = linter(() => editorCtx.parseErrors() as Diagnostic[]);
 
-  onMount(() => {
-    const doc = filesCtx.activeDoc();
-    const lang = getLangExtension(doc?.name ?? "spec.yaml");
-
-    view = new EditorView({
-      doc: editorCtx.editorContent(),
-      extensions: [
-        basicSetup,
-        syntaxHighlighting(defaultHighlightStyle),
-        lang,
-        linterExtension,
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            editorCtx.onContentChange(update.state.doc.toString());
-          }
-        }),
-        EditorView.theme({
-          "&": { height: "100%" },
-          ".cm-scroller": { overflow: "auto" },
-        }),
-        gutterTheme,
-      ],
-      // biome-ignore lint/style/noNonNullAssertion: ref is always set before onMount fires
-      parent: containerRef!,
-    });
-
-    onCleanup(() => {
-      view?.destroy();
-      view = undefined;
-    });
+  const ref = createCodeMirror({
+    value: () => editorCtx.editorContent(),
+    onChange: (v) => editorCtx.onContentChange(v),
+    extensions: [
+      basicSetup,
+      syntaxHighlighting(defaultHighlightStyle),
+      lang,
+      linterExtension,
+      gutterTheme,
+    ],
   });
 
-  // When a new file is loaded from outside (e.g. sidebar click), sync editor content
-  createEffect(() => {
-    const content = editorCtx.editorContent();
-    if (!view) return;
-    const current = view.state.doc.toString();
-    if (current !== content) {
-      view.dispatch({
-        changes: { from: 0, to: current.length, insert: content },
-      });
-    }
-  });
-
-  return <div ref={containerRef} class={styles.codeMirrorWrap} />;
+  return <div ref={ref} class={styles.codeMirrorWrap} />;
 }

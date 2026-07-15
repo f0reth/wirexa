@@ -4,8 +4,8 @@ import {
   syntaxHighlighting,
 } from "@codemirror/language";
 import { linter } from "@codemirror/lint";
-import { basicSetup, EditorView } from "codemirror";
-import { createEffect, onCleanup, onMount } from "solid-js";
+import { basicSetup } from "codemirror";
+import { createCodeMirror } from "../shared/codemirror";
 import { gutterTheme } from "../shared/editor-theme";
 import styles from "./http.module.css";
 
@@ -15,49 +15,17 @@ interface Props {
 }
 
 export function JsonBodyEditor(props: Props) {
-  let containerRef: HTMLDivElement | undefined;
-  let view: EditorView | undefined;
-
-  onMount(() => {
-    view = new EditorView({
-      doc: props.value,
-      extensions: [
-        basicSetup,
-        syntaxHighlighting(defaultHighlightStyle),
-        json(),
-        linter(jsonParseLinter()),
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            props.onChange(update.state.doc.toString());
-          }
-        }),
-        EditorView.theme({
-          "&": { height: "100%" },
-          ".cm-scroller": { overflow: "auto" },
-        }),
-        gutterTheme,
-      ],
-      // biome-ignore lint/style/noNonNullAssertion: ref is always set before onMount fires
-      parent: containerRef!,
-    });
-
-    onCleanup(() => {
-      view?.destroy();
-      view = undefined;
-    });
+  const ref = createCodeMirror({
+    value: () => props.value,
+    onChange: (v) => props.onChange(v),
+    extensions: [
+      basicSetup,
+      syntaxHighlighting(defaultHighlightStyle),
+      json(),
+      linter(jsonParseLinter()),
+      gutterTheme,
+    ],
   });
 
-  // Sync externally-changed values (e.g. loading a saved request) into the editor
-  createEffect(() => {
-    const content = props.value;
-    if (!view) return;
-    const current = view.state.doc.toString();
-    if (current !== content) {
-      view.dispatch({
-        changes: { from: 0, to: current.length, insert: content },
-      });
-    }
-  });
-
-  return <div ref={containerRef} class={styles.jsonBodyEditor} />;
+  return <div ref={ref} class={styles.jsonBodyEditor} />;
 }
