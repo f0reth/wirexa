@@ -6,7 +6,7 @@ import {
   Send,
   StartListen,
   StopListen,
-} from "../../../wailsjs/go/adapters/UdpHandler";
+} from "../../../wailsjs/go/adapters/UDPHandler";
 import { udpdomain } from "../../../wailsjs/go/models";
 import { EventsOn } from "../../../wailsjs/runtime/runtime";
 import type {
@@ -16,22 +16,23 @@ import type {
   UdpSendResult,
   UdpTarget,
 } from "../../domain/udp/types";
+import { WailsEvents } from "../../shared/wails-events";
 
-function toWailsRequest(req: UdpSendRequest): udpdomain.UdpSendRequest {
-  return udpdomain.UdpSendRequest.createFrom(req);
+function toWailsRequest(req: UdpSendRequest): udpdomain.UDPSendRequest {
+  return udpdomain.UDPSendRequest.createFrom(req);
 }
 
-function fromWailsSendResult(res: udpdomain.UdpSendResult): UdpSendResult {
+function fromWailsSendResult(res: udpdomain.UDPSendResult): UdpSendResult {
   return { ...res };
 }
 
-function fromWailsTarget(t: udpdomain.UdpTarget): UdpTarget {
+function fromWailsTarget(t: udpdomain.UDPTarget): UdpTarget {
   // スプレッドで素通しし、Go 側がプリミティブ項目を足しても黙って落ちないようにする。
   return { ...t };
 }
 
-function toWailsTarget(t: UdpTarget): udpdomain.UdpTarget {
-  return udpdomain.UdpTarget.createFrom(t);
+function toWailsTarget(t: UdpTarget): udpdomain.UDPTarget {
+  return udpdomain.UDPTarget.createFrom(t);
 }
 
 export async function send(req: UdpSendRequest): Promise<UdpSendResult> {
@@ -54,7 +55,7 @@ export async function deleteTarget(id: string): Promise<void> {
 }
 
 function fromWailsListenSession(
-  s: udpdomain.UdpListenSession,
+  s: udpdomain.UDPListenSession,
 ): UdpListenSession {
   return {
     ...s,
@@ -80,5 +81,5 @@ export async function getListeners(): Promise<UdpListenSession[]> {
 }
 
 export function onMessage(cb: (msg: UdpReceivedMessage) => void): () => void {
-  return EventsOn("udp:message", cb);
+  return EventsOn(WailsEvents.udpMessage, cb);
 }

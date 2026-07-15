@@ -15,6 +15,7 @@ import type {
 } from "../../domain/mqtt/types";
 import { generateId } from "../../infrastructure/id/generator";
 import { errorMessage } from "../../shared/error";
+import { type MqttEventName, WailsEvents } from "../../shared/wails-events";
 import { makeSubscription } from "./subscription";
 
 export type { ConnectionPersistence };
@@ -41,12 +42,7 @@ export type OfflineStateExt = OfflineConnectionState & ConnectionRuntimeState;
 export type OnlineStateExt = OnlineConnectionState & ConnectionRuntimeState;
 export type ConnectionStateExt = OfflineStateExt | OnlineStateExt;
 
-export type MqttEventName =
-  | "mqtt:connected"
-  | "mqtt:disconnected"
-  | "mqtt:connection-lost"
-  | "mqtt:connection-failed"
-  | "mqtt:message";
+export type { MqttEventName };
 
 export type MqttEventListener = (
   event: MqttEventName,
@@ -240,7 +236,7 @@ export function createConnectionsState(
   }
 
   // Wails イベントリスナー登録 → onCleanup で解除
-  const cancelMessage = onEvent("mqtt:message", (data) => {
+  const cancelMessage = onEvent(WailsEvents.mqttMessage, (data) => {
     if (messageBuffer.length < 5000) {
       messageBuffer.push(data as RawMessage);
     }
@@ -250,7 +246,7 @@ export function createConnectionsState(
     }
   });
 
-  const cancelConnected = onEvent("mqtt:connected", (data) => {
+  const cancelConnected = onEvent(WailsEvents.mqttConnected, (data) => {
     const { connectionId } = data as { connectionId: string };
     updateConnection(connectionId, (state) => {
       if (state.type !== "online") return state;
@@ -258,7 +254,7 @@ export function createConnectionsState(
     });
   });
 
-  const cancelDisconnected = onEvent("mqtt:disconnected", (data) => {
+  const cancelDisconnected = onEvent(WailsEvents.mqttDisconnected, (data) => {
     const { connectionId } = data as { connectionId: string };
     updateConnection(connectionId, (state) => {
       if (state.type !== "online") return state;
@@ -266,31 +262,37 @@ export function createConnectionsState(
     });
   });
 
-  const cancelConnectionLost = onEvent("mqtt:connection-lost", (data) => {
-    const { connectionId, error } = data as {
-      connectionId: string;
-      error: string;
-    };
-    console.error("[MQTT] Connection lost:", error);
-    notify.error("MQTT connection lost", error, { key: connectionId });
-    updateConnection(connectionId, (state) => {
-      if (state.type !== "online") return state;
-      return { ...state, connected: false };
-    });
-  });
+  const cancelConnectionLost = onEvent(
+    WailsEvents.mqttConnectionLost,
+    (data) => {
+      const { connectionId, error } = data as {
+        connectionId: string;
+        error: string;
+      };
+      console.error("[MQTT] Connection lost:", error);
+      notify.error("MQTT connection lost", error, { key: connectionId });
+      updateConnection(connectionId, (state) => {
+        if (state.type !== "online") return state;
+        return { ...state, connected: false };
+      });
+    },
+  );
 
-  const cancelConnectionFailed = onEvent("mqtt:connection-failed", (data) => {
-    const { connectionId, error } = data as {
-      connectionId: string;
-      error: string;
-    };
-    console.error("[MQTT] Connection failed:", error);
-    notify.error("MQTT connection failed", error, { key: connectionId });
-    updateConnection(connectionId, (state) => {
-      if (state.type !== "online") return state;
-      return { ...state, connected: false, isScanning: false };
-    });
-  });
+  const cancelConnectionFailed = onEvent(
+    WailsEvents.mqttConnectionFailed,
+    (data) => {
+      const { connectionId, error } = data as {
+        connectionId: string;
+        error: string;
+      };
+      console.error("[MQTT] Connection failed:", error);
+      notify.error("MQTT connection failed", error, { key: connectionId });
+      updateConnection(connectionId, (state) => {
+        if (state.type !== "online") return state;
+        return { ...state, connected: false, isScanning: false };
+      });
+    },
+  );
 
   onCleanup(() => {
     cancelMessage();

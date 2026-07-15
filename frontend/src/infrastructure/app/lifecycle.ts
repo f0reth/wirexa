@@ -1,5 +1,6 @@
 import { ConfirmQuit } from "../../../wailsjs/go/main/App";
 import { EventsOn } from "../../../wailsjs/runtime/runtime";
+import { WailsEvents } from "../../shared/wails-events";
 
 /**
  * lifecycle はアプリのライフサイクル（ウィンドウを閉じる等）に関わる
@@ -17,5 +18,5 @@ export async function confirmQuit(): Promise<void> {
  * 戻り値の関数で購読を解除できる。
  */
 export function onBeforeClose(cb: () => void): () => void {
-  return EventsOn("app:before-close", cb);
+  return EventsOn(WailsEvents.appBeforeClose, cb);
 }

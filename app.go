@@ -15,6 +15,7 @@ import (
 	httpapp "github.com/f0reth/Wirexa/internal/application/http"
 	mqttapp "github.com/f0reth/Wirexa/internal/application/mqtt"
 	udpapp "github.com/f0reth/Wirexa/internal/application/udp"
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	httpdomain "github.com/f0reth/Wirexa/internal/domain/http"
 	mqttdomain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 	udpdomain "github.com/f0reth/Wirexa/internal/domain/udp"
@@ -28,7 +29,7 @@ import (
 var (
 	_ httpdomain.CollectionRepository = (*infra.JSONStore[httpdomain.Collection])(nil)
 	_ mqttdomain.ProfileRepository    = (*infra.JSONStore[mqttdomain.BrokerProfile])(nil)
-	_ udpdomain.TargetRepository      = (*infra.JSONStore[udpdomain.UdpTarget])(nil)
+	_ udpdomain.TargetRepository      = (*infra.JSONStore[udpdomain.UDPTarget])(nil)
 )
 
 const wirexaConfigDir = "Wirexa"
@@ -42,9 +43,9 @@ const (
 )
 
 type App struct {
-	mqttHandler    *adapters.MqttHandler
-	httpHandler    *adapters.HttpHandler
-	udpHandler     *adapters.UdpHandler
+	mqttHandler    *adapters.MQTTHandler
+	httpHandler    *adapters.HTTPHandler
+	udpHandler     *adapters.UDPHandler
 	logHandler     *adapters.LogHandler
 	openAPIHandler *adapters.OpenAPIHandler
 	netClient      *httpinfra.NetClient
@@ -59,9 +60,9 @@ type App struct {
 
 func NewApp() *App {
 	return &App{
-		mqttHandler:    &adapters.MqttHandler{},
-		httpHandler:    &adapters.HttpHandler{},
-		udpHandler:     &adapters.UdpHandler{},
+		mqttHandler:    &adapters.MQTTHandler{},
+		httpHandler:    &adapters.HTTPHandler{},
+		udpHandler:     &adapters.UDPHandler{},
 		logHandler:     &adapters.LogHandler{},
 		openAPIHandler: &adapters.OpenAPIHandler{},
 	}
@@ -74,8 +75,8 @@ func (a *App) startup(ctx context.Context) {
 		log.Printf("startup failed: %v", err) // stderr へのベストエフォート
 		_, _ = runtime.MessageDialog(ctx, runtime.MessageDialogOptions{
 			Type:    runtime.ErrorDialog,
-			Title:   "Wirexa - 起動に失敗しました",
-			Message: fmt.Sprintf("アプリケーションを起動できませんでした。\n\n%v", err),
+			Title:   "Wirexa - Startup Failed",
+			Message: fmt.Sprintf("The application could not be started.\n\n%v", err),
 		})
 		runtime.Quit(ctx)
 		return
@@ -89,7 +90,7 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) initialize(ctx context.Context) error {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		return fmt.Errorf("設定ディレクトリの取得に失敗しました: %w", err)
+		return fmt.Errorf("failed to get config directory: %w", err)
 	}
 	a.windowStatePath = filepath.Join(configDir, wirexaConfigDir, "window-state.json")
 
@@ -99,42 +100,42 @@ func (a *App) initialize(ctx context.Context) error {
 
 	logger, err := infra.NewFileLogger(filepath.Join(configDir, wirexaConfigDir, "logs"))
 	if err != nil {
-		return fmt.Errorf("ロガーの初期化に失敗しました: %w", err)
+		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
 	adapters.SetupLogHandler(a.logHandler, logger)
 
 	// MQTT / UDP の両サービスで共有する (ctx を保持するだけのステートレスな型)。
 	emitter := infra.NewWailsEmitter(ctx)
 
-	clientFactory := mqttinfra.NewPahoClientFactory(mqttinfra.MqttClientConfig{})
-	mqttSvc := mqttapp.NewMqttService(emitter, clientFactory, logger)
+	clientFactory := mqttinfra.NewPahoClientFactory(mqttinfra.MQTTClientConfig{})
+	mqttSvc := mqttapp.NewMQTTService(emitter, clientFactory, logger)
 
 	profileRepo, err := infra.NewJSONStore(
 		filepath.Join(configDir, wirexaConfigDir, "mqtt-profiles"),
 		func(p *mqttdomain.BrokerProfile) string { return p.ID },
 	)
 	if err != nil {
-		return fmt.Errorf("MQTT プロファイルの保存先を作成できませんでした: %w", err)
+		return fmt.Errorf("failed to create MQTT profile store: %w", err)
 	}
 	profileRepo.SetLogger(logger)
 	profileSvc, err := mqttapp.NewProfileService(profileRepo)
 	if err != nil {
-		return fmt.Errorf("MQTT プロファイルの読み込みに失敗しました: %w", err)
+		return fmt.Errorf("failed to load MQTT profiles: %w", err)
 	}
-	adapters.SetupMqttHandler(a.mqttHandler, mqttSvc, profileSvc)
+	adapters.SetupMQTTHandler(a.mqttHandler, mqttSvc, profileSvc)
 
 	collRepo, err := infra.NewJSONStore(
 		filepath.Join(configDir, wirexaConfigDir, "collections"),
 		func(c *httpdomain.Collection) string { return c.ID },
 	)
 	if err != nil {
-		return fmt.Errorf("コレクションの保存先を作成できませんでした: %w", err)
+		return fmt.Errorf("failed to create collection store: %w", err)
 	}
 	collRepo.SetLogger(logger)
 	layoutRepo := httpinfra.NewSidebarLayoutRepository(filepath.Join(configDir, wirexaConfigDir, "sidebar_layout.json"))
 	collSvc, err := httpapp.NewCollectionService(collRepo, layoutRepo)
 	if err != nil {
-		return fmt.Errorf("コレクションの初期化に失敗しました: %w", err)
+		return fmt.Errorf("failed to initialize collections: %w", err)
 	}
 	a.netClient = httpinfra.NewNetClient()
 	reqSvc := httpapp.NewHTTPRequestService(a.netClient, logger)
@@ -142,23 +143,23 @@ func (a *App) initialize(ctx context.Context) error {
 
 	targetRepo, err := infra.NewJSONStore(
 		filepath.Join(configDir, wirexaConfigDir, "udp-targets"),
-		func(t *udpdomain.UdpTarget) string { return t.ID },
+		func(t *udpdomain.UDPTarget) string { return t.ID },
 	)
 	if err != nil {
-		return fmt.Errorf("UDP ターゲットの保存先を作成できませんでした: %w", err)
+		return fmt.Errorf("failed to create UDP target store: %w", err)
 	}
 	targetRepo.SetLogger(logger)
 	targetSvc, err := udpapp.NewTargetService(targetRepo)
 	if err != nil {
-		return fmt.Errorf("UDP ターゲットの読み込みに失敗しました: %w", err)
+		return fmt.Errorf("failed to load UDP targets: %w", err)
 	}
 	udpSocket := udpinfra.NewNetSocket()
-	sendSvc := udpapp.NewUdpSendService(udpSocket, logger)
-	listenSvc := udpapp.NewUdpListenerService(udpSocket, emitter, logger)
-	adapters.SetupUdpHandler(a.udpHandler, sendSvc, targetSvc, listenSvc)
+	sendSvc := udpapp.NewUDPSendService(udpSocket, logger)
+	listenSvc := udpapp.NewUDPListenerService(udpSocket, emitter, logger)
+	adapters.SetupUDPHandler(a.udpHandler, sendSvc, targetSvc, listenSvc)
 
 	adapters.SetupOpenAPIHandler(ctx, a.openAPIHandler,
-		filepath.Join(configDir, wirexaConfigDir, "openapi-recents.json"))
+		filepath.Join(configDir, wirexaConfigDir, "openapi-recents.json"), logger)
 
 	a.restoreWindowState(ctx)
 
@@ -272,7 +273,7 @@ func (a *App) beforeClose(ctx context.Context) bool {
 	if a.quitConfirmed {
 		return false
 	}
-	runtime.EventsEmit(ctx, "app:before-close")
+	runtime.EventsEmit(ctx, cmn.EventAppBeforeClose)
 	return true
 }
 
