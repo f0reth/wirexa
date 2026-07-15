@@ -1,6 +1,7 @@
 import { Check, Copy } from "lucide-solid";
-import { createSignal, For, Show } from "solid-js";
+import { For, Show } from "solid-js";
 import { Button } from "../../../components/ui/button";
+import { createCopyButton } from "../../../components/ui/copy-button";
 import { useUdpReceive } from "../../providers/udp-provider";
 import styles from "./udp.module.css";
 
@@ -15,13 +16,7 @@ function formatTime(timestamp: number): string {
 
 export function MessageLog() {
   const { messages, clearMessages } = useUdpReceive();
-  const [copiedTs, setCopiedTs] = createSignal<number | null>(null);
-
-  function copyPayload(payload: string, ts: number) {
-    navigator.clipboard.writeText(payload);
-    setCopiedTs(ts);
-    setTimeout(() => setCopiedTs(null), 1500);
-  }
+  const { copy, isCopied } = createCopyButton<number>();
 
   return (
     <div class={styles.messageLog}>
@@ -49,11 +44,11 @@ export function MessageLog() {
                 <button
                   type="button"
                   class={styles.copyBtn}
-                  onClick={() => copyPayload(msg.payload, msg.timestamp)}
+                  onClick={() => copy(msg.payload, msg.timestamp)}
                   title="Copy payload"
                 >
                   <Show
-                    when={copiedTs() === msg.timestamp}
+                    when={isCopied(msg.timestamp)}
                     fallback={<Copy size={12} />}
                   >
                     <Check size={12} />

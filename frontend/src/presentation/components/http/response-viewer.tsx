@@ -1,6 +1,7 @@
 import { Check, Copy } from "lucide-solid";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
+import { createCopyButton } from "../../../components/ui/copy-button";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { TabList } from "../../../components/ui/tabs";
 import {
@@ -38,18 +39,13 @@ export function ResponseViewer() {
   const { response, loading } = useHttpRequest();
 
   const [responseTab, setResponseTab] = createSignal("body");
-  const [copied, setCopied] = createSignal(false);
+  const { copy, isCopied } = createCopyButton();
   const [showTruncatedBody, setShowTruncatedBody] = createSignal(false);
-  let copyTimer: ReturnType<typeof setTimeout> | undefined;
-  onCleanup(() => clearTimeout(copyTimer));
 
   function handleCopy() {
     const resp = response();
     if (!resp) return;
-    navigator.clipboard.writeText(bodyDisplay().text);
-    setCopied(true);
-    clearTimeout(copyTimer);
-    copyTimer = setTimeout(() => setCopied(false), 1500);
+    copy(bodyDisplay().text);
   }
 
   async function handleSaveToFile() {
@@ -102,7 +98,7 @@ export function ResponseViewer() {
             title="Copy body"
           >
             <Show
-              when={copied()}
+              when={isCopied()}
               fallback={<Copy size={14} aria-hidden="true" />}
             >
               <Check size={14} aria-hidden="true" />
