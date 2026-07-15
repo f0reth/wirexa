@@ -24,6 +24,7 @@ import { CollectionNode } from "./collection-node";
 import { type DragItem, dragItem, ghostPos } from "./drag-state";
 import styles from "./sidebar.module.css";
 import { InsertionZone, TreeItemNode } from "./tree-item-node";
+import { type TreeUiContextValue, TreeUiProvider } from "./tree-ui-context";
 import { useTreeDragDrop } from "./use-tree-drag-drop";
 
 export function CollectionTree() {
@@ -202,6 +203,31 @@ export function CollectionTree() {
     onDropToSidebar: handleDropToSidebar,
   });
 
+  // ツリー描画に必要な rename 状態とハンドラを束ねて配布する。
+  const treeUi: TreeUiContextValue = {
+    activeRequestId: requestCtx.activeRequestId,
+    renamingItemId,
+    setRenamingItemId,
+    renamingCollectionId,
+    setRenamingCollectionId,
+    onAddFolder: handleAddFolder,
+    onAddRequest: handleAddRequest,
+    onDeleteItem: (collectionId, itemId, name, type) =>
+      setDeletingItem({ collectionId, itemId, name, type }),
+    onDeleteCollection: (id, name) =>
+      setDeletingItem({
+        collectionId: id,
+        itemId: "",
+        name,
+        type: "collection",
+      }),
+    onSelectRequest: (item, collectionId) => {
+      if (item.request) requestCtx.loadRequest(item.request, collectionId);
+    },
+    onRenameItem: handleRenameItem,
+    onRenameCollection: handleRenameCollection,
+  };
+
   return (
     <div class={styles.collectionTree}>
       <div class={styles.collectionHeader}>
@@ -243,107 +269,56 @@ export function CollectionTree() {
 
       <ScrollArea class={styles.treeScroll}>
         <div class={styles.treeList}>
-          <For each={collectionsCtx.sidebarLayout}>
-            {(entry, index) => {
-              if (entry.kind === "collection") {
-                const collection = () =>
-                  collectionsCtx.collections.find((c) => c.id === entry.id);
+          <TreeUiProvider value={treeUi}>
+            <For each={collectionsCtx.sidebarLayout}>
+              {(entry, index) => {
+                if (entry.kind === "collection") {
+                  const collection = () =>
+                    collectionsCtx.collections.find((c) => c.id === entry.id);
+                  return (
+                    <Show when={collection()}>
+                      {(col) => (
+                        <>
+                          <InsertionZone kind="sidebar" position={index()} />
+                          <CollectionNode
+                            collection={col()}
+                            sourceIndex={index()}
+                          />
+                        </>
+                      )}
+                    </Show>
+                  );
+                }
+                // kind === "item"
+                const item = () =>
+                  collectionsCtx.rootItems.find((i) => i.id === entry.id);
                 return (
-                  <Show when={collection()}>
-                    {(col) => (
+                  <Show when={item()}>
+                    {(it) => (
                       <>
                         <InsertionZone kind="sidebar" position={index()} />
-                        <CollectionNode
-                          collection={col()}
+                        <TreeItemNode
+                          item={it()}
+                          collectionId={ROOT_COLLECTION_ID}
+                          depth={0}
+                          sourceParentId=""
                           sourceIndex={index()}
-                          onDeleteCollection={(id, name) =>
-                            setDeletingItem({
-                              collectionId: id,
-                              itemId: "",
-                              name,
-                              type: "collection",
-                            })
-                          }
-                          onAddFolder={handleAddFolder}
-                          onAddRequest={handleAddRequest}
-                          onDeleteItem={(collectionId, itemId, name, type) =>
-                            setDeletingItem({
-                              collectionId,
-                              itemId,
-                              name,
-                              type,
-                            })
-                          }
-                          onSelectRequest={(item) => {
-                            if (item.request) {
-                              requestCtx.loadRequest(item.request, col().id);
-                            }
-                          }}
-                          onRenameItem={handleRenameItem}
-                          onRenameCollection={handleRenameCollection}
-                          onMoveItem={handleMoveItem}
-                          activeRequestId={requestCtx.activeRequestId()}
-                          renamingItemId={renamingItemId()}
-                          setRenamingItemId={setRenamingItemId}
-                          renamingCollectionId={renamingCollectionId()}
-                          setRenamingCollectionId={setRenamingCollectionId}
                         />
                       </>
                     )}
                   </Show>
                 );
-              }
-              // kind === "item"
-              const item = () =>
-                collectionsCtx.rootItems.find((i) => i.id === entry.id);
-              return (
-                <Show when={item()}>
-                  {(it) => (
-                    <>
-                      <InsertionZone kind="sidebar" position={index()} />
-                      <TreeItemNode
-                        item={it()}
-                        collectionId={ROOT_COLLECTION_ID}
-                        depth={0}
-                        sourceParentId=""
-                        sourceIndex={index()}
-                        onAddFolder={handleAddFolder}
-                        onAddRequest={handleAddRequest}
-                        onDeleteItem={(cId, iId, name, type) =>
-                          setDeletingItem({
-                            collectionId: cId,
-                            itemId: iId,
-                            name,
-                            type,
-                          })
-                        }
-                        onSelectRequest={(item) => {
-                          if (item.request)
-                            requestCtx.loadRequest(
-                              item.request,
-                              ROOT_COLLECTION_ID,
-                            );
-                        }}
-                        onRenameItem={handleRenameItem}
-                        onMoveItem={handleMoveItem}
-                        activeRequestId={requestCtx.activeRequestId()}
-                        renamingItemId={renamingItemId()}
-                        setRenamingItemId={setRenamingItemId}
-                      />
-                    </>
-                  )}
-                </Show>
-              );
-            }}
-          </For>
-          <InsertionZone
-            kind="sidebar"
-            position={collectionsCtx.sidebarLayout.length}
-          />
+              }}
+            </For>
+            <InsertionZone
+              kind="sidebar"
+              position={collectionsCtx.sidebarLayout.length}
+            />
 
-          <Show when={collectionsCtx.sidebarLayout.length === 0}>
-            <p class={styles.emptyTree}>No collections yet</p>
-          </Show>
+            <Show when={collectionsCtx.sidebarLayout.length === 0}>
+              <p class={styles.emptyTree}>No collections yet</p>
+            </Show>
+          </TreeUiProvider>
         </div>
       </ScrollArea>
 

@@ -5,7 +5,9 @@ import type { HttpMethod, TreeItem } from "../../../domain/http/types";
 import { METHOD_COLORS } from "../../constants/http";
 import { useHttpCollections } from "../../providers/http-provider";
 import { dragItem, dropTarget, setDragItem, setGhostPos } from "./drag-state";
+import { RenameInput } from "./rename-input";
 import styles from "./sidebar.module.css";
+import { useTreeUi } from "./tree-ui-context";
 
 const LONG_PRESS_MS = 250;
 
@@ -149,34 +151,15 @@ export function TreeItemNode(props: {
   depth: number;
   sourceParentId: string;
   sourceIndex: number;
-  onAddFolder: (collectionId: string, parentId: string) => void;
-  onAddRequest: (collectionId: string, parentId: string) => void;
-  onDeleteItem: (
-    collectionId: string,
-    itemId: string,
-    name: string,
-    type: string,
-  ) => void;
-  onSelectRequest: (item: TreeItem) => void;
-  onRenameItem: (collectionId: string, itemId: string, name: string) => void;
-  onMoveItem: (
-    sourceCollectionId: string,
-    itemId: string,
-    targetCollectionId: string,
-    targetParentId: string,
-    position: number,
-  ) => void;
-  activeRequestId: string | null;
-  renamingItemId: string | null;
-  setRenamingItemId: (id: string | null) => void;
 }) {
+  const ui = useTreeUi();
   const collectionsCtx = useHttpCollections();
   const expanded = () => collectionsCtx.isExpanded(props.item.id, false);
   const toggleExpanded = () =>
     collectionsCtx.setExpanded(props.item.id, !expanded());
 
   if (props.item.type === "folder") {
-    const isRenaming = () => props.renamingItemId === props.item.id;
+    const isRenaming = () => ui.renamingItemId() === props.item.id;
     const suppressRef = { suppress: false };
     const { handleMouseDown } = makeDragHandlers(
       props.collectionId,
@@ -191,9 +174,9 @@ export function TreeItemNode(props: {
       if (!isRenaming()) return;
       const trimmed = value.trim();
       if (trimmed && trimmed !== props.item.name) {
-        props.onRenameItem(props.collectionId, props.item.id, trimmed);
+        ui.onRenameItem(props.collectionId, props.item.id, trimmed);
       }
-      props.setRenamingItemId(null);
+      ui.setRenamingItemId(null);
     };
 
     return (
@@ -235,7 +218,7 @@ export function TreeItemNode(props: {
                     class={styles.treeNodeName}
                     onDblClick={(e) => {
                       e.stopPropagation();
-                      props.setRenamingItemId(props.item.id);
+                      ui.setRenamingItemId(props.item.id);
                     }}
                   >
                     {props.item.name}
@@ -243,23 +226,10 @@ export function TreeItemNode(props: {
                 </>
               }
             >
-              <input
-                data-testid="rename-input"
-                class={styles.renameInput}
-                ref={(el) => {
-                  el.value = props.item.name;
-                  requestAnimationFrame(() => {
-                    el.focus();
-                    el.select();
-                  });
-                }}
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter")
-                    handleRenameCommit(e.currentTarget.value);
-                  if (e.key === "Escape") props.setRenamingItemId(null);
-                }}
-                onBlur={(e) => handleRenameCommit(e.currentTarget.value)}
+              <RenameInput
+                value={props.item.name}
+                onCommit={handleRenameCommit}
+                onCancel={() => ui.setRenamingItemId(null)}
               />
             </Show>
           </button>
@@ -270,9 +240,7 @@ export function TreeItemNode(props: {
               aria-label="Add folder"
               title="Add folder"
               onMouseDown={(e) => e.stopPropagation()}
-              onClick={() =>
-                props.onAddFolder(props.collectionId, props.item.id)
-              }
+              onClick={() => ui.onAddFolder(props.collectionId, props.item.id)}
             >
               <FolderPlus size={10} aria-hidden="true" />
             </button>
@@ -282,9 +250,7 @@ export function TreeItemNode(props: {
               aria-label="Add request"
               title="Add request"
               onMouseDown={(e) => e.stopPropagation()}
-              onClick={() =>
-                props.onAddRequest(props.collectionId, props.item.id)
-              }
+              onClick={() => ui.onAddRequest(props.collectionId, props.item.id)}
             >
               <Plus size={10} aria-hidden="true" />
             </button>
@@ -295,7 +261,7 @@ export function TreeItemNode(props: {
               title="Delete"
               onMouseDown={(e) => e.stopPropagation()}
               onClick={() =>
-                props.onDeleteItem(
+                ui.onDeleteItem(
                   props.collectionId,
                   props.item.id,
                   props.item.name,
@@ -323,15 +289,6 @@ export function TreeItemNode(props: {
                     depth={props.depth + 1}
                     sourceParentId={props.item.id}
                     sourceIndex={index()}
-                    onAddFolder={props.onAddFolder}
-                    onAddRequest={props.onAddRequest}
-                    onDeleteItem={props.onDeleteItem}
-                    onSelectRequest={props.onSelectRequest}
-                    onRenameItem={props.onRenameItem}
-                    onMoveItem={props.onMoveItem}
-                    activeRequestId={props.activeRequestId}
-                    renamingItemId={props.renamingItemId}
-                    setRenamingItemId={props.setRenamingItemId}
                   />
                 </>
               )}
@@ -349,8 +306,8 @@ export function TreeItemNode(props: {
 
   // Request item
   const method = () => (props.item.request?.method || "GET") as HttpMethod;
-  const isActive = () => props.activeRequestId === props.item.id;
-  const isRenaming = () => props.renamingItemId === props.item.id;
+  const isActive = () => ui.activeRequestId() === props.item.id;
+  const isRenaming = () => ui.renamingItemId() === props.item.id;
   const suppressRef = { suppress: false };
   const { handleMouseDown } = makeDragHandlers(
     props.collectionId,
@@ -365,9 +322,9 @@ export function TreeItemNode(props: {
     if (!isRenaming()) return;
     const trimmed = value.trim();
     if (trimmed && trimmed !== props.item.name) {
-      props.onRenameItem(props.collectionId, props.item.id, trimmed);
+      ui.onRenameItem(props.collectionId, props.item.id, trimmed);
     }
-    props.setRenamingItemId(null);
+    ui.setRenamingItemId(null);
   };
 
   return (
@@ -392,11 +349,11 @@ export function TreeItemNode(props: {
             suppressRef.suppress = false;
             return;
           }
-          if (!isRenaming()) props.onSelectRequest(props.item);
+          if (!isRenaming()) ui.onSelectRequest(props.item, props.collectionId);
         }}
         onKeyDown={(e) => {
           if (!isRenaming() && (e.key === "Enter" || e.key === " "))
-            props.onSelectRequest(props.item);
+            ui.onSelectRequest(props.item, props.collectionId);
         }}
       >
         <span
@@ -414,7 +371,7 @@ export function TreeItemNode(props: {
                 class={styles.requestName}
                 onDblClick={(e) => {
                   e.stopPropagation();
-                  props.setRenamingItemId(props.item.id);
+                  ui.setRenamingItemId(props.item.id);
                 }}
               >
                 {props.item.name}
@@ -422,22 +379,10 @@ export function TreeItemNode(props: {
             </>
           }
         >
-          <input
-            data-testid="rename-input"
-            class={styles.renameInput}
-            ref={(el) => {
-              el.value = props.item.name;
-              requestAnimationFrame(() => {
-                el.focus();
-                el.select();
-              });
-            }}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleRenameCommit(e.currentTarget.value);
-              if (e.key === "Escape") props.setRenamingItemId(null);
-            }}
-            onBlur={(e) => handleRenameCommit(e.currentTarget.value)}
+          <RenameInput
+            value={props.item.name}
+            onCommit={handleRenameCommit}
+            onCancel={() => ui.setRenamingItemId(null)}
           />
         </Show>
       </button>
@@ -448,7 +393,7 @@ export function TreeItemNode(props: {
         title="Delete"
         onMouseDown={(e) => e.stopPropagation()}
         onClick={() =>
-          props.onDeleteItem(
+          ui.onDeleteItem(
             props.collectionId,
             props.item.id,
             props.item.name,

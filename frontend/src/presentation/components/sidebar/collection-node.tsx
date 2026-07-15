@@ -1,9 +1,10 @@
 import { clsx } from "clsx";
 import { ChevronRight, Folder, FolderPlus, Plus, Trash2 } from "lucide-solid";
 import { For, Show } from "solid-js";
-import type { Collection, TreeItem } from "../../../domain/http/types";
+import type { Collection } from "../../../domain/http/types";
 import { useHttpCollections } from "../../providers/http-provider";
 import { dragItem, dropTarget, setDragItem, setGhostPos } from "./drag-state";
+import { RenameInput } from "./rename-input";
 import styles from "./sidebar.module.css";
 import {
   DROP_COLLECTION_ID_ATTR,
@@ -12,6 +13,7 @@ import {
   InsertionZone,
   TreeItemNode,
 } from "./tree-item-node";
+import { useTreeUi } from "./tree-ui-context";
 
 const LONG_PRESS_MS = 250;
 
@@ -70,37 +72,14 @@ function makeCollectionDragHandlers(
 export function CollectionNode(props: {
   collection: Collection;
   sourceIndex: number;
-  onDeleteCollection: (id: string, name: string) => void;
-  onAddFolder: (collectionId: string, parentId: string) => void;
-  onAddRequest: (collectionId: string, parentId: string) => void;
-  onDeleteItem: (
-    collectionId: string,
-    itemId: string,
-    name: string,
-    type: string,
-  ) => void;
-  onSelectRequest: (item: TreeItem) => void;
-  onRenameItem: (collectionId: string, itemId: string, name: string) => void;
-  onRenameCollection: (id: string, name: string) => void;
-  onMoveItem: (
-    sourceCollectionId: string,
-    itemId: string,
-    targetCollectionId: string,
-    targetParentId: string,
-    position: number,
-  ) => void;
-  activeRequestId: string | null;
-  renamingItemId: string | null;
-  setRenamingItemId: (id: string | null) => void;
-  renamingCollectionId: string | null;
-  setRenamingCollectionId: (id: string | null) => void;
 }) {
+  const ui = useTreeUi();
   const collectionsCtx = useHttpCollections();
   const expanded = () => collectionsCtx.isExpanded(props.collection.id, true);
   const toggleExpanded = () =>
     collectionsCtx.setExpanded(props.collection.id, !expanded());
 
-  const isRenaming = () => props.renamingCollectionId === props.collection.id;
+  const isRenaming = () => ui.renamingCollectionId() === props.collection.id;
 
   const suppressRef = { suppress: false };
   const { handleMouseDown: handleCollectionMouseDown } =
@@ -115,9 +94,9 @@ export function CollectionNode(props: {
     if (!isRenaming()) return;
     const trimmed = value.trim();
     if (trimmed && trimmed !== props.collection.name) {
-      props.onRenameCollection(props.collection.id, trimmed);
+      ui.onRenameCollection(props.collection.id, trimmed);
     }
-    props.setRenamingCollectionId(null);
+    ui.setRenamingCollectionId(null);
   };
 
   return (
@@ -171,7 +150,7 @@ export function CollectionNode(props: {
                   class={styles.treeNodeName}
                   onDblClick={(e) => {
                     e.stopPropagation();
-                    props.setRenamingCollectionId(props.collection.id);
+                    ui.setRenamingCollectionId(props.collection.id);
                   }}
                 >
                   {props.collection.name}
@@ -179,23 +158,10 @@ export function CollectionNode(props: {
               </>
             }
           >
-            <input
-              data-testid="rename-input"
-              class={styles.renameInput}
-              ref={(el) => {
-                el.value = props.collection.name;
-                requestAnimationFrame(() => {
-                  el.focus();
-                  el.select();
-                });
-              }}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter")
-                  handleRenameCommit(e.currentTarget.value);
-                if (e.key === "Escape") props.setRenamingCollectionId(null);
-              }}
-              onBlur={(e) => handleRenameCommit(e.currentTarget.value)}
+            <RenameInput
+              value={props.collection.name}
+              onCommit={handleRenameCommit}
+              onCancel={() => ui.setRenamingCollectionId(null)}
             />
           </Show>
         </button>
@@ -206,7 +172,7 @@ export function CollectionNode(props: {
             aria-label="Add folder"
             title="Add folder"
             onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => props.onAddFolder(props.collection.id, "")}
+            onClick={() => ui.onAddFolder(props.collection.id, "")}
           >
             <FolderPlus size={12} aria-hidden="true" />
           </button>
@@ -216,7 +182,7 @@ export function CollectionNode(props: {
             aria-label="Add request"
             title="Add request"
             onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => props.onAddRequest(props.collection.id, "")}
+            onClick={() => ui.onAddRequest(props.collection.id, "")}
           >
             <Plus size={12} aria-hidden="true" />
           </button>
@@ -227,10 +193,7 @@ export function CollectionNode(props: {
             title="Delete collection"
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() =>
-              props.onDeleteCollection(
-                props.collection.id,
-                props.collection.name,
-              )
+              ui.onDeleteCollection(props.collection.id, props.collection.name)
             }
           >
             <Trash2 size={12} aria-hidden="true" />
@@ -253,15 +216,6 @@ export function CollectionNode(props: {
                   depth={1}
                   sourceParentId=""
                   sourceIndex={index()}
-                  onAddFolder={props.onAddFolder}
-                  onAddRequest={props.onAddRequest}
-                  onDeleteItem={props.onDeleteItem}
-                  onSelectRequest={props.onSelectRequest}
-                  onRenameItem={props.onRenameItem}
-                  onMoveItem={props.onMoveItem}
-                  activeRequestId={props.activeRequestId}
-                  renamingItemId={props.renamingItemId}
-                  setRenamingItemId={props.setRenamingItemId}
                 />
               </>
             )}
