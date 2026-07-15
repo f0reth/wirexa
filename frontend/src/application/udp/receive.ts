@@ -7,6 +7,7 @@ import type {
   UdpReceivedMessage,
 } from "../../domain/udp/types";
 import { errorMessage } from "../../shared/error";
+import { runGuarded } from "../ui/guard";
 import { notify } from "../ui/notifications";
 
 export interface UdpReceiveApi {
@@ -33,12 +34,10 @@ export function createUdpReceiveState(api: UdpReceiveApi) {
   // 起動時にバックエンドの実リスニングセッションを復元する。
   // webview リロード後もバックエンドは受信を継続しているため、UI 状態を実状態に同期する。
   async function refreshListeners(): Promise<void> {
-    try {
+    await runGuarded("Failed to restore listeners", async () => {
       const list = await api.getListeners();
       setSessions(reconcile(list));
-    } catch (err: unknown) {
-      notify.error("Failed to restore listeners", errorMessage(err));
-    }
+    });
   }
 
   async function startListen(): Promise<void> {

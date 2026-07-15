@@ -8,7 +8,7 @@ import {
   Show,
 } from "solid-js";
 import { Portal } from "solid-js/web";
-import { notify } from "../../../application/ui/notifications";
+import { runGuarded } from "../../../application/ui/guard";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { ScrollArea } from "../../../components/ui/scroll-area";
@@ -16,7 +16,6 @@ import {
   DEFAULT_SETTINGS,
   ROOT_COLLECTION_ID,
 } from "../../../domain/http/types";
-import { errorMessage } from "../../../shared/error";
 import {
   useHttpCollections,
   useHttpRequest,
@@ -62,7 +61,7 @@ export function CollectionTree() {
 
   const handleAddRootRequest = async () => {
     setAddMenuOpen(false);
-    try {
+    await runGuarded("Failed to add request", async () => {
       const item = await collectionsCtx.addRequest(ROOT_COLLECTION_ID, "", {
         id: "",
         name: "New Request",
@@ -76,43 +75,35 @@ export function CollectionTree() {
         doc: "",
       });
       if (item?.id) setRenamingItemId(item.id);
-    } catch (err) {
-      notify.error("Failed to add request", errorMessage(err));
-    }
+    });
   };
 
   const handleCreateCollection = async () => {
-    try {
+    await runGuarded("Failed to create collection", async () => {
       const collection =
         await collectionsCtx.createCollection("New Collection");
       if (collection?.id) {
         setRenamingCollectionId(collection.id);
       }
-    } catch (err) {
-      notify.error("Failed to create collection", errorMessage(err));
-    }
+    });
   };
 
   const handleRenameCollection = async (id: string, newName: string) => {
     const trimmed = newName.trim();
     if (!trimmed) return;
-    try {
-      await collectionsCtx.renameCollection(id, trimmed);
-    } catch (err) {
-      notify.error("Failed to rename collection", errorMessage(err));
-    }
+    await runGuarded("Failed to rename collection", () =>
+      collectionsCtx.renameCollection(id, trimmed),
+    );
   };
 
   const handleDeleteCollection = async (id: string) => {
-    try {
-      await collectionsCtx.deleteCollection(id);
-    } catch (err) {
-      notify.error("Failed to delete collection", errorMessage(err));
-    }
+    await runGuarded("Failed to delete collection", () =>
+      collectionsCtx.deleteCollection(id),
+    );
   };
 
   const handleAddFolder = async (collectionId: string, parentId: string) => {
-    try {
+    await runGuarded("Failed to add folder", async () => {
       const item = await collectionsCtx.addFolder(
         collectionId,
         parentId,
@@ -121,13 +112,11 @@ export function CollectionTree() {
       if (item?.id) {
         setRenamingItemId(item.id);
       }
-    } catch (err) {
-      notify.error("Failed to add folder", errorMessage(err));
-    }
+    });
   };
 
   const handleAddRequest = async (collectionId: string, parentId: string) => {
-    try {
+    await runGuarded("Failed to add request", async () => {
       const item = await collectionsCtx.addRequest(collectionId, parentId, {
         id: "",
         name: "New Request",
@@ -143,17 +132,13 @@ export function CollectionTree() {
       if (item?.id) {
         setRenamingItemId(item.id);
       }
-    } catch (err) {
-      notify.error("Failed to add request", errorMessage(err));
-    }
+    });
   };
 
   const handleDeleteItem = async (collectionId: string, itemId: string) => {
-    try {
-      await collectionsCtx.deleteItem(collectionId, itemId);
-    } catch (err) {
-      notify.error("Failed to delete item", errorMessage(err));
-    }
+    await runGuarded("Failed to delete item", () =>
+      collectionsCtx.deleteItem(collectionId, itemId),
+    );
   };
 
   const handleRenameItem = async (
@@ -163,15 +148,13 @@ export function CollectionTree() {
   ) => {
     const trimmed = newName.trim();
     if (!trimmed) return;
-    try {
-      await collectionsCtx.renameItem(collectionId, itemId, trimmed);
-    } catch (err) {
-      notify.error("Failed to rename item", errorMessage(err));
-    }
+    await runGuarded("Failed to rename item", () =>
+      collectionsCtx.renameItem(collectionId, itemId, trimmed),
+    );
   };
 
   const handleDropToSidebar = async (di: DragItem, position: number) => {
-    try {
+    await runGuarded("Failed to move item", async () => {
       if (di.kind === "collection") {
         await collectionsCtx.moveSidebarEntry(
           "collection",
@@ -192,9 +175,7 @@ export function CollectionTree() {
           );
         }
       }
-    } catch (err) {
-      notify.error("Failed to move item", errorMessage(err));
-    }
+    });
   };
 
   const handleMoveItem = async (
@@ -204,17 +185,15 @@ export function CollectionTree() {
     targetParentId: string,
     position: number,
   ) => {
-    try {
-      await collectionsCtx.moveItem(
+    await runGuarded("Failed to move item", () =>
+      collectionsCtx.moveItem(
         sourceCollectionId,
         itemId,
         targetCollectionId,
         targetParentId,
         position,
-      );
-    } catch (err) {
-      notify.error("Failed to move item", errorMessage(err));
-    }
+      ),
+    );
   };
 
   // ドラッグ&ドロップの document レベルハンドラを登録する（ハンドラ定義後に呼ぶ）。

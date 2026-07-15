@@ -1,13 +1,12 @@
 import { clsx } from "clsx";
 import { ChevronLeft, ChevronRight, Save } from "lucide-solid";
 import { onMount, Show } from "solid-js";
-import { notify } from "../../../application/ui/notifications";
+import { runGuarded } from "../../../application/ui/guard";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "../../../components/ui/resizable";
-import { errorMessage } from "../../../shared/error";
 import {
   useOpenApiEditor,
   useOpenApiFiles,
@@ -52,12 +51,10 @@ export function OpenApiClient() {
     const file = e.dataTransfer?.files?.[0];
     if (!file) return;
     e.preventDefault();
-    try {
+    await runGuarded("Failed to open dropped file", async () => {
       const content = await file.text();
       await filesCtx.openDropped(content, file.name);
-    } catch (err) {
-      notify.error("Failed to open dropped file", errorMessage(err));
-    }
+    });
   };
 
   return (

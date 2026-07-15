@@ -16,6 +16,7 @@ import {
   createFilesState,
   type FilesState,
 } from "../../application/openapi/files";
+import { runGuarded } from "../../application/ui/guard";
 import { notify } from "../../application/ui/notifications";
 import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import type { ActiveDoc } from "../../domain/openapi/types";
@@ -114,11 +115,7 @@ export function OpenApiProvider(props: { children: JSX.Element }) {
   }
 
   async function openFile(): Promise<void> {
-    try {
-      await guardSwitch(doOpenFile);
-    } catch (err) {
-      notify.error("Failed to open file", errorMessage(err));
-    }
+    await runGuarded("Failed to open file", () => guardSwitch(doOpenFile));
   }
 
   async function doSelectFile(path: string): Promise<void> {
@@ -133,11 +130,9 @@ export function OpenApiProvider(props: { children: JSX.Element }) {
   }
 
   async function selectFile(path: string): Promise<void> {
-    try {
-      await guardSwitch(() => doSelectFile(path));
-    } catch (err) {
-      notify.error("Failed to open file", errorMessage(err));
-    }
+    await runGuarded("Failed to open file", () =>
+      guardSwitch(() => doSelectFile(path)),
+    );
   }
 
   async function saveActiveFile(): Promise<boolean> {
