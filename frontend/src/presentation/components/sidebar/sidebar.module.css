@@ -445,30 +445,6 @@
   border-radius: 0.25rem;
 }
 
-/* インサーションゾーン: アイテム間の挿入位置を示す */
-.insertionZone {
-  height: 4px;
-  position: relative;
-  margin: 0;
-}
-
-/* ドラッグ中は hover 可能な領域を広げて操作しやすくする */
-.insertionZoneVisible {
-  height: 8px;
-}
-
-.insertionZoneActive::after {
-  content: "";
-  position: absolute;
-  left: 0.5rem;
-  right: 0.5rem;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 2px;
-  background-color: var(--color-primary);
-  border-radius: 1px;
-}
-
 /* ドラッグゴースト: マウスに追従するアイテム名ラベル */
 .dragGhost {
   position: fixed;
@@ -485,12 +461,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   opacity: 0.9;
-}
-
-.dragHandle {
-  color: var(--color-muted-foreground);
-  cursor: grab;
-  flex-shrink: 0;
 }
 
 .listItemDragging {

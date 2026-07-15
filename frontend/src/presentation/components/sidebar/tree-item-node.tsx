@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 import { ChevronRight, Folder, FolderPlus, Plus, Trash2 } from "lucide-solid";
 import { For, Show } from "solid-js";
+import reorderStyles from "../../../components/ui/list-reorder.module.css";
 import type { HttpMethod, TreeItem } from "../../../domain/http/types";
 import { METHOD_COLORS } from "../../constants/http";
 import { useHttpCollections } from "../../providers/http-provider";
@@ -72,9 +73,9 @@ export function InsertionZone(props: {
   return (
     <div
       class={clsx(
-        styles.insertionZone,
-        dragItem() && !isNoOp() && styles.insertionZoneVisible,
-        isActive() && styles.insertionZoneActive,
+        reorderStyles.insertionZone,
+        dragItem() && !isNoOp() && reorderStyles.insertionZoneVisible,
+        isActive() && reorderStyles.insertionZoneActive,
       )}
       style={{ display: isNoOp() ? "none" : undefined }}
       {...{

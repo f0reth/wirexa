@@ -21,3 +21,10 @@
   background-color: var(--color-primary);
   border-radius: 1px;
 }
+
+/* ドラッグハンドル: 並べ替え可能なアイテムのつまみ */
+.dragHandle {
+  color: var(--color-muted-foreground);
+  cursor: grab;
+  flex-shrink: 0;
+}

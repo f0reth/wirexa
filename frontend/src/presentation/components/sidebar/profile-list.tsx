@@ -8,6 +8,7 @@ import {
   createListReorder,
   InsertionZone,
 } from "../../../components/ui/list-reorder";
+import reorderStyles from "../../../components/ui/list-reorder.module.css";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import styles from "./sidebar.module.css";
 
@@ -92,7 +93,7 @@ export function ProfileList<T extends { id: string; name: string }>(
                 >
                   <GripVertical
                     size={12}
-                    class={styles.dragHandle}
+                    class={reorderStyles.dragHandle}
                     aria-hidden="true"
                   />
                   {props.renderContent(item)}

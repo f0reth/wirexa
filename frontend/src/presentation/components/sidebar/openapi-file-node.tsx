@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import { FileCode, Trash2 } from "lucide-solid";
+import reorderStyles from "../../../components/ui/list-reorder.module.css";
 import type { OpenApiFile } from "../../../domain/openapi/types";
 import styles from "./sidebar.module.css";
 
@@ -16,9 +17,9 @@ export function OpenApiInsertionZone(props: {
   return (
     <div
       class={clsx(
-        styles.insertionZone,
-        props.isDragging && styles.insertionZoneVisible,
-        props.isActive && styles.insertionZoneActive,
+        reorderStyles.insertionZone,
+        props.isDragging && reorderStyles.insertionZoneVisible,
+        props.isActive && reorderStyles.insertionZoneActive,
       )}
       {...{
         [OPENAPI_DROP_ZONE_ATTR]: "true",
