@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
+	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 )
 
 // コンパイル時に domain.SidebarLayoutRepository を満たすことを検証
@@ -45,20 +45,5 @@ func (r *SidebarLayoutRepository) Save(layout []domain.SidebarEntry) error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Dir(r.path)
-	tmp, err := os.CreateTemp(dir, ".tmp-sidebar-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err = tmp.Write(data); err != nil {
-		_ = tmp.Close()        //nolint:errcheck // best-effort cleanup
-		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
-		return err
-	}
-	if err = tmp.Close(); err != nil {
-		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
-		return err
-	}
-	return os.Rename(tmpName, r.path)
+	return infra.AtomicWriteFile(r.path, data, 0o600)
 }
