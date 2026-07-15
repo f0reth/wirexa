@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -18,8 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
@@ -197,8 +196,8 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	if err != nil {
 		// context 由来のタイムアウトは "context deadline exceeded" としか出ないため、
 		// ユーザーに意味の伝わる文言へ置き換える。
-		if errors.Is(err, context.DeadlineExceeded) {
-			return domain.HttpResponse{}, fmt.Errorf("request timed out after %s", timeout)
+		if terr := wrapTimeout(err, timeout); terr != nil {
+			return domain.HttpResponse{}, terr
 		}
 		return domain.HttpResponse{}, fmt.Errorf("request failed: %w", err)
 	}
@@ -208,8 +207,8 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 	// その場合はテンポラリファイルを一切作らない。
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return domain.HttpResponse{}, fmt.Errorf("request timed out after %s", timeout)
+		if terr := wrapTimeout(err, timeout); terr != nil {
+			return domain.HttpResponse{}, terr
 		}
 		return domain.HttpResponse{}, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -223,8 +222,8 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 		var peek [1]byte
 		n, rerr := io.ReadFull(resp.Body, peek[:])
 		if rerr != nil && !errors.Is(rerr, io.EOF) && !errors.Is(rerr, io.ErrUnexpectedEOF) {
-			if errors.Is(rerr, context.DeadlineExceeded) {
-				return domain.HttpResponse{}, fmt.Errorf("request timed out after %s", timeout)
+			if terr := wrapTimeout(rerr, timeout); terr != nil {
+				return domain.HttpResponse{}, terr
 			}
 			return domain.HttpResponse{}, fmt.Errorf("failed to read response: %w", rerr)
 		}
@@ -233,8 +232,8 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 			bodyTruncated = true
 			written, capped, serr := c.spillToTempFile(req.ID, body, peek[:n], resp.Body)
 			if serr != nil {
-				if errors.Is(serr, context.DeadlineExceeded) {
-					return domain.HttpResponse{}, fmt.Errorf("request timed out after %s", timeout)
+				if terr := wrapTimeout(serr, timeout); terr != nil {
+					return domain.HttpResponse{}, terr
 				}
 				return domain.HttpResponse{}, serr
 			}
@@ -250,12 +249,7 @@ func (c *NetClient) Do(ctx context.Context, req domain.HttpRequest) (domain.Http
 
 	respContentType := resp.Header.Get("Content-Type")
 	// 非 UTF-8 のバイナリボディは string 変換で壊れるため base64 で渡す。
-	bodyStr := string(body)
-	bodyBase64 := false
-	if !utf8.Valid(body) {
-		bodyStr = base64.StdEncoding.EncodeToString(body)
-		bodyBase64 = true
-	}
+	bodyStr, bodyBase64 := cmn.EncodeMaybeBase64(body)
 
 	return domain.HttpResponse{
 		StatusCode:    resp.StatusCode,
@@ -397,6 +391,16 @@ func newTransport(s domain.RequestSettings) *http.Transport {
 		t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // ユーザーが明示的に設定した場合のみ有効
 	}
 	return t
+}
+
+// wrapTimeout はエラーが context のデッドライン超過由来なら
+// ユーザーに意味の伝わる文言へ置き換える。それ以外は nil を返し、
+// 呼び出し側で個別のラップを続けさせる。
+func wrapTimeout(err error, timeout time.Duration) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("request timed out after %s", timeout)
+	}
+	return nil
 }
 
 func resolveTimeout(s domain.RequestSettings) time.Duration {
