@@ -37,8 +37,17 @@ const jsonUrl = () => `http://127.0.0.1:${server.port}/json`;
 /** バックエンドに保存されているリクエストの URL を読む (自動保存の完了判定に使う)。 */
 const savedUrl = (page: Page, requestName: RegExp) =>
   page.evaluate(async (name) => {
-    // biome-ignore lint/suspicious/noExplicitAny: Wails が注入する window.go に型は無い
-    const handler = (window as any).go.adapters.HttpHandler;
+    // Wails が window.go へ注入するバインディング。生成された .d.ts から型を借りることで、
+    // Go 側の rename に追従できていない場合は tsc で落ちる。
+    const handler = (
+      window as unknown as {
+        go: {
+          adapters: {
+            HTTPHandler: typeof import("../../../wailsjs/go/adapters/HTTPHandler");
+          };
+        };
+      }
+    ).go.adapters.HTTPHandler;
     const collections = await handler.GetCollections();
     for (const c of collections) {
       for (const item of c.items ?? []) {
