@@ -3,16 +3,8 @@ import { For, Show } from "solid-js";
 import { Button } from "../../../components/ui/button";
 import { createCopyButton } from "../../../components/ui/copy-button";
 import { useUdpReceive } from "../../providers/udp-provider";
+import { formatTime } from "../../utils/format";
 import styles from "./udp.module.css";
-
-function formatTime(timestamp: number): string {
-  const d = new Date(timestamp);
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  const ss = String(d.getSeconds()).padStart(2, "0");
-  const ms = String(d.getMilliseconds()).padStart(3, "0");
-  return `${hh}:${mm}:${ss}.${ms}`;
-}
 
 export function MessageLog() {
   const { messages, clearMessages } = useUdpReceive();

@@ -3,10 +3,10 @@ import { createMemo, Show } from "solid-js";
 import { Badge } from "../../../../components/ui/badge";
 import { createCopyButton } from "../../../../components/ui/copy-button";
 import { useMqttMessages } from "../../../providers/mqtt-provider";
+import { formatJson, formatTime } from "../../../utils/format";
 import { HexView } from "../../shared/hex-view";
 import styles from "../messages.module.css";
 import base from "../mqtt.module.css";
-import { formatPayload, formatTime } from "../utils";
 
 export function MessageDetail() {
   const { selectedMessage } = useMqttMessages();
@@ -20,8 +20,8 @@ export function MessageDetail() {
         }
       >
         {(msg) => {
-          const formattedPayload = createMemo(() =>
-            formatPayload(msg().payload),
+          const formattedPayload = createMemo(
+            () => formatJson(msg().payload) ?? msg().payload,
           );
           const formattedTime = createMemo(() => formatTime(msg().timestamp));
           const { copy, isCopied } = createCopyButton();

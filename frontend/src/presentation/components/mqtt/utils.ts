@@ -1,19 +1,3 @@
-export function formatTime(date: Date): string {
-  return date.toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
-
-export function formatPayload(payload: string): string {
-  try {
-    return JSON.stringify(JSON.parse(payload), null, 2);
-  } catch {
-    return payload;
-  }
-}
-
 const topicColorCache = new Map<string, string>();
 
 export function getTopicColor(topic: string): string {

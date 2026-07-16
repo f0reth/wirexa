@@ -7,10 +7,11 @@ import {
   useMqttMessages,
   useMqttSubscribe,
 } from "../../../providers/mqtt-provider";
+import { formatTime } from "../../../utils/format";
 import { base64ByteLength } from "../../shared/hex-view";
 import styles from "../messages.module.css";
 import base from "../mqtt.module.css";
-import { formatTime, getTopicColor } from "../utils";
+import { getTopicColor } from "../utils";
 
 export function MessagesPanel() {
   const {

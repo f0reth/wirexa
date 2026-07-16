@@ -9,6 +9,7 @@ import {
   saveResponseBody,
 } from "../../../infrastructure/http/client";
 import { useHttpRequest } from "../../providers/http-provider";
+import { formatJson } from "../../utils/format";
 import { highlightJson } from "../../utils/json-highlight";
 import { HexView } from "../shared/hex-view";
 import styles from "./http.module.css";
@@ -70,12 +71,8 @@ export function ResponseViewer() {
     if (!isJsonContentType(ct) || body.length > HIGHLIGHT_SIZE_LIMIT) {
       return { text: body, html: null as string | null };
     }
-    let formatted: string;
-    try {
-      formatted = JSON.stringify(JSON.parse(body), null, 2);
-    } catch {
-      return { text: body, html: null as string | null };
-    }
+    const formatted = formatJson(body);
+    if (formatted === null) return { text: body, html: null as string | null };
     return { text: formatted, html: highlightJson(formatted) };
   });
 
