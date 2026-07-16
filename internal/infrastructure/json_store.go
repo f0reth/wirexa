@@ -91,12 +91,8 @@ func (s *JSONStore[T]) logf(msg string, args ...any) {
 // Save はアイテムを JSON ファイルに書き込む。
 // tmp ファイル経由の原子的置き換えで書き込み中断によるデータ破損を防ぐ。
 func (s *JSONStore[T]) Save(item *T) error {
-	data, err := json.MarshalIndent(item, "", "  ")
-	if err != nil {
-		return err
-	}
 	dest := filepath.Join(s.dir, s.getID(item)+".json")
-	return AtomicWriteFile(dest, data, 0o600)
+	return WriteJSONFile(dest, item, 0o600)
 }
 
 // Delete はアイテムの JSON ファイルを削除する。

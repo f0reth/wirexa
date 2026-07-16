@@ -1,5 +1,7 @@
 package httpdomain
 
+import cmn "github.com/f0reth/Wirexa/internal/domain"
+
 // RequestAuth はリクエスト認証情報を表す。
 type RequestAuth struct {
 	Type     string `json:"type"`     // "none" | "basic" | "bearer"
@@ -178,25 +180,13 @@ func (c *Collection) AppendItem(parentID string, item *TreeItem) bool {
 // parentID が見つからない、またはフォルダでない場合は false を返す。
 func (c *Collection) InsertItem(parentID string, item *TreeItem, position int) bool {
 	if parentID == "" {
-		c.Items = insertAt(c.Items, item, position)
+		c.Items = cmn.InsertAt(c.Items, item, position)
 		return true
 	}
 	parent, _, ok := findNode(parentID, c.Items, nil)
 	if !ok || parent.Type != ItemTypeFolder {
 		return false
 	}
-	parent.Children = insertAt(parent.Children, item, position)
+	parent.Children = cmn.InsertAt(parent.Children, item, position)
 	return true
-}
-
-// insertAt はスライスの指定インデックスにアイテムを挿入する。
-// position が負または範囲外の場合は末尾に追加する。
-func insertAt(items []*TreeItem, item *TreeItem, position int) []*TreeItem {
-	if position < 0 || position >= len(items) {
-		return append(items, item)
-	}
-	items = append(items, nil)
-	copy(items[position+1:], items[position:])
-	items[position] = item
-	return items
 }

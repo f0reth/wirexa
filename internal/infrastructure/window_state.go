@@ -31,9 +31,5 @@ func LoadWindowState(path string) (WindowState, bool) {
 
 // SaveWindowState は現在のウィンドウ状態を JSON へ原子的に書き出す。
 func SaveWindowState(path string, s WindowState) error {
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-	return AtomicWriteFile(path, data, 0o600)
+	return WriteJSONFile(path, s, 0o600)
 }

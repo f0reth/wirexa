@@ -75,7 +75,7 @@ func (l *SidebarLayoutService) Move(kind, id string, position int) error {
 	}
 	entry := layout[srcIdx]
 	layout = append(layout[:srcIdx], layout[srcIdx+1:]...)
-	return l.repo.Save(insertEntryAt(layout, entry, position))
+	return l.repo.Save(cmn.InsertAt(layout, entry, position))
 }
 
 // InsertItem はアイテムエントリをレイアウトの指定位置に挿入する。
@@ -87,7 +87,7 @@ func (l *SidebarLayoutService) InsertItem(itemID string, position int) error {
 		return err
 	}
 	entry := domain.SidebarEntry{Kind: sidebarKindItem, ID: itemID}
-	return l.repo.Save(insertEntryAt(layout, entry, position))
+	return l.repo.Save(cmn.InsertAt(layout, entry, position))
 }
 
 // GetOrInit はレイアウトを返す。空の場合は computeInitial で初期値を生成して保存する。
@@ -122,15 +122,4 @@ func (l *SidebarLayoutService) GetOrInit(computeInitial func() []domain.SidebarE
 		return nil, fmt.Errorf("failed to save initial sidebar layout: %w", err)
 	}
 	return initial, nil
-}
-
-// insertEntryAt はエントリをスライスの指定位置に挿入する。範囲外なら末尾に追加する。
-func insertEntryAt(layout []domain.SidebarEntry, entry domain.SidebarEntry, position int) []domain.SidebarEntry {
-	if position < 0 || position >= len(layout) {
-		return append(layout, entry)
-	}
-	layout = append(layout, domain.SidebarEntry{})
-	copy(layout[position+1:], layout[position:])
-	layout[position] = entry
-	return layout
 }

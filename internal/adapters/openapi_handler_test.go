@@ -127,22 +127,65 @@ func TestRemoveRecentRevokesGrant(t *testing.T) {
 	}
 }
 
-func TestMoveRecentReorders(t *testing.T) {
+// newRecentsABC は /a.yaml /b.yaml /c.yaml をこの順で登録したハンドラを返す。
+func newRecentsABC(t *testing.T) *OpenAPIHandler {
+	t.Helper()
 	h, _ := newTestHandler(t)
 	for _, p := range []string{"/a.yaml", "/b.yaml", "/c.yaml"} {
 		if err := h.recents.add(p, filepath.Base(p)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	// c を先頭へ。
-	if err := h.MoveRecent("/c.yaml", 0); err != nil {
-		t.Fatalf("MoveRecent: %v", err)
-	}
+	return h
+}
+
+// assertRecentOrder は GetRecents の並びと Order の振り直しを検証する。
+func assertRecentOrder(t *testing.T, h *OpenAPIHandler, want ...string) {
+	t.Helper()
 	got := h.GetRecents()
-	want := []string{"/c.yaml", "/a.yaml", "/b.yaml"}
+	if len(got) != len(want) {
+		t.Fatalf("GetRecents len = %d, want %d (%+v)", len(got), len(want), got)
+	}
 	for i, w := range want {
 		if got[i].Path != w || got[i].Order != i {
 			t.Fatalf("order[%d] = %+v, want path %s order %d", i, got[i], w, i)
 		}
 	}
+}
+
+func TestMoveRecentReorders(t *testing.T) {
+	h := newRecentsABC(t)
+	// c を先頭へ。
+	if err := h.MoveRecent("/c.yaml", 0); err != nil {
+		t.Fatalf("MoveRecent: %v", err)
+	}
+	assertRecentOrder(t, h, "/c.yaml", "/a.yaml", "/b.yaml")
+}
+
+// index は対象を取り除いた後のスライスに対する位置なので、3 件から 1 件抜いた
+// len == 2 がちょうど末尾を指す。
+func TestMoveRecentIndexAtLenAppendsToEnd(t *testing.T) {
+	h := newRecentsABC(t)
+	if err := h.MoveRecent("/a.yaml", 2); err != nil {
+		t.Fatalf("MoveRecent: %v", err)
+	}
+	assertRecentOrder(t, h, "/b.yaml", "/c.yaml", "/a.yaml")
+}
+
+func TestMoveRecentIndexBeyondLenAppendsToEnd(t *testing.T) {
+	h := newRecentsABC(t)
+	if err := h.MoveRecent("/a.yaml", 99); err != nil {
+		t.Fatalf("MoveRecent: %v", err)
+	}
+	assertRecentOrder(t, h, "/b.yaml", "/c.yaml", "/a.yaml")
+}
+
+// 負の index は末尾に追加する。domain.InsertAt が定める挿入契約であり、
+// insertAt / insertEntryAt 由来の 2 箇所と揃えるために先頭挿入から変更した。
+func TestMoveRecentNegativeIndexAppendsToEnd(t *testing.T) {
+	h := newRecentsABC(t)
+	if err := h.MoveRecent("/a.yaml", -1); err != nil {
+		t.Fatalf("MoveRecent: %v", err)
+	}
+	assertRecentOrder(t, h, "/b.yaml", "/c.yaml", "/a.yaml")
 }

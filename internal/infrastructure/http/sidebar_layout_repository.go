@@ -41,9 +41,5 @@ func (r *SidebarLayoutRepository) Load() ([]domain.SidebarEntry, error) {
 // Save はレイアウトをファイルに書き込む。
 // tmp ファイル経由の原子的置き換えで書き込み中断によるデータ破損を防ぐ。
 func (r *SidebarLayoutRepository) Save(layout []domain.SidebarEntry) error {
-	data, err := json.MarshalIndent(layout, "", "  ")
-	if err != nil {
-		return err
-	}
-	return infra.AtomicWriteFile(r.path, data, 0o600)
+	return infra.WriteJSONFile(r.path, layout, 0o600)
 }

@@ -148,15 +148,7 @@ func (s *openapiRecentStore) move(path string, index int) error {
 	}
 	item := s.items[from]
 	s.items = append(s.items[:from], s.items[from+1:]...)
-	if index < 0 {
-		index = 0
-	}
-	if index > len(s.items) {
-		index = len(s.items)
-	}
-	s.items = append(s.items, OpenAPIRecent{})
-	copy(s.items[index+1:], s.items[index:])
-	s.items[index] = item
+	s.items = cmn.InsertAt(s.items, item, index)
 	s.reindexLocked()
 	return s.persistLocked()
 }
@@ -170,9 +162,5 @@ func (s *openapiRecentStore) reindexLocked() {
 
 // persistLocked は現在の一覧を JSON へ原子的に書き出す。呼び出し側で lock 済み。
 func (s *openapiRecentStore) persistLocked() error {
-	data, err := json.MarshalIndent(s.items, "", "  ")
-	if err != nil {
-		return err
-	}
-	return infra.AtomicWriteFile(s.path, data, 0o600)
+	return infra.WriteJSONFile(s.path, s.items, 0o600)
 }
