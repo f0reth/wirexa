@@ -1,6 +1,17 @@
 package httpdomain
 
-import cmn "github.com/f0reth/Wirexa/internal/domain"
+import (
+	"net/url"
+	"strings"
+
+	cmn "github.com/f0reth/Wirexa/internal/domain"
+)
+
+// BodyType 定数のうち、行編集 UI を持つ form 系ボディの種別。
+const (
+	BodyTypeFormData       = "form-data"
+	BodyTypeFormURLEncoded = "form-urlencoded"
+)
 
 // RequestAuth はリクエスト認証情報を表す。
 type RequestAuth struct {
@@ -43,9 +54,103 @@ type KeyValuePair struct {
 }
 
 // RequestBody はリクエストボディを表す。
+// FormData / FormURLEncoded は form 系ボディの編集状態（行）を保持し、
+// ワイヤ形式は送信時に生成する。Contents は form 系以外のボディ本文と、
+// Forms 導入前に保存された旧データの復元元を兼ねる。
+//
+// 行を map[string][]KeyValuePair でまとめないのは Wails のバインディング生成が
+// map[string][]Struct を壊すため（asMap 経路が `new Array(rows)` で行配列を
+// 二重配列にする）。body type ごとに独立したスライスとして持つ。
 type RequestBody struct {
-	Contents map[string]string `json:"contents"`
-	Type     string            `json:"type"`
+	Contents       map[string]string `json:"contents"`
+	FormData       []KeyValuePair    `json:"formData,omitempty"`
+	FormURLEncoded []KeyValuePair    `json:"formUrlEncoded,omitempty"`
+	Type           string            `json:"type"`
+}
+
+// formPairsFor は body type に対応する行スライスへのポインタを返す。
+// form 系以外の body type では nil を返す。
+func (b *RequestBody) formPairsFor(bodyType string) *[]KeyValuePair {
+	switch bodyType {
+	case BodyTypeFormData:
+		return &b.FormData
+	case BodyTypeFormURLEncoded:
+		return &b.FormURLEncoded
+	}
+	return nil
+}
+
+// FormPairs は現在の Type に対応するフォーム行を返す。form 系以外では nil。
+func (b *RequestBody) FormPairs() []KeyValuePair {
+	if dst := b.formPairsFor(b.Type); dst != nil {
+		return *dst
+	}
+	return nil
+}
+
+// NormalizeForms は行フィールド導入前に保存されたリクエストを移行する。
+// 行が未設定で Contents に旧 urlencoded 文字列が残っている場合のみ復元し、
+// 移行後は Contents 側の form 系キーを削除して正を一本化する。
+// キーを消さないと「全行を削除した」状態が行なしと区別できず、
+// 再読み込み時に旧文字列から行が復活してしまう。
+func (b *RequestBody) NormalizeForms() {
+	for _, bodyType := range []string{BodyTypeFormData, BodyTypeFormURLEncoded} {
+		dst := b.formPairsFor(bodyType)
+		if content := b.Contents[bodyType]; *dst == nil && content != "" {
+			*dst = ParseFormPairs(content)
+		}
+		delete(b.Contents, bodyType)
+	}
+}
+
+// ParseFormPairs は application/x-www-form-urlencoded 文字列を行へ復元する。
+// url.ParseQuery と違い map を経由しないため、入力の行順と重複キーをそのまま保つ。
+func ParseFormPairs(content string) []KeyValuePair {
+	if content == "" {
+		return nil
+	}
+	segments := strings.Split(content, "&")
+	pairs := make([]KeyValuePair, 0, len(segments))
+	for _, segment := range segments {
+		if segment == "" {
+			continue
+		}
+		key, value, _ := strings.Cut(segment, "=")
+		pairs = append(pairs, KeyValuePair{
+			Key:     unescapeFormComponent(key),
+			Value:   unescapeFormComponent(value),
+			Enabled: true,
+		})
+	}
+	return pairs
+}
+
+// EncodeFormPairs は有効な行を application/x-www-form-urlencoded 文字列へ変換する。
+// url.Values.Encode() を使わないのはキー名でソートされ UI の行順が失われるため。
+func EncodeFormPairs(pairs []KeyValuePair) string {
+	var sb strings.Builder
+	for _, p := range pairs {
+		if !p.Enabled || p.Key == "" {
+			continue
+		}
+		if sb.Len() > 0 {
+			sb.WriteByte('&')
+		}
+		sb.WriteString(url.QueryEscape(p.Key))
+		sb.WriteByte('=')
+		sb.WriteString(url.QueryEscape(p.Value))
+	}
+	return sb.String()
+}
+
+// unescapeFormComponent は urlencoded の 1 要素をデコードする。
+// 不正なエスケープを含む入力でも移行を失敗させず、生の文字列として扱う。
+func unescapeFormComponent(s string) string {
+	decoded, err := url.QueryUnescape(s)
+	if err != nil {
+		return s
+	}
+	return decoded
 }
 
 // HTTPResponse は HTTP レスポンスを表す。

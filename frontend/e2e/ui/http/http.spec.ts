@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { expect, test } from "../../fixtures/ui";
 
 test.beforeEach(async ({ page }) => {
@@ -75,6 +76,89 @@ test("switching body type to Form Data shows key-value editor", async ({
   await bodyPanel.getByRole("button", { name: "Form Data" }).click();
 
   await expect(bodyPanel.getByRole("button", { name: "Add" })).toBeVisible();
+});
+
+// ボディタイプを選択して Body タブの key-value エディタを開く。
+async function openFormBody(page: Page, bodyTypeLabel: string) {
+  await page.getByRole("tab", { name: "Body" }).click();
+  const bodyPanel = page.locator("#tabpanel-body");
+  await bodyPanel.getByRole("button").first().click();
+  await bodyPanel.getByRole("button", { name: bodyTypeLabel }).click();
+  return bodyPanel;
+}
+
+// 行は文字列へ直列化して導出し直していたため、空キー行が直列化で捨てられ
+// Add が無反応になっていた。行が実体の state であることを担保する回帰テスト。
+for (const bodyTypeLabel of ["Form Data", "Form URL Encoded"]) {
+  test(`can add rows to ${bodyTypeLabel} body`, async ({ page }) => {
+    const bodyPanel = await openFormBody(page, bodyTypeLabel);
+    const addButton = bodyPanel.getByRole("button", { name: "Add" });
+
+    await expect(bodyPanel.getByPlaceholder("Field")).toHaveCount(0);
+
+    await addButton.click();
+    await expect(bodyPanel.getByPlaceholder("Field")).toHaveCount(1);
+
+    await addButton.click();
+    await expect(bodyPanel.getByPlaceholder("Field")).toHaveCount(2);
+
+    const fields = bodyPanel.getByPlaceholder("Field");
+    await fields.nth(0).fill("username");
+    await fields.nth(1).fill("password");
+    await expect(fields.nth(0)).toHaveValue("username");
+    await expect(fields.nth(1)).toHaveValue("password");
+  });
+}
+
+// チェックボックスは行の有効/無効を切り替えるものであり、行を削除してはいけない。
+test("unchecking a Form Data row disables it without removing it", async ({
+  page,
+}) => {
+  const bodyPanel = await openFormBody(page, "Form Data");
+
+  await bodyPanel.getByRole("button", { name: "Add" }).click();
+  await bodyPanel.getByPlaceholder("Field").fill("token");
+
+  const checkbox = bodyPanel.getByRole("checkbox");
+  await expect(checkbox).toBeChecked();
+  await checkbox.uncheck();
+
+  await expect(checkbox).not.toBeChecked();
+  await expect(bodyPanel.getByPlaceholder("Field")).toHaveCount(1);
+  await expect(bodyPanel.getByPlaceholder("Field")).toHaveValue("token");
+});
+
+// キーを空にしても値ごと行が消えてはいけない。
+test("clearing the key of a Form Data row keeps the row", async ({ page }) => {
+  const bodyPanel = await openFormBody(page, "Form Data");
+
+  await bodyPanel.getByRole("button", { name: "Add" }).click();
+  await bodyPanel.getByPlaceholder("Field").fill("k");
+  await bodyPanel.getByPlaceholder("Value").fill("kept");
+
+  await bodyPanel.getByPlaceholder("Field").fill("");
+
+  await expect(bodyPanel.getByPlaceholder("Field")).toHaveCount(1);
+  await expect(bodyPanel.getByPlaceholder("Value")).toHaveValue("kept");
+});
+
+// form-data と form-urlencoded は独立した行を持ち、切り替えで互いを壊さない。
+test("Form Data and Form URL Encoded keep independent rows", async ({
+  page,
+}) => {
+  const bodyPanel = await openFormBody(page, "Form Data");
+  await bodyPanel.getByRole("button", { name: "Add" }).click();
+  await bodyPanel.getByPlaceholder("Field").fill("from-form-data");
+
+  await openFormBody(page, "Form URL Encoded");
+  await expect(bodyPanel.getByPlaceholder("Field")).toHaveCount(0);
+  await bodyPanel.getByRole("button", { name: "Add" }).click();
+  await bodyPanel.getByPlaceholder("Field").fill("from-urlencoded");
+
+  await openFormBody(page, "Form Data");
+  await expect(bodyPanel.getByPlaceholder("Field")).toHaveValue(
+    "from-form-data",
+  );
 });
 
 test("switching body type back to none hides the editor", async ({ page }) => {

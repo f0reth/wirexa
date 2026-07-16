@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -672,17 +673,46 @@ func TestHTTP_SendRequest_Auth(t *testing.T) {
 // TestHTTP_SendRequest_BodyTypes は各ボディタイプで Content-Type ヘッダーが自動付与されることを確認する。
 func TestHTTP_SendRequest_BodyTypes(t *testing.T) {
 	tests := []struct {
-		bodyType string
-		content  string
-		wantCT   string
+		name   string
+		body   httpdomain.RequestBody
+		wantCT string
 	}{
-		{"json", `{"k":"v"}`, "application/json"},
-		{"text", "hello text", "text/plain"},
-		{"form-urlencoded", "k=v", "application/x-www-form-urlencoded"},
+		{
+			name:   "json",
+			body:   contentsBody("json", `{"k":"v"}`),
+			wantCT: "application/json",
+		},
+		{
+			name:   "text",
+			body:   contentsBody("text", "hello text"),
+			wantCT: "text/plain",
+		},
+		{
+			name: "form-urlencoded",
+			body: httpdomain.RequestBody{
+				Type:           httpdomain.BodyTypeFormURLEncoded,
+				FormURLEncoded: []httpdomain.KeyValuePair{{Key: "k", Value: "v", Enabled: true}},
+			},
+			wantCT: "application/x-www-form-urlencoded",
+		},
+		{
+			name: "form-data",
+			body: httpdomain.RequestBody{
+				Type:     httpdomain.BodyTypeFormData,
+				FormData: []httpdomain.KeyValuePair{{Key: "k", Value: "v", Enabled: true}},
+			},
+			wantCT: "multipart/form-data; boundary=",
+		},
+		// 行フィールド導入前に保存されたリクエストは Contents の文字列から移行される。
+		{
+			name:   "form-urlencoded (旧データ)",
+			body:   contentsBody(httpdomain.BodyTypeFormURLEncoded, "k=v"),
+			wantCT: "application/x-www-form-urlencoded",
+		},
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.bodyType, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			var gotCT string
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				gotCT = r.Header.Get("Content-Type")
@@ -694,10 +724,7 @@ func TestHTTP_SendRequest_BodyTypes(t *testing.T) {
 			_, err := h.SendRequest(httpdomain.HTTPRequest{
 				Method: "POST",
 				URL:    srv.URL,
-				Body: httpdomain.RequestBody{
-					Type:     tc.bodyType,
-					Contents: map[string]string{tc.bodyType: tc.content},
-				},
+				Body:   tc.body,
 			})
 			if err != nil {
 				t.Fatalf("SendRequest: %v", err)
@@ -706,6 +733,160 @@ func TestHTTP_SendRequest_BodyTypes(t *testing.T) {
 				t.Errorf("Content-Type = %q, want prefix %q", gotCT, tc.wantCT)
 			}
 		})
+	}
+}
+
+func contentsBody(bodyType, content string) httpdomain.RequestBody {
+	return httpdomain.RequestBody{
+		Type:     bodyType,
+		Contents: map[string]string{bodyType: content},
+	}
+}
+
+// formRows は送信ボディの検証に使う代表的な行を返す。
+// 無効行と空キー行はワイヤに載ってはならない。
+func formRows() []httpdomain.KeyValuePair {
+	return []httpdomain.KeyValuePair{
+		{Key: "z", Value: "first", Enabled: true},
+		{Key: "a", Value: "second", Enabled: true},
+		{Key: "disabled", Value: "no", Enabled: false},
+		{Key: "", Value: "orphan", Enabled: true},
+	}
+}
+
+// TestHTTP_SendRequest_FormURLEncodedBody は urlencoded ボディが行順を保ち、
+// 無効行・空キー行を除外して送信されることを確認する。
+func TestHTTP_SendRequest_FormURLEncodedBody(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	h := newHTTPHandler(t)
+	_, err := h.SendRequest(httpdomain.HTTPRequest{
+		Method: "POST",
+		URL:    srv.URL,
+		Body: httpdomain.RequestBody{
+			Type:           httpdomain.BodyTypeFormURLEncoded,
+			FormURLEncoded: formRows(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendRequest: %v", err)
+	}
+
+	// url.Values.Encode() を使うとキー名でソートされ "a=second&z=first" になる。
+	// UI の行順が送信順であることを保証する。
+	if want := "z=first&a=second"; gotBody != want {
+		t.Errorf("body = %q, want %q", gotBody, want)
+	}
+}
+
+// TestHTTP_SendRequest_FormDataBody は form-data が multipart として組み立てられ、
+// サーバー側で各フィールドが読めることを確認する。
+func TestHTTP_SendRequest_FormDataBody(t *testing.T) {
+	var gotForm map[string][]string
+	var parseErr error
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if parseErr = r.ParseMultipartForm(1 << 20); parseErr == nil {
+			gotForm = r.MultipartForm.Value
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	h := newHTTPHandler(t)
+	_, err := h.SendRequest(httpdomain.HTTPRequest{
+		Method: "POST",
+		URL:    srv.URL,
+		Body: httpdomain.RequestBody{
+			Type:     httpdomain.BodyTypeFormData,
+			FormData: formRows(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendRequest: %v", err)
+	}
+	if parseErr != nil {
+		t.Fatalf("ParseMultipartForm: %v", parseErr)
+	}
+
+	if got := gotForm["z"]; len(got) != 1 || got[0] != "first" {
+		t.Errorf(`field "z" = %v, want ["first"]`, got)
+	}
+	if got := gotForm["a"]; len(got) != 1 || got[0] != "second" {
+		t.Errorf(`field "a" = %v, want ["second"]`, got)
+	}
+	if _, ok := gotForm["disabled"]; ok {
+		t.Error("無効行が送信されている")
+	}
+	if _, ok := gotForm[""]; ok {
+		t.Error("空キー行が送信されている")
+	}
+}
+
+// TestHTTP_SendRequest_FormDataOverridesUserContentType は、ユーザーが Content-Type を
+// 指定しても multipart の boundary 付きヘッダーが優先されることを確認する。
+// boundary は送信時に採番するためユーザーには書けず、尊重するとボディが解釈不能になる。
+func TestHTTP_SendRequest_FormDataOverridesUserContentType(t *testing.T) {
+	var gotCT string
+	var parseErr error
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCT = r.Header.Get("Content-Type")
+		parseErr = r.ParseMultipartForm(1 << 20)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	h := newHTTPHandler(t)
+	_, err := h.SendRequest(httpdomain.HTTPRequest{
+		Method:  "POST",
+		URL:     srv.URL,
+		Headers: []httpdomain.KeyValuePair{{Key: "Content-Type", Value: "text/plain", Enabled: true}},
+		Body: httpdomain.RequestBody{
+			Type:     httpdomain.BodyTypeFormData,
+			FormData: []httpdomain.KeyValuePair{{Key: "k", Value: "v", Enabled: true}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendRequest: %v", err)
+	}
+	if !strings.HasPrefix(gotCT, "multipart/form-data; boundary=") {
+		t.Errorf("Content-Type = %q, want multipart with boundary", gotCT)
+	}
+	if parseErr != nil {
+		t.Fatalf("ParseMultipartForm: %v", parseErr)
+	}
+}
+
+// TestHTTP_SendRequest_FormURLEncodedKeepsUserContentType は urlencoded では
+// ユーザー指定の Content-Type を尊重する（form-data のような上書きをしない）ことを確認する。
+func TestHTTP_SendRequest_FormURLEncodedKeepsUserContentType(t *testing.T) {
+	var gotCT string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCT = r.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	h := newHTTPHandler(t)
+	_, err := h.SendRequest(httpdomain.HTTPRequest{
+		Method:  "POST",
+		URL:     srv.URL,
+		Headers: []httpdomain.KeyValuePair{{Key: "Content-Type", Value: "application/custom", Enabled: true}},
+		Body: httpdomain.RequestBody{
+			Type:           httpdomain.BodyTypeFormURLEncoded,
+			FormURLEncoded: []httpdomain.KeyValuePair{{Key: "k", Value: "v", Enabled: true}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendRequest: %v", err)
+	}
+	if gotCT != "application/custom" {
+		t.Errorf("Content-Type = %q, want %q", gotCT, "application/custom")
 	}
 }
 

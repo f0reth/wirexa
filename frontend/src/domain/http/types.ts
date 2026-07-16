@@ -10,6 +10,9 @@ export interface KeyValuePair {
   enabled: boolean;
 }
 
+// form 系ボディの行は contents の文字列ではなく専用フィールドで保持する。
+// 文字列を正にすると空キー行・無効行を表現できず編集中に行が消えるため、
+// ワイヤ形式（urlencoded / multipart）は Go 側が送信時に生成する。
 export interface RequestBody {
   type: "none" | "json" | "text" | "form-urlencoded" | "form-data" | "file";
   contents: Partial<
@@ -18,6 +21,20 @@ export interface RequestBody {
       string
     >
   >;
+  formData?: KeyValuePair[];
+  formUrlEncoded?: KeyValuePair[];
+}
+
+// body type と行フィールドの対応。form 系以外は行を持たない。
+export const FORM_PAIR_FIELDS = {
+  "form-data": "formData",
+  "form-urlencoded": "formUrlEncoded",
+} as const satisfies Partial<Record<BodyType, keyof RequestBody>>;
+
+export type FormBodyType = keyof typeof FORM_PAIR_FIELDS;
+
+export function isFormBodyType(v: BodyType): v is FormBodyType {
+  return v in FORM_PAIR_FIELDS;
 }
 
 export type AuthType = "none" | "basic" | "bearer";

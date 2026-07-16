@@ -44,6 +44,7 @@ func NewCollectionService(repo domain.CollectionRepository, layoutRepo domain.Si
 	}
 	for i := range cols {
 		c := cols[i]
+		normalizeItemForms(c.Items)
 		svc.cache[c.ID] = &c
 	}
 	if _, ok := svc.cache[domain.RootCollectionID]; !ok {
@@ -63,6 +64,19 @@ func NewCollectionService(repo domain.CollectionRepository, layoutRepo domain.Si
 	}
 
 	return svc, nil
+}
+
+// normalizeItemForms はツリーを再帰的に走査し、各リクエストの form 系ボディを移行する。
+// 読み込み直後にキャッシュ全体へ適用することで、GetCollections / GetRootItems /
+// 送信のいずれの経路でも行が復元済みであることを保証する。
+// __root__ もキャッシュに載るため、ルート直下のリクエストも対象になる。
+func normalizeItemForms(items []*domain.TreeItem) {
+	for _, item := range items {
+		if item.Request != nil {
+			item.Request.Body.NormalizeForms()
+		}
+		normalizeItemForms(item.Children)
+	}
 }
 
 // GetCollections は全コレクションを名前順で返す（__root__ を除く）。

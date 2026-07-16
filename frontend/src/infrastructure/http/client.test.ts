@@ -256,6 +256,28 @@ describe("sendRequest", () => {
       "network error",
     );
   });
+
+  // Wails 生成型への変換で form 行が壊れないことを担保する。
+  // 行を map[string][]KeyValuePair で持たせると生成側の asMap 経路が
+  // `new Array(rows)` で行配列を二重配列にするため、フィールド分割している。
+  it("passes form pairs through to the backend intact", async () => {
+    vi.mocked(Handler.SendRequest).mockResolvedValue(
+      makeWailsResponse() as never,
+    );
+    const formData = [
+      { key: "z", value: "first", enabled: true },
+      { key: "", value: "orphan", enabled: true },
+      { key: "disabled", value: "no", enabled: false },
+    ];
+
+    await sendRequest({
+      ...makeDomainRequest(),
+      body: { type: "form-data" as const, contents: {}, formData },
+    });
+
+    const sent = vi.mocked(Handler.SendRequest).mock.calls[0][0];
+    expect(sent.body.formData).toEqual(formData);
+  });
 });
 
 describe("getCollections", () => {
@@ -271,6 +293,31 @@ describe("getCollections", () => {
     ]);
     const result = await getCollections();
     expect(result).toEqual([{ id: "col-1", name: "My Collection", items: [] }]);
+  });
+
+  // 旧データの行復元は Go 側のロード時に完了しているため、ここは素通しでよい。
+  it("keeps form pairs when mapping a request from the backend", async () => {
+    const formUrlEncoded = [
+      { key: "a", value: "1", enabled: true },
+      { key: "b", value: "2", enabled: false },
+    ];
+    vi.mocked(Handler.GetCollections).mockResolvedValue([
+      makeWailsCollection({
+        items: [
+          makeWailsTreeItem({
+            type: "request",
+            request: makeWailsRequest({
+              body: { type: "form-urlencoded", contents: {}, formUrlEncoded },
+            }),
+          }),
+        ],
+      }) as never,
+    ]);
+
+    const result = await getCollections();
+    expect(result[0].items[0].request?.body.formUrlEncoded).toEqual(
+      formUrlEncoded,
+    );
   });
 
   it("maps proxyMode 'none' correctly via fromWailsRequestSettings", async () => {

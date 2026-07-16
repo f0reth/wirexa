@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -133,9 +134,17 @@ func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTP
 	}
 	parsedURL.RawQuery = q.Encode()
 
+	// 旧データが Contents に urlencoded 文字列を持つ場合に備えて行へ復元する。
+	// SendRequest はフロントが組み立てたリクエストを直接受け取り、
+	// 移行済みのコレクションキャッシュを経由しないためここでも正規化する。
+	req.Body.NormalizeForms()
+
 	bodyContent := req.Body.Contents[req.Body.Type]
 	var bodyReader io.Reader
 	contentType := ""
+	// multipart は boundary が Content-Type に載るため、ユーザー指定ヘッダに
+	// 上書きさせてはいけない（後段の Set/既存優先の分岐で使う）。
+	forceContentType := false
 	switch req.Body.Type {
 	case "json":
 		bodyReader = strings.NewReader(bodyContent)
@@ -143,11 +152,26 @@ func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTP
 	case "text":
 		bodyReader = strings.NewReader(bodyContent)
 		contentType = "text/plain"
-	case "form-urlencoded":
-		bodyReader = strings.NewReader(bodyContent)
+	case domain.BodyTypeFormURLEncoded:
+		bodyReader = strings.NewReader(domain.EncodeFormPairs(req.Body.FormPairs()))
 		contentType = "application/x-www-form-urlencoded"
-	case "form-data":
-		bodyReader = strings.NewReader(bodyContent)
+	case domain.BodyTypeFormData:
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		for _, p := range req.Body.FormPairs() {
+			if !p.Enabled || p.Key == "" {
+				continue
+			}
+			if err = mw.WriteField(p.Key, p.Value); err != nil {
+				return domain.HTTPResponse{}, fmt.Errorf("failed to write form field: %w", err)
+			}
+		}
+		if err = mw.Close(); err != nil {
+			return domain.HTTPResponse{}, fmt.Errorf("failed to close multipart writer: %w", err)
+		}
+		bodyReader = &buf
+		contentType = mw.FormDataContentType()
+		forceContentType = true
 	case "file":
 		if bodyContent != "" {
 			var fileData []byte
@@ -182,7 +206,11 @@ func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTP
 	case "bearer":
 		httpReq.Header.Set("Authorization", "Bearer "+req.Auth.Token)
 	}
-	if contentType != "" && httpReq.Header.Get("Content-Type") == "" {
+	// 通常はユーザーが Headers タブで指定した Content-Type を尊重する。
+	// ただし multipart は送信時に採番した boundary を Content-Type に載せる必要があり、
+	// ユーザー指定値では boundary が失われてボディが解釈不能になるため上書きする
+	// （Auth が Authorization を上書きするのと同じ扱い）。
+	if contentType != "" && (forceContentType || httpReq.Header.Get("Content-Type") == "") {
 		httpReq.Header.Set("Content-Type", contentType)
 	}
 

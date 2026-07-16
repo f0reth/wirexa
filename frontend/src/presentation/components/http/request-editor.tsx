@@ -1,8 +1,4 @@
-import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
-import {
-  parseFormPairs,
-  serializeFormPairs,
-} from "../../../application/http/form-pairs";
+import { createSignal, Match, Show, Switch } from "solid-js";
 import { Input } from "../../../components/ui/input";
 import {
   Select,
@@ -13,7 +9,12 @@ import {
 } from "../../../components/ui/select";
 import { TabList, TabPanel } from "../../../components/ui/tabs";
 import { Textarea } from "../../../components/ui/textarea";
-import type { AuthType, BodyType } from "../../../domain/http/types";
+import type {
+  AuthType,
+  BodyType,
+  KeyValuePair,
+} from "../../../domain/http/types";
+import { FORM_PAIR_FIELDS, isFormBodyType } from "../../../domain/http/types";
 import { openFilePicker } from "../../../infrastructure/http/client";
 import { AUTH_TYPES, BODY_TYPES } from "../../constants/http";
 import { useHttpRequest } from "../../providers/http-provider";
@@ -24,6 +25,9 @@ import { KeyValueEditor } from "./key-value-editor";
 import { RequestSettingsPanel } from "./request-settings-panel";
 
 const JSON_BODY_DEFAULT = '{\n  "": ""\n}';
+
+// 行が無いときに毎回新しい配列を作らないよう、空配列の同一性を固定する。
+const EMPTY_PAIRS: KeyValuePair[] = [];
 
 const TABS = [
   { value: "params", label: "Params" },
@@ -60,6 +64,24 @@ export function RequestEditor() {
       ...body(),
       contents: { ...body().contents, [body().type]: content },
     });
+
+  // form 系の行は body の専用フィールドそのものを読み書きする。
+  // 文字列へ畳んで導出し直すと空キー行が直列化で落ちて Add が効かなくなるため、
+  // Params/Headers と同じく実体の state を KeyValueEditor に直結させる。
+  const formField = () => {
+    const type = body().type;
+    return isFormBodyType(type) ? FORM_PAIR_FIELDS[type] : null;
+  };
+  const isFormBody = () => formField() !== null;
+  const formPairs = () => {
+    const field = formField();
+    return field ? (body()[field] ?? EMPTY_PAIRS) : EMPTY_PAIRS;
+  };
+  const setFormPairs = (pairs: KeyValuePair[]) => {
+    const field = formField();
+    if (!field) return;
+    setBody({ ...body(), [field]: pairs });
+  };
 
   const [requestTab, setRequestTab] = createSignal("params");
 
@@ -124,62 +146,52 @@ export function RequestEditor() {
             </div>
 
             <Show when={body().type !== "none"}>
-              {(() => {
-                const isForm = () =>
-                  body().type === "form-urlencoded" ||
-                  body().type === "form-data";
-                const formPairs = createMemo(() =>
-                  isForm() ? parseFormPairs(bodyContent()) : [],
-                );
-                return (
-                  <Switch>
-                    <Match when={body().type === "file"}>
-                      <div class={styles.filePickerRow}>
-                        <Input
-                          value={bodyContent()}
-                          placeholder="No file selected"
-                          onInput={(e) => setBodyContent(e.currentTarget.value)}
-                          class={styles.filePathInput}
-                        />
-                        <button
-                          type="button"
-                          class={styles.fileBrowseButton}
-                          onClick={async () => {
-                            const path = await openFilePicker();
-                            if (path) {
-                              setBodyContent(path);
-                            }
-                          }}
-                        >
-                          Browse...
-                        </button>
-                      </div>
-                    </Match>
-                    <Match when={isForm()}>
-                      <KeyValueEditor
-                        pairs={formPairs()}
-                        onChange={(pairs) =>
-                          setBodyContent(serializeFormPairs(pairs))
+              <Switch>
+                <Match when={body().type === "file"}>
+                  <div class={styles.filePickerRow}>
+                    <Input
+                      value={bodyContent()}
+                      placeholder="No file selected"
+                      onInput={(e) => setBodyContent(e.currentTarget.value)}
+                      class={styles.filePathInput}
+                    />
+                    <button
+                      type="button"
+                      class={styles.fileBrowseButton}
+                      onClick={async () => {
+                        const path = await openFilePicker();
+                        if (path) {
+                          setBodyContent(path);
                         }
-                      />
-                    </Match>
-                    <Match when={body().type === "json"}>
-                      <JsonBodyEditor
-                        value={bodyContent()}
-                        onChange={(content) => setBodyContent(content)}
-                      />
-                    </Match>
-                    <Match when={true}>
-                      <Textarea
-                        value={bodyContent()}
-                        onInput={(e) => setBodyContent(e.currentTarget.value)}
-                        placeholder="Enter body content..."
-                        class={styles.bodyTextarea}
-                      />
-                    </Match>
-                  </Switch>
-                );
-              })()}
+                      }}
+                    >
+                      Browse...
+                    </button>
+                  </div>
+                </Match>
+                <Match when={isFormBody()}>
+                  <KeyValueEditor
+                    pairs={formPairs()}
+                    onChange={setFormPairs}
+                    keyPlaceholder="Field"
+                    valuePlaceholder="Value"
+                  />
+                </Match>
+                <Match when={body().type === "json"}>
+                  <JsonBodyEditor
+                    value={bodyContent()}
+                    onChange={(content) => setBodyContent(content)}
+                  />
+                </Match>
+                <Match when={true}>
+                  <Textarea
+                    value={bodyContent()}
+                    onInput={(e) => setBodyContent(e.currentTarget.value)}
+                    placeholder="Enter body content..."
+                    class={styles.bodyTextarea}
+                  />
+                </Match>
+              </Switch>
             </Show>
           </div>
         </TabPanel>

@@ -79,7 +79,9 @@ function fromWailsRequestBody(body: httpdomain.RequestBody): RequestBody {
   if (!isBodyType(body.type)) {
     throw new Error(`Unknown body type: ${body.type}`);
   }
+  // 旧データの行復元は Go 側のロード時に済んでいるため、ここでは素通しする。
   return {
+    ...body,
     type: body.type,
     contents: (body.contents ?? {}) as RequestBody["contents"],
   };
