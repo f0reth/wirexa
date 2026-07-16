@@ -1,7 +1,10 @@
 package udpdomain
 
 import (
+	"errors"
 	"testing"
+
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 )
 
 func TestDecodeFixedLengthPayload_SingleField(t *testing.T) {
@@ -357,6 +360,132 @@ func TestDecodePayload_Fixed_SpaceSeparated(t *testing.T) {
 	want := []byte{0xAA, 0xBB, 0xCC}
 	if !bytesEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// TestEncodeFixedField_ErrorMessages はエラー文言が UI にそのまま出るため、
+// 型名と書式が崩れていないことを確認する。
+func TestEncodeFixedField_ErrorMessages(t *testing.T) {
+	tests := []struct {
+		name  string
+		want  string
+		field FixedLengthField
+	}{
+		{
+			name:  "numeric parse failure names the field type",
+			field: FixedLengthField{Name: "f", FieldType: FieldTypeUint16, Value: "abc"},
+			want:  `field 'f': invalid uint16: strconv.ParseUint: parsing "abc": invalid syntax`,
+		},
+		{
+			name:  "numeric overflow names the field type",
+			field: FixedLengthField{Name: "count", FieldType: FieldTypeUint8, Value: "256"},
+			want:  `field 'count': invalid uint8: strconv.ParseUint: parsing "256": value out of range`,
+		},
+		{
+			name:  "float parse failure names the field type",
+			field: FixedLengthField{Name: "ratio", FieldType: FieldTypeFloat32, Value: "x"},
+			want:  `field 'ratio': invalid float32: strconv.ParseFloat: parsing "x": invalid syntax`,
+		},
+		{
+			name:  "string length must be positive",
+			field: FixedLengthField{Name: "hdr", FieldType: FieldTypeString, Length: 0, Value: "a"},
+			want:  `field 'hdr': length must be > 0`,
+		},
+		{
+			name:  "string rejects non-ASCII",
+			field: FixedLengthField{Name: "hdr", FieldType: FieldTypeString, Length: 4, Value: "あ"},
+			want:  `field 'hdr': character 'あ' is not single-byte (ASCII only)`,
+		},
+		{
+			name:  "string exceeding length reports both sizes",
+			field: FixedLengthField{Name: "hdr", FieldType: FieldTypeString, Length: 2, Value: "hello"},
+			want:  `field 'hdr': data (5 bytes) exceeds length 2`,
+		},
+		{
+			name:  "bytes rejects invalid hex",
+			field: FixedLengthField{Name: "raw", FieldType: FieldTypeBytes, Length: 4, Value: "ZZ"},
+			want:  `field 'raw': invalid hex: encoding/hex: invalid byte: U+005A 'Z'`,
+		},
+		{
+			name:  "bytes exceeding length reports both sizes",
+			field: FixedLengthField{Name: "raw", FieldType: FieldTypeBytes, Length: 2, Value: "aabbcc"},
+			want:  `field 'raw': data (3 bytes) exceeds length 2`,
+		},
+		{
+			name:  "unknown field type is echoed back",
+			field: FixedLengthField{Name: "f", FieldType: "nope", Value: "1"},
+			want:  `field 'f': unknown field type: nope`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := &FixedLengthPayload{Fields: []FixedLengthField{tt.field}}
+			_, err := DecodeFixedLengthPayload(payload, EndiannessBig)
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			var vErr *cmn.ValidationError
+			if !errors.As(err, &vErr) {
+				t.Fatalf("expected *cmn.ValidationError, got %T", err)
+			}
+			if vErr.Field != "fixedLengthPayload" {
+				t.Errorf("Field = %q, want %q", vErr.Field, "fixedLengthPayload")
+			}
+			if vErr.Message != tt.want {
+				t.Errorf("Message = %q, want %q", vErr.Message, tt.want)
+			}
+		})
+	}
+}
+
+// TestEncodeFixedField_LengthMatchesFieldTypeByteSize は、エンコード結果の長さと
+// FieldTypeByteSize が単一のテーブルから導かれていることを全数値型で確認する。
+func TestEncodeFixedField_LengthMatchesFieldTypeByteSize(t *testing.T) {
+	numericTypes := []FieldType{
+		FieldTypeUint8, FieldTypeUint16, FieldTypeUint32, FieldTypeUint64,
+		FieldTypeInt8, FieldTypeInt16, FieldTypeInt32, FieldTypeInt64,
+		FieldTypeFloat32, FieldTypeFloat64,
+	}
+	for _, ft := range numericTypes {
+		t.Run(string(ft), func(t *testing.T) {
+			size := FieldTypeByteSize(ft)
+			if size <= 0 {
+				t.Fatalf("FieldTypeByteSize(%q) = %d, want a positive size", ft, size)
+			}
+			// Length はわざと型サイズと矛盾させ、数値型では無視されることも確かめる。
+			payload := &FixedLengthPayload{
+				Fields: []FixedLengthField{{Name: "f", FieldType: ft, Value: "1", Length: 99}},
+			}
+			got, err := DecodeFixedLengthPayload(payload, EndiannessBig)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != size {
+				t.Errorf("encoded length = %d, want %d (FieldTypeByteSize)", len(got), size)
+			}
+		})
+	}
+}
+
+func TestPadTo(t *testing.T) {
+	tests := []struct {
+		name   string
+		data   []byte
+		want   []byte
+		length int
+	}{
+		{name: "pads with zeros", data: []byte{0xAA}, length: 3, want: []byte{0xAA, 0x00, 0x00}},
+		{name: "exact length is unchanged", data: []byte{0xAA, 0xBB}, length: 2, want: []byte{0xAA, 0xBB}},
+		{name: "longer than length is returned as-is", data: []byte{1, 2, 3}, length: 2, want: []byte{1, 2, 3}},
+		{name: "empty input", data: []byte{}, length: 2, want: []byte{0x00, 0x00}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := padTo(tt.data, tt.length); !bytesEqual(got, tt.want) {
+				t.Errorf("padTo() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

@@ -32,19 +32,12 @@ const (
 )
 
 // FieldTypeByteSize は数値型の固定バイトサイズを返す。可変長型（string, bytes）は -1 を返す。
+// サイズの定義元は encoding.go の numericFieldSpecs で、エンコード処理と同じテーブルを読む。
 func FieldTypeByteSize(t FieldType) int {
-	switch t {
-	case FieldTypeUint8, FieldTypeInt8:
-		return 1
-	case FieldTypeUint16, FieldTypeInt16:
-		return 2
-	case FieldTypeUint32, FieldTypeInt32, FieldTypeFloat32:
-		return 4
-	case FieldTypeUint64, FieldTypeInt64, FieldTypeFloat64:
-		return 8
-	default:
-		return -1
+	if spec, ok := numericFieldSpecs[t]; ok {
+		return spec.size
 	}
+	return -1
 }
 
 // Endianness はバイトオーダーを表す。

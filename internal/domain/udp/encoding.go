@@ -58,12 +58,7 @@ func DecodePayload(payload string, encoding PayloadEncoding, messageLength int) 
 		if len(data) > messageLength {
 			return nil, &cmn.ValidationError{Field: fieldPayload, Message: "payload exceeds messageLength"}
 		}
-		if len(data) < messageLength {
-			padded := make([]byte, messageLength)
-			copy(padded, data)
-			data = padded
-		}
-		return data, nil
+		return padTo(data, messageLength), nil
 	default:
 		return nil, &cmn.ValidationError{Field: "encoding", Message: "unknown: " + string(encoding)}
 	}
@@ -93,151 +88,150 @@ func DecodeFixedLengthPayload(payload *FixedLengthPayload, endianness Endianness
 	return result, nil
 }
 
+// numericKind は数値型フィールドの符号種別を表す。parse の呼び分けに使う。
+type numericKind int
+
+const (
+	kindUint numericKind = iota
+	kindInt
+	kindFloat
+)
+
+// numericSpec は数値型フィールドのバイトサイズと符号種別を保持する。
+type numericSpec struct {
+	size int
+	kind numericKind
+}
+
+// numericFieldSpecs は数値型フィールドのバイトサイズと符号種別を定義する唯一のテーブル。
+// encodeNumericField と FieldTypeByteSize の双方がこれを読む。
+var numericFieldSpecs = map[FieldType]numericSpec{
+	FieldTypeUint8:   {size: 1, kind: kindUint},
+	FieldTypeUint16:  {size: 2, kind: kindUint},
+	FieldTypeUint32:  {size: 4, kind: kindUint},
+	FieldTypeUint64:  {size: 8, kind: kindUint},
+	FieldTypeInt8:    {size: 1, kind: kindInt},
+	FieldTypeInt16:   {size: 2, kind: kindInt},
+	FieldTypeInt32:   {size: 4, kind: kindInt},
+	FieldTypeInt64:   {size: 8, kind: kindInt},
+	FieldTypeFloat32: {size: 4, kind: kindFloat},
+	FieldTypeFloat64: {size: 8, kind: kindFloat},
+}
+
 func encodeFixedField(field FixedLengthField, byteOrder binary.ByteOrder) ([]byte, error) {
 	switch field.FieldType {
 	case FieldTypeString, "":
-		return encodeStringField(field)
+		return encodeVariableField(field, decodeASCII)
 	case FieldTypeBytes:
-		return encodeBytesField(field)
-	case FieldTypeUint8:
-		v, err := strconv.ParseUint(field.Value, 10, 8)
-		if err != nil {
-			return nil, fixedFieldErr(field.Name, "invalid uint8: "+err.Error())
-		}
-		return []byte{uint8(v)}, nil
-	case FieldTypeUint16:
-		v, err := strconv.ParseUint(field.Value, 10, 16)
-		if err != nil {
-			return nil, fixedFieldErr(field.Name, "invalid uint16: "+err.Error())
-		}
-		buf := make([]byte, 2)
-		byteOrder.PutUint16(buf, uint16(v))
-		return buf, nil
-	case FieldTypeUint32:
-		v, err := strconv.ParseUint(field.Value, 10, 32)
-		if err != nil {
-			return nil, fixedFieldErr(field.Name, "invalid uint32: "+err.Error())
-		}
-		buf := make([]byte, 4)
-		byteOrder.PutUint32(buf, uint32(v))
-		return buf, nil
-	case FieldTypeUint64:
-		v, err := strconv.ParseUint(field.Value, 10, 64)
-		if err != nil {
-			return nil, fixedFieldErr(field.Name, "invalid uint64: "+err.Error())
-		}
-		buf := make([]byte, 8)
-		byteOrder.PutUint64(buf, v)
-		return buf, nil
-	case FieldTypeInt8:
-		v, err := strconv.ParseInt(field.Value, 10, 8)
-		if err != nil {
-			return nil, fixedFieldErr(field.Name, "invalid int8: "+err.Error())
-		}
-		return []byte{byte(v)}, nil //nolint:gosec // ParseInt(10, 8) で -128〜127 が保証済み
-	case FieldTypeInt16:
-		v, err := strconv.ParseInt(field.Value, 10, 16)
-		if err != nil {
-			return nil, fixedFieldErr(field.Name, "invalid int16: "+err.Error())
-		}
-		buf := make([]byte, 2)
-		byteOrder.PutUint16(buf, uint16(v)) //nolint:gosec // ParseInt(10, 16) でビット幅が保証済み
-		return buf, nil
-	case FieldTypeInt32:
-		v, err := strconv.ParseInt(field.Value, 10, 32)
-		if err != nil {
-			return nil, fixedFieldErr(field.Name, "invalid int32: "+err.Error())
-		}
-		buf := make([]byte, 4)
-		byteOrder.PutUint32(buf, uint32(v)) //nolint:gosec // ParseInt(10, 32) でビット幅が保証済み
-		return buf, nil
-	case FieldTypeInt64:
-		v, err := strconv.ParseInt(field.Value, 10, 64)
-		if err != nil {
-			return nil, fixedFieldErr(field.Name, "invalid int64: "+err.Error())
-		}
-		buf := make([]byte, 8)
-		byteOrder.PutUint64(buf, uint64(v)) //nolint:gosec // ParseInt(10, 64) でビット幅が保証済み
-		return buf, nil
-	case FieldTypeFloat32:
-		v, err := strconv.ParseFloat(field.Value, 32)
-		if err != nil {
-			return nil, fixedFieldErr(field.Name, "invalid float32: "+err.Error())
-		}
-		buf := make([]byte, 4)
-		byteOrder.PutUint32(buf, math.Float32bits(float32(v)))
-		return buf, nil
-	case FieldTypeFloat64:
-		v, err := strconv.ParseFloat(field.Value, 64)
-		if err != nil {
-			return nil, fixedFieldErr(field.Name, "invalid float64: "+err.Error())
-		}
-		buf := make([]byte, 8)
-		byteOrder.PutUint64(buf, math.Float64bits(v))
-		return buf, nil
-	default:
-		return nil, fixedFieldErr(field.Name, "unknown field type: "+string(field.FieldType))
+		return encodeVariableField(field, decodeHex)
 	}
+	if spec, ok := numericFieldSpecs[field.FieldType]; ok {
+		return encodeNumericField(field, spec, byteOrder)
+	}
+	return nil, fixedFieldErr(field.Name, "unknown field type: "+string(field.FieldType))
 }
 
-func encodeStringField(field FixedLengthField) ([]byte, error) {
-	if field.Length <= 0 {
-		return nil, &cmn.ValidationError{
-			Field:   fieldFixedLengthPayload,
-			Message: fmt.Sprintf("field '%s': length must be > 0", field.Name),
+// encodeNumericField は数値型フィールドを spec.size バイトのバイト列に変換する。
+// field.Length は数値型では参照しない (サイズは型が決める)。
+func encodeNumericField(field FixedLengthField, spec numericSpec, byteOrder binary.ByteOrder) ([]byte, error) {
+	bits := spec.size * 8
+	var raw uint64
+	switch spec.kind {
+	case kindUint:
+		v, err := strconv.ParseUint(field.Value, 10, bits)
+		if err != nil {
+			return nil, invalidValueErr(field, err)
+		}
+		raw = v
+	case kindInt:
+		v, err := strconv.ParseInt(field.Value, 10, bits)
+		if err != nil {
+			return nil, invalidValueErr(field, err)
+		}
+		// 負値は 2 の補数として下位ビットに残り、putUint の切り詰めで型幅に収まる
+		raw = uint64(v) //nolint:gosec // ビットパターンの再解釈が目的であり値の大小は意味を持たない
+	case kindFloat:
+		v, err := strconv.ParseFloat(field.Value, bits)
+		if err != nil {
+			return nil, invalidValueErr(field, err)
+		}
+		if spec.size == 4 {
+			raw = uint64(math.Float32bits(float32(v)))
+		} else {
+			raw = math.Float64bits(v)
 		}
 	}
+	return putUint(raw, spec.size, byteOrder), nil
+}
+
+// invalidValueErr は parse 失敗を "field 'x': invalid uint16: ..." 形式のエラーにする。
+// 型名は FieldType の文字列値をそのまま使う。
+func invalidValueErr(field FixedLengthField, err error) *cmn.ValidationError {
+	return fixedFieldErr(field.Name, "invalid "+string(field.FieldType)+": "+err.Error())
+}
+
+// putUint は raw の下位 size バイトを byteOrder に従って書き出す。
+// size は numericFieldSpecs の値 (1/2/4/8) のみを想定する。
+func putUint(raw uint64, size int, byteOrder binary.ByteOrder) []byte {
+	buf := make([]byte, size)
+	switch size {
+	case 1:
+		buf[0] = byte(raw) //nolint:gosec // bitSize=8 の parse 結果であり下位 8 ビットのみが有効
+	case 2:
+		byteOrder.PutUint16(buf, uint16(raw)) //nolint:gosec // bitSize=16 の parse 結果でビット幅が保証済み
+	case 4:
+		byteOrder.PutUint32(buf, uint32(raw)) //nolint:gosec // bitSize=32 の parse 結果でビット幅が保証済み
+	case 8:
+		byteOrder.PutUint64(buf, raw)
+	}
+	return buf
+}
+
+// encodeVariableField は可変長フィールド (string / bytes) を field.Length バイトに整える。
+// 型ごとの差分は decode のみ。
+func encodeVariableField(field FixedLengthField, decode func(FixedLengthField) ([]byte, error)) ([]byte, error) {
+	if field.Length <= 0 {
+		return nil, fixedFieldErr(field.Name, "length must be > 0")
+	}
+	data, err := decode(field)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > field.Length {
+		return nil, fixedFieldErr(field.Name, fmt.Sprintf("data (%d bytes) exceeds length %d", len(data), field.Length))
+	}
+	return padTo(data, field.Length), nil
+}
+
+func decodeASCII(field FixedLengthField) ([]byte, error) {
 	data := make([]byte, 0, len(field.Value))
 	for _, r := range field.Value {
 		if r > 0x7F {
-			return nil, &cmn.ValidationError{
-				Field:   fieldFixedLengthPayload,
-				Message: fmt.Sprintf("field '%s': character '%c' is not single-byte (ASCII only)", field.Name, r),
-			}
+			return nil, fixedFieldErr(field.Name, fmt.Sprintf("character '%c' is not single-byte (ASCII only)", r))
 		}
 		data = append(data, byte(r)) //nolint:gosec // r <= 0x7F が保証済み
-	}
-	if len(data) > field.Length {
-		return nil, &cmn.ValidationError{
-			Field:   fieldFixedLengthPayload,
-			Message: fmt.Sprintf("field '%s': data (%d bytes) exceeds length %d", field.Name, len(data), field.Length),
-		}
-	}
-	if len(data) < field.Length {
-		padded := make([]byte, field.Length)
-		copy(padded, data)
-		data = padded
 	}
 	return data, nil
 }
 
-func encodeBytesField(field FixedLengthField) ([]byte, error) {
-	if field.Length <= 0 {
-		return nil, &cmn.ValidationError{
-			Field:   fieldFixedLengthPayload,
-			Message: fmt.Sprintf("field '%s': length must be > 0", field.Name),
-		}
-	}
+func decodeHex(field FixedLengthField) ([]byte, error) {
 	cleaned := strings.ReplaceAll(field.Value, " ", "")
 	data, err := hex.DecodeString(cleaned)
 	if err != nil {
-		return nil, &cmn.ValidationError{
-			Field:   fieldFixedLengthPayload,
-			Message: fmt.Sprintf("field '%s': invalid hex: %s", field.Name, err.Error()),
-		}
-	}
-	if len(data) > field.Length {
-		return nil, &cmn.ValidationError{
-			Field:   fieldFixedLengthPayload,
-			Message: fmt.Sprintf("field '%s': data (%d bytes) exceeds length %d", field.Name, len(data), field.Length),
-		}
-	}
-	if len(data) < field.Length {
-		padded := make([]byte, field.Length)
-		copy(padded, data)
-		data = padded
+		return nil, fixedFieldErr(field.Name, "invalid hex: "+err.Error())
 	}
 	return data, nil
+}
+
+// padTo は data を length バイトまで 0x00 で右パディングする。
+// len(data) >= length なら data をそのまま返す。
+func padTo(data []byte, length int) []byte {
+	if len(data) >= length {
+		return data
+	}
+	padded := make([]byte, length)
+	copy(padded, data)
+	return padded
 }
 
 func fixedFieldErr(name, message string) *cmn.ValidationError {
