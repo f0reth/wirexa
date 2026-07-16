@@ -3,8 +3,7 @@ import { FileCode, Trash2 } from "lucide-solid";
 import reorderStyles from "../../../components/ui/list-reorder.module.css";
 import type { OpenApiFile } from "../../../domain/openapi/types";
 import styles from "./sidebar.module.css";
-
-const LONG_PRESS_MS = 250;
+import { makeLongPressDragHandlers } from "./use-long-press-drag";
 
 export const OPENAPI_DROP_ZONE_ATTR = "data-openapi-drop-zone";
 export const OPENAPI_DROP_INDEX_ATTR = "data-openapi-drop-index";
@@ -29,51 +28,6 @@ export function OpenApiInsertionZone(props: {
   );
 }
 
-export function makeDragHandlers(
-  fileId: string,
-  suppressRef: { suppress: boolean },
-  onDragStart: (id: string, x: number, y: number) => void,
-) {
-  const handleMouseDown = (e: MouseEvent) => {
-    if (e.button !== 0) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
-
-    const activate = (x: number, y: number) => {
-      suppressRef.suppress = true;
-      onDragStart(fileId, x, y);
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-    };
-
-    const handleMove = (me: MouseEvent) => {
-      const dx = me.clientX - startX;
-      const dy = me.clientY - startY;
-      if (Math.sqrt(dx * dx + dy * dy) > 5) {
-        clearTimeout(timer);
-        activate(me.clientX, me.clientY);
-      }
-    };
-
-    const handleUp = () => {
-      clearTimeout(timer);
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-    };
-
-    const timer = setTimeout(() => {
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-      activate(startX, startY);
-    }, LONG_PRESS_MS);
-
-    document.addEventListener("mousemove", handleMove);
-    document.addEventListener("mouseup", handleUp);
-  };
-
-  return { handleMouseDown };
-}
-
 export function OpenApiFileNode(props: {
   file: OpenApiFile;
   isActive: boolean;
@@ -82,10 +36,8 @@ export function OpenApiFileNode(props: {
   onDragStart: (path: string, x: number, y: number) => void;
 }) {
   const suppressRef = { suppress: false };
-  const { handleMouseDown } = makeDragHandlers(
-    props.file.path,
-    suppressRef,
-    props.onDragStart,
+  const { handleMouseDown } = makeLongPressDragHandlers(suppressRef, (x, y) =>
+    props.onDragStart(props.file.path, x, y),
   );
 
   return (

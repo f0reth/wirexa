@@ -9,8 +9,7 @@ import { dragItem, dropTarget, setDragItem, setGhostPos } from "./drag-state";
 import { RenameInput } from "./rename-input";
 import styles from "./sidebar.module.css";
 import { useTreeUi } from "./tree-ui-context";
-
-const LONG_PRESS_MS = 250;
+import { makeLongPressDragHandlers } from "./use-long-press-drag";
 
 export const DROP_ZONE_ATTR = "data-drop-zone";
 export const DROP_COLLECTION_ID_ATTR = "data-drop-collection-id";
@@ -89,63 +88,6 @@ export function InsertionZone(props: {
   );
 }
 
-/** 長押し（LONG_PRESS_MS）またはマウス移動5px超でドラッグ開始する */
-export function makeDragHandlers(
-  collectionId: string,
-  itemId: string,
-  name: string,
-  sourceParentId: string,
-  getSourceIndex: () => number,
-  suppressRef: { suppress: boolean },
-) {
-  const handleMouseDown = (e: MouseEvent) => {
-    if (e.button !== 0) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
-
-    const activate = (x: number, y: number) => {
-      suppressRef.suppress = true;
-      setDragItem({
-        kind: "item",
-        collectionId,
-        itemId,
-        name,
-        sourceParentId,
-        sourceIndex: getSourceIndex(),
-      });
-      setGhostPos({ x, y });
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-    };
-
-    const handleMove = (me: MouseEvent) => {
-      const dx = me.clientX - startX;
-      const dy = me.clientY - startY;
-      if (Math.sqrt(dx * dx + dy * dy) > 5) {
-        clearTimeout(timer);
-        activate(me.clientX, me.clientY);
-      }
-    };
-
-    const handleUp = () => {
-      clearTimeout(timer);
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-    };
-
-    const timer = setTimeout(() => {
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-      activate(startX, startY);
-    }, LONG_PRESS_MS);
-
-    document.addEventListener("mousemove", handleMove);
-    document.addEventListener("mouseup", handleUp);
-  };
-
-  return { handleMouseDown };
-}
-
 export function TreeItemNode(props: {
   item: TreeItem;
   collectionId: string;
@@ -159,17 +101,24 @@ export function TreeItemNode(props: {
   const toggleExpanded = () =>
     collectionsCtx.setExpanded(props.item.id, !expanded());
 
+  // folder / request の両分岐で同じペイロードを積むため 1 箇所にまとめる。
+  const dragHandlers = (suppressRef: { suppress: boolean }) =>
+    makeLongPressDragHandlers(suppressRef, (x, y) => {
+      setDragItem({
+        kind: "item",
+        collectionId: props.collectionId,
+        itemId: props.item.id,
+        name: props.item.name,
+        sourceParentId: props.sourceParentId,
+        sourceIndex: props.sourceIndex,
+      });
+      setGhostPos({ x, y });
+    });
+
   if (props.item.type === "folder") {
     const isRenaming = () => ui.renamingItemId() === props.item.id;
     const suppressRef = { suppress: false };
-    const { handleMouseDown } = makeDragHandlers(
-      props.collectionId,
-      props.item.id,
-      props.item.name,
-      props.sourceParentId,
-      () => props.sourceIndex,
-      suppressRef,
-    );
+    const { handleMouseDown } = dragHandlers(suppressRef);
 
     const handleRenameCommit = (value: string) => {
       if (!isRenaming()) return;
@@ -310,14 +259,7 @@ export function TreeItemNode(props: {
   const isActive = () => ui.activeRequestId() === props.item.id;
   const isRenaming = () => ui.renamingItemId() === props.item.id;
   const suppressRef = { suppress: false };
-  const { handleMouseDown } = makeDragHandlers(
-    props.collectionId,
-    props.item.id,
-    props.item.name,
-    props.sourceParentId,
-    () => props.sourceIndex,
-    suppressRef,
-  );
+  const { handleMouseDown } = dragHandlers(suppressRef);
 
   const handleRenameCommit = (value: string) => {
     if (!isRenaming()) return;

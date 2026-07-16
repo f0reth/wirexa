@@ -14,60 +14,7 @@ import {
   TreeItemNode,
 } from "./tree-item-node";
 import { useTreeUi } from "./tree-ui-context";
-
-const LONG_PRESS_MS = 250;
-
-function makeCollectionDragHandlers(
-  collectionId: string,
-  name: string,
-  getSourceIndex: () => number,
-  suppressRef: { suppress: boolean },
-) {
-  const handleMouseDown = (e: MouseEvent) => {
-    if (e.button !== 0) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
-
-    const activate = (x: number, y: number) => {
-      suppressRef.suppress = true;
-      setDragItem({
-        kind: "collection",
-        collectionId,
-        name,
-        sourceIndex: getSourceIndex(),
-      });
-      setGhostPos({ x, y });
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-    };
-
-    const handleMove = (me: MouseEvent) => {
-      const dx = me.clientX - startX;
-      const dy = me.clientY - startY;
-      if (Math.sqrt(dx * dx + dy * dy) > 5) {
-        clearTimeout(timer);
-        activate(me.clientX, me.clientY);
-      }
-    };
-
-    const handleUp = () => {
-      clearTimeout(timer);
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-    };
-
-    const timer = setTimeout(() => {
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-      activate(startX, startY);
-    }, LONG_PRESS_MS);
-
-    document.addEventListener("mousemove", handleMove);
-    document.addEventListener("mouseup", handleUp);
-  };
-
-  return { handleMouseDown };
-}
+import { makeLongPressDragHandlers } from "./use-long-press-drag";
 
 export function CollectionNode(props: {
   collection: Collection;
@@ -83,12 +30,15 @@ export function CollectionNode(props: {
 
   const suppressRef = { suppress: false };
   const { handleMouseDown: handleCollectionMouseDown } =
-    makeCollectionDragHandlers(
-      props.collection.id,
-      props.collection.name,
-      () => props.sourceIndex,
-      suppressRef,
-    );
+    makeLongPressDragHandlers(suppressRef, (x, y) => {
+      setDragItem({
+        kind: "collection",
+        collectionId: props.collection.id,
+        name: props.collection.name,
+        sourceIndex: props.sourceIndex,
+      });
+      setGhostPos({ x, y });
+    });
 
   const handleRenameCommit = (value: string) => {
     if (!isRenaming()) return;
