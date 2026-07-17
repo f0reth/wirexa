@@ -1,7 +1,9 @@
 package httpdomain
 
 import (
+	"mime"
 	"net/url"
+	"path/filepath"
 	"strings"
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
@@ -53,6 +55,37 @@ type KeyValuePair struct {
 	Enabled bool   `json:"enabled"`
 }
 
+// FormRow の Kind 定数。値の種別ごとに送信時の扱いと Content-Type の自動判定が変わる。
+const (
+	FormRowKindText = "text"
+	FormRowKindJSON = "json"
+	FormRowKindFile = "file"
+)
+
+// FormRow は form 系ボディの 1 行を表す。
+// Headers / Params と KeyValuePair を共有しないのは、値の種別とパートごとの
+// Content-Type がヘッダー行には無意味なフィールドになるため。
+type FormRow struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	// Kind は "" | "text" | "json" | "file"。"" は Kind 導入前の旧データで、text とみなす。
+	Kind string `json:"kind,omitempty"`
+	// FilePath は Kind=="file" のときの送信元パス。Value と分けて持つのは、
+	// kind を切り替えても互いの入力値を失わせないため。
+	FilePath string `json:"filePath,omitempty"`
+	// ContentType は空ならパートごとに Kind から自動決定する。
+	ContentType string `json:"contentType,omitempty"`
+	Enabled     bool   `json:"enabled"`
+}
+
+// EffectiveKind は Kind 未設定（Kind 導入前に保存された行）を text とみなして返す。
+func (r *FormRow) EffectiveKind() string {
+	if r.Kind == "" {
+		return FormRowKindText
+	}
+	return r.Kind
+}
+
 // RequestBody はリクエストボディを表す。
 // FormData / FormURLEncoded は form 系ボディの編集状態（行）を保持し、
 // ワイヤ形式は送信時に生成する。Contents は form 系以外のボディ本文と、
@@ -63,14 +96,14 @@ type KeyValuePair struct {
 // 二重配列にする）。body type ごとに独立したスライスとして持つ。
 type RequestBody struct {
 	Contents       map[string]string `json:"contents"`
-	FormData       []KeyValuePair    `json:"formData,omitempty"`
-	FormURLEncoded []KeyValuePair    `json:"formUrlEncoded,omitempty"`
+	FormData       []FormRow         `json:"formData,omitempty"`
+	FormURLEncoded []FormRow         `json:"formUrlEncoded,omitempty"`
 	Type           string            `json:"type"`
 }
 
 // formPairsFor は body type に対応する行スライスへのポインタを返す。
 // form 系以外の body type では nil を返す。
-func (b *RequestBody) formPairsFor(bodyType string) *[]KeyValuePair {
+func (b *RequestBody) formPairsFor(bodyType string) *[]FormRow {
 	switch bodyType {
 	case BodyTypeFormData:
 		return &b.FormData
@@ -81,7 +114,7 @@ func (b *RequestBody) formPairsFor(bodyType string) *[]KeyValuePair {
 }
 
 // FormPairs は現在の Type に対応するフォーム行を返す。form 系以外では nil。
-func (b *RequestBody) FormPairs() []KeyValuePair {
+func (b *RequestBody) FormPairs() []FormRow {
 	if dst := b.formPairsFor(b.Type); dst != nil {
 		return *dst
 	}
@@ -105,18 +138,18 @@ func (b *RequestBody) NormalizeForms() {
 
 // ParseFormPairs は application/x-www-form-urlencoded 文字列を行へ復元する。
 // url.ParseQuery と違い map を経由しないため、入力の行順と重複キーをそのまま保つ。
-func ParseFormPairs(content string) []KeyValuePair {
+func ParseFormPairs(content string) []FormRow {
 	if content == "" {
 		return nil
 	}
 	segments := strings.Split(content, "&")
-	pairs := make([]KeyValuePair, 0, len(segments))
+	pairs := make([]FormRow, 0, len(segments))
 	for _, segment := range segments {
 		if segment == "" {
 			continue
 		}
 		key, value, _ := strings.Cut(segment, "=")
-		pairs = append(pairs, KeyValuePair{
+		pairs = append(pairs, FormRow{
 			Key:     unescapeFormComponent(key),
 			Value:   unescapeFormComponent(value),
 			Enabled: true,
@@ -127,9 +160,13 @@ func ParseFormPairs(content string) []KeyValuePair {
 
 // EncodeFormPairs は有効な行を application/x-www-form-urlencoded 文字列へ変換する。
 // url.Values.Encode() を使わないのはキー名でソートされ UI の行順が失われるため。
-func EncodeFormPairs(pairs []KeyValuePair) string {
+//
+// Kind は参照しない。urlencoded のワイヤ形式に載るのは文字列の Key/Value だけで、
+// json 行は値がそのままエスケープされれば正しく、file 行は UI 上そもそも選べない。
+func EncodeFormPairs(pairs []FormRow) string {
 	var sb strings.Builder
-	for _, p := range pairs {
+	for i := range pairs {
+		p := &pairs[i]
 		if !p.Enabled || p.Key == "" {
 			continue
 		}
@@ -141,6 +178,16 @@ func EncodeFormPairs(pairs []KeyValuePair) string {
 		sb.WriteString(url.QueryEscape(p.Value))
 	}
 	return sb.String()
+}
+
+// GuessFileContentType は拡張子からファイルの Content-Type を推定する。
+// 判定できない場合はバイナリとして扱う。
+// 送信時の自動付与と UI のヒント表示の両方がこれを使い、判定を一箇所に寄せる。
+func GuessFileContentType(path string) string {
+	if ct := mime.TypeByExtension(filepath.Ext(path)); ct != "" {
+		return ct
+	}
+	return "application/octet-stream"
 }
 
 // unescapeFormComponent は urlencoded の 1 要素をデコードする。

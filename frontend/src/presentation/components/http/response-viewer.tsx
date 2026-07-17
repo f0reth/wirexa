@@ -170,7 +170,7 @@ export function ResponseViewer() {
                   class={styles.editorTabBar}
                 />
 
-                <div class={styles.responseContent}>
+                <div class={styles.responseContent} data-testid="response-body">
                   <Show when={responseTab() === "body"}>
                     <ScrollArea class={styles.responseScrollArea}>
                       <Show

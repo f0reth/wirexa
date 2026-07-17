@@ -295,7 +295,8 @@ describe("getCollections", () => {
     expect(result).toEqual([{ id: "col-1", name: "My Collection", items: [] }]);
   });
 
-  // 旧データの行復元は Go 側のロード時に完了しているため、ここは素通しでよい。
+  // 旧データの行復元は Go 側のロード時に完了しているため、行そのものは素通しでよい。
+  // kind 未設定（kind 導入前に保存された行）は text へ寄せる。
   it("keeps form pairs when mapping a request from the backend", async () => {
     const formUrlEncoded = [
       { key: "a", value: "1", enabled: true },
@@ -315,9 +316,95 @@ describe("getCollections", () => {
     ]);
 
     const result = await getCollections();
-    expect(result[0].items[0].request?.body.formUrlEncoded).toEqual(
-      formUrlEncoded,
-    );
+    expect(result[0].items[0].request?.body.formUrlEncoded).toEqual([
+      {
+        key: "a",
+        value: "1",
+        enabled: true,
+        kind: "text",
+        filePath: "",
+        contentType: "",
+      },
+      {
+        key: "b",
+        value: "2",
+        enabled: false,
+        kind: "text",
+        filePath: "",
+        contentType: "",
+      },
+    ]);
+  });
+
+  it("keeps form row kind, file path and content type from the backend", async () => {
+    const formData = [
+      {
+        key: "doc",
+        value: "",
+        kind: "file",
+        filePath: "C:\\tmp\\a.png",
+        contentType: "image/png",
+        enabled: true,
+      },
+      { key: "meta", value: "{}", kind: "json", enabled: true },
+    ];
+    vi.mocked(Handler.GetCollections).mockResolvedValue([
+      makeWailsCollection({
+        items: [
+          makeWailsTreeItem({
+            type: "request",
+            request: makeWailsRequest({
+              body: { type: "form-data", contents: {}, formData },
+            }),
+          }),
+        ],
+      }) as never,
+    ]);
+
+    const result = await getCollections();
+    expect(result[0].items[0].request?.body.formData).toEqual([
+      {
+        key: "doc",
+        value: "",
+        kind: "file",
+        filePath: "C:\\tmp\\a.png",
+        contentType: "image/png",
+        enabled: true,
+      },
+      {
+        key: "meta",
+        value: "{}",
+        kind: "json",
+        filePath: "",
+        contentType: "",
+        enabled: true,
+      },
+    ]);
+  });
+
+  // 未知の kind で行を捨てず、編集可能な text として扱う。
+  it("falls back to text for an unknown form row kind", async () => {
+    vi.mocked(Handler.GetCollections).mockResolvedValue([
+      makeWailsCollection({
+        items: [
+          makeWailsTreeItem({
+            type: "request",
+            request: makeWailsRequest({
+              body: {
+                type: "form-data",
+                contents: {},
+                formData: [
+                  { key: "a", value: "1", kind: "bogus", enabled: true },
+                ],
+              },
+            }),
+          }),
+        ],
+      }) as never,
+    ]);
+
+    const result = await getCollections();
+    expect(result[0].items[0].request?.body.formData?.[0].kind).toBe("text");
   });
 
   it("maps proxyMode 'none' correctly via fromWailsRequestSettings", async () => {

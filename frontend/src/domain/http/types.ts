@@ -10,6 +10,20 @@ export interface KeyValuePair {
   enabled: boolean;
 }
 
+// form 系ボディの 1 行。Headers/Params の KeyValuePair と分けているのは、
+// 値の種別とパートごとの Content-Type がヘッダー行には無意味なため。
+export interface FormRow {
+  key: string;
+  value: string;
+  // 未設定は "text"（kind 導入前に保存された行）。
+  kind?: FormRowKind;
+  // file の送信元パス。value と分けて持つので kind を往復しても入力が消えない。
+  filePath?: string;
+  // 空なら送信時に kind から自動決定する。
+  contentType?: string;
+  enabled: boolean;
+}
+
 // form 系ボディの行は contents の文字列ではなく専用フィールドで保持する。
 // 文字列を正にすると空キー行・無効行を表現できず編集中に行が消えるため、
 // ワイヤ形式（urlencoded / multipart）は Go 側が送信時に生成する。
@@ -21,8 +35,8 @@ export interface RequestBody {
       string
     >
   >;
-  formData?: KeyValuePair[];
-  formUrlEncoded?: KeyValuePair[];
+  formData?: FormRow[];
+  formUrlEncoded?: FormRow[];
 }
 
 // body type と行フィールドの対応。form 系以外は行を持たない。
@@ -162,6 +176,25 @@ export function isHttpMethod(v: string): v is HttpMethod {
 export function isBodyType(v: string): v is BodyType {
   return (BODY_TYPES as string[]).includes(v);
 }
+
+export type FormRowKind = "text" | "json" | "file";
+// FormRowKind ユニオンに値を追加して下のレコードを更新し忘れると satisfies がコンパイルエラーになる。
+const FORM_ROW_KIND_SET = {
+  text: true,
+  json: true,
+  file: true,
+} satisfies Record<FormRowKind, true>;
+export const FORM_ROW_KINDS = Object.keys(FORM_ROW_KIND_SET) as FormRowKind[];
+
+export function isFormRowKind(v: string): v is FormRowKind {
+  return (FORM_ROW_KINDS as string[]).includes(v);
+}
+
+// file は multipart のパートでしか表現できないため form-data 行にだけ許す。
+export const FORM_ROW_KINDS_BY_BODY_TYPE = {
+  "form-data": FORM_ROW_KINDS,
+  "form-urlencoded": ["text", "json"],
+} as const satisfies Record<FormBodyType, readonly FormRowKind[]>;
 
 export function isAuthType(v: string): v is AuthType {
   return (AUTH_TYPES as string[]).includes(v);

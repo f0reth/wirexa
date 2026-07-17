@@ -161,6 +161,112 @@ test("Form Data and Form URL Encoded keep independent rows", async ({
   );
 });
 
+// ── form-data の行種別と行ごとの Content-Type ────────────────────────────────
+
+// 行を1つ追加して、その行の kind セレクタを返す。
+async function addFormRow(page: Page, bodyTypeLabel: string) {
+  const bodyPanel = await openFormBody(page, bodyTypeLabel);
+  await bodyPanel.getByRole("button", { name: "Add" }).click();
+  return { bodyPanel, kindSelect: bodyPanel.getByTestId("form-kind-select") };
+}
+
+test("a new Form Data row starts as a Text row", async ({ page }) => {
+  const { bodyPanel, kindSelect } = await addFormRow(page, "Form Data");
+
+  await expect(kindSelect.getByRole("button").first()).toContainText("Text");
+  await expect(bodyPanel.getByPlaceholder("Value")).toBeVisible();
+});
+
+test("selecting the File kind swaps the value field for a file path picker", async ({
+  page,
+}) => {
+  const { bodyPanel, kindSelect } = await addFormRow(page, "Form Data");
+
+  await kindSelect.getByRole("button").first().click();
+  await kindSelect.getByRole("button", { name: "File" }).click();
+
+  await expect(bodyPanel.getByPlaceholder("No file selected")).toBeVisible();
+  await expect(bodyPanel.getByPlaceholder("Value")).toHaveCount(0);
+  await expect(bodyPanel.getByRole("button", { name: "Browse..." })).toBeVisible();
+});
+
+// value と filePath は別フィールドなので、kind を往復しても入力が消えてはいけない。
+test("switching kind back and forth keeps both the value and the file path", async ({
+  page,
+}) => {
+  const { bodyPanel, kindSelect } = await addFormRow(page, "Form Data");
+  const trigger = kindSelect.getByRole("button").first();
+
+  await bodyPanel.getByPlaceholder("Value").fill("text kept");
+
+  await trigger.click();
+  await kindSelect.getByRole("button", { name: "File" }).click();
+  await bodyPanel.getByPlaceholder("No file selected").fill("C:\\tmp\\a.png");
+
+  await trigger.click();
+  await kindSelect.getByRole("button", { name: "Text" }).click();
+  await expect(bodyPanel.getByPlaceholder("Value")).toHaveValue("text kept");
+
+  await trigger.click();
+  await kindSelect.getByRole("button", { name: "File" }).click();
+  await expect(bodyPanel.getByPlaceholder("No file selected")).toHaveValue(
+    "C:\\tmp\\a.png",
+  );
+});
+
+// Content-Type 未指定のときは、実際に送信される自動判定値をヒントとして出す。
+test("expanding a File row shows the auto Content-Type guessed from the path", async ({
+  page,
+}) => {
+  const { bodyPanel, kindSelect } = await addFormRow(page, "Form Data");
+
+  await kindSelect.getByRole("button").first().click();
+  await kindSelect.getByRole("button", { name: "File" }).click();
+  await bodyPanel.getByPlaceholder("No file selected").fill("C:\\tmp\\a.png");
+
+  await bodyPanel.getByRole("button", { name: "Expand row" }).click();
+  await expect(bodyPanel.getByText("auto: image/png")).toBeVisible();
+
+  // 明示した Content-Type が自動判定に勝つので、ヒントは引っ込む。
+  await bodyPanel.getByPlaceholder("auto").fill("application/custom");
+  await expect(bodyPanel.getByText("auto: image/png")).toHaveCount(0);
+});
+
+test("expanding a JSON row shows a JSON editor and an application/json hint", async ({
+  page,
+}) => {
+  const { bodyPanel, kindSelect } = await addFormRow(page, "Form Data");
+
+  await kindSelect.getByRole("button").first().click();
+  await kindSelect.getByRole("button", { name: "JSON" }).click();
+  await bodyPanel.getByRole("button", { name: "Expand row" }).click();
+
+  await expect(bodyPanel.locator(".cm-editor")).toBeVisible();
+  await expect(bodyPanel.getByText("auto: application/json")).toBeVisible();
+});
+
+// urlencoded はワイヤ形式にパートが無いので file も行ごとの Content-Type も表現できない。
+test("Form URL Encoded rows offer no File kind and no Content-Type field", async ({
+  page,
+}) => {
+  const { bodyPanel, kindSelect } = await addFormRow(page, "Form URL Encoded");
+
+  // Text はトリガー側にも出ている（現在の kind）ので、選択肢側は JSON/File で見る。
+  await kindSelect.getByRole("button").first().click();
+  await expect(kindSelect.getByRole("button", { name: "JSON" })).toBeVisible();
+  await expect(kindSelect.getByRole("button", { name: "File" })).toHaveCount(0);
+
+  // text 行は展開しても出すものが無いのでトグルごと出さない。
+  await expect(
+    bodyPanel.getByRole("button", { name: "Expand row" }),
+  ).toHaveCount(0);
+
+  await kindSelect.getByRole("button", { name: "JSON" }).click();
+  await bodyPanel.getByRole("button", { name: "Expand row" }).click();
+  await expect(bodyPanel.locator(".cm-editor")).toBeVisible();
+  await expect(bodyPanel.getByPlaceholder("auto")).toHaveCount(0);
+});
+
 test("switching body type back to none hides the editor", async ({ page }) => {
   await page.getByRole("tab", { name: "Body" }).click();
 

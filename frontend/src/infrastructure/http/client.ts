@@ -8,6 +8,7 @@ import {
   GetCollections,
   GetRootItems,
   GetSidebarLayout,
+  GuessFormPartContentType,
   MoveItem,
   MoveItemToSidebar,
   MoveSidebarEntry,
@@ -23,10 +24,12 @@ import { httpdomain } from "../../../wailsjs/go/models";
 import {
   type Collection,
   DEFAULT_SETTINGS,
+  type FormRow,
   type HttpRequest,
   type HttpResponse,
   isAuthType,
   isBodyType,
+  isFormRowKind,
   isHttpMethod,
   type KeyValuePair,
   type RequestAuth,
@@ -75,6 +78,17 @@ function fromWailsRequestAuth(auth: httpdomain.RequestAuth): RequestAuth {
   };
 }
 
+// Go の kind は string なのでユニオンへ絞り込む。未設定（kind 導入前の行）と
+// 未知の値はどちらも text 相当として扱い、行を捨てない。
+function fromWailsFormRow(row: httpdomain.FormRow): FormRow {
+  return {
+    ...row,
+    kind: row.kind && isFormRowKind(row.kind) ? row.kind : "text",
+    filePath: row.filePath ?? "",
+    contentType: row.contentType ?? "",
+  };
+}
+
 function fromWailsRequestBody(body: httpdomain.RequestBody): RequestBody {
   if (!isBodyType(body.type)) {
     throw new Error(`Unknown body type: ${body.type}`);
@@ -84,6 +98,8 @@ function fromWailsRequestBody(body: httpdomain.RequestBody): RequestBody {
     ...body,
     type: body.type,
     contents: (body.contents ?? {}) as RequestBody["contents"],
+    formData: body.formData?.map(fromWailsFormRow),
+    formUrlEncoded: body.formUrlEncoded?.map(fromWailsFormRow),
   };
 }
 
@@ -150,6 +166,12 @@ export async function cancelRequest(id: string): Promise<void> {
 // presentation 層が wailsjs バインディングを直接叩かないようインフラ層でラップする。
 export function openFilePicker(): Promise<string> {
   return OpenFilePicker();
+}
+
+// guessFormPartContentType は form-data の file 行に自動付与される Content-Type を返す。
+// 拡張子の判定は OS 依存なので、UI のヒントも送信時と同じ Go の判定に問い合わせる。
+export function guessFormPartContentType(path: string): Promise<string> {
+  return GuessFormPartContentType(path);
 }
 
 export async function getCollections(): Promise<Collection[]> {

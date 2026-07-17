@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
 import { startTestServer, type TestServer } from "../../fixtures/http-server";
 import { expect, test } from "../../fixtures/integration";
@@ -15,6 +16,15 @@ test.beforeAll(async () => {
         "X-Custom-Header": "test-value",
       });
       res.end(JSON.stringify({ message: "hello", status: "ok" }));
+    } else if (req.url === "/echo") {
+      // 受け取ったボディをそのまま返す。multipart のワイヤ形式を
+      // レスポンスビューアで直接検証するため、解析はしない。
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end(Buffer.concat(chunks));
+      });
     } else if (req.url === "/multi-header") {
       res.writeHead(200, {
         "Content-Type": "text/plain",
@@ -33,6 +43,7 @@ test.afterAll(async () => {
 });
 
 const jsonUrl = () => `http://127.0.0.1:${server.port}/json`;
+const echoUrl = () => `http://127.0.0.1:${server.port}/echo`;
 
 /** バックエンドに保存されているリクエストの URL を読む (自動保存の完了判定に使う)。 */
 const savedUrl = (page: Page, requestName: RegExp) =>
@@ -114,6 +125,60 @@ test("response viewer headers tab shows every value of a multi-value header", as
   await expect(page.getByText("set-cookie")).toHaveCount(2);
   await expect(page.getByText("a=1; Path=/")).toBeVisible();
   await expect(page.getByText("b=2; Path=/")).toBeVisible();
+});
+
+// ── form-data の行種別（text / json / file）────────────────────────────────
+
+// UI で組んだ行が実 Go バックエンドで multipart に組み立てられ、file 行では
+// 実ファイルのバイトがワイヤに載ることを確認する。UI e2e の fake backend は
+// ファイルを読まないため、この経路はここでしか確かめられない。
+test("form-data rows are sent as multipart parts with real file bytes", async ({
+  page,
+  app,
+}, testInfo) => {
+  const filePath = testInfo.outputPath("upload.json");
+  await writeFile(filePath, '{"from":"file"}');
+
+  await app.urlInput.fill(echoUrl());
+  await page.getByRole("tab", { name: "Body" }).click();
+  const bodyPanel = page.locator("#tabpanel-body");
+  await bodyPanel.getByRole("button").first().click();
+  await bodyPanel.getByRole("button", { name: "Form Data" }).click();
+
+  // text 行
+  await bodyPanel.getByRole("button", { name: "Add" }).click();
+  await bodyPanel.getByPlaceholder("Field").fill("plain");
+  await bodyPanel.getByPlaceholder("Value").fill("text value");
+
+  // file 行（Browse はネイティブダイアログなのでパスを直接入力する）
+  await bodyPanel.getByRole("button", { name: "Add" }).click();
+  await bodyPanel.getByPlaceholder("Field").nth(1).fill("doc");
+  const kindSelect = bodyPanel.getByTestId("form-kind-select").nth(1);
+  await kindSelect.getByRole("button").first().click();
+  await kindSelect.getByRole("button", { name: "File" }).click();
+  await bodyPanel.getByPlaceholder("No file selected").fill(filePath);
+
+  await app.sendButton.click();
+  await expect(page.getByText("200", { exact: true })).toBeVisible();
+
+  // エコーされた multipart のワイヤ形式をそのまま確認する。
+  // ボディは 1 要素にまとめて描画されるため、部分一致で見る。
+  const responseBody = page.getByTestId("response-body");
+
+  // text 行は従来どおりパートに Content-Type を付けない。
+  await expect(responseBody).toContainText(
+    'Content-Disposition: form-data; name="plain"',
+  );
+  await expect(responseBody).toContainText("text value");
+
+  // file 行はファイル名と、拡張子から自動判定した Content-Type を載せる。
+  await expect(responseBody).toContainText(
+    'Content-Disposition: form-data; name="doc"; filename="upload.json"',
+  );
+  await expect(responseBody).toContainText("Content-Type: application/json");
+
+  // ディスク上のファイルの中身がボディに載っている（fake backend では確かめられない部分）。
+  await expect(responseBody).toContainText('{"from":"file"}');
 });
 
 // ── 観点I-6: コレクションへの保存・読み込み ──────────────────────────────────

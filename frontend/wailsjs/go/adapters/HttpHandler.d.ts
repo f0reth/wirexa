@@ -20,6 +20,8 @@ export function GetRootItems():Promise<Array<httpdomain.TreeItem>>;
 
 export function GetSidebarLayout():Promise<Array<httpdomain.SidebarEntry>>;
 
+export function GuessFormPartContentType(arg1:string):Promise<string>;
+
 export function MoveItem(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number):Promise<void>;
 
 export function MoveItemToSidebar(arg1:string,arg2:string,arg3:number):Promise<void>;

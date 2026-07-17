@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -691,7 +692,7 @@ func TestHTTP_SendRequest_BodyTypes(t *testing.T) {
 			name: "form-urlencoded",
 			body: httpdomain.RequestBody{
 				Type:           httpdomain.BodyTypeFormURLEncoded,
-				FormURLEncoded: []httpdomain.KeyValuePair{{Key: "k", Value: "v", Enabled: true}},
+				FormURLEncoded: []httpdomain.FormRow{{Key: "k", Value: "v", Enabled: true}},
 			},
 			wantCT: "application/x-www-form-urlencoded",
 		},
@@ -699,7 +700,7 @@ func TestHTTP_SendRequest_BodyTypes(t *testing.T) {
 			name: "form-data",
 			body: httpdomain.RequestBody{
 				Type:     httpdomain.BodyTypeFormData,
-				FormData: []httpdomain.KeyValuePair{{Key: "k", Value: "v", Enabled: true}},
+				FormData: []httpdomain.FormRow{{Key: "k", Value: "v", Enabled: true}},
 			},
 			wantCT: "multipart/form-data; boundary=",
 		},
@@ -745,8 +746,8 @@ func contentsBody(bodyType, content string) httpdomain.RequestBody {
 
 // formRows は送信ボディの検証に使う代表的な行を返す。
 // 無効行と空キー行はワイヤに載ってはならない。
-func formRows() []httpdomain.KeyValuePair {
-	return []httpdomain.KeyValuePair{
+func formRows() []httpdomain.FormRow {
+	return []httpdomain.FormRow{
 		{Key: "z", Value: "first", Enabled: true},
 		{Key: "a", Value: "second", Enabled: true},
 		{Key: "disabled", Value: "no", Enabled: false},
@@ -828,6 +829,83 @@ func TestHTTP_SendRequest_FormDataBody(t *testing.T) {
 	}
 }
 
+// TestHTTP_SendRequest_FormDataKinds は json / file 行が multipart のパートとして
+// 送られ、Content-Type 未指定なら kind から自動付与されることを確認する。
+func TestHTTP_SendRequest_FormDataKinds(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "upload.json")
+	if err := os.WriteFile(filePath, []byte(`{"from":"file"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var gotForm *multipart.Form
+	var parseErr error
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if parseErr = r.ParseMultipartForm(1 << 20); parseErr == nil {
+			gotForm = r.MultipartForm
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	h := newHTTPHandler(t)
+	_, err := h.SendRequest(httpdomain.HTTPRequest{
+		Method: "POST",
+		URL:    srv.URL,
+		Body: httpdomain.RequestBody{
+			Type: httpdomain.BodyTypeFormData,
+			FormData: []httpdomain.FormRow{
+				{Key: "plain", Value: "text value", Kind: httpdomain.FormRowKindText, Enabled: true},
+				{Key: "meta", Value: `{"k":"v"}`, Kind: httpdomain.FormRowKindJSON, Enabled: true},
+				{Key: "custom", Value: "a,b", Kind: httpdomain.FormRowKindText, ContentType: "text/csv", Enabled: true},
+				{Key: "doc", FilePath: filePath, Kind: httpdomain.FormRowKindFile, Enabled: true},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendRequest: %v", err)
+	}
+	if parseErr != nil {
+		t.Fatalf("ParseMultipartForm: %v", parseErr)
+	}
+
+	if got := gotForm.Value["plain"]; len(got) != 1 || got[0] != "text value" {
+		t.Errorf(`field "plain" = %v, want ["text value"]`, got)
+	}
+	if got := gotForm.Value["meta"]; len(got) != 1 || got[0] != `{"k":"v"}` {
+		t.Errorf(`field "meta" = %v, want [{"k":"v"}]`, got)
+	}
+	if got := gotForm.Value["custom"]; len(got) != 1 || got[0] != "a,b" {
+		t.Errorf(`field "custom" = %v, want ["a,b"]`, got)
+	}
+
+	// file 行はフィールドではなくファイルパートとして届く。
+	files := gotForm.File["doc"]
+	if len(files) != 1 {
+		t.Fatalf(`file "doc" = %v, want 1 part`, files)
+	}
+	if files[0].Filename != "upload.json" {
+		t.Errorf("filename = %q, want upload.json", files[0].Filename)
+	}
+	f, err := files[0].Open()
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer f.Close()
+	content, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(content) != `{"from":"file"}` {
+		t.Errorf("file content = %q, want the file on disk", content)
+	}
+
+	// 具体的な MIME は OS 依存なので、拡張子から判定できたことだけを見る。
+	if ct := files[0].Header.Get("Content-Type"); ct == "" || ct == "application/octet-stream" {
+		t.Errorf("file Content-Type = %q, want a type guessed from .json", ct)
+	}
+}
+
 // TestHTTP_SendRequest_FormDataOverridesUserContentType は、ユーザーが Content-Type を
 // 指定しても multipart の boundary 付きヘッダーが優先されることを確認する。
 // boundary は送信時に採番するためユーザーには書けず、尊重するとボディが解釈不能になる。
@@ -848,7 +926,7 @@ func TestHTTP_SendRequest_FormDataOverridesUserContentType(t *testing.T) {
 		Headers: []httpdomain.KeyValuePair{{Key: "Content-Type", Value: "text/plain", Enabled: true}},
 		Body: httpdomain.RequestBody{
 			Type:     httpdomain.BodyTypeFormData,
-			FormData: []httpdomain.KeyValuePair{{Key: "k", Value: "v", Enabled: true}},
+			FormData: []httpdomain.FormRow{{Key: "k", Value: "v", Enabled: true}},
 		},
 	})
 	if err != nil {
@@ -879,7 +957,7 @@ func TestHTTP_SendRequest_FormURLEncodedKeepsUserContentType(t *testing.T) {
 		Headers: []httpdomain.KeyValuePair{{Key: "Content-Type", Value: "application/custom", Enabled: true}},
 		Body: httpdomain.RequestBody{
 			Type:           httpdomain.BodyTypeFormURLEncoded,
-			FormURLEncoded: []httpdomain.KeyValuePair{{Key: "k", Value: "v", Enabled: true}},
+			FormURLEncoded: []httpdomain.FormRow{{Key: "k", Value: "v", Enabled: true}},
 		},
 	})
 	if err != nil {

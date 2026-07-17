@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -156,21 +154,12 @@ func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTP
 		bodyReader = strings.NewReader(domain.EncodeFormPairs(req.Body.FormPairs()))
 		contentType = "application/x-www-form-urlencoded"
 	case domain.BodyTypeFormData:
-		var buf bytes.Buffer
-		mw := multipart.NewWriter(&buf)
-		for _, p := range req.Body.FormPairs() {
-			if !p.Enabled || p.Key == "" {
-				continue
-			}
-			if err = mw.WriteField(p.Key, p.Value); err != nil {
-				return domain.HTTPResponse{}, fmt.Errorf("failed to write form field: %w", err)
-			}
+		var buf *bytes.Buffer
+		buf, contentType, err = buildMultipartBody(req.Body.FormPairs())
+		if err != nil {
+			return domain.HTTPResponse{}, err
 		}
-		if err = mw.Close(); err != nil {
-			return domain.HTTPResponse{}, fmt.Errorf("failed to close multipart writer: %w", err)
-		}
-		bodyReader = &buf
-		contentType = mw.FormDataContentType()
+		bodyReader = buf
 		forceContentType = true
 	case "file":
 		if bodyContent != "" {
@@ -180,11 +169,7 @@ func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTP
 				return domain.HTTPResponse{}, fmt.Errorf("failed to read file: %w", err)
 			}
 			bodyReader = bytes.NewReader(fileData)
-			if ct := mime.TypeByExtension(filepath.Ext(bodyContent)); ct != "" {
-				contentType = ct
-			} else {
-				contentType = "application/octet-stream"
-			}
+			contentType = domain.GuessFileContentType(bodyContent)
 		}
 	}
 

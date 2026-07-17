@@ -45,6 +45,14 @@ func (h *HTTPHandler) OpenFilePicker() (string, error) {
 	})
 }
 
+// GuessFormPartContentType は form-data の file 行で自動付与される Content-Type を返す。
+// UI のヒント表示と送信時の判定を同じ実装に寄せるために公開する
+// （拡張子の判定は OS 依存で、フロント側に再実装すると表示と実際の送信内容がずれる）。
+// パスは受け取るだけでファイルは読まないため、読み取り許可の検査は不要。
+func (h *HTTPHandler) GuessFormPartContentType(path string) string {
+	return httpdomain.GuessFileContentType(path)
+}
+
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
 func (h *HTTPHandler) SendRequest(req httpdomain.HTTPRequest) (httpdomain.HTTPResponse, error) {
 	res, err := h.reqSvc.SendRequest(req)

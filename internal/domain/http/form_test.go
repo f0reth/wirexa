@@ -1,6 +1,7 @@
 package httpdomain
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -9,7 +10,7 @@ func TestParseFormPairs(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
-		want    []KeyValuePair
+		want    []FormRow
 	}{
 		{
 			name:    "空文字列は行なし",
@@ -19,7 +20,7 @@ func TestParseFormPairs(t *testing.T) {
 		{
 			name:    "行順を保つ（url.Values と違いソートしない）",
 			content: "z=1&a=2&m=3",
-			want: []KeyValuePair{
+			want: []FormRow{
 				{Key: "z", Value: "1", Enabled: true},
 				{Key: "a", Value: "2", Enabled: true},
 				{Key: "m", Value: "3", Enabled: true},
@@ -28,7 +29,7 @@ func TestParseFormPairs(t *testing.T) {
 		{
 			name:    "重複キーを潰さない",
 			content: "k=1&k=2",
-			want: []KeyValuePair{
+			want: []FormRow{
 				{Key: "k", Value: "1", Enabled: true},
 				{Key: "k", Value: "2", Enabled: true},
 			},
@@ -36,27 +37,27 @@ func TestParseFormPairs(t *testing.T) {
 		{
 			name:    "値に = を含む",
 			content: "k=a=b",
-			want:    []KeyValuePair{{Key: "k", Value: "a=b", Enabled: true}},
+			want:    []FormRow{{Key: "k", Value: "a=b", Enabled: true}},
 		},
 		{
 			name:    "= が無い要素は値を空にする",
 			content: "k",
-			want:    []KeyValuePair{{Key: "k", Value: "", Enabled: true}},
+			want:    []FormRow{{Key: "k", Value: "", Enabled: true}},
 		},
 		{
 			name:    "パーセントエンコードと + をデコードする",
 			content: "a%20b=c+d",
-			want:    []KeyValuePair{{Key: "a b", Value: "c d", Enabled: true}},
+			want:    []FormRow{{Key: "a b", Value: "c d", Enabled: true}},
 		},
 		{
 			name:    "不正なエスケープは生文字列のまま採用しエラーにしない",
 			content: "k=%zz",
-			want:    []KeyValuePair{{Key: "k", Value: "%zz", Enabled: true}},
+			want:    []FormRow{{Key: "k", Value: "%zz", Enabled: true}},
 		},
 		{
 			name:    "空要素は読み飛ばす",
 			content: "a=1&&b=2",
-			want: []KeyValuePair{
+			want: []FormRow{
 				{Key: "a", Value: "1", Enabled: true},
 				{Key: "b", Value: "2", Enabled: true},
 			},
@@ -76,7 +77,7 @@ func TestParseFormPairs(t *testing.T) {
 func TestEncodeFormPairs(t *testing.T) {
 	tests := []struct {
 		name  string
-		pairs []KeyValuePair
+		pairs []FormRow
 		want  string
 	}{
 		{
@@ -86,7 +87,7 @@ func TestEncodeFormPairs(t *testing.T) {
 		},
 		{
 			name: "入力順を保つ（キー名でソートしない）",
-			pairs: []KeyValuePair{
+			pairs: []FormRow{
 				{Key: "z", Value: "1", Enabled: true},
 				{Key: "a", Value: "2", Enabled: true},
 			},
@@ -94,7 +95,7 @@ func TestEncodeFormPairs(t *testing.T) {
 		},
 		{
 			name: "無効行を除外する",
-			pairs: []KeyValuePair{
+			pairs: []FormRow{
 				{Key: "a", Value: "1", Enabled: true},
 				{Key: "b", Value: "2", Enabled: false},
 				{Key: "c", Value: "3", Enabled: true},
@@ -103,7 +104,7 @@ func TestEncodeFormPairs(t *testing.T) {
 		},
 		{
 			name: "空キー行を除外する（編集中の未入力行を送らない）",
-			pairs: []KeyValuePair{
+			pairs: []FormRow{
 				{Key: "", Value: "orphan", Enabled: true},
 				{Key: "a", Value: "1", Enabled: true},
 			},
@@ -111,7 +112,7 @@ func TestEncodeFormPairs(t *testing.T) {
 		},
 		{
 			name:  "特殊文字をエスケープする",
-			pairs: []KeyValuePair{{Key: "a b", Value: "c&d=e", Enabled: true}},
+			pairs: []FormRow{{Key: "a b", Value: "c&d=e", Enabled: true}},
 			want:  "a+b=c%26d%3De",
 		},
 	}
@@ -127,7 +128,7 @@ func TestEncodeFormPairs(t *testing.T) {
 
 // TestEncodeFormPairs_RoundTrip は Encode → Parse で行が保たれることを確認する。
 func TestEncodeFormPairs_RoundTrip(t *testing.T) {
-	pairs := []KeyValuePair{
+	pairs := []FormRow{
 		{Key: "z", Value: "a b", Enabled: true},
 		{Key: "a", Value: "c&d", Enabled: true},
 		{Key: "%weird", Value: "", Enabled: true},
@@ -146,7 +147,7 @@ func TestRequestBody_NormalizeForms(t *testing.T) {
 		}
 		b.NormalizeForms()
 
-		want := []KeyValuePair{
+		want := []FormRow{
 			{Key: "a", Value: "1", Enabled: true},
 			{Key: "b", Value: "2", Enabled: true},
 		}
@@ -174,7 +175,7 @@ func TestRequestBody_NormalizeForms(t *testing.T) {
 	})
 
 	t.Run("既に行があれば上書きしない", func(t *testing.T) {
-		existing := []KeyValuePair{{Key: "kept", Value: "v", Enabled: false}}
+		existing := []FormRow{{Key: "kept", Value: "v", Enabled: false}}
 		b := RequestBody{
 			Type:     BodyTypeFormData,
 			FormData: existing,
@@ -232,7 +233,7 @@ func TestRequestBody_NormalizeForms(t *testing.T) {
 }
 
 func TestRequestBody_FormPairs(t *testing.T) {
-	pairs := []KeyValuePair{{Key: "a", Value: "1", Enabled: true}}
+	pairs := []FormRow{{Key: "a", Value: "1", Enabled: true}}
 
 	t.Run("Type に対応する行を返す", func(t *testing.T) {
 		b := RequestBody{Type: BodyTypeFormData, FormData: pairs}
@@ -245,6 +246,95 @@ func TestRequestBody_FormPairs(t *testing.T) {
 		b := RequestBody{Type: "json", FormData: pairs}
 		if b.FormPairs() != nil {
 			t.Errorf("FormPairs() = %+v, want nil", b.FormPairs())
+		}
+	})
+}
+
+func TestFormRow_EffectiveKind(t *testing.T) {
+	tests := []struct {
+		name string
+		kind string
+		want string
+	}{
+		{name: "未設定は text とみなす（Kind 導入前の行）", kind: "", want: FormRowKindText},
+		{name: "text はそのまま", kind: FormRowKindText, want: FormRowKindText},
+		{name: "json はそのまま", kind: FormRowKindJSON, want: FormRowKindJSON},
+		{name: "file はそのまま", kind: FormRowKindFile, want: FormRowKindFile},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := FormRow{Kind: tc.kind}
+			if got := r.EffectiveKind(); got != tc.want {
+				t.Errorf("EffectiveKind() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// Kind 導入前に保存された行は kind/filePath/contentType を持たない。
+// 読み込みで落ちず text 行として扱えることを保証する。
+func TestFormRow_UnmarshalLegacyJSON(t *testing.T) {
+	var b RequestBody
+	legacy := `{"type":"form-data","contents":{},"formData":[{"key":"a","value":"1","enabled":true}]}`
+	if err := json.Unmarshal([]byte(legacy), &b); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	want := []FormRow{{Key: "a", Value: "1", Enabled: true}}
+	if !reflect.DeepEqual(b.FormData, want) {
+		t.Errorf("FormData = %+v, want %+v", b.FormData, want)
+	}
+	if got := b.FormData[0].EffectiveKind(); got != FormRowKindText {
+		t.Errorf("EffectiveKind() = %q, want %q", got, FormRowKindText)
+	}
+}
+
+// 未設定の kind/filePath/contentType は omitempty で保存内容を増やさない。
+func TestFormRow_MarshalOmitsUnsetFields(t *testing.T) {
+	row := FormRow{Key: "a", Value: "1", Enabled: true}
+	got, err := json.Marshal(row)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	want := `{"key":"a","value":"1","enabled":true}`
+	if string(got) != want {
+		t.Errorf("Marshal() = %s, want %s", got, want)
+	}
+}
+
+// urlencoded のワイヤ形式に載るのは Key/Value だけ。json 行の値はそのまま
+// エスケープされ、kind や contentType は出力に影響しない。
+func TestEncodeFormPairs_IgnoresKind(t *testing.T) {
+	pairs := []FormRow{
+		{Key: "a", Value: "1", Kind: FormRowKindText, Enabled: true},
+		{Key: "j", Value: `{"k":"v"}`, Kind: FormRowKindJSON, ContentType: "application/json", Enabled: true},
+	}
+	want := `a=1&j=%7B%22k%22%3A%22v%22%7D`
+	if got := EncodeFormPairs(pairs); got != want {
+		t.Errorf("EncodeFormPairs() = %q, want %q", got, want)
+	}
+}
+
+func TestGuessFileContentType(t *testing.T) {
+	t.Run("判定できない拡張子はバイナリ扱い", func(t *testing.T) {
+		if got := GuessFileContentType("a.unknown-ext-xyz"); got != "application/octet-stream" {
+			t.Errorf("GuessFileContentType() = %q, want application/octet-stream", got)
+		}
+	})
+
+	t.Run("拡張子が無い場合もバイナリ扱い", func(t *testing.T) {
+		if got := GuessFileContentType("noext"); got != "application/octet-stream" {
+			t.Errorf("GuessFileContentType() = %q, want application/octet-stream", got)
+		}
+	})
+
+	// 具体的な MIME は OS 依存（Windows はレジストリ参照）なので、
+	// 判定できた場合に octet-stream へ落ちないことだけを確認する。
+	t.Run("既知の拡張子はバイナリ扱いに落とさない", func(t *testing.T) {
+		if got := GuessFileContentType("a.json"); got == "application/octet-stream" {
+			t.Errorf("GuessFileContentType(a.json) = %q, want a json media type", got)
 		}
 	})
 }

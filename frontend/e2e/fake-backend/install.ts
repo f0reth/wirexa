@@ -380,6 +380,21 @@ const HttpHandler = {
   }),
 
   OpenFilePicker: counted("OpenFilePicker", async () => ""),
+  // Go の mime.TypeByExtension 相当。実機の判定は OS 依存なので、
+  // UI のヒント表示を確かめられる代表的な拡張子だけ返す。
+  GuessFormPartContentType: counted(
+    "GuessFormPartContentType",
+    async (path: string) => {
+      const dot = path.lastIndexOf(".");
+      const ext = dot === -1 ? "" : path.slice(dot).toLowerCase();
+      const types: Record<string, string> = {
+        ".json": "application/json",
+        ".png": "image/png",
+        ".txt": "text/plain; charset=utf-8",
+      };
+      return types[ext] ?? "application/octet-stream";
+    },
+  ),
   SaveResponseBody: counted("SaveResponseBody", async () => {}),
   SaveResponseBase64: counted("SaveResponseBase64", async () => {}),
 };

@@ -63,6 +63,22 @@ export namespace httpdomain {
 	        this.disableRedirects = source["disableRedirects"];
 	    }
 	}
+	export class KeyValuePair {
+	    key: string;
+	    value: string;
+	    enabled: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new KeyValuePair(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.value = source["value"];
+	        this.enabled = source["enabled"];
+	    }
+	}
 	export class RequestAuth {
 	    type: string;
 	    username: string;
@@ -81,26 +97,32 @@ export namespace httpdomain {
 	        this.token = source["token"];
 	    }
 	}
-	export class KeyValuePair {
+	export class FormRow {
 	    key: string;
 	    value: string;
+	    kind?: string;
+	    filePath?: string;
+	    contentType?: string;
 	    enabled: boolean;
 	
 	    static createFrom(source: any = {}) {
-	        return new KeyValuePair(source);
+	        return new FormRow(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.key = source["key"];
 	        this.value = source["value"];
+	        this.kind = source["kind"];
+	        this.filePath = source["filePath"];
+	        this.contentType = source["contentType"];
 	        this.enabled = source["enabled"];
 	    }
 	}
 	export class RequestBody {
 	    contents: Record<string, string>;
-	    formData?: KeyValuePair[];
-	    formUrlEncoded?: KeyValuePair[];
+	    formData?: FormRow[];
+	    formUrlEncoded?: FormRow[];
 	    type: string;
 	
 	    static createFrom(source: any = {}) {
@@ -110,8 +132,8 @@ export namespace httpdomain {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.contents = source["contents"];
-	        this.formData = this.convertValues(source["formData"], KeyValuePair);
-	        this.formUrlEncoded = this.convertValues(source["formUrlEncoded"], KeyValuePair);
+	        this.formData = this.convertValues(source["formData"], FormRow);
+	        this.formUrlEncoded = this.convertValues(source["formUrlEncoded"], FormRow);
 	        this.type = source["type"];
 	    }
 	
@@ -253,6 +275,7 @@ export namespace httpdomain {
 		    return a;
 		}
 	}
+	
 	
 	export class HTTPResponse {
 	    headers: Record<string, Array<string>>;

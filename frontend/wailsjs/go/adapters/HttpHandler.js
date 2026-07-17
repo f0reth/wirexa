@@ -38,6 +38,10 @@ export function GetSidebarLayout() {
   return window['go']['adapters']['HTTPHandler']['GetSidebarLayout']();
 }
 
+export function GuessFormPartContentType(arg1) {
+  return window['go']['adapters']['HTTPHandler']['GuessFormPartContentType'](arg1);
+}
+
 export function MoveItem(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['adapters']['HTTPHandler']['MoveItem'](arg1, arg2, arg3, arg4, arg5);
 }

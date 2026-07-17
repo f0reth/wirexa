@@ -1,4 +1,9 @@
-import type { AuthType, BodyType, HttpMethod } from "../../domain/http/types";
+import type {
+  AuthType,
+  BodyType,
+  FormRowKind,
+  HttpMethod,
+} from "../../domain/http/types";
 
 export const METHOD_COLORS: Record<HttpMethod, string> = {
   GET: "#4CAF50",
@@ -18,6 +23,12 @@ export const BODY_TYPES: { value: BodyType; label: string }[] = [
   { value: "form-urlencoded", label: "Form URL Encoded" },
   { value: "file", label: "File" },
 ];
+
+export const FORM_ROW_KIND_LABELS: Record<FormRowKind, string> = {
+  text: "Text",
+  json: "JSON",
+  file: "File",
+};
 
 export const AUTH_TYPES: { value: AuthType; label: string }[] = [
   { value: "none", label: "None" },
