@@ -96,8 +96,7 @@ func TestUDPListenerService_StartListen_InvalidPort(t *testing.T) {
 		if err == nil {
 			t.Errorf("expected error for port=%d, got nil", port)
 		}
-		var ve *cmn.ValidationError
-		if !errors.As(err, &ve) {
+		if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 			t.Errorf("port=%d: expected ValidationError, got %T", port, err)
 		}
 	}
@@ -140,8 +139,7 @@ func TestUDPListenerService_StartListen_DuplicatePort(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for duplicate port, got nil")
 	}
-	var ve *cmn.ValidationError
-	if !errors.As(err, &ve) {
+	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 		t.Errorf("expected ValidationError, got %T", err)
 	}
 	conn.Close()
@@ -191,8 +189,7 @@ func TestUDPListenerService_StopListen_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError, got %T", err)
 	}
 }

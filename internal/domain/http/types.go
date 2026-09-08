@@ -96,9 +96,9 @@ func (r *FormRow) EffectiveKind() string {
 // 二重配列にする）。body type ごとに独立したスライスとして持つ。
 type RequestBody struct {
 	Contents       map[string]string `json:"contents"`
+	Type           string            `json:"type"`
 	FormData       []FormRow         `json:"formData,omitempty"`
 	FormURLEncoded []FormRow         `json:"formUrlEncoded,omitempty"`
-	Type           string            `json:"type"`
 }
 
 // formPairsFor は body type に対応する行スライスへのポインタを返す。

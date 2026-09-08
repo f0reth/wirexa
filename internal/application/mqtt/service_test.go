@@ -1,8 +1,10 @@
 package mqttapp
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -116,8 +118,7 @@ func TestMQTTService_Connect_EmptyBroker(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty broker, got nil")
 	}
-	var ve *cmn.ValidationError
-	if !errors.As(err, &ve) {
+	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 		t.Errorf("expected ValidationError, got %T", err)
 	}
 }
@@ -229,8 +230,7 @@ func TestMQTTService_Disconnect_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError, got %T", err)
 	}
 }
@@ -267,8 +267,7 @@ func TestMQTTService_Publish_EmptyTopic(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var ve *cmn.ValidationError
-	if !errors.As(err, &ve) {
+	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 		t.Errorf("expected ValidationError, got %T", err)
 	}
 }
@@ -279,8 +278,7 @@ func TestMQTTService_Publish_InvalidQoS(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for qos=3, got nil")
 	}
-	var ve *cmn.ValidationError
-	if !errors.As(err, &ve) {
+	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 		t.Errorf("expected ValidationError, got %T", err)
 	}
 }
@@ -291,8 +289,7 @@ func TestMQTTService_Publish_ConnectionNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError, got %T", err)
 	}
 }
@@ -369,8 +366,7 @@ func TestMQTTService_Subscribe_ConnectionNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError, got %T", err)
 	}
 }
@@ -447,7 +443,7 @@ func TestMQTTService_Subscribe_BinaryPayloadBase64(t *testing.T) {
 	if err != nil {
 		t.Fatalf("payload is not valid base64: %v", err)
 	}
-	if string(got) != string(binary) {
+	if !bytes.Equal(got, binary) {
 		t.Errorf("decoded payload mismatch: got %v want %v", got, binary)
 	}
 }
@@ -457,11 +453,11 @@ func lastMessage(t *testing.T, e *mockEmitterWithChan) domain.MQTTMessage {
 	t.Helper()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for i := len(e.events) - 1; i >= 0; i-- {
-		if e.events[i].event == cmn.EventMQTTMessage {
-			msg, ok := e.events[i].data.(domain.MQTTMessage)
+	for _, event := range slices.Backward(e.events) {
+		if event.event == cmn.EventMQTTMessage {
+			msg, ok := event.data.(domain.MQTTMessage)
 			if !ok {
-				t.Fatalf("message event data is not MQTTMessage: %T", e.events[i].data)
+				t.Fatalf("message event data is not MQTTMessage: %T", event.data)
 			}
 			return msg
 		}
@@ -486,8 +482,7 @@ func TestMQTTService_Unsubscribe_ConnectionNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError, got %T", err)
 	}
 }
@@ -744,8 +739,7 @@ func TestMQTTService_Subscribe_InvalidQoS_ReturnsValidationError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for qos=3, got nil")
 	}
-	var ve *cmn.ValidationError
-	if !errors.As(err, &ve) {
+	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 		t.Errorf("expected ValidationError, got %T", err)
 	}
 }

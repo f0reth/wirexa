@@ -16,7 +16,7 @@ type mockTransport struct {
 	doFn func(req domain.HTTPRequest) (domain.HTTPResponse, error)
 }
 
-func (m *mockTransport) Do(_ context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) {
+func (m *mockTransport) Do(_ context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) { //nolint:gocritic // hugeParam: must match HTTPTransport's value-based contract.
 	if m.doFn != nil {
 		return m.doFn(req)
 	}
@@ -132,7 +132,7 @@ type mockTransportCtx struct {
 	doFn func(ctx context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error)
 }
 
-func (m *mockTransportCtx) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) {
+func (m *mockTransportCtx) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) { //nolint:gocritic // hugeParam: must match HTTPTransport's value-based contract.
 	if m.doFn != nil {
 		return m.doFn(ctx, req)
 	}
@@ -175,8 +175,7 @@ func TestHTTPRequestService_SendRequest_InvalidMethod_ReturnsValidationError(t *
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var ve *cmn.ValidationError
-	if !errors.As(err, &ve) {
+	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 		t.Errorf("expected ValidationError, got %T", err)
 	}
 }

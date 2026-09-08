@@ -24,12 +24,12 @@ var _ domain.MQTTUseCase = (*MQTTService)(nil)
 
 type connection struct {
 	client domain.BrokerClient
-	config domain.ConnectionConfig
 	// subs は現在購読中のトピック→QoS。リロード後の状態復元のためサーバー側で保持する。
 	// s.mu は接続 map の保護用で、購読 map の変更は withConn(RLock 保持) 中に起きるため
 	// per-connection の subMu で保護する。
-	subMu sync.Mutex
-	subs  map[string]byte
+	subs   map[string]byte
+	config domain.ConnectionConfig
+	subMu  sync.Mutex
 }
 
 // MQTTService は複数の MQTT 接続を管理するアプリケーションサービス。

@@ -183,7 +183,7 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 }
 
 // AddRequest はコレクションにリクエストを追加する。
-func (s *CollectionService) AddRequest(collectionID, parentID string, req domain.HTTPRequest) (*domain.TreeItem, error) {
+func (s *CollectionService) AddRequest(collectionID, parentID string, req domain.HTTPRequest) (*domain.TreeItem, error) { //nolint:gocritic // hugeParam: preserve request DTO value semantics across application boundaries.
 	if req.ID == "" {
 		req.ID = uuid.NewString()
 	}
@@ -235,7 +235,7 @@ func (s *CollectionService) appendItemToCache(collectionID, parentID string, ite
 }
 
 // UpdateRequest はコレクション内のリクエストを更新する。
-func (s *CollectionService) UpdateRequest(collectionID string, req domain.HTTPRequest) error {
+func (s *CollectionService) UpdateRequest(collectionID string, req domain.HTTPRequest) error { //nolint:gocritic // hugeParam: preserve request DTO value semantics across application boundaries.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

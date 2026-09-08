@@ -17,7 +17,8 @@ formatters:
       - '(^|/|\\)vendor(/|\\)'
   settings:
     gofumpt:
-      extra-rules: true
+      extra:
+        group-params: true
 
 linters:
   default: none

@@ -19,17 +19,17 @@ const openapiMaxRecents = 50
 type OpenAPIRecent struct {
 	Path         string `json:"path"`
 	Name         string `json:"name"`
-	Order        int    `json:"order"`
 	LastOpenedAt string `json:"lastOpenedAt"`
+	Order        int    `json:"order"`
 }
 
 // openapiRecentStore は最近使ったファイル一覧を設定ディレクトリの JSON に永続化する。
 // 追加はダイアログ / 保存ハンドラ経由でのみ行われ、JS からは汚染できない。
 type openapiRecentStore struct {
-	mu     sync.Mutex
 	logger cmn.Logger
 	path   string
 	items  []OpenAPIRecent
+	mu     sync.Mutex
 }
 
 // newOpenapiRecentStore は指定パスの JSON をロードしてストアを返す。
@@ -37,7 +37,7 @@ type openapiRecentStore struct {
 // JSONStore.Load と同様に握り潰さずログへ残す。logger は nil でもよい。
 func newOpenapiRecentStore(path string, logger cmn.Logger) *openapiRecentStore {
 	s := &openapiRecentStore{path: path, logger: logger}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is the app-owned recents file configured by the composition root.
 	if err != nil {
 		if !os.IsNotExist(err) {
 			s.logf("openapi_recents: failed to read file, starting empty", "path", path, "error", err)

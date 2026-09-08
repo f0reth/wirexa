@@ -156,8 +156,7 @@ func TestCachedStore_Delete_NotFound(t *testing.T) {
 	cs := newStore(t, repo)
 
 	err := cs.Delete("missing")
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError, got %T: %v", err, err)
 	}
 	// 存在確認で弾かれるので repo.Delete は呼ばれない
@@ -175,8 +174,7 @@ func TestCachedStore_Delete_RepoError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); ok {
 		t.Error("expected repo error, got NotFoundError")
 	}
 	// repo エラー時はキャッシュに残る

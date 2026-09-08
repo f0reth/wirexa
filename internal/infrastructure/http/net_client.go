@@ -112,7 +112,7 @@ func SweepStaleTempFiles() {
 }
 
 // Do は HTTPRequest を実行して HTTPResponse を返す。
-func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) {
+func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) { //nolint:gocritic // hugeParam: preserve HTTPTransport's value-based contract.
 	timeout := resolveTimeout(req.Settings)
 	// タイムアウトは http.Client.Timeout ではなく context で表現し、
 	// RequestUseCase 側のキャンセルと同じ経路に一本化する。

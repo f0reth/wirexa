@@ -14,9 +14,9 @@ import (
 // JSONStore は JSON ファイルによる汎用永続化ストア。
 // T は保存するドメイン型、getID は T から一意な ID を取得する関数。
 type JSONStore[T any] struct {
+	logger domain.Logger
 	getID  func(*T) string
 	dir    string
-	logger domain.Logger
 }
 
 // SetLogger は破損ファイル退避などの記録に使うロガーを注入する。
@@ -45,7 +45,7 @@ func (s *JSONStore[T]) Load() ([]T, error) {
 			continue
 		}
 		path := filepath.Join(s.dir, e.Name())
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) //nolint:gosec // G304: path uses an entry returned by ReadDir for this app-owned store directory.
 		if err != nil {
 			// 読めないファイルは触らずスキップして起動を継続する。
 			s.logf("json_store: failed to read file, skipping", "file", e.Name(), "error", err)

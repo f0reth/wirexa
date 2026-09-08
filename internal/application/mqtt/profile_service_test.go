@@ -171,8 +171,7 @@ func TestProfileService_DeleteProfile_NonExistentID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError, got %T", err)
 	}
 }
@@ -188,8 +187,7 @@ func TestProfileService_DeleteProfile_DoesNotCallRepoForMissingID(t *testing.T) 
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError (not repo error), got %T: %v", err, err)
 	}
 }

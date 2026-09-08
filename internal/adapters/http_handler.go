@@ -54,7 +54,7 @@ func (h *HTTPHandler) GuessFormPartContentType(path string) string {
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
-func (h *HTTPHandler) SendRequest(req httpdomain.HTTPRequest) (httpdomain.HTTPResponse, error) {
+func (h *HTTPHandler) SendRequest(req httpdomain.HTTPRequest) (httpdomain.HTTPResponse, error) { //nolint:gocritic // hugeParam: preserve the Wails RPC DTO's value semantics.
 	res, err := h.reqSvc.SendRequest(req)
 	if err != nil {
 		return httpdomain.HTTPResponse{}, err
@@ -143,12 +143,12 @@ func (h *HTTPHandler) AddFolder(collectionID, parentID, name string) (*httpdomai
 }
 
 // AddRequest はコレクションにリクエストを追加する。
-func (h *HTTPHandler) AddRequest(collectionID, parentID string, req httpdomain.HTTPRequest) (*httpdomain.TreeItem, error) {
+func (h *HTTPHandler) AddRequest(collectionID, parentID string, req httpdomain.HTTPRequest) (*httpdomain.TreeItem, error) { //nolint:gocritic // hugeParam: preserve the Wails RPC DTO's value semantics.
 	return h.itemSvc.AddRequest(collectionID, parentID, req)
 }
 
 // UpdateRequest はコレクション内のリクエストを更新する。
-func (h *HTTPHandler) UpdateRequest(collectionID string, req httpdomain.HTTPRequest) error {
+func (h *HTTPHandler) UpdateRequest(collectionID string, req httpdomain.HTTPRequest) error { //nolint:gocritic // hugeParam: preserve the Wails RPC DTO's value semantics.
 	return h.itemSvc.UpdateRequest(collectionID, req)
 }
 
