@@ -43,17 +43,16 @@ const (
 )
 
 type App struct {
+	ctx            context.Context
 	mqttHandler    *adapters.MQTTHandler
 	httpHandler    *adapters.HTTPHandler
 	udpHandler     *adapters.UDPHandler
 	logHandler     *adapters.LogHandler
 	openAPIHandler *adapters.OpenAPIHandler
 	netClient      *httpinfra.NetClient
-	ctx            context.Context
+	windowMgr      *infra.WindowManager
 	ready          bool
 	quitConfirmed  bool
-
-	windowMgr *infra.WindowManager
 }
 
 func NewApp() *App {
@@ -71,11 +70,14 @@ func (a *App) startup(ctx context.Context) {
 	if err := a.initialize(ctx); err != nil {
 		// GUI アプリではコンソールが無いため、致命的エラーはダイアログで提示してから終了する。
 		log.Printf("startup failed: %v", err) // stderr へのベストエフォート
-		_, _ = runtime.MessageDialog(ctx, runtime.MessageDialogOptions{
+		_, dialogErr := runtime.MessageDialog(ctx, runtime.MessageDialogOptions{
 			Type:    runtime.ErrorDialog,
 			Title:   "Wirexa - Startup Failed",
 			Message: fmt.Sprintf("The application could not be started.\n\n%v", err),
 		})
+		if dialogErr != nil {
+			log.Printf("failed to show startup error dialog: %v", dialogErr)
+		}
 		runtime.Quit(ctx)
 		return
 	}
