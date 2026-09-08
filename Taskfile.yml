@@ -1,0 +1,221 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: "3"
+
+vars:
+  FRONTEND_DIR: frontend
+  WAILS_VERSION: v2.12.0
+  WAILS: go run github.com/wailsapp/wails/v2/cmd/wails@{{.WAILS_VERSION}}
+  GOLANGCI_LINT_VERSION: v2.13.2
+  GOLANGCI_LINT: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}
+
+tasks:
+  default:
+    desc: 利用可能なタスクを表示する
+    cmds:
+      - task --list
+    silent: true
+
+  setup:
+    desc: 開発・テストに必要な依存関係と Chromium をセットアップする
+    cmds:
+      - task: deps
+      - task: test:e2e:setup
+
+  deps:
+    desc: Go とフロントエンドの依存関係をインストールする
+    deps:
+      - deps:go
+      - deps:frontend
+
+  deps:go:
+    desc: Go モジュールをダウンロードする
+    cmds:
+      - go mod download
+
+  deps:frontend:
+    desc: Bun パッケージをインストールする
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - bun install
+
+  dev:
+    desc: Wails アプリをホットリロード付きで起動する
+    cmds:
+      - "{{.WAILS}} dev {{.CLI_ARGS}}"
+
+  dev:frontend:
+    desc: フロントエンドの Vite 開発サーバーだけを起動する
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - bun run dev {{.CLI_ARGS}}
+
+  preview:
+    desc: ビルド済みフロントエンドをプレビューする
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - bun run preview {{.CLI_ARGS}}
+
+  build:
+    desc: Wails アプリをビルドする
+    cmds:
+      - "{{.WAILS}} build {{.CLI_ARGS}}"
+
+  build:release:
+    desc: 配布用の最適化オプション付きで Wails アプリをビルドする
+    cmds:
+      - '{{.WAILS}} build -trimpath -ldflags="-s -w" {{.CLI_ARGS}}'
+
+  build:frontend:
+    desc: フロントエンドを型チェックしてビルドする
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - bun run build {{.CLI_ARGS}}
+
+  generate:
+    desc: Wails のフロントエンドバインディングを再生成する
+    deps:
+      - internal:frontend-dist
+    cmds:
+      - "{{.WAILS}} generate module {{.CLI_ARGS}}"
+
+  generate:check:
+    desc: Wails の生成済みバインディングが最新か検証する
+    cmds:
+      - task: generate
+      - git diff --exit-code -- frontend/wailsjs
+
+  test:
+    desc: Go とフロントエンドのユニットテストを実行する
+    deps:
+      - test:go
+      - test:frontend
+
+  test:all:
+    desc: ユニット・統合・UI E2E・実バックエンド E2E をすべて実行する
+    cmds:
+      - task: test
+      - task: test:go:integration
+      - task: test:e2e
+      - task: test:e2e:fullstack
+
+  test:go:
+    desc: Go のユニットテストを実行する
+    deps:
+      - internal:frontend-dist
+    cmds:
+      - go test {{.CLI_ARGS}} ./...
+
+  test:go:integration:
+    desc: Go の統合テストを実行する
+    deps:
+      - internal:frontend-dist
+    cmds:
+      - go test -tags integration -v {{.CLI_ARGS}} ./internal/integration/...
+
+  test:frontend:
+    desc: Vitest のユニットテストを実行する
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - bun run test {{.CLI_ARGS}}
+
+  test:frontend:watch:
+    desc: Vitest をウォッチモードで起動する
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - bun run test:watch {{.CLI_ARGS}}
+
+  test:e2e:setup:
+    desc: Playwright 用 Chromium をインストールする
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - bun run test:e2e:setup
+
+  test:e2e:
+    desc: 偽バックエンドを使う UI E2E テストを実行する
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - bun run test:e2e {{.CLI_ARGS}}
+
+  test:e2e:fullstack:
+    desc: 実際の Go バックエンドを使う E2E テストを実行する
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - bun run test:e2e:fullstack {{.CLI_ARGS}}
+
+  typecheck:
+    desc: フロントエンドを TypeScript で型チェックする
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - bun run tsc {{.CLI_ARGS}}
+
+  lint:
+    desc: Go とフロントエンドの lint を実行する
+    deps:
+      - lint:go
+      - lint:frontend
+
+  lint:go:
+    desc: golangci-lint で Go コードを検査する
+    deps:
+      - internal:frontend-dist
+    cmds:
+      - "{{.GOLANGCI_LINT}} run {{.CLI_ARGS}}"
+
+  lint:frontend:
+    desc: Biome でフロントエンドを検査する
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - bun run ci {{.CLI_ARGS}}
+
+  format:
+    desc: Go とフロントエンドをフォーマットする
+    cmds:
+      - task: format:go
+      - task: format:frontend
+
+  format:go:
+    desc: golangci-lint の設定に従って Go コードをフォーマットする
+    cmds:
+      - "{{.GOLANGCI_LINT}} fmt {{.CLI_ARGS}}"
+
+  format:frontend:
+    desc: Biome でフロントエンドをフォーマットする
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - bun run format {{.CLI_ARGS}}
+
+  check:
+    desc: ユニットテスト・型チェック・lint をまとめて実行する
+    deps:
+      - test
+      - typecheck
+      - lint
+
+  ci:
+    desc: CI 相当の検証をローカルで実行する（fullstack E2E を除く）
+    cmds:
+      - task: check
+      - task: test:go:integration
+      - task: test:e2e
+      - task: generate:check
+
+  licenses:
+    desc: フロントエンド依存関係のライセンス一覧を生成する
+    dir: "{{.FRONTEND_DIR}}"
+    cmds:
+      - bun run licenses {{.CLI_ARGS}}
+
+  internal:frontend-dist:
+    internal: true
+    cmds:
+      - cmd: mkdir -p frontend/dist
+        platforms: [darwin, linux]
+      - cmd: touch frontend/dist/index.html
+        platforms: [darwin, linux]
+      - cmd: >-
+          powershell -NoProfile -Command
+          "New-Item -ItemType Directory -Force -Path 'frontend/dist' | Out-Null;
+          if (-not (Test-Path 'frontend/dist/index.html')) {
+          New-Item -ItemType File -Path 'frontend/dist/index.html' | Out-Null }"
+        platforms: [windows]

@@ -1,8 +1,5 @@
 build
 node_modules
 dist
-.claude
-Taskfile.yml
-CLAUDE.md
 playwright-report
 test-results
