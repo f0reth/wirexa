@@ -12,11 +12,12 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
-// isolateTempDir は TMP/TEMP を専用ディレクトリに向け、os.TempDir() ベースの
-// 一時ファイル生成・掃除をテスト間で隔離する。
+// isolateTempDir は各 OS の一時ディレクトリ環境変数を専用ディレクトリに向け、
+// os.TempDir() ベースの一時ファイル生成・掃除をテスト間で隔離する。
 func isolateTempDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
 	t.Setenv("TMP", dir)
 	t.Setenv("TEMP", dir)
 	return dir
