@@ -8,22 +8,41 @@ The SolidJS/TypeScript frontend is under `frontend/src/`, with matching architec
 
 ## Build, Test, and Development Commands
 
-- `wails dev`: run the desktop app with frontend hot reload.
-- `wails build`: produce a release build in `build/bin/`.
-- `go test ./...`: run Go unit tests.
-- `go test -tags integration -v ./internal/integration/...`: run backend integration tests.
-- `golangci-lint run`: apply the Go checks configured in `.golangci.yml`.
-- `cd frontend && bun install`: install locked frontend dependencies.
-- `cd frontend && bun run build`: type-check and build the UI.
-- `cd frontend && bun run test`: run Vitest unit tests.
-- `cd frontend && bun run ci`: run Biome formatting and lint checks.
-- `cd frontend && bun run test:e2e`: run Playwright UI tests (after `bun run test:e2e:setup`).
+Run development, build, generation, formatting, lint, and test operations through
+Taskfile tasks. Do not invoke the underlying `go`, `bun`, `wails`, or
+`golangci-lint` commands directly when an equivalent task exists.
 
-After changing exported Go bindings, run `wails generate module` and commit the resulting `frontend/wailsjs/` updates.
+- `task setup`: install Go and frontend dependencies plus Playwright Chromium.
+- `task dev`: run the desktop app with frontend hot reload.
+- `task dev:frontend`: run only the Vite development server.
+- `task build`: build the desktop app in `build/bin/`.
+- `task build:release`: build the optimized distributable desktop app.
+- `task build:frontend`: type-check and build the UI.
+- `task test`: run Go and frontend unit tests.
+- `task test:go:integration`: run backend integration tests.
+- `task test:e2e`: run Playwright UI tests with the fake backend.
+- `task test:e2e:fullstack`: run Playwright tests against the real backend.
+- `task test:all`: run every unit, integration, and E2E test suite.
+- `task lint`: run Go and frontend lint checks.
+- `task format`: format Go and frontend sources.
+- `task typecheck`: type-check the frontend.
+- `task check`: run unit tests, type-checking, and lint checks.
+- `task ci`: run the local CI-equivalent checks except fullstack E2E.
+- `task --list`: show all available tasks, including narrower component tasks.
+
+Pass additional tool arguments after `--`, for example `task test:go -- -race`.
+After changing exported Go bindings, run `task generate` and commit the resulting
+`frontend/wailsjs/` updates. Use `task generate:check` to verify that committed
+bindings are current.
 
 ## Coding Style & Naming Conventions
 
-Format Go with `gofumpt` and `goimports`; follow standard Go naming (`MixedCaps`, short package names) and handle errors explicitly. TypeScript uses Biome: two-space indentation, double quotes, and organized imports. Use kebab-case filenames such as `request-service.ts`; name tests `*_test.go`, `*.test.ts`, or `*.spec.ts` according to their runner. Keep protocol-specific code in its HTTP, MQTT, UDP, or OpenAPI package.
+Run `task format` to format Go with `gofumpt` and `goimports` and TypeScript with
+Biome. Follow standard Go naming (`MixedCaps`, short package names) and handle
+errors explicitly. TypeScript uses two-space indentation, double quotes, and
+organized imports. Use kebab-case filenames such as `request-service.ts`; name
+tests `*_test.go`, `*.test.ts`, or `*.spec.ts` according to their runner. Keep
+protocol-specific code in its HTTP, MQTT, UDP, or OpenAPI package.
 
 ## Testing Guidelines
 
