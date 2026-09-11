@@ -9,7 +9,12 @@ import {
 } from "../../../components/ui/select";
 import { TabList, TabPanel } from "../../../components/ui/tabs";
 import { Textarea } from "../../../components/ui/textarea";
-import type { AuthType, BodyType, FormRow } from "../../../domain/http/types";
+import type {
+  AuthType,
+  BodyType,
+  ContentBodyType,
+  FormRow,
+} from "../../../domain/http/types";
 import { FORM_PAIR_FIELDS, isFormBodyType } from "../../../domain/http/types";
 import { AUTH_TYPES, BODY_TYPES } from "../../constants/http";
 import { useHttpRequest } from "../../providers/http-provider";
@@ -49,18 +54,27 @@ export function RequestEditor() {
     setDoc,
   } = useHttpRequest();
 
+  // file 種別は本文を contents に持たない（送信元は file 参照の token だけ）。
+  const contentKey = (): ContentBodyType | null => {
+    const type = body().type;
+    return type === "file" ? null : type;
+  };
   const bodyContent = () => {
-    const content = body().contents[body().type];
-    if (content === undefined && body().type === "json") {
+    const key = contentKey();
+    const content = key ? body().contents[key] : undefined;
+    if (content === undefined && key === "json") {
       return JSON_BODY_DEFAULT;
     }
     return content ?? "";
   };
-  const setBodyContent = (content: string) =>
+  const setBodyContent = (content: string) => {
+    const key = contentKey();
+    if (!key) return;
     setBody({
       ...body(),
-      contents: { ...body().contents, [body().type]: content },
+      contents: { ...body().contents, [key]: content },
     });
+  };
 
   // form 系の行は body の専用フィールドそのものを読み書きする。
   // 文字列へ畳んで導出し直すと空キー行が直列化で落ちて Add が効かなくなるため、

@@ -177,12 +177,11 @@ func toStoredRequest(r *domain.HTTPRequest) *storedRequest {
 
 func toStoredBody(b *domain.RequestBody) storedRequestBody {
 	contents := maps.Clone(b.Contents)
-	// runtime に残る旧形式のパス (file 種別の本文) は basename だけを残して捨てる。
-	legacyPath := contents[domain.BodyTypeFile]
+	// file ボディの送信元は File の token だけ。Contents にパスが紛れていても保存しない。
 	delete(contents, domain.BodyTypeFile)
 	return storedRequestBody{
 		Contents:       contents,
-		File:           toStoredFileRef(b.File, legacyPath),
+		File:           toStoredFileRef(b.File),
 		Type:           b.Type,
 		FormData:       toStoredRows(b.FormData),
 		FormURLEncoded: toStoredRows(b.FormURLEncoded),
@@ -197,7 +196,7 @@ func toStoredRows(rows []domain.FormRow) []storedFormRow {
 	for i := range rows {
 		r := &rows[i]
 		out[i] = storedFormRow{
-			File:        toStoredFileRef(r.File, r.FilePath),
+			File:        toStoredFileRef(r.File),
 			Key:         r.Key,
 			Value:       r.Value,
 			Kind:        r.Kind,
@@ -210,15 +209,11 @@ func toStoredRows(rows []domain.FormRow) []storedFormRow {
 
 // toStoredFileRef は token を捨て、basename があれば再選択が必要な参照として保存する。
 // 選択中の token が有効でも、再起動後は token が無いため NeedsReselect を必ず立てる。
-func toStoredFileRef(ref domain.FileReference, legacyPath string) *storedFileReference {
-	name := ref.Name
-	if name == "" {
-		name = legacyBaseName(legacyPath)
-	}
-	if name == "" {
+func toStoredFileRef(ref domain.FileReference) *storedFileReference {
+	if ref.Name == "" {
 		return nil
 	}
-	return &storedFileReference{Name: name, NeedsReselect: true}
+	return &storedFileReference{Name: ref.Name, NeedsReselect: true}
 }
 
 // ── 永続化 DTO → runtime model ───────────────────────────────────────────────

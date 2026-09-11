@@ -98,7 +98,6 @@ function fromWailsFormRow(row: httpdomain.FormRow): FormRow {
   return {
     ...row,
     kind: row.kind && isFormRowKind(row.kind) ? row.kind : "text",
-    filePath: row.filePath ?? "",
     file: fromWailsFileReference(row.file),
     contentType: row.contentType ?? "",
   };

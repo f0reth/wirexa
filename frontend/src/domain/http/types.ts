@@ -70,9 +70,7 @@ export interface FormRow {
   value: string;
   // 未設定は "text"（kind 導入前に保存された行）。
   kind?: FormRowKind;
-  // file の送信元パス。value と分けて持つので kind を往復しても入力が消えない。
-  filePath?: string;
-  // file の送信元ファイルの参照。
+  // file の送信元ファイルの参照。value と分けて持つので kind を往復しても入力が消えない。
   file?: FileReference;
   // 空なら送信時に kind から自動決定する。
   contentType?: string;
@@ -84,11 +82,9 @@ export interface FormRow {
 // ワイヤ形式（urlencoded / multipart）は Go 側が送信時に生成する。
 export interface RequestBody {
   type: "none" | "json" | "text" | "form-urlencoded" | "form-data" | "file";
+  // file 種別は本文を持たない（送信元は file 参照の token だけで、パスを置かない）。
   contents: Partial<
-    Record<
-      "none" | "json" | "text" | "form-urlencoded" | "form-data" | "file",
-      string
-    >
+    Record<"none" | "json" | "text" | "form-urlencoded" | "form-data", string>
   >;
   formData?: FormRow[];
   formUrlEncoded?: FormRow[];
@@ -223,6 +219,8 @@ const HTTP_METHOD_SET = {
 export const HTTP_METHODS = Object.keys(HTTP_METHOD_SET) as HttpMethod[];
 
 export type BodyType = RequestBody["type"];
+// contents に本文を持つ body type。
+export type ContentBodyType = keyof RequestBody["contents"];
 // BodyType ユニオンに値を追加して下のレコードを更新し忘れると satisfies がコンパイルエラーになる。
 const BODY_TYPE_SET = {
   none: true,

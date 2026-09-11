@@ -321,7 +321,6 @@ describe("getCollections", () => {
         value: "1",
         enabled: true,
         kind: "text",
-        filePath: "",
         contentType: "",
       },
       {
@@ -329,19 +328,18 @@ describe("getCollections", () => {
         value: "2",
         enabled: false,
         kind: "text",
-        filePath: "",
         contentType: "",
       },
     ]);
   });
 
-  it("keeps form row kind, file path and content type from the backend", async () => {
+  it("keeps form row kind, file reference and content type from the backend", async () => {
     const formData = [
       {
         key: "doc",
         value: "",
         kind: "file",
-        filePath: "C:\\tmp\\a.png",
+        file: { name: "a.png", needsReselect: true },
         contentType: "image/png",
         enabled: true,
       },
@@ -366,7 +364,12 @@ describe("getCollections", () => {
         key: "doc",
         value: "",
         kind: "file",
-        filePath: "C:\\tmp\\a.png",
+        file: {
+          token: "",
+          name: "a.png",
+          contentType: "",
+          needsReselect: true,
+        },
         contentType: "image/png",
         enabled: true,
       },
@@ -374,7 +377,6 @@ describe("getCollections", () => {
         key: "meta",
         value: "{}",
         kind: "json",
-        filePath: "",
         contentType: "",
         enabled: true,
       },

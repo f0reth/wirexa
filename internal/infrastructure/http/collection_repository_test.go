@@ -126,7 +126,6 @@ func TestCollectionRepository_SaveDropsTokensAndPaths(t *testing.T) {
 	req.Body.Contents[domain.BodyTypeFile] = secretDir + "/a.png"
 	req.Body.FormData = []domain.FormRow{
 		{Key: "selected", Kind: domain.FormRowKindFile, File: domain.FileReference{Token: secretToken, Name: "b.txt"}, Enabled: true},
-		{Key: "typed", Kind: domain.FormRowKindFile, FilePath: secretDir + `\c.txt`, Enabled: true},
 	}
 	col := collectionWith(req)
 
@@ -154,11 +153,8 @@ func TestCollectionRepository_SaveDropsTokensAndPaths(t *testing.T) {
 	if _, ok := got.Contents[domain.BodyTypeFile]; ok {
 		t.Error("loaded contents must not carry a file path")
 	}
-	wantRows := []domain.FileReference{{Name: "b.txt", NeedsReselect: true}, {Name: "c.txt", NeedsReselect: true}}
-	for i, want := range wantRows {
-		if got.FormData[i].File != want || got.FormData[i].FilePath != "" {
-			t.Errorf("row %d = %+v, want file %+v and no path", i, got.FormData[i], want)
-		}
+	if want := (domain.FileReference{Name: "b.txt", NeedsReselect: true}); got.FormData[0].File != want {
+		t.Errorf("row file = %+v, want %+v", got.FormData[0].File, want)
 	}
 }
 
@@ -195,8 +191,8 @@ func TestCollectionRepository_MigratesLegacyPaths(t *testing.T) {
 	}
 	wantRows := []domain.FileReference{{Name: "b.txt", NeedsReselect: true}, {Name: "dir", NeedsReselect: true}, {}}
 	for i, want := range wantRows {
-		if body.FormData[i].File != want || body.FormData[i].FilePath != "" {
-			t.Errorf("row %d = %+v, want file %+v and no path", i, body.FormData[i], want)
+		if body.FormData[i].File != want {
+			t.Errorf("row %d file = %+v, want %+v", i, body.FormData[i].File, want)
 		}
 	}
 
@@ -316,7 +312,7 @@ func TestCollectionRepository_LoadedServiceHidesLegacyPaths(t *testing.T) {
 	}
 	for _, item := range items {
 		body := item.Request.Body
-		if _, ok := body.Contents[domain.BodyTypeFile]; ok || body.FormData[0].FilePath != "" {
+		if _, ok := body.Contents[domain.BodyTypeFile]; ok {
 			t.Fatalf("%s exposes a legacy path: %+v", item.ID, body)
 		}
 		if !body.File.NeedsReselect || !body.FormData[0].File.NeedsReselect {

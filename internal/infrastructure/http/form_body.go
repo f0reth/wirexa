@@ -39,7 +39,7 @@ func buildMultipartBody(rows []domain.FormRow, files domain.SelectedFileReader) 
 func writeFormRow(mw *multipart.Writer, r *domain.FormRow, files domain.SelectedFileReader) error {
 	switch r.EffectiveKind() {
 	case domain.FormRowKindFile:
-		// 送信元はダイアログで選ばれ token で解決できるファイルだけ。FilePath (旧データのパス) は読まない。
+		// 送信元はダイアログで選ばれ token で解決できるファイルだけで、パスを受け取る経路は無い。
 		file, ok, err := resolveFile(files, r.File)
 		if err != nil {
 			return err

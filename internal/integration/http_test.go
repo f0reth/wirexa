@@ -1201,8 +1201,8 @@ func TestHTTP_SendRequest_RawPathsAreNeverRead(t *testing.T) {
 	defer srv.Close()
 
 	const forged = "00112233445566778899aabbccddeeff"
-	fileRow := func(ref httpdomain.FileReference, path string) []httpdomain.FormRow {
-		return []httpdomain.FormRow{{Key: "f", Kind: httpdomain.FormRowKindFile, File: ref, FilePath: path, Enabled: true}}
+	fileRow := func(ref httpdomain.FileReference) []httpdomain.FormRow {
+		return []httpdomain.FormRow{{Key: "f", Kind: httpdomain.FormRowKindFile, File: ref, Enabled: true}}
 	}
 	tests := []struct {
 		wantErr error
@@ -1210,9 +1210,9 @@ func TestHTTP_SendRequest_RawPathsAreNeverRead(t *testing.T) {
 		body    httpdomain.RequestBody
 	}{
 		{name: "file body の Contents に生のパス", body: httpdomain.RequestBody{Type: httpdomain.BodyTypeFile, Contents: map[string]string{"file": secret}}},
-		{name: "form-data 行の FilePath に生のパス", body: httpdomain.RequestBody{Type: httpdomain.BodyTypeFormData, FormData: fileRow(httpdomain.FileReference{}, secret)}},
+		{name: "form-data 行に名前だけの参照", body: httpdomain.RequestBody{Type: httpdomain.BodyTypeFormData, FormData: fileRow(httpdomain.FileReference{Name: "secret.txt"})}, wantErr: httpdomain.ErrFileAccessDenied},
 		{name: "file body に偽の token", body: httpdomain.RequestBody{Type: httpdomain.BodyTypeFile, File: httpdomain.FileReference{Token: forged}}, wantErr: httpdomain.ErrFileAccessDenied},
-		{name: "form-data 行に偽の token", body: httpdomain.RequestBody{Type: httpdomain.BodyTypeFormData, FormData: fileRow(httpdomain.FileReference{Token: forged}, secret)}, wantErr: httpdomain.ErrFileAccessDenied},
+		{name: "form-data 行に偽の token", body: httpdomain.RequestBody{Type: httpdomain.BodyTypeFormData, FormData: fileRow(httpdomain.FileReference{Token: forged})}, wantErr: httpdomain.ErrFileAccessDenied},
 		{name: "token の無い保存済み参照", body: httpdomain.RequestBody{Type: httpdomain.BodyTypeFile, File: httpdomain.FileReference{Name: "secret.txt", NeedsReselect: true}}, wantErr: httpdomain.ErrFileAccessDenied},
 	}
 

@@ -50,6 +50,8 @@ func (s *HTTPRequestService) SendRequest(req domain.HTTPRequest) (domain.HTTPRes
 	if req.ID == "" {
 		req.ID = uuid.NewString()
 	}
+	// file ボディの送信元は File の token だけ。Contents に置かれたパスは受け付けない。
+	req.Body.DropFileContents()
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
 	if s.closed {

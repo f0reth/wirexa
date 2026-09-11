@@ -4,6 +4,20 @@
 
 関連文書: [Backend Architecture Review](./backend-architecture-review.md#1-http-ファイル送信のローカルファイルアクセスが制限されていない)
 
+## 実装状況
+
+2026-09-11 時点で「段階的な導入順序」の手順 1〜6 を実装済み。手順 4 と 5 は `OpenFilePicker(hint)` の戻り値を共有するため、同一の変更単位で導入した。手順 7（drag & drop）と手順 8（symlink／パス差し替え対策）は未実施で、選択後のパス差し替え（TOCTOU）は既知の残存リスクとして残る。
+
+本書の設計からの差分は次のとおり。
+
+- `SaveResponseBody` は `(bool, error)` を返す。キャンセルと保存成功を UI が区別し、保存成功後は再保存を提示しないため。
+- 空の execution ID は拒否せず、backend が内部で採番する（frontend は送信ごとに必ず ID を付ける）。同じ非空 ID の並行送信は拒否する。
+- `ready` 状態の TTL 回収は専用 goroutine を持たず、response store の各操作の冒頭で遅延評価する。件数・総容量・同時 spill の上限により、操作が無い間も使用量は有界。
+- 同じパスの再選択には同じ token を返し、256 件の上限を繰り返し選択で使い切らないようにする。
+- request を切り替えると表示中の response をクリアし、その一時ファイルを破棄する。
+
+主な実装箇所: `internal/infrastructure/http/file_registry.go`、`internal/infrastructure/http/response_store.go`、`internal/infrastructure/http/collection_repository.go`、`internal/adapters/http_handler.go`、`frontend/src/presentation/components/http/file-reference-input.tsx`。
+
 ## 概要
 
 HTTP 機能では、Wails RPC から受け取ったローカルファイルパスを backend が直接読み込んでいる。また、大きな HTTP レスポンスを保存する際は、backend の一時ファイルパスを frontend へ返し、frontend から同じパスを `SaveResponseBody` へ渡している。

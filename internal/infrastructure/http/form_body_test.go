@@ -90,10 +90,6 @@ func TestBuildMultipartBody_SkipsRows(t *testing.T) {
 			name: "ファイル未選択の file 行は送らない（まだ書きかけの行）",
 			row:  domain.FormRow{Key: "f", Kind: domain.FormRowKindFile, Enabled: true},
 		},
-		{
-			name: "生のパスは読まない（token が無ければ未選択として扱う）",
-			row:  domain.FormRow{Key: "f", Kind: domain.FormRowKindFile, FilePath: "/etc/hosts", Enabled: true},
-		},
 	}
 
 	for _, tc := range tests {

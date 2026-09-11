@@ -190,7 +190,7 @@ test("selecting the File kind swaps the value field for a file path picker", asy
   await expect(bodyPanel.getByRole("button", { name: "Browse..." })).toBeVisible();
 });
 
-// value と filePath は別フィールドなので、kind を往復しても入力が消えてはいけない。
+// value と file 参照は別フィールドなので、kind を往復しても入力が消えてはいけない。
 test("switching kind back and forth keeps both the value and the file path", async ({
   page,
 }) => {

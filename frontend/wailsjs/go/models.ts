@@ -101,7 +101,6 @@ export namespace httpdomain {
 	    key: string;
 	    value: string;
 	    kind?: string;
-	    filePath?: string;
 	    contentType?: string;
 	    file: FileReference;
 	    enabled: boolean;
@@ -115,7 +114,6 @@ export namespace httpdomain {
 	        this.key = source["key"];
 	        this.value = source["value"];
 	        this.kind = source["kind"];
-	        this.filePath = source["filePath"];
 	        this.contentType = source["contentType"];
 	        this.file = this.convertValues(source["file"], FileReference);
 	        this.enabled = source["enabled"];

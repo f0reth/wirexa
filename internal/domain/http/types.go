@@ -95,12 +95,10 @@ type FormRow struct {
 	Value string `json:"value"`
 	// Kind は "" | "text" | "json" | "file"。"" は Kind 導入前の旧データで、text とみなす。
 	Kind string `json:"kind,omitempty"`
-	// FilePath は Kind=="file" のときの送信元パス。Value と分けて持つのは、
-	// kind を切り替えても互いの入力値を失わせないため。
-	FilePath string `json:"filePath,omitempty"`
 	// ContentType は空ならパートごとに Kind から自動決定する。
 	ContentType string `json:"contentType,omitempty"`
-	// File は Kind=="file" のときの送信元ファイルの参照。
+	// File は Kind=="file" のときの送信元ファイルの参照。Value と分けて持つのは、
+	// kind を切り替えても互いの入力値を失わせないため。
 	File    FileReference `json:"file,omitzero"`
 	Enabled bool          `json:"enabled"`
 }
@@ -163,6 +161,12 @@ func (b *RequestBody) NormalizeForms() {
 		}
 		delete(b.Contents, bodyType)
 	}
+}
+
+// DropFileContents は Contents の file 種別のキーを捨てる。file ボディの送信元は File の
+// token だけで、Contents に置かれたパス (旧形式) を受理する経路を残さない。
+func (b *RequestBody) DropFileContents() {
+	delete(b.Contents, BodyTypeFile)
 }
 
 // ParseFormPairs は application/x-www-form-urlencoded 文字列を行へ復元する。
