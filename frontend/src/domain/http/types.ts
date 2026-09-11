@@ -10,6 +10,18 @@ export interface KeyValuePair {
   enabled: boolean;
 }
 
+// request file の参照。実パスは持たない。token は backend がファイルダイアログの
+// 選択結果に発行したもので、現在のセッションでだけ有効（永続化されない）。
+export interface FileReference {
+  token?: string;
+  // 表示用の basename。
+  name?: string;
+  // 選択時に推定した表示用の Content-Type。
+  contentType?: string;
+  // 保存済み・移行済みの参照で、送信前にファイルの再選択が必要。
+  needsReselect?: boolean;
+}
+
 // form 系ボディの 1 行。Headers/Params の KeyValuePair と分けているのは、
 // 値の種別とパートごとの Content-Type がヘッダー行には無意味なため。
 export interface FormRow {
@@ -19,6 +31,8 @@ export interface FormRow {
   kind?: FormRowKind;
   // file の送信元パス。value と分けて持つので kind を往復しても入力が消えない。
   filePath?: string;
+  // file の送信元ファイルの参照。
+  file?: FileReference;
   // 空なら送信時に kind から自動決定する。
   contentType?: string;
   enabled: boolean;
@@ -37,6 +51,8 @@ export interface RequestBody {
   >;
   formData?: FormRow[];
   formUrlEncoded?: FormRow[];
+  // type が "file" のときの送信元ファイルの参照。
+  file?: FileReference;
 }
 
 // body type と行フィールドの対応。form 系以外は行を持たない。

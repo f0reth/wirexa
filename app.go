@@ -28,7 +28,7 @@ import (
 
 // コンパイル時に各ドメインインターフェースを JSONStore[T] が満たすことを検証
 var (
-	_ httpdomain.CollectionRepository = (*infra.JSONStore[httpdomain.Collection])(nil)
+	_ httpdomain.CollectionRepository = (*httpinfra.CollectionRepository)(nil)
 	_ mqttdomain.ProfileRepository    = (*infra.JSONStore[mqttdomain.BrokerProfile])(nil)
 	_ udpdomain.TargetRepository      = (*infra.JSONStore[udpdomain.UDPTarget])(nil)
 )
@@ -133,14 +133,11 @@ func (a *App) initialize(ctx context.Context) error {
 	}
 	adapters.SetupMQTTHandler(a.mqttHandler, mqttSvc, profileSvc)
 
-	collRepo, err := infra.NewJSONStore(
-		filepath.Join(configDir, wirexaConfigDir, "collections"),
-		func(c *httpdomain.Collection) string { return c.ID },
-	)
+	// token と実パスを永続化しないよう、runtime model と永続化 DTO を変換する専用リポジトリを使う。
+	collRepo, err := httpinfra.NewCollectionRepository(filepath.Join(configDir, wirexaConfigDir, "collections"), logger)
 	if err != nil {
 		return fmt.Errorf("failed to create collection store: %w", err)
 	}
-	collRepo.SetLogger(logger)
 	layoutRepo := httpinfra.NewSidebarLayoutRepository(filepath.Join(configDir, wirexaConfigDir, "sidebar_layout.json"))
 	collSvc, err := httpapp.NewCollectionService(collRepo, layoutRepo)
 	if err != nil {

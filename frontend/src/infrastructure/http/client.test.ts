@@ -1034,6 +1034,64 @@ describe("discardResponseBody", () => {
   });
 });
 
+describe("file references", () => {
+  it("maps saved file references that need reselecting", async () => {
+    vi.mocked(Handler.GetRootItems).mockResolvedValue([
+      makeWailsTreeItem({
+        type: "request",
+        id: "r1",
+        request: makeWailsRequest({
+          body: {
+            type: "file",
+            contents: {},
+            file: { name: "a.png", needsReselect: true },
+            formData: [
+              {
+                key: "f",
+                value: "",
+                kind: "file",
+                enabled: true,
+                file: { name: "b.txt", needsReselect: true },
+              },
+            ],
+          },
+        }),
+      }),
+    ] as never);
+
+    const [item] = await getRootItems();
+
+    expect(item.request?.body.file).toEqual({
+      token: "",
+      name: "a.png",
+      contentType: "",
+      needsReselect: true,
+    });
+    expect(item.request?.body.formData?.[0].file).toEqual({
+      token: "",
+      name: "b.txt",
+      contentType: "",
+      needsReselect: true,
+    });
+  });
+
+  it("treats an empty file reference as no selection", async () => {
+    vi.mocked(Handler.GetRootItems).mockResolvedValue([
+      makeWailsTreeItem({
+        type: "request",
+        id: "r1",
+        request: makeWailsRequest({
+          body: { type: "file", contents: {}, file: {} },
+        }),
+      }),
+    ] as never);
+
+    const [item] = await getRootItems();
+
+    expect(item.request?.body.file).toBeUndefined();
+  });
+});
+
 describe("saveResponseBinary", () => {
   it("calls SaveResponseBase64 with the base64 body and content type", async () => {
     vi.mocked(Handler.SaveResponseBase64).mockResolvedValue(undefined);

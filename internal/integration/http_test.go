@@ -20,7 +20,6 @@ import (
 	"github.com/f0reth/Wirexa/internal/adapters"
 	httpapp "github.com/f0reth/Wirexa/internal/application/http"
 	httpdomain "github.com/f0reth/Wirexa/internal/domain/http"
-	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 	httpinfra "github.com/f0reth/Wirexa/internal/infrastructure/http"
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
@@ -30,9 +29,9 @@ import (
 func newHTTPHandlerWithDir(t *testing.T, dir string) *adapters.HTTPHandler {
 	t.Helper()
 	collDir := filepath.Join(dir, "collections")
-	repo, err := infra.NewJSONStore(collDir, func(c *httpdomain.Collection) string { return c.ID })
+	repo, err := httpinfra.NewCollectionRepository(collDir, nil)
 	if err != nil {
-		t.Fatalf("NewJSONStore: %v", err)
+		t.Fatalf("NewCollectionRepository: %v", err)
 	}
 	layoutRepo := httpinfra.NewSidebarLayoutRepository(filepath.Join(dir, "sidebar_layout.json"))
 	collSvc, err := httpapp.NewCollectionService(repo, layoutRepo)
@@ -1088,9 +1087,9 @@ func TestHTTP_CorruptStorage(t *testing.T) {
 	}
 
 	// 破損ファイルは退避・スキップされ、NewCollectionService は成功する（DI を手動で組み立てる）
-	repo, err := infra.NewJSONStore(dir, func(c *httpdomain.Collection) string { return c.ID })
+	repo, err := httpinfra.NewCollectionRepository(dir, nil)
 	if err != nil {
-		t.Fatalf("NewJSONStore: %v", err)
+		t.Fatalf("NewCollectionRepository: %v", err)
 	}
 	layoutRepo := httpinfra.NewSidebarLayoutRepository(filepath.Join(dir, "layout.json"))
 	if _, err = httpapp.NewCollectionService(repo, layoutRepo); err != nil {

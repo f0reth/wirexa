@@ -19,6 +19,7 @@ import {
   openFilePicker,
 } from "../../../infrastructure/http/client";
 import { FORM_ROW_KIND_LABELS } from "../../constants/http";
+import { filePlaceholder } from "./file-reference";
 import styles from "./http.module.css";
 import { JsonBodyEditor } from "./json-body-editor";
 
@@ -64,9 +65,18 @@ export function FormRowEditor(props: FormRowEditorProps) {
   const canExpand = (row: FormRow) =>
     props.bodyType === "form-data" || kindOf(row) === "json";
 
+  // ファイルを指定し直したら、保存済みの参照（再選択待ち）は捨てる。
+  const setFilePath = (index: number, path: string) => {
+    props.onChange(
+      props.rows.map((r, i) =>
+        i === index ? { ...r, filePath: path, file: undefined } : r,
+      ),
+    );
+  };
+
   const browse = async (index: number) => {
     const path = await openFilePicker();
-    if (path) update(index, "filePath", path);
+    if (path) setFilePath(index, path);
   };
 
   return (
@@ -147,10 +157,8 @@ export function FormRowEditor(props: FormRowEditorProps) {
                 >
                   <Input
                     value={row().filePath ?? ""}
-                    onInput={(e) =>
-                      update(index, "filePath", e.currentTarget.value)
-                    }
-                    placeholder="No file selected"
+                    onInput={(e) => setFilePath(index, e.currentTarget.value)}
+                    placeholder={filePlaceholder(row().file)}
                     class={styles.kvInput}
                   />
                   <Button

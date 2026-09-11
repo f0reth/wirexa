@@ -25,6 +25,7 @@ import { httpdomain } from "../../../wailsjs/go/models";
 import {
   type Collection,
   DEFAULT_SETTINGS,
+  type FileReference,
   type FormRow,
   type HttpRequest,
   type HttpResponse,
@@ -79,6 +80,19 @@ function fromWailsRequestAuth(auth: httpdomain.RequestAuth): RequestAuth {
   };
 }
 
+// ファイル参照が空（未選択）なら undefined にし、UI が未選択と参照ありを区別できるようにする。
+function fromWailsFileReference(
+  ref: httpdomain.FileReference | undefined | null,
+): FileReference | undefined {
+  if (!ref || (!ref.token && !ref.name)) return undefined;
+  return {
+    token: ref.token ?? "",
+    name: ref.name ?? "",
+    contentType: ref.contentType ?? "",
+    needsReselect: ref.needsReselect ?? false,
+  };
+}
+
 // Go の kind は string なのでユニオンへ絞り込む。未設定（kind 導入前の行）と
 // 未知の値はどちらも text 相当として扱い、行を捨てない。
 function fromWailsFormRow(row: httpdomain.FormRow): FormRow {
@@ -86,6 +100,7 @@ function fromWailsFormRow(row: httpdomain.FormRow): FormRow {
     ...row,
     kind: row.kind && isFormRowKind(row.kind) ? row.kind : "text",
     filePath: row.filePath ?? "",
+    file: fromWailsFileReference(row.file),
     contentType: row.contentType ?? "",
   };
 }
@@ -101,6 +116,7 @@ function fromWailsRequestBody(body: httpdomain.RequestBody): RequestBody {
     contents: (body.contents ?? {}) as RequestBody["contents"],
     formData: body.formData?.map(fromWailsFormRow),
     formUrlEncoded: body.formUrlEncoded?.map(fromWailsFormRow),
+    file: fromWailsFileReference(body.file),
   };
 }
 

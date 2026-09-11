@@ -15,6 +15,7 @@ import { openFilePicker } from "../../../infrastructure/http/client";
 import { AUTH_TYPES, BODY_TYPES } from "../../constants/http";
 import { useHttpRequest } from "../../providers/http-provider";
 import { DocEditor } from "./doc-editor";
+import { filePlaceholder } from "./file-reference";
 import { FormRowEditor } from "./form-row-editor";
 import styles from "./http.module.css";
 import { JsonBodyEditor } from "./json-body-editor";
@@ -60,6 +61,13 @@ export function RequestEditor() {
     setBody({
       ...body(),
       contents: { ...body().contents, [body().type]: content },
+    });
+  // ファイルを指定し直したら、保存済みの参照（再選択待ち）は捨てる。
+  const setFilePath = (path: string) =>
+    setBody({
+      ...body(),
+      file: undefined,
+      contents: { ...body().contents, file: path },
     });
 
   // form 系の行は body の専用フィールドそのものを読み書きする。
@@ -151,8 +159,8 @@ export function RequestEditor() {
                   <div class={styles.filePickerRow}>
                     <Input
                       value={bodyContent()}
-                      placeholder="No file selected"
-                      onInput={(e) => setBodyContent(e.currentTarget.value)}
+                      placeholder={filePlaceholder(body().file)}
+                      onInput={(e) => setFilePath(e.currentTarget.value)}
                       class={styles.filePathInput}
                     />
                     <button
@@ -161,7 +169,7 @@ export function RequestEditor() {
                       onClick={async () => {
                         const path = await openFilePicker();
                         if (path) {
-                          setBodyContent(path);
+                          setFilePath(path);
                         }
                       }}
                     >

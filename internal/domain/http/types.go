@@ -15,6 +15,23 @@ const (
 	BodyTypeFormURLEncoded = "form-urlencoded"
 )
 
+// BodyTypeFile はファイルの内容をそのままボディにする種別。
+const BodyTypeFile = "file"
+
+// FileReference は request file の参照。実パスは持たず、backend がファイルダイアログの
+// 選択結果に発行した session token と表示用の情報だけを運ぶ。
+// 永続化時は token を捨て、basename と再選択が必要であることだけを保存する。
+type FileReference struct {
+	// Token は現在のセッションでファイルダイアログから発行された token。空なら未選択。
+	Token string `json:"token,omitempty"`
+	// Name は表示用の basename。アクセス判定には使わない。
+	Name string `json:"name,omitempty"`
+	// ContentType は選択時に推定した表示用の Content-Type。アクセス判定には使わない。
+	ContentType string `json:"contentType,omitempty"`
+	// NeedsReselect は保存済み・移行済みの参照で、送信前にファイルの再選択が必要であることを示す。
+	NeedsReselect bool `json:"needsReselect,omitempty"`
+}
+
 // RequestAuth はリクエスト認証情報を表す。
 type RequestAuth struct {
 	Type     string `json:"type"`     // "none" | "basic" | "bearer"
@@ -75,7 +92,9 @@ type FormRow struct {
 	FilePath string `json:"filePath,omitempty"`
 	// ContentType は空ならパートごとに Kind から自動決定する。
 	ContentType string `json:"contentType,omitempty"`
-	Enabled     bool   `json:"enabled"`
+	// File は Kind=="file" のときの送信元ファイルの参照。
+	File    FileReference `json:"file,omitzero"`
+	Enabled bool          `json:"enabled"`
 }
 
 // EffectiveKind は Kind 未設定（Kind 導入前に保存された行）を text とみなして返す。
@@ -95,10 +114,12 @@ func (r *FormRow) EffectiveKind() string {
 // map[string][]Struct を壊すため（asMap 経路が `new Array(rows)` で行配列を
 // 二重配列にする）。body type ごとに独立したスライスとして持つ。
 type RequestBody struct {
-	Contents       map[string]string `json:"contents"`
-	Type           string            `json:"type"`
-	FormData       []FormRow         `json:"formData,omitempty"`
-	FormURLEncoded []FormRow         `json:"formUrlEncoded,omitempty"`
+	Contents map[string]string `json:"contents"`
+	// File は Type=="file" のときの送信元ファイルの参照。
+	File           FileReference `json:"file,omitzero"`
+	Type           string        `json:"type"`
+	FormData       []FormRow     `json:"formData,omitempty"`
+	FormURLEncoded []FormRow     `json:"formUrlEncoded,omitempty"`
 }
 
 // formPairsFor は body type に対応する行スライスへのポインタを返す。
