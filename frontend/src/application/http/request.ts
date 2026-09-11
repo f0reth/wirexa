@@ -12,6 +12,7 @@ import type {
 } from "../../domain/http/types";
 import {
   DEFAULT_SETTINGS,
+  hasUnconfirmedFile,
   isResponseUnavailableError,
 } from "../../domain/http/types";
 import { generateId } from "../../infrastructure/id/generator";
@@ -39,6 +40,26 @@ interface CurrentResponse {
 // 切り詰められたレスポンスの全文の保存状態。
 // saved は保存済み（backend の一時ファイルは削除済み）、unavailable は backend が回収済み。
 export type ResponseSaveState = "idle" | "saved" | "unavailable";
+
+// 未確定・再選択待ちのファイルがあるときに送信を止める理由。
+const UNCONFIRMED_FILE_ERROR =
+  "Select the file with Browse... before sending. A typed path only sets where the file dialog opens.";
+
+function errorResponse(error: string): HttpResponse {
+  return {
+    statusCode: 0,
+    statusText: "",
+    headers: {},
+    body: "",
+    contentType: "",
+    size: 0,
+    timingMs: 0,
+    error,
+    bodyTruncated: false,
+    bodyBase64: false,
+    bodyCapped: false,
+  };
+}
 
 export function createRequestState(api: RequestApi, logger: Logger) {
   const [method, setMethod] = createSignal<HttpMethod>("GET");
@@ -101,6 +122,14 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     const u = url();
     const sendId = generateId();
     replaceResponse(null);
+    // 入力しただけのパスや保存済みの参照は許可にならないため、backend に送る前に止める。
+    if (hasUnconfirmedFile(body())) {
+      replaceResponse({
+        executionId: sendId,
+        response: errorResponse(UNCONFIRMED_FILE_ERROR),
+      });
+      return;
+    }
     setInFlight((ids) => [...ids, sendId]);
     logger.info("HTTP request sent", { method: m, url: u });
     try {
@@ -127,19 +156,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       replaceResponse({
         executionId: sendId,
-        response: {
-          statusCode: 0,
-          statusText: "",
-          headers: {},
-          body: "",
-          contentType: "",
-          size: 0,
-          timingMs: 0,
-          error: errorMsg,
-          bodyTruncated: false,
-          bodyBase64: false,
-          bodyCapped: false,
-        },
+        response: errorResponse(errorMsg),
       });
       logger.error("HTTP request failed", {
         method: m,

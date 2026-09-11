@@ -14,6 +14,7 @@ vi.mock("../../../wailsjs/go/adapters/HTTPHandler", () => ({
   MoveItem: vi.fn(),
   MoveItemToSidebar: vi.fn(),
   MoveSidebarEntry: vi.fn(),
+  OpenFilePicker: vi.fn(),
   RenameCollection: vi.fn(),
   RenameItem: vi.fn(),
   SaveResponseBase64: vi.fn(),
@@ -37,6 +38,7 @@ import {
   moveItem,
   moveItemToSidebar,
   moveSidebarEntry,
+  openFilePicker,
   renameCollection,
   renameItem,
   saveResponseBinary,
@@ -1031,6 +1033,33 @@ describe("discardResponseBody", () => {
     vi.mocked(Handler.DiscardResponseBody).mockResolvedValue(undefined);
     await discardResponseBody("exec-1");
     expect(Handler.DiscardResponseBody).toHaveBeenCalledWith("exec-1");
+  });
+});
+
+describe("openFilePicker", () => {
+  it("passes the hint and returns the selected file reference", async () => {
+    vi.mocked(Handler.OpenFilePicker).mockResolvedValue({
+      token: "tok",
+      name: "a.png",
+      contentType: "image/png",
+    } as never);
+
+    await expect(openFilePicker("/tmp/a.png")).resolves.toEqual({
+      token: "tok",
+      name: "a.png",
+      contentType: "image/png",
+    });
+    expect(Handler.OpenFilePicker).toHaveBeenCalledWith("/tmp/a.png");
+  });
+
+  it("returns undefined when the dialog is canceled", async () => {
+    vi.mocked(Handler.OpenFilePicker).mockResolvedValue({
+      token: "",
+      name: "",
+      contentType: "",
+    } as never);
+
+    await expect(openFilePicker("")).resolves.toBeUndefined();
   });
 });
 

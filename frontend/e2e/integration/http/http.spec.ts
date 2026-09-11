@@ -129,10 +129,11 @@ test("response viewer headers tab shows every value of a multi-value header", as
 
 // ── form-data の行種別（text / json / file）────────────────────────────────
 
-// UI で組んだ行が実 Go バックエンドで multipart に組み立てられ、file 行では
-// 実ファイルのバイトがワイヤに載ることを確認する。UI e2e の fake backend は
-// ファイルを読まないため、この経路はここでしか確かめられない。
-test("form-data rows are sent as multipart parts with real file bytes", async ({
+// UI で組んだ行が実 Go バックエンドで multipart に組み立てられることを確認する。
+// file 行はネイティブのファイルダイアログで確定したものだけが送られ、入力しただけの
+// パスは許可にならない。ダイアログは E2E から操作できないため、実ファイルのバイトが
+// ワイヤに載ることは Go の統合テスト (TestHTTP_SendRequest_FormDataKinds) で確認する。
+test("form-data rows are sent as multipart parts and a typed file path is not uploaded", async ({
   page,
   app,
 }, testInfo) => {
@@ -150,14 +151,20 @@ test("form-data rows are sent as multipart parts with real file bytes", async ({
   await bodyPanel.getByPlaceholder("Field").fill("plain");
   await bodyPanel.getByPlaceholder("Value").fill("text value");
 
-  // file 行（Browse はネイティブダイアログなのでパスを直接入力する）
+  // file 行: パスを入力しただけでは未確定のままで、送信は止まる
   await bodyPanel.getByRole("button", { name: "Add" }).click();
   await bodyPanel.getByPlaceholder("Field").nth(1).fill("doc");
   const kindSelect = bodyPanel.getByTestId("form-kind-select").nth(1);
   await kindSelect.getByRole("button").first().click();
   await kindSelect.getByRole("button", { name: "File" }).click();
   await bodyPanel.getByPlaceholder("No file selected").fill(filePath);
+  await expect(bodyPanel.getByText("Not confirmed")).toBeVisible();
 
+  await app.sendButton.click();
+  await expect(page.getByTestId("response-error")).toContainText("Browse");
+
+  // 未確定の file 行を外せば、残りの行は multipart で送られる
+  await bodyPanel.getByRole("button", { name: "Remove row" }).nth(1).click();
   await app.sendButton.click();
   await expect(page.getByText("200", { exact: true })).toBeVisible();
 
@@ -171,14 +178,9 @@ test("form-data rows are sent as multipart parts with real file bytes", async ({
   );
   await expect(responseBody).toContainText("text value");
 
-  // file 行はファイル名と、拡張子から自動判定した Content-Type を載せる。
-  await expect(responseBody).toContainText(
-    'Content-Disposition: form-data; name="doc"; filename="upload.json"',
-  );
-  await expect(responseBody).toContainText("Content-Type: application/json");
-
-  // ディスク上のファイルの中身がボディに載っている（fake backend では確かめられない部分）。
-  await expect(responseBody).toContainText('{"from":"file"}');
+  // 入力しただけのパスのファイルは送られていない。
+  await expect(responseBody).not.toContainText('name="doc"');
+  await expect(responseBody).not.toContainText('{"from":"file"}');
 });
 
 // ── 観点I-6: コレクションへの保存・読み込み ──────────────────────────────────

@@ -85,7 +85,7 @@ func truncatedRequest(t *testing.T, id string, body []byte) domain.HTTPRequest {
 
 func TestNetClient_Cleanup(t *testing.T) {
 	dir := isolateTempDir(t)
-	c := NewNetClient()
+	c := NewNetClient(nil)
 	if _, err := c.Do(context.Background(), truncatedRequest(t, "big", make([]byte, 2*1024*1024))); err != nil {
 		t.Fatalf("Do: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestNetClient_Cleanup(t *testing.T) {
 // 上限に収まるレスポンスでは一時ファイルを一切作らず、execution ID の予約も残さないことを確認する。
 func TestNetClient_WithinLimit_NoTempFile(t *testing.T) {
 	dir := isolateTempDir(t)
-	c := NewNetClient()
+	c := NewNetClient(nil)
 
 	req := domain.HTTPRequest{
 		ID:     "small",
@@ -142,7 +142,7 @@ func TestNetClient_Truncated_TempFileHoldsFullBody(t *testing.T) {
 	const maxBody = 1 * 1024 * 1024
 	full := bytes.Repeat([]byte("a"), maxBody+512)
 
-	c := NewNetClient()
+	c := NewNetClient(nil)
 	res, err := c.Do(context.Background(), truncatedRequest(t, "big", full))
 	if err != nil {
 		t.Fatalf("Do: %v", err)
@@ -188,7 +188,7 @@ func TestNetClient_AbsoluteLimit_CapsBody(t *testing.T) {
 	const hardLimit = 8 * 1024
 	full := bytes.Repeat([]byte("b"), 64*1024)
 
-	c := NewNetClient()
+	c := NewNetClient(nil)
 	c.maxTempBytes = hardLimit
 
 	res, err := c.Do(context.Background(), domain.HTTPRequest{
@@ -226,7 +226,7 @@ func TestNetClient_AbsoluteLimit_CapsBody(t *testing.T) {
 // 破棄した後は同じ ID で再送でき、一時ファイルは常に 1 個以下に保たれる。
 func TestNetClient_TruncatedResend_RejectedUntilDiscard(t *testing.T) {
 	dir := isolateTempDir(t)
-	c := NewNetClient()
+	c := NewNetClient(nil)
 	req := truncatedRequest(t, "same-id", make([]byte, 2*1024*1024))
 
 	if _, err := c.Do(context.Background(), req); err != nil {

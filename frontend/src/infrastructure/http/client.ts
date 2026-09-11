@@ -9,7 +9,6 @@ import {
   GetCollections,
   GetRootItems,
   GetSidebarLayout,
-  GuessFormPartContentType,
   MoveItem,
   MoveItemToSidebar,
   MoveSidebarEntry,
@@ -178,16 +177,20 @@ export async function cancelRequest(id: string): Promise<void> {
   return CancelRequest(id);
 }
 
-// openFilePicker はネイティブのファイル選択ダイアログを開き、選択パスを返す。
+// openFilePicker はネイティブのファイル選択ダイアログを開き、選択されたファイルの参照を返す。
+// hint は入力欄の文字列で、ダイアログの初期位置にだけ使われる（許可にはならない）。
+// token はダイアログの選択結果からだけ発行され、キャンセル時は undefined を返す。
 // presentation 層が wailsjs バインディングを直接叩かないようインフラ層でラップする。
-export function openFilePicker(): Promise<string> {
-  return OpenFilePicker();
-}
-
-// guessFormPartContentType は form-data の file 行に自動付与される Content-Type を返す。
-// 拡張子の判定は OS 依存なので、UI のヒントも送信時と同じ Go の判定に問い合わせる。
-export function guessFormPartContentType(path: string): Promise<string> {
-  return GuessFormPartContentType(path);
+export async function openFilePicker(
+  hint: string,
+): Promise<FileReference | undefined> {
+  const selected = await OpenFilePicker(hint);
+  if (!selected?.token) return undefined;
+  return {
+    token: selected.token,
+    name: selected.name,
+    contentType: selected.contentType,
+  };
 }
 
 export async function getCollections(): Promise<Collection[]> {

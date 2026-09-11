@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Minus, Plus } from "lucide-solid";
-import { createResource, createSignal, Index, Show } from "solid-js";
+import { createSignal, Index, Show } from "solid-js";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import {
@@ -14,12 +14,8 @@ import type {
   FormRowKind,
 } from "../../../domain/http/types";
 import { FORM_ROW_KINDS_BY_BODY_TYPE } from "../../../domain/http/types";
-import {
-  guessFormPartContentType,
-  openFilePicker,
-} from "../../../infrastructure/http/client";
 import { FORM_ROW_KIND_LABELS } from "../../constants/http";
-import { filePlaceholder } from "./file-reference";
+import { FileReferenceInput } from "./file-reference-input";
 import styles from "./http.module.css";
 import { JsonBodyEditor } from "./json-body-editor";
 
@@ -65,39 +61,18 @@ export function FormRowEditor(props: FormRowEditorProps) {
   const canExpand = (row: FormRow) =>
     props.bodyType === "form-data" || kindOf(row) === "json";
 
-  // ファイルを指定し直したら、保存済みの参照（再選択待ち）は捨てる。
-  const setFilePath = (index: number, path: string) => {
-    props.onChange(
-      props.rows.map((r, i) =>
-        i === index ? { ...r, filePath: path, file: undefined } : r,
-      ),
-    );
-  };
-
-  const browse = async (index: number) => {
-    const path = await openFilePicker();
-    if (path) setFilePath(index, path);
-  };
-
   return (
     <div class={styles.kvEditor}>
       <Index each={props.rows}>
         {(row, index) => {
-          // file 行の自動 Content-Type は Go に問い合わせる（拡張子判定は OS 依存で、
-          // ここで再実装すると実際に送られる値とヒントがずれる）。
-          const [autoFileType] = createResource(
-            () =>
-              kindOf(row()) === "file" && row().filePath
-                ? row().filePath
-                : undefined,
-            (path: string) => guessFormPartContentType(path),
-          );
+          // file 行の自動 Content-Type は、送信時と同じく選択時に backend が判定した値を出す
+          // （拡張子判定は OS 依存で、ここで再実装すると実際に送られる値とヒントがずれる）。
           const autoContentType = () => {
             switch (kindOf(row())) {
               case "json":
                 return "application/json";
               case "file":
-                return autoFileType() ?? "";
+                return row().file?.token ? (row().file?.contentType ?? "") : "";
               default:
                 return "none";
             }
@@ -155,20 +130,11 @@ export function FormRowEditor(props: FormRowEditorProps) {
                     />
                   }
                 >
-                  <Input
-                    value={row().filePath ?? ""}
-                    onInput={(e) => setFilePath(index, e.currentTarget.value)}
-                    placeholder={filePlaceholder(row().file)}
-                    class={styles.kvInput}
+                  <FileReferenceInput
+                    file={row().file}
+                    onChange={(file) => update(index, "file", file)}
+                    inputClass={styles.kvInput}
                   />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    class={styles.formBrowse}
-                    onClick={() => void browse(index)}
-                  >
-                    Browse...
-                  </Button>
                 </Show>
                 <Show when={canExpand(row())}>
                   <Button

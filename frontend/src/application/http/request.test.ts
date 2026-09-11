@@ -1,6 +1,10 @@
 import { createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
-import type { HttpRequest, HttpResponse } from "../../domain/http/types";
+import type {
+  HttpRequest,
+  HttpResponse,
+  RequestBody,
+} from "../../domain/http/types";
 import { DEFAULT_SETTINGS } from "../../domain/http/types";
 import type { Logger } from "../logger";
 import { createRequestState, type RequestApi } from "./request";
@@ -307,6 +311,108 @@ describe("createRequestState response body lifecycle", () => {
         "application/octet-stream",
       );
       expect(api.saveResponseBody).not.toHaveBeenCalled();
+      dispose();
+    });
+  });
+});
+
+describe("createRequestState file confirmation", () => {
+  const blocked: Array<[string, RequestBody]> = [
+    [
+      "a typed path that was never confirmed",
+      { type: "file", contents: {}, file: { hint: "/tmp/a.bin" } },
+    ],
+    [
+      "a saved file that needs reselecting",
+      {
+        type: "file",
+        contents: {},
+        file: { name: "a.bin", needsReselect: true },
+      },
+    ],
+    [
+      "an unconfirmed form-data file row",
+      {
+        type: "form-data",
+        contents: {},
+        formData: [
+          {
+            key: "f",
+            value: "",
+            kind: "file",
+            enabled: true,
+            file: { hint: "/tmp/b.bin" },
+          },
+        ],
+      },
+    ],
+  ];
+
+  for (const [label, body] of blocked) {
+    it(`does not send ${label}`, async () => {
+      await createRoot(async (dispose) => {
+        const { api, sent } = makeApi();
+        const state = createRequestState(api, noopLogger);
+        state.setBody(body);
+
+        await state.sendRequest();
+
+        expect(sent).toHaveLength(0);
+        expect(state.response()?.error).toContain("Browse");
+        dispose();
+      });
+    });
+  }
+
+  it("ignores disabled and keyless file rows", async () => {
+    await createRoot(async (dispose) => {
+      const { api, sent, settleAll } = makeApi();
+      const state = createRequestState(api, noopLogger);
+      state.setBody({
+        type: "form-data",
+        contents: {},
+        formData: [
+          {
+            key: "",
+            value: "",
+            kind: "file",
+            enabled: true,
+            file: { hint: "x" },
+          },
+          {
+            key: "f",
+            value: "",
+            kind: "file",
+            enabled: false,
+            file: { hint: "y" },
+          },
+        ],
+      });
+
+      const send = state.sendRequest();
+      await settleAll();
+      await send;
+
+      expect(sent).toHaveLength(1);
+      dispose();
+    });
+  });
+
+  it("sends a confirmed file by its token", async () => {
+    await createRoot(async (dispose) => {
+      const { api, sent, settleAll } = makeApi();
+      const state = createRequestState(api, noopLogger);
+      state.setBody({
+        type: "file",
+        contents: {},
+        file: { token: "tok", name: "a.bin" },
+      });
+
+      const send = state.sendRequest();
+      await settleAll();
+      await send;
+
+      expect(sent[0].body.file?.token).toBe("tok");
       dispose();
     });
   });

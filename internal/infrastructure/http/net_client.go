@@ -43,6 +43,7 @@ type transportKey struct {
 
 // NetClient は net/http を使った domain.HTTPTransport の実装。
 type NetClient struct {
+	files      domain.SelectedFileReader
 	transports map[transportKey]*http.Transport
 	responses  *ResponseStore
 	mu         sync.Mutex
@@ -50,9 +51,11 @@ type NetClient struct {
 	maxTempBytes int64
 }
 
-// NewNetClient は NetClient を生成する。
-func NewNetClient() *NetClient {
+// NewNetClient は NetClient を生成する。files は request file の token を解決する registry で、
+// nil の場合はファイルを送る全てのリクエストを拒否する。
+func NewNetClient(files domain.SelectedFileReader) *NetClient {
 	return &NetClient{
+		files:        files,
 		transports:   make(map[transportKey]*http.Transport),
 		responses:    NewResponseStore(),
 		maxTempBytes: defaultMaxTempBytes,
@@ -132,21 +135,22 @@ func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTP
 		contentType = "application/x-www-form-urlencoded"
 	case domain.BodyTypeFormData:
 		var buf *bytes.Buffer
-		buf, contentType, err = buildMultipartBody(req.Body.FormPairs())
+		buf, contentType, err = buildMultipartBody(req.Body.FormPairs(), c.files)
 		if err != nil {
 			return domain.HTTPResponse{}, err
 		}
 		bodyReader = buf
 		forceContentType = true
-	case "file":
-		if bodyContent != "" {
-			var fileData []byte
-			fileData, err = os.ReadFile(bodyContent) //nolint:gosec // user-selected file path
-			if err != nil {
-				return domain.HTTPResponse{}, fmt.Errorf("failed to read file: %w", err)
-			}
-			bodyReader = bytes.NewReader(fileData)
-			contentType = domain.GuessFileContentType(bodyContent)
+	case domain.BodyTypeFile:
+		// 送信元は token を registry で解決したファイルだけ。Contents の文字列 (旧データのパス) は読まない。
+		// filename と Content-Type も frontend の値ではなく registry の値を使う。
+		file, ok, ferr := resolveFile(c.files, req.Body.File)
+		if ferr != nil {
+			return domain.HTTPResponse{}, ferr
+		}
+		if ok {
+			bodyReader = bytes.NewReader(file.Data)
+			contentType = file.ContentType
 		}
 	}
 

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -13,8 +14,22 @@ import (
 	httpdomain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
-// errSaveDialog は保存ダイアログの起動失敗。Wails のエラー文言は透過させない。
-var errSaveDialog = errors.New("failed to open save dialog")
+// maxHintLength はファイルダイアログの hint として受け付ける文字列の上限。超えた hint は捨てる。
+const maxHintLength = 4096
+
+var (
+	// errSaveDialog は保存ダイアログの起動失敗。Wails のエラー文言は透過させない。
+	errSaveDialog = errors.New("failed to open save dialog")
+	// errFilePicker はファイル選択ダイアログの起動失敗。Wails のエラーは hint の実パスを
+	// 含みうるため (default directory '%s' does not exist) 透過させない。
+	errFilePicker = errors.New("failed to open file picker")
+)
+
+// FileSelector はダイアログで選択されたファイルを登録して session token を発行する。
+// 登録を呼ぶのは OpenFilePicker のダイアログ処理だけで、RPC からパスを登録する経路は無い。
+type FileSelector interface {
+	Register(path string) (httpdomain.SelectedFile, error)
+}
 
 // HTTPHandler は Wails RPC アダプターとして HTTP ユースケースを公開する。
 type HTTPHandler struct {
@@ -23,6 +38,7 @@ type HTTPHandler struct {
 	collSvc   httpdomain.CollectionUseCase
 	itemSvc   httpdomain.CollectionItemUseCase
 	responses httpdomain.ResponseBodyStore
+	files     FileSelector
 	dialog    FileDialog
 }
 
@@ -33,6 +49,7 @@ type HTTPHandlerDeps struct {
 	CollSvc   httpdomain.CollectionUseCase
 	ItemSvc   httpdomain.CollectionItemUseCase
 	Responses httpdomain.ResponseBodyStore
+	Files     FileSelector
 	Dialog    FileDialog
 }
 
@@ -44,25 +61,62 @@ func SetupHTTPHandler(ctx context.Context, h *HTTPHandler, deps HTTPHandlerDeps)
 	h.collSvc = deps.CollSvc
 	h.itemSvc = deps.ItemSvc
 	h.responses = deps.Responses
+	h.files = deps.Files
 	h.dialog = deps.Dialog
 	if h.dialog == nil {
 		h.dialog = wailsFileDialog{}
 	}
 }
 
-// OpenFilePicker はネイティブのファイル選択ダイアログを開き、選択されたファイルパスを返す。
-func (h *HTTPHandler) OpenFilePicker() (string, error) {
-	return h.dialog.OpenFile(h.ctx, runtime.OpenDialogOptions{
-		Title: "Select File",
-	})
+// OpenFilePicker はネイティブのファイル選択ダイアログを開き、選択されたファイルに発行した
+// session token と表示用の basename・Content-Type を返す。キャンセル時は Token が空。
+//
+// hint は入力欄に打ち込まれた・ペーストされた文字列で、ダイアログの初期位置を決めるためだけに使う。
+// hint は許可の根拠にせず、読み取り経路にも渡さない。token を発行するのはダイアログの戻り値だけ。
+func (h *HTTPHandler) OpenFilePicker(hint string) (httpdomain.SelectedFile, error) {
+	if h.files == nil {
+		return httpdomain.SelectedFile{}, errFilePicker
+	}
+	options := runtime.OpenDialogOptions{Title: "Select File"}
+	options.DefaultDirectory, options.DefaultFilename = dialogLocationFromHint(hint)
+	path, err := h.dialog.OpenFile(h.ctx, options)
+	if err != nil && (options.DefaultDirectory != "" || options.DefaultFilename != "") {
+		// 判定後にディレクトリが消えた場合など、hint 由来の失敗では既定位置で開き直す。
+		path, err = h.dialog.OpenFile(h.ctx, runtime.OpenDialogOptions{Title: "Select File"})
+	}
+	if err != nil {
+		return httpdomain.SelectedFile{}, errFilePicker
+	}
+	if path == "" {
+		return httpdomain.SelectedFile{}, nil
+	}
+	return h.files.Register(path)
 }
 
-// GuessFormPartContentType は form-data の file 行で自動付与される Content-Type を返す。
-// UI のヒント表示と送信時の判定を同じ実装に寄せるために公開する
-// （拡張子の判定は OS 依存で、フロント側に再実装すると表示と実際の送信内容がずれる）。
-// パスは受け取るだけでファイルは読まないため、読み取り許可の検査は不要。
-func (h *HTTPHandler) GuessFormPartContentType(path string) string {
-	return httpdomain.GuessFileContentType(path)
+// dialogLocationFromHint は hint からダイアログの初期ディレクトリとファイル名を決める。
+// 絶対パスで、ディレクトリ部分が存在する場合だけ使い、それ以外は hint を捨てて既定位置で開く。
+// Wails は存在しないディレクトリに対してそのパスを含むエラーを返すため、事前に判定する。
+func dialogLocationFromHint(hint string) (dir, name string) {
+	hint = strings.TrimSpace(hint)
+	if hint == "" || len(hint) > maxHintLength || strings.ContainsRune(hint, 0) {
+		return "", ""
+	}
+	cleaned := filepath.Clean(hint)
+	if !filepath.IsAbs(cleaned) {
+		return "", ""
+	}
+	if isDir(cleaned) {
+		return cleaned, ""
+	}
+	if parent := filepath.Dir(cleaned); isDir(parent) {
+		return parent, filepath.Base(cleaned)
+	}
+	return "", ""
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。

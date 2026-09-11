@@ -143,13 +143,16 @@ func (a *App) initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize collections: %w", err)
 	}
-	a.netClient = httpinfra.NewNetClient()
+	// request file はダイアログで選ばれたものだけを session token で参照させる。
+	fileRegistry := httpinfra.NewFileRegistry()
+	a.netClient = httpinfra.NewNetClient(fileRegistry)
 	a.reqSvc = httpapp.NewHTTPRequestService(a.netClient, logger)
 	adapters.SetupHTTPHandler(ctx, a.httpHandler, adapters.HTTPHandlerDeps{
 		ReqSvc:    a.reqSvc,
 		CollSvc:   collSvc,
 		ItemSvc:   collSvc,
 		Responses: a.netClient.Responses(),
+		Files:     fileRegistry,
 	})
 
 	targetRepo, err := infra.NewJSONStore(

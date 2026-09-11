@@ -8,6 +8,7 @@
 import {
   DEFAULT_SETTINGS,
   type Collection,
+  type FileReference,
   type HttpRequest,
   type HttpResponse,
   ROOT_COLLECTION_ID,
@@ -80,12 +81,13 @@ function seeded(seed: FakeSeed): Db {
     };
     for (const r of c.requests ?? []) {
       const id = r.id ?? newId("req");
+      const request = blankRequest(id, r.name, r.url ?? "");
       col.items.push({
         type: "request",
         id,
         name: r.name,
         children: [],
-        request: blankRequest(id, r.name, r.url ?? ""),
+        request: r.body ? { ...request, body: r.body } : request,
       });
     }
     fresh.collections.push(col);
@@ -212,8 +214,33 @@ const DEFAULT_RESPONSE: HttpResponse = {
   bodyCapped: false,
 };
 
+// Go の resolveFile と同じく、ダイアログで選ばれていない token や、token の無い
+// 保存済み参照ではファイルを送らない。
+function fileAccessDenied(req: HttpRequest): boolean {
+  const denied = (ref: FileReference | undefined) =>
+    !!ref &&
+    (ref.token
+      ? ref.token !== seed.pickedFile?.token
+      : !!ref.name || !!ref.needsReselect);
+  if (req.body.type === "file") return denied(req.body.file);
+  if (req.body.type === "form-data") {
+    return (req.body.formData ?? []).some(
+      (row) => row.enabled && row.key && row.kind === "file" && denied(row.file),
+    );
+  }
+  return false;
+}
+
 function sendRequest(req: HttpRequest): Promise<HttpResponse> {
   return new Promise<HttpResponse>((resolve, reject) => {
+    if (fileAccessDenied(req)) {
+      reject(
+        new Error(
+          "failed to send request: file access denied: select the file again",
+        ),
+      );
+      return;
+    }
     const timer = setTimeout(() => {
       inFlight.delete(req.id);
       if (seed.httpError) reject(new Error(seed.httpError));
@@ -391,21 +418,12 @@ const HttpHandler = {
     inFlight.get(id)?.();
   }),
 
-  OpenFilePicker: counted("OpenFilePicker", async () => ""),
-  // Go の mime.TypeByExtension 相当。実機の判定は OS 依存なので、
-  // UI のヒント表示を確かめられる代表的な拡張子だけ返す。
-  GuessFormPartContentType: counted(
-    "GuessFormPartContentType",
-    async (path: string) => {
-      const dot = path.lastIndexOf(".");
-      const ext = dot === -1 ? "" : path.slice(dot).toLowerCase();
-      const types: Record<string, string> = {
-        ".json": "application/json",
-        ".png": "image/png",
-        ".txt": "text/plain; charset=utf-8",
-      };
-      return types[ext] ?? "application/octet-stream";
-    },
+  // ダイアログで seed.pickedFile が選ばれたものとして返す (未設定ならキャンセル)。
+  // hint は Go 側と同じく初期位置にしか使わないので、戻り値に影響しない。
+  OpenFilePicker: counted(
+    "OpenFilePicker",
+    async (_hint: string) =>
+      seed.pickedFile ?? { token: "", name: "", contentType: "" },
   ),
   // Go 側と同じく execution ID だけを受け取る。seed.saveResponseError で
   // 回収済み (TTL・上限) の一時ファイルを模す。

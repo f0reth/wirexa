@@ -18,4 +18,11 @@ var (
 	ErrDiscardResponseFailed = errors.New("failed to discard response")
 	// ErrExecutionInProgress は同じ execution ID のリクエストが実行中であることを示す。
 	ErrExecutionInProgress = errors.New("a request with the same execution ID is already running")
+
+	// ErrFileAccessDenied は file token が空・未知・失効済み、または再選択待ちであることを示す。
+	ErrFileAccessDenied = errors.New("file access denied: select the file again")
+	// ErrSelectedFileUnavailable は選択後の削除・権限変更などでファイルを読めないことを示す。
+	ErrSelectedFileUnavailable = errors.New("selected file unavailable")
+	// ErrFileSelectionLimit は選択済みファイルの登録数が上限に達したことを示す。
+	ErrFileSelectionLimit = errors.New("file selection limit reached")
 )

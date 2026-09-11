@@ -20,6 +20,47 @@ export interface FileReference {
   contentType?: string;
   // 保存済み・移行済みの参照で、送信前にファイルの再選択が必要。
   needsReselect?: boolean;
+  // 入力欄に入力・ペーストされた文字列。ダイアログの初期位置にだけ使う frontend 専用の値で、
+  // 許可にはならない。Wails の createFrom が未知のフィールドを落とすため RPC にも永続化にも載らない。
+  hint?: string;
+}
+
+// ファイル参照の状態。selected は現在のセッションでダイアログから確定済み、
+// unconfirmed は入力欄に文字列があるだけで未確定、reselect は保存済みで再選択が必要。
+export type FileSelectionState =
+  | "none"
+  | "selected"
+  | "unconfirmed"
+  | "reselect";
+
+export function fileSelectionState(
+  ref: FileReference | undefined,
+): FileSelectionState {
+  if (!ref) return "none";
+  if (ref.token) return "selected";
+  if (ref.hint) return "unconfirmed";
+  if (ref.needsReselect && ref.name) return "reselect";
+  return "none";
+}
+
+// 送信前にダイアログでの確定が必要なファイルがあるか。入力しただけのパスや
+// 保存済みの参照は許可にならないため、backend に送る前に止める。
+export function hasUnconfirmedFile(body: RequestBody): boolean {
+  const pending = (ref: FileReference | undefined) => {
+    const state = fileSelectionState(ref);
+    return state === "unconfirmed" || state === "reselect";
+  };
+  if (body.type === "file") return pending(body.file);
+  if (body.type === "form-data") {
+    return (body.formData ?? []).some(
+      (row) =>
+        row.enabled &&
+        row.key !== "" &&
+        row.kind === "file" &&
+        pending(row.file),
+    );
+  }
+  return false;
 }
 
 // form 系ボディの 1 行。Headers/Params の KeyValuePair と分けているのは、

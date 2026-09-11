@@ -11,11 +11,10 @@ import { TabList, TabPanel } from "../../../components/ui/tabs";
 import { Textarea } from "../../../components/ui/textarea";
 import type { AuthType, BodyType, FormRow } from "../../../domain/http/types";
 import { FORM_PAIR_FIELDS, isFormBodyType } from "../../../domain/http/types";
-import { openFilePicker } from "../../../infrastructure/http/client";
 import { AUTH_TYPES, BODY_TYPES } from "../../constants/http";
 import { useHttpRequest } from "../../providers/http-provider";
 import { DocEditor } from "./doc-editor";
-import { filePlaceholder } from "./file-reference";
+import { FileReferenceInput } from "./file-reference-input";
 import { FormRowEditor } from "./form-row-editor";
 import styles from "./http.module.css";
 import { JsonBodyEditor } from "./json-body-editor";
@@ -61,13 +60,6 @@ export function RequestEditor() {
     setBody({
       ...body(),
       contents: { ...body().contents, [body().type]: content },
-    });
-  // ファイルを指定し直したら、保存済みの参照（再選択待ち）は捨てる。
-  const setFilePath = (path: string) =>
-    setBody({
-      ...body(),
-      file: undefined,
-      contents: { ...body().contents, file: path },
     });
 
   // form 系の行は body の専用フィールドそのものを読み書きする。
@@ -157,24 +149,11 @@ export function RequestEditor() {
               <Switch>
                 <Match when={body().type === "file"}>
                   <div class={styles.filePickerRow}>
-                    <Input
-                      value={bodyContent()}
-                      placeholder={filePlaceholder(body().file)}
-                      onInput={(e) => setFilePath(e.currentTarget.value)}
-                      class={styles.filePathInput}
+                    <FileReferenceInput
+                      file={body().file}
+                      onChange={(file) => setBody({ ...body(), file })}
+                      inputClass={styles.filePathInput}
                     />
-                    <button
-                      type="button"
-                      class={styles.fileBrowseButton}
-                      onClick={async () => {
-                        const path = await openFilePicker();
-                        if (path) {
-                          setFilePath(path);
-                        }
-                      }}
-                    >
-                      Browse...
-                    </button>
                   </div>
                 </Match>
                 <Match when={formBodyType()}>

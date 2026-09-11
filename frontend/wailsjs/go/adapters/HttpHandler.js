@@ -42,10 +42,6 @@ export function GetSidebarLayout() {
   return window['go']['adapters']['HTTPHandler']['GetSidebarLayout']();
 }
 
-export function GuessFormPartContentType(arg1) {
-  return window['go']['adapters']['HTTPHandler']['GuessFormPartContentType'](arg1);
-}
-
 export function MoveItem(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['adapters']['HTTPHandler']['MoveItem'](arg1, arg2, arg3, arg4, arg5);
 }
@@ -58,8 +54,8 @@ export function MoveSidebarEntry(arg1, arg2, arg3) {
   return window['go']['adapters']['HTTPHandler']['MoveSidebarEntry'](arg1, arg2, arg3);
 }
 
-export function OpenFilePicker() {
-  return window['go']['adapters']['HTTPHandler']['OpenFilePicker']();
+export function OpenFilePicker(arg1) {
+  return window['go']['adapters']['HTTPHandler']['OpenFilePicker'](arg1);
 }
 
 export function RenameCollection(arg1, arg2) {

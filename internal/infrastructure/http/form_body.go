@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/textproto"
-	"os"
-	"path/filepath"
 	"strings"
 
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
@@ -18,7 +16,8 @@ var quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")
 
 // buildMultipartBody は form-data の行から multipart ボディと Content-Type を組み立てる。
 // 返す Content-Type は採番済みの boundary を含むため、呼び出し側で必ず優先させる。
-func buildMultipartBody(rows []domain.FormRow) (*bytes.Buffer, string, error) {
+// file 行は files で token を解決したファイルだけを読む。
+func buildMultipartBody(rows []domain.FormRow, files domain.SelectedFileReader) (*bytes.Buffer, string, error) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	for i := range rows {
@@ -26,7 +25,7 @@ func buildMultipartBody(rows []domain.FormRow) (*bytes.Buffer, string, error) {
 		if !r.Enabled || r.Key == "" {
 			continue
 		}
-		if err := writeFormRow(mw, r); err != nil {
+		if err := writeFormRow(mw, r, files); err != nil {
 			return nil, "", err
 		}
 	}
@@ -37,23 +36,25 @@ func buildMultipartBody(rows []domain.FormRow) (*bytes.Buffer, string, error) {
 }
 
 // writeFormRow は 1 行をパートとして書き出す。
-func writeFormRow(mw *multipart.Writer, r *domain.FormRow) error {
+func writeFormRow(mw *multipart.Writer, r *domain.FormRow, files domain.SelectedFileReader) error {
 	switch r.EffectiveKind() {
 	case domain.FormRowKindFile:
-		// パス未入力の行はまだ書きかけなので、無効行と同じく黙って飛ばす。
-		if r.FilePath == "" {
+		// 送信元はダイアログで選ばれ token で解決できるファイルだけ。FilePath (旧データのパス) は読まない。
+		file, ok, err := resolveFile(files, r.File)
+		if err != nil {
+			return err
+		}
+		// 何も選ばれていない行はまだ書きかけなので、無効行と同じく黙って飛ばす。
+		if !ok {
 			return nil
 		}
-		// パスはユーザーがファイルダイアログで選ぶ（既存の file ボディ型と同じ扱い）。
-		data, err := os.ReadFile(r.FilePath)
-		if err != nil {
-			return fmt.Errorf("failed to read form file: %w", err)
-		}
+		// filename と自動 Content-Type は registry の値を正とし、frontend の値は使わない。
+		// ユーザーが明示したパートの Content-Type だけは上書き値として扱う。
 		contentType := r.ContentType
 		if contentType == "" {
-			contentType = domain.GuessFileContentType(r.FilePath)
+			contentType = file.ContentType
 		}
-		return writePart(mw, r.Key, filepath.Base(r.FilePath), contentType, data)
+		return writePart(mw, r.Key, file.Name, contentType, file.Data)
 	case domain.FormRowKindJSON:
 		contentType := r.ContentType
 		if contentType == "" {

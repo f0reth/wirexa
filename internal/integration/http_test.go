@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -17,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+
 	"github.com/f0reth/Wirexa/internal/adapters"
 	httpapp "github.com/f0reth/Wirexa/internal/application/http"
 	httpdomain "github.com/f0reth/Wirexa/internal/domain/http"
@@ -28,6 +31,28 @@ import (
 // コレクションは dir/collections/ サブディレクトリに保存し、sidebar_layout.json と混在させない。
 func newHTTPHandlerWithDir(t *testing.T, dir string) *adapters.HTTPHandler {
 	t.Helper()
+	return buildHTTPHandler(t, dir, nil)
+}
+
+// newHTTPHandlerWithDialog は OpenFilePicker が dialog の選択結果を返す HTTPHandler を組み立てる。
+func newHTTPHandlerWithDialog(t *testing.T, dialog adapters.FileDialog) *adapters.HTTPHandler {
+	t.Helper()
+	return buildHTTPHandler(t, t.TempDir(), dialog)
+}
+
+// fileDialog は統合テスト用の FileDialog。OpenFile はユーザーが path を選んだものとして返す。
+type fileDialog struct{ path string }
+
+func (d *fileDialog) OpenFile(context.Context, runtime.OpenDialogOptions) (string, error) {
+	return d.path, nil
+}
+
+func (d *fileDialog) SaveFile(context.Context, runtime.SaveDialogOptions) (string, error) {
+	return "", nil
+}
+
+func buildHTTPHandler(t *testing.T, dir string, dialog adapters.FileDialog) *adapters.HTTPHandler {
+	t.Helper()
 	collDir := filepath.Join(dir, "collections")
 	repo, err := httpinfra.NewCollectionRepository(collDir, nil)
 	if err != nil {
@@ -38,7 +63,8 @@ func newHTTPHandlerWithDir(t *testing.T, dir string) *adapters.HTTPHandler {
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
-	netClient := httpinfra.NewNetClient()
+	files := httpinfra.NewFileRegistry()
+	netClient := httpinfra.NewNetClient(files)
 	t.Cleanup(netClient.Cleanup)
 	reqSvc := httpapp.NewHTTPRequestService(netClient, testutil.NoopLogger{})
 	h := &adapters.HTTPHandler{}
@@ -47,6 +73,8 @@ func newHTTPHandlerWithDir(t *testing.T, dir string) *adapters.HTTPHandler {
 		CollSvc:   collSvc,
 		ItemSvc:   collSvc,
 		Responses: netClient.Responses(),
+		Files:     files,
+		Dialog:    dialog,
 	})
 	return h
 }
@@ -857,8 +885,13 @@ func TestHTTP_SendRequest_FormDataKinds(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HTTPRequest{
+	// ファイルはダイアログで選択されたものとして token を得る。パスは RPC に渡らない。
+	h := newHTTPHandlerWithDialog(t, &fileDialog{path: filePath})
+	picked, err := h.OpenFilePicker("")
+	if err != nil {
+		t.Fatalf("OpenFilePicker: %v", err)
+	}
+	_, err = h.SendRequest(httpdomain.HTTPRequest{
 		Method: "POST",
 		URL:    srv.URL,
 		Body: httpdomain.RequestBody{
@@ -867,7 +900,7 @@ func TestHTTP_SendRequest_FormDataKinds(t *testing.T) {
 				{Key: "plain", Value: "text value", Kind: httpdomain.FormRowKindText, Enabled: true},
 				{Key: "meta", Value: `{"k":"v"}`, Kind: httpdomain.FormRowKindJSON, Enabled: true},
 				{Key: "custom", Value: "a,b", Kind: httpdomain.FormRowKindText, ContentType: "text/csv", Enabled: true},
-				{Key: "doc", FilePath: filePath, Kind: httpdomain.FormRowKindFile, Enabled: true},
+				{Key: "doc", File: httpdomain.FileReference{Token: picked.Token}, Kind: httpdomain.FormRowKindFile, Enabled: true},
 			},
 		},
 	})
@@ -1102,5 +1135,110 @@ func TestHTTP_CorruptStorage(t *testing.T) {
 	}
 	if _, statErr := os.Stat(corruptFile + ".corrupt"); statErr != nil {
 		t.Errorf("corrupt.json.corrupt should exist: %v", statErr)
+	}
+}
+
+// TestHTTP_SendRequest_FileBodyViaDialogToken はダイアログで選んだファイルが token 経由で送れ、
+// filename と Content-Type も frontend の値ではなく選択時の値になることを確認する。
+func TestHTTP_SendRequest_FileBodyViaDialogToken(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "payload.txt")
+	if err := os.WriteFile(filePath, []byte("file bytes"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	var gotBody, gotType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		gotBody, gotType = string(data), r.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	h := newHTTPHandlerWithDialog(t, &fileDialog{path: filePath})
+	picked, err := h.OpenFilePicker("")
+	if err != nil {
+		t.Fatalf("OpenFilePicker: %v", err)
+	}
+	if picked.Name != "payload.txt" || strings.Contains(picked.Token, filePath) {
+		t.Fatalf("selected = %+v, want the basename and an opaque token", picked)
+	}
+
+	_, err = h.SendRequest(httpdomain.HTTPRequest{
+		ID:     "exec-file",
+		Method: "POST",
+		URL:    srv.URL,
+		Body: httpdomain.RequestBody{
+			Type: httpdomain.BodyTypeFile,
+			File: httpdomain.FileReference{Token: picked.Token, Name: "spoofed.exe", ContentType: "application/x-spoofed"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendRequest: %v", err)
+	}
+	if gotBody != "file bytes" {
+		t.Errorf("body = %q, want the selected file", gotBody)
+	}
+	if gotType != picked.ContentType {
+		t.Errorf("Content-Type = %q, want %q from the selection", gotType, picked.ContentType)
+	}
+}
+
+// TestHTTP_SendRequest_RawPathsAreNeverRead は RPC 引数に任意の絶対パスや偽の token を渡しても、
+// そのファイルが読まれて外部へ送られないことを確認する。
+func TestHTTP_SendRequest_RawPathsAreNeverRead(t *testing.T) {
+	secret := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(secret, []byte("top secret"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	var mu sync.Mutex
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(data))
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	const forged = "00112233445566778899aabbccddeeff"
+	fileRow := func(ref httpdomain.FileReference, path string) []httpdomain.FormRow {
+		return []httpdomain.FormRow{{Key: "f", Kind: httpdomain.FormRowKindFile, File: ref, FilePath: path, Enabled: true}}
+	}
+	tests := []struct {
+		wantErr error
+		name    string
+		body    httpdomain.RequestBody
+	}{
+		{name: "file body の Contents に生のパス", body: httpdomain.RequestBody{Type: httpdomain.BodyTypeFile, Contents: map[string]string{"file": secret}}},
+		{name: "form-data 行の FilePath に生のパス", body: httpdomain.RequestBody{Type: httpdomain.BodyTypeFormData, FormData: fileRow(httpdomain.FileReference{}, secret)}},
+		{name: "file body に偽の token", body: httpdomain.RequestBody{Type: httpdomain.BodyTypeFile, File: httpdomain.FileReference{Token: forged}}, wantErr: httpdomain.ErrFileAccessDenied},
+		{name: "form-data 行に偽の token", body: httpdomain.RequestBody{Type: httpdomain.BodyTypeFormData, FormData: fileRow(httpdomain.FileReference{Token: forged}, secret)}, wantErr: httpdomain.ErrFileAccessDenied},
+		{name: "token の無い保存済み参照", body: httpdomain.RequestBody{Type: httpdomain.BodyTypeFile, File: httpdomain.FileReference{Name: "secret.txt", NeedsReselect: true}}, wantErr: httpdomain.ErrFileAccessDenied},
+	}
+
+	h := newHTTPHandler(t)
+	for i, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := h.SendRequest(httpdomain.HTTPRequest{ID: fmt.Sprintf("raw-%d", i), Method: "POST", URL: srv.URL, Body: tc.body})
+			if tc.wantErr == nil && err != nil {
+				t.Fatalf("SendRequest: %v", err)
+			}
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("SendRequest error = %v, want %v", err, tc.wantErr)
+				}
+				if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), forged) {
+					t.Fatalf("error leaks the path or token: %q", err)
+				}
+			}
+		})
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, b := range bodies {
+		if strings.Contains(b, "top secret") {
+			t.Fatalf("the secret file was sent: %q", b)
+		}
 	}
 }

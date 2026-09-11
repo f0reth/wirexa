@@ -9,6 +9,20 @@ type HTTPTransport interface {
 	Do(ctx context.Context, req HTTPRequest) (HTTPResponse, error)
 }
 
+// SelectedFileReader は file token を解決し、ファイルダイアログで選択されたファイルを読むポート。
+// 空・未登録の token では ErrFileAccessDenied を返し、ファイルを開かない。
+type SelectedFileReader interface {
+	ReadSelectedFile(token string) (SelectedFileContent, error)
+}
+
+// SelectedFileContent は送信用に読み込んだ選択ファイル。
+// Name と ContentType は registry が選択時に決めた値で、frontend から渡された値ではない。
+type SelectedFileContent struct {
+	Name        string
+	ContentType string
+	Data        []byte
+}
+
 // ResponseBodyStore は切り詰められたレスポンス全文の一時ファイルを execution ID で管理するポート。
 // 一時ファイルのパスは外へ出さず、保存は lease を通してのみ行う。
 type ResponseBodyStore interface {

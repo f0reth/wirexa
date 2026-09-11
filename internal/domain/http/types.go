@@ -32,6 +32,14 @@ type FileReference struct {
 	NeedsReselect bool `json:"needsReselect,omitempty"`
 }
 
+// SelectedFile はファイルダイアログでの選択結果。実パスは含まず、backend が発行した
+// session token と表示用の basename・Content-Type だけを返す。キャンセル時は Token が空。
+type SelectedFile struct {
+	Token       string `json:"token"`
+	Name        string `json:"name"`
+	ContentType string `json:"contentType"`
+}
+
 // RequestAuth はリクエスト認証情報を表す。
 type RequestAuth struct {
 	Type     string `json:"type"`     // "none" | "basic" | "bearer"

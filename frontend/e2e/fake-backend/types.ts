@@ -3,6 +3,7 @@
 import type {
   Collection,
   HttpResponse,
+  RequestBody,
   SidebarEntry,
   TreeItem,
 } from "../../src/domain/http/types";
@@ -15,8 +16,16 @@ export interface FakeSeed {
   collections?: Array<{
     id?: string;
     name: string;
-    requests?: Array<{ id?: string; name: string; url?: string }>;
+    requests?: Array<{
+      id?: string;
+      name: string;
+      url?: string;
+      /** 保存済みのボディ。file 参照の再選択表示などの検証に使う。 */
+      body?: RequestBody;
+    }>;
   }>;
+  /** OpenFilePicker (ファイルダイアログ) で選ばれたことにするファイル。未設定ならキャンセル。 */
+  pickedFile?: { token: string; name: string; contentType: string };
   udpTargets?: Array<{ id?: string; name: string; host: string; port: number }>;
   mqttProfiles?: Array<{ id?: string; name: string; broker?: string }>;
   /** SendRequest が返すレスポンス (既定値に対する上書き)。 */

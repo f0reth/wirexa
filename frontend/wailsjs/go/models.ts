@@ -354,6 +354,22 @@ export namespace httpdomain {
 	
 	
 	
+	export class SelectedFile {
+	    token: string;
+	    name: string;
+	    contentType: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SelectedFile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.token = source["token"];
+	        this.name = source["name"];
+	        this.contentType = source["contentType"];
+	    }
+	}
 	export class SidebarEntry {
 	    kind: string;
 	    id: string;
