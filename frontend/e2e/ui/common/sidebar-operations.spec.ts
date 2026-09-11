@@ -36,10 +36,8 @@ test("rename is cancelled on Escape", async ({ page, app }) => {
 
   const input = app.renameInput;
   await expect(input).toBeVisible();
-  await input.click();
-  await page.keyboard.press("Control+a");
-  await page.keyboard.type("Will Be Cancelled");
-  await page.keyboard.press("Escape");
+  await input.fill("Will Be Cancelled");
+  await input.press("Escape");
 
   await expect(app.collection("New Collection")).toBeVisible();
   await expect(page.getByText("Will Be Cancelled")).toBeHidden();
