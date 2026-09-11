@@ -26,21 +26,36 @@ type HTTPHandler struct {
 	collSvc   httpdomain.CollectionUseCase
 	itemSvc   httpdomain.CollectionItemUseCase
 	tempFiles TempFileProvider
+	dialog    FileDialog
+}
+
+// HTTPHandlerDeps は HTTPHandler に注入する依存をまとめる。
+// Dialog が nil の場合は Wails runtime のダイアログを使う。
+type HTTPHandlerDeps struct {
+	ReqSvc    httpdomain.RequestUseCase
+	CollSvc   httpdomain.CollectionUseCase
+	ItemSvc   httpdomain.CollectionItemUseCase
+	TempFiles TempFileProvider
+	Dialog    FileDialog
 }
 
 // SetupHTTPHandler は既存の HTTPHandler インスタンスにサービスを注入する。
 // Wails の Bind に渡す前に事前確保した空ハンドラーを startup() で初期化する際に使用する。
-func SetupHTTPHandler(ctx context.Context, h *HTTPHandler, reqSvc httpdomain.RequestUseCase, collSvc httpdomain.CollectionUseCase, itemSvc httpdomain.CollectionItemUseCase, tempFiles TempFileProvider) {
+func SetupHTTPHandler(ctx context.Context, h *HTTPHandler, deps HTTPHandlerDeps) {
 	h.ctx = ctx
-	h.reqSvc = reqSvc
-	h.collSvc = collSvc
-	h.itemSvc = itemSvc
-	h.tempFiles = tempFiles
+	h.reqSvc = deps.ReqSvc
+	h.collSvc = deps.CollSvc
+	h.itemSvc = deps.ItemSvc
+	h.tempFiles = deps.TempFiles
+	h.dialog = deps.Dialog
+	if h.dialog == nil {
+		h.dialog = wailsFileDialog{}
+	}
 }
 
 // OpenFilePicker はネイティブのファイル選択ダイアログを開き、選択されたファイルパスを返す。
 func (h *HTTPHandler) OpenFilePicker() (string, error) {
-	return runtime.OpenFileDialog(h.ctx, runtime.OpenDialogOptions{
+	return h.dialog.OpenFile(h.ctx, runtime.OpenDialogOptions{
 		Title: "Select File",
 	})
 }
@@ -73,14 +88,7 @@ func (h *HTTPHandler) CancelRequest(id string) {
 // SaveResponseBody はテンポラリファイルをOSのファイル保存ダイアログで指定先に保存する。
 // 保存後にテンポラリファイルを削除する。キャンセル時は何もしない。
 func (h *HTTPHandler) SaveResponseBody(tempFilePath, contentType string) error {
-	ext := contentTypeToExtension(contentType)
-	savePath, err := runtime.SaveFileDialog(h.ctx, runtime.SaveDialogOptions{
-		DefaultFilename: "response" + ext,
-		Filters: []runtime.FileFilter{{
-			DisplayName: contentType,
-			Pattern:     "*" + ext,
-		}},
-	})
+	savePath, err := h.dialog.SaveFile(h.ctx, saveDialogOptions(contentType))
 	if err != nil || savePath == "" {
 		return err
 	}
@@ -98,18 +106,23 @@ func (h *HTTPHandler) SaveResponseBase64(base64Content, contentType string) erro
 	if err != nil {
 		return err
 	}
+	savePath, err := h.dialog.SaveFile(h.ctx, saveDialogOptions(contentType))
+	if err != nil || savePath == "" {
+		return err
+	}
+	return os.WriteFile(savePath, data, 0o600)
+}
+
+// saveDialogOptions は Content-Type から保存ダイアログの既定ファイル名と filter を組み立てる。
+func saveDialogOptions(contentType string) runtime.SaveDialogOptions {
 	ext := contentTypeToExtension(contentType)
-	savePath, err := runtime.SaveFileDialog(h.ctx, runtime.SaveDialogOptions{
+	return runtime.SaveDialogOptions{
 		DefaultFilename: "response" + ext,
 		Filters: []runtime.FileFilter{{
 			DisplayName: contentType,
 			Pattern:     "*" + ext,
 		}},
-	})
-	if err != nil || savePath == "" {
-		return err
 	}
-	return os.WriteFile(savePath, data, 0o600)
 }
 
 // GetRootItems はルートコレクションのアイテム一覧を返す。

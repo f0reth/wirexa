@@ -41,7 +41,11 @@ func newHTTPHandlerWithDir(t *testing.T, dir string) *adapters.HTTPHandler {
 	}
 	reqSvc := httpapp.NewHTTPRequestService(httpinfra.NewNetClient(), testutil.NoopLogger{})
 	h := &adapters.HTTPHandler{}
-	adapters.SetupHTTPHandler(context.Background(), h, reqSvc, collSvc, collSvc, nil)
+	adapters.SetupHTTPHandler(context.Background(), h, adapters.HTTPHandlerDeps{
+		ReqSvc:  reqSvc,
+		CollSvc: collSvc,
+		ItemSvc: collSvc,
+	})
 	return h
 }
 
