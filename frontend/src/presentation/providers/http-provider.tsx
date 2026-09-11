@@ -9,6 +9,7 @@ import { createCollectionsState } from "../../application/http/collections";
 import {
   createAutoSaveEffect,
   createRequestState,
+  type ResponseSaveState,
 } from "../../application/http/request";
 import type {
   Collection,
@@ -45,6 +46,8 @@ export interface RequestContextValue {
   doc: Accessor<string>;
   setDoc: (val: string) => void;
   response: Accessor<HttpResponse | null>;
+  responseSaveState: Accessor<ResponseSaveState>;
+  saveResponseBody: () => Promise<void>;
   loading: Accessor<boolean>;
   activeRequestId: Accessor<string | null>;
   activeCollectionId: Accessor<string | null>;
@@ -113,6 +116,9 @@ export function HttpProvider(props: { children: JSX.Element }) {
       sendRequest: httpClient.sendRequest,
       cancelRequest: httpClient.cancelRequest,
       updateRequest: httpClient.updateRequest,
+      saveResponseBody: httpClient.saveResponseBody,
+      saveResponseBinary: httpClient.saveResponseBinary,
+      discardResponseBody: httpClient.discardResponseBody,
       afterSave: (colId, req) => collectionsState.patchRequest(colId, req),
     },
     createLogger("frontend:http"),

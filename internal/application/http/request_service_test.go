@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
@@ -189,6 +190,108 @@ func TestHTTPRequestService_SendRequest_EmptyID_DoesNotPanic(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestHTTPRequestService_SendRequest_EmptyID_AssignsExecutionID(t *testing.T) {
+	var got string
+	transport := &mockTransport{doFn: func(r domain.HTTPRequest) (domain.HTTPResponse, error) {
+		got = r.ID
+		return domain.HTTPResponse{StatusCode: 200}, nil
+	}}
+	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	if _, err := svc.SendRequest(domain.HTTPRequest{Method: "GET", URL: "http://example.com"}); err != nil {
+		t.Fatalf("SendRequest: %v", err)
+	}
+	if got == "" {
+		t.Fatal("transport must receive a non-empty execution ID")
+	}
+}
+
+// 同じ execution ID の並行送信は拒否し、先行リクエストのキャンセル登録を上書きしない。
+func TestHTTPRequestService_SendRequest_RejectsDuplicateExecutionID(t *testing.T) {
+	started := make(chan struct{})
+	transport := &mockTransportCtx{
+		doFn: func(ctx context.Context, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
+			close(started)
+			<-ctx.Done()
+			return domain.HTTPResponse{}, ctx.Err()
+		},
+	}
+	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+
+	const reqID = "exec-dup"
+	done := make(chan error, 1)
+	go func() {
+		_, err := svc.SendRequest(domain.HTTPRequest{ID: reqID, Method: "GET", URL: "http://example.com"})
+		done <- err
+	}()
+	<-started
+
+	if _, err := svc.SendRequest(domain.HTTPRequest{ID: reqID, Method: "GET", URL: "http://example.com"}); !errors.Is(err, domain.ErrExecutionInProgress) {
+		t.Fatalf("duplicate send: want ErrExecutionInProgress, got %v", err)
+	}
+
+	// 先行リクエストは引き続きキャンセルできる。
+	svc.CancelRequest(reqID)
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected the first request to be canceled")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("first request was not canceled: its cancel entry was overwritten")
+	}
+}
+
+func TestHTTPRequestService_Shutdown_CancelsInFlightAndRejectsNewSends(t *testing.T) {
+	started := make(chan struct{})
+	transport := &mockTransportCtx{
+		doFn: func(ctx context.Context, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
+			close(started)
+			<-ctx.Done()
+			return domain.HTTPResponse{}, ctx.Err()
+		},
+	}
+	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := svc.SendRequest(domain.HTTPRequest{ID: "exec-1", Method: "GET", URL: "http://example.com"})
+		done <- err
+	}()
+	<-started
+
+	if !svc.Shutdown(5 * time.Second) {
+		t.Fatal("Shutdown timed out waiting for the in-flight request")
+	}
+	if err := <-done; err == nil {
+		t.Fatal("expected the in-flight request to be canceled")
+	}
+	if _, err := svc.SendRequest(domain.HTTPRequest{ID: "exec-2", Method: "GET", URL: "http://example.com"}); err == nil {
+		t.Fatal("SendRequest after Shutdown must fail")
+	}
+}
+
+func TestHTTPRequestService_Shutdown_ReturnsFalseOnTimeout(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{})
+	transport := &mockTransportCtx{
+		doFn: func(_ context.Context, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
+			close(started)
+			<-release // キャンセルに応じない transport を模す
+			return domain.HTTPResponse{}, nil
+		},
+	}
+	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	go func() {
+		_, _ = svc.SendRequest(domain.HTTPRequest{ID: "stuck", Method: "GET", URL: "http://example.com"})
+	}()
+	<-started
+	defer close(release)
+
+	if svc.Shutdown(10 * time.Millisecond) {
+		t.Fatal("Shutdown must report a timeout when a request ignores cancellation")
 	}
 }
 

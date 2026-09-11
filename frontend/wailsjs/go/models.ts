@@ -283,7 +283,6 @@ export namespace httpdomain {
 	    body: string;
 	    contentType: string;
 	    error: string;
-	    tempFilePath: string;
 	    statusCode: number;
 	    size: number;
 	    timingMs: number;
@@ -302,7 +301,6 @@ export namespace httpdomain {
 	        this.body = source["body"];
 	        this.contentType = source["contentType"];
 	        this.error = source["error"];
-	        this.tempFilePath = source["tempFilePath"];
 	        this.statusCode = source["statusCode"];
 	        this.size = source["size"];
 	        this.timingMs = source["timingMs"];

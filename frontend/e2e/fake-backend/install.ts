@@ -123,16 +123,29 @@ save();
 // ── 呼び出しカウンタ ──────────────────────────────────────────────────────────
 
 const calls: Record<string, number> = {};
+const args: Record<string, unknown[][]> = {};
 
-// バインディング呼び出しを数える。テストは expect.poll でこのカウンタの増加を待てるので、
-// 「自動保存が終わるまで 800ms 寝る」ような固定 sleep が要らなくなる。
+// 記録用に引数を複製する。Wails の createFrom は map を参照のまま渡すため、引数に Solid の
+// store proxy が混ざり structuredClone では複製できない。JSON 経由なら proxy も読める。
+// 記録の失敗でバインディング本体を落とさないよう、複製できなければそのまま持つ。
+function snapshotArgs(callArgs: unknown[]): unknown[] {
+  try {
+    return JSON.parse(JSON.stringify(callArgs)) as unknown[];
+  } catch {
+    return callArgs;
+  }
+}
+
+// バインディング呼び出しを数え、引数を記録する。テストは expect.poll でこのカウンタの増加を
+// 待てるので、「自動保存が終わるまで 800ms 寝る」ような固定 sleep が要らなくなる。
 function counted<A extends unknown[], R>(
   name: string,
   fn: (...args: A) => R,
 ): (...args: A) => R {
-  return (...args: A) => {
+  return (...callArgs: A) => {
     calls[name] = (calls[name] ?? 0) + 1;
-    return fn(...args);
+    (args[name] ??= []).push(snapshotArgs(callArgs));
+    return fn(...callArgs);
   };
 }
 
@@ -195,7 +208,6 @@ const DEFAULT_RESPONSE: HttpResponse = {
   timingMs: 1,
   error: "",
   bodyTruncated: false,
-  tempFilePath: "",
   bodyBase64: false,
   bodyCapped: false,
 };
@@ -395,7 +407,16 @@ const HttpHandler = {
       return types[ext] ?? "application/octet-stream";
     },
   ),
-  SaveResponseBody: counted("SaveResponseBody", async () => {}),
+  // Go 側と同じく execution ID だけを受け取る。seed.saveResponseError で
+  // 回収済み (TTL・上限) の一時ファイルを模す。
+  SaveResponseBody: counted("SaveResponseBody", async (_executionId: string) => {
+    if (seed.saveResponseError) throw new Error(seed.saveResponseError);
+    return true;
+  }),
+  DiscardResponseBody: counted(
+    "DiscardResponseBody",
+    async (_executionId: string) => {},
+  ),
   SaveResponseBase64: counted("SaveResponseBase64", async () => {}),
 };
 
@@ -529,6 +550,7 @@ w.go = {
 
 window.__wirexaFake = {
   calls,
+  args,
   snapshot: () => ({
     collections: clone(
       db.collections.filter((c) => c.id !== ROOT_COLLECTION_ID),

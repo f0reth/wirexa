@@ -39,12 +39,15 @@ func newHTTPHandlerWithDir(t *testing.T, dir string) *adapters.HTTPHandler {
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
-	reqSvc := httpapp.NewHTTPRequestService(httpinfra.NewNetClient(), testutil.NoopLogger{})
+	netClient := httpinfra.NewNetClient()
+	t.Cleanup(netClient.Cleanup)
+	reqSvc := httpapp.NewHTTPRequestService(netClient, testutil.NoopLogger{})
 	h := &adapters.HTTPHandler{}
 	adapters.SetupHTTPHandler(context.Background(), h, adapters.HTTPHandlerDeps{
-		ReqSvc:  reqSvc,
-		CollSvc: collSvc,
-		ItemSvc: collSvc,
+		ReqSvc:    reqSvc,
+		CollSvc:   collSvc,
+		ItemSvc:   collSvc,
+		Responses: netClient.Responses(),
 	})
 	return h
 }
@@ -285,9 +288,12 @@ func TestHTTP_CancelRequest(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
+	// キャンセルは送信時の execution ID で行う (空 ID は backend が内部採番するため指定できない)。
+	const executionID = "exec-cancel"
 	done := make(chan error, 1)
 	go func() {
 		_, err := h.SendRequest(httpdomain.HTTPRequest{
+			ID:     executionID,
 			Method: "GET",
 			URL:    srv.URL,
 		})
@@ -300,7 +306,7 @@ func TestHTTP_CancelRequest(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("server did not receive request in time")
 	}
-	h.CancelRequest("")
+	h.CancelRequest(executionID)
 
 	select {
 	case err := <-done:

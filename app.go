@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -34,6 +35,9 @@ var (
 
 const wirexaConfigDir = "Wirexa"
 
+// httpShutdownTimeout は終了時に実行中の HTTP リクエストの終了を待つ上限。
+const httpShutdownTimeout = 3 * time.Second
+
 // ウィンドウの既定・最小サイズ。main.go の options.App と共有する。
 const (
 	defaultWindowWidth  = 1280
@@ -50,6 +54,7 @@ type App struct {
 	logHandler     *adapters.LogHandler
 	openAPIHandler *adapters.OpenAPIHandler
 	netClient      *httpinfra.NetClient
+	reqSvc         *httpapp.HTTPRequestService
 	windowMgr      *infra.WindowManager
 	ready          bool
 	quitConfirmed  bool
@@ -142,12 +147,12 @@ func (a *App) initialize(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize collections: %w", err)
 	}
 	a.netClient = httpinfra.NewNetClient()
-	reqSvc := httpapp.NewHTTPRequestService(a.netClient, logger)
+	a.reqSvc = httpapp.NewHTTPRequestService(a.netClient, logger)
 	adapters.SetupHTTPHandler(ctx, a.httpHandler, adapters.HTTPHandlerDeps{
-		ReqSvc:    reqSvc,
+		ReqSvc:    a.reqSvc,
 		CollSvc:   collSvc,
 		ItemSvc:   collSvc,
-		TempFiles: a.netClient,
+		Responses: a.netClient.Responses(),
 	})
 
 	targetRepo, err := infra.NewJSONStore(
@@ -215,6 +220,11 @@ func (a *App) shutdown(_ context.Context) {
 	}
 	a.mqttHandler.Shutdown()
 	a.udpHandler.Shutdown()
+	// 実行中の HTTP リクエストを先に止めてから一時ファイルを回収する。
+	// 待機上限を過ぎたリクエストの一時ファイルは次回起動時の sweep に任せる。
+	if a.reqSvc != nil {
+		a.reqSvc.Shutdown(httpShutdownTimeout)
+	}
 	if a.netClient != nil {
 		a.netClient.Cleanup()
 	}

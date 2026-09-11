@@ -25,12 +25,16 @@ export interface FakeSeed {
   httpResponseDelayMs?: number;
   /** SendRequest を必ず失敗させる (接続エラーの検証に使う)。 */
   httpError?: string;
+  /** SaveResponseBody を必ず失敗させる (回収済み一時ファイルの検証に使う)。 */
+  saveResponseError?: string;
 }
 
 /** window に生える、偽バックエンドのテスト用操作面。 */
 export interface FakeBackend {
   /** バインディング名 → 呼び出し回数。固定 sleep の代わりに expect.poll で待つ。 */
   calls: Record<string, number>;
+  /** バインディング名 → 呼び出しごとの引数。RPC 境界に何が渡ったかを検証する。 */
+  args: Record<string, unknown[][]>;
   /** 現在の状態のスナップショット (構造化クローン可能な形)。 */
   snapshot(): {
     collections: Collection[];

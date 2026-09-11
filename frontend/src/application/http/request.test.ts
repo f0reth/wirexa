@@ -18,7 +18,6 @@ function makeResponse(): HttpResponse {
     timingMs: 1,
     error: "",
     bodyTruncated: false,
-    tempFilePath: "",
     bodyBase64: false,
     bodyCapped: false,
   };
@@ -39,27 +38,43 @@ function makeRequest(id: string): HttpRequest {
   };
 }
 
+function makeTruncatedResponse(body = "partial"): HttpResponse {
+  return { ...makeResponse(), body, bodyTruncated: true };
+}
+
 /** sendRequest を任意のタイミングで解決できる API を作る。 */
 function makeApi() {
   const sent: HttpRequest[] = [];
-  const pending: Array<() => void> = [];
-  const api: RequestApi = {
-    sendRequest: (req) => {
+  // 送信順の index で個別に解決できるよう、解決済みの枠は undefined にして詰めない。
+  const pending: Array<((res: HttpResponse) => void) | undefined> = [];
+  const api = {
+    sendRequest: (req: HttpRequest) => {
       sent.push(req);
       return new Promise<HttpResponse>((resolve) => {
-        pending.push(() => resolve(makeResponse()));
+        pending.push(resolve);
       });
     },
-    cancelRequest: vi.fn(async () => {}),
-    updateRequest: vi.fn(async () => {}),
-  };
+    cancelRequest: vi.fn(async (_id: string) => {}),
+    updateRequest: vi.fn(async (_colId: string, _req: HttpRequest) => {}),
+    saveResponseBody: vi.fn(async (_executionId: string) => true),
+    saveResponseBinary: vi.fn(async (_body: string, _ct: string) => {}),
+    discardResponseBody: vi.fn(async (_executionId: string) => {}),
+  } satisfies RequestApi;
   return {
     api,
     sent,
     /** 送信済みリクエストをすべて解決する。 */
     settleAll: async () => {
-      for (const resolve of pending.splice(0)) resolve();
+      pending.forEach((resolve, i) => {
+        resolve?.(makeResponse());
+        pending[i] = undefined;
+      });
       await Promise.resolve();
+    },
+    /** index 番目の送信を指定したレスポンスで解決する。 */
+    settle: (index: number, res: HttpResponse) => {
+      pending[index]?.(res);
+      pending[index] = undefined;
     },
   };
 }
@@ -136,6 +151,162 @@ describe("createRequestState send id", () => {
       expect(state.loading()).toBe(false);
       await state.cancelRequest();
       expect(api.cancelRequest).not.toHaveBeenCalled();
+      dispose();
+    });
+  });
+});
+
+describe("createRequestState response body lifecycle", () => {
+  it("discards the previous truncated body when a new send starts", async () => {
+    await createRoot(async (dispose) => {
+      const { api, sent, settle } = makeApi();
+      const state = createRequestState(api, noopLogger);
+
+      const first = state.sendRequest();
+      settle(0, makeTruncatedResponse());
+      await first;
+
+      const second = state.sendRequest();
+      expect(api.discardResponseBody).toHaveBeenCalledWith(sent[0].id);
+      settle(1, makeResponse());
+      await second;
+      dispose();
+    });
+  });
+
+  it("does not discard bodies the backend is not tracking", async () => {
+    await createRoot(async (dispose) => {
+      const { api, settle } = makeApi();
+      const state = createRequestState(api, noopLogger);
+
+      const first = state.sendRequest();
+      settle(0, makeResponse());
+      await first;
+      const second = state.sendRequest();
+      settle(1, makeResponse());
+      await second;
+
+      expect(api.discardResponseBody).not.toHaveBeenCalled();
+      dispose();
+    });
+  });
+
+  it("saves by execution ID and does not discard after a successful save", async () => {
+    await createRoot(async (dispose) => {
+      const { api, sent, settle } = makeApi();
+      const state = createRequestState(api, noopLogger);
+
+      const send = state.sendRequest();
+      settle(0, makeTruncatedResponse());
+      await send;
+      await state.saveResponseBody();
+
+      expect(api.saveResponseBody).toHaveBeenCalledWith(sent[0].id);
+      expect(state.responseSaveState()).toBe("saved");
+
+      state.newRequest();
+      expect(api.discardResponseBody).not.toHaveBeenCalled();
+      expect(state.response()).toBeNull();
+      dispose();
+    });
+  });
+
+  it("keeps the body saveable after the save dialog is canceled", async () => {
+    await createRoot(async (dispose) => {
+      const { api, settle } = makeApi();
+      api.saveResponseBody.mockResolvedValueOnce(false);
+      const state = createRequestState(api, noopLogger);
+
+      const send = state.sendRequest();
+      settle(0, makeTruncatedResponse());
+      await send;
+      await state.saveResponseBody();
+
+      expect(state.responseSaveState()).toBe("idle");
+      dispose();
+    });
+  });
+
+  it("marks the body unavailable when the backend has reclaimed it", async () => {
+    await createRoot(async (dispose) => {
+      const { api, settle } = makeApi();
+      api.saveResponseBody.mockRejectedValueOnce(
+        new Error("response body unavailable"),
+      );
+      const state = createRequestState(api, noopLogger);
+
+      const send = state.sendRequest();
+      settle(0, makeTruncatedResponse());
+      await send;
+      await state.saveResponseBody();
+
+      expect(state.responseSaveState()).toBe("unavailable");
+      dispose();
+    });
+  });
+
+  it("clears and discards the response when switching to another request", async () => {
+    await createRoot(async (dispose) => {
+      const { api, sent, settle } = makeApi();
+      const state = createRequestState(api, noopLogger);
+      state.loadRequest(makeRequest("a"), "col-1");
+
+      const send = state.sendRequest();
+      settle(0, makeTruncatedResponse());
+      await send;
+
+      // 同じリクエストを開き直しただけでは破棄しない。
+      state.loadRequest(makeRequest("a"), "col-1");
+      expect(api.discardResponseBody).not.toHaveBeenCalled();
+      expect(state.response()).not.toBeNull();
+
+      state.loadRequest(makeRequest("b"), "col-1");
+      expect(api.discardResponseBody).toHaveBeenCalledWith(sent[0].id);
+      expect(state.response()).toBeNull();
+      dispose();
+    });
+  });
+
+  it("keeps the displayed response paired with its execution ID when responses arrive out of order", async () => {
+    await createRoot(async (dispose) => {
+      const { api, sent, settle } = makeApi();
+      const state = createRequestState(api, noopLogger);
+
+      const first = state.sendRequest();
+      const second = state.sendRequest();
+      settle(1, makeTruncatedResponse("second"));
+      await second;
+      settle(0, makeTruncatedResponse("first"));
+      await first;
+
+      expect(state.response()?.body).toBe("first");
+      expect(api.discardResponseBody).toHaveBeenCalledWith(sent[1].id);
+      await state.saveResponseBody();
+      expect(api.saveResponseBody).toHaveBeenCalledWith(sent[0].id);
+      dispose();
+    });
+  });
+
+  it("saves a non-truncated binary body from memory", async () => {
+    await createRoot(async (dispose) => {
+      const { api, settle } = makeApi();
+      const state = createRequestState(api, noopLogger);
+
+      const send = state.sendRequest();
+      settle(0, {
+        ...makeResponse(),
+        body: "AAEC",
+        bodyBase64: true,
+        contentType: "application/octet-stream",
+      });
+      await send;
+      await state.saveResponseBody();
+
+      expect(api.saveResponseBinary).toHaveBeenCalledWith(
+        "AAEC",
+        "application/octet-stream",
+      );
+      expect(api.saveResponseBody).not.toHaveBeenCalled();
       dispose();
     });
   });

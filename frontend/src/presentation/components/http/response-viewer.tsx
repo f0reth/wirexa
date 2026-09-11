@@ -4,10 +4,6 @@ import { Badge } from "../../../components/ui/badge";
 import { createCopyButton } from "../../../components/ui/copy-button";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { TabList } from "../../../components/ui/tabs";
-import {
-  saveResponseBinary,
-  saveResponseBody,
-} from "../../../infrastructure/http/client";
 import { useHttpRequest } from "../../providers/http-provider";
 import { formatJson } from "../../utils/format";
 import { highlightJson } from "../../utils/json-highlight";
@@ -38,7 +34,8 @@ function formatSize(bytes: number): string {
 }
 
 export function ResponseViewer() {
-  const { response, loading } = useHttpRequest();
+  const { response, loading, responseSaveState, saveResponseBody } =
+    useHttpRequest();
 
   const [responseTab, setResponseTab] = createSignal("body");
   const { copy, isCopied } = createCopyButton();
@@ -50,15 +47,8 @@ export function ResponseViewer() {
     copy(bodyDisplay().text);
   }
 
-  async function handleSaveToFile() {
-    const resp = response();
-    if (!resp) return;
-    // 切り詰め時は temp ファイル（全文）から、非切り詰めバイナリはメモリ上の base64 から保存する。
-    if (resp.bodyTruncated) {
-      await saveResponseBody(resp.tempFilePath, resp.contentType);
-    } else {
-      await saveResponseBinary(resp.body, resp.contentType);
-    }
+  function handleSaveToFile() {
+    void saveResponseBody();
   }
 
   // パースを1回だけ行い、コピー用テキストと表示用HTMLを同時に生成する
@@ -208,14 +198,25 @@ export function ResponseViewer() {
                               >
                                 Show truncated body
                               </button>
-                              <button
-                                type="button"
-                                class={styles.responseBodyLimitBtn}
-                                onClick={handleSaveToFile}
-                              >
-                                Save body to file
-                              </button>
+                              <Show when={responseSaveState() === "idle"}>
+                                <button
+                                  type="button"
+                                  class={styles.responseBodyLimitBtn}
+                                  onClick={handleSaveToFile}
+                                >
+                                  Save body to file
+                                </button>
+                              </Show>
                             </div>
+                            <Show when={responseSaveState() === "saved"}>
+                              <p>Saved the full body to a file.</p>
+                            </Show>
+                            <Show when={responseSaveState() === "unavailable"}>
+                              <p>
+                                The full body is no longer available. Send the
+                                request again to save it.
+                              </p>
+                            </Show>
                           </div>
                         </Show>
 

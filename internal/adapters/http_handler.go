@@ -4,7 +4,7 @@ package adapters
 import (
 	"context"
 	"encoding/base64"
-	"io"
+	"errors"
 	"os"
 	"strings"
 
@@ -13,11 +13,8 @@ import (
 	httpdomain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
-// TempFileProvider はテンポラリファイルパスを取得・消費するインターフェース。
-// インフラ詳細を adapter 層に伝達するために使用する。
-type TempFileProvider interface {
-	ConsumeTempFilePath(requestID string) string
-}
+// errSaveDialog は保存ダイアログの起動失敗。Wails のエラー文言は透過させない。
+var errSaveDialog = errors.New("failed to open save dialog")
 
 // HTTPHandler は Wails RPC アダプターとして HTTP ユースケースを公開する。
 type HTTPHandler struct {
@@ -25,7 +22,7 @@ type HTTPHandler struct {
 	reqSvc    httpdomain.RequestUseCase
 	collSvc   httpdomain.CollectionUseCase
 	itemSvc   httpdomain.CollectionItemUseCase
-	tempFiles TempFileProvider
+	responses httpdomain.ResponseBodyStore
 	dialog    FileDialog
 }
 
@@ -35,7 +32,7 @@ type HTTPHandlerDeps struct {
 	ReqSvc    httpdomain.RequestUseCase
 	CollSvc   httpdomain.CollectionUseCase
 	ItemSvc   httpdomain.CollectionItemUseCase
-	TempFiles TempFileProvider
+	Responses httpdomain.ResponseBodyStore
 	Dialog    FileDialog
 }
 
@@ -46,7 +43,7 @@ func SetupHTTPHandler(ctx context.Context, h *HTTPHandler, deps HTTPHandlerDeps)
 	h.reqSvc = deps.ReqSvc
 	h.collSvc = deps.CollSvc
 	h.itemSvc = deps.ItemSvc
-	h.tempFiles = deps.TempFiles
+	h.responses = deps.Responses
 	h.dialog = deps.Dialog
 	if h.dialog == nil {
 		h.dialog = wailsFileDialog{}
@@ -69,13 +66,12 @@ func (h *HTTPHandler) GuessFormPartContentType(path string) string {
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
+// req.ID は送信ごとの execution ID。ボディが切り詰められた場合、全文の一時ファイルは
+// backend がこの ID で追跡し、SaveResponseBody / DiscardResponseBody で参照する。
 func (h *HTTPHandler) SendRequest(req httpdomain.HTTPRequest) (httpdomain.HTTPResponse, error) { //nolint:gocritic // hugeParam: preserve the Wails RPC DTO's value semantics.
 	res, err := h.reqSvc.SendRequest(req)
 	if err != nil {
 		return httpdomain.HTTPResponse{}, err
-	}
-	if res.BodyTruncated && h.tempFiles != nil {
-		res.TempFilePath = h.tempFiles.ConsumeTempFilePath(req.ID)
 	}
 	return res, nil
 }
@@ -85,17 +81,40 @@ func (h *HTTPHandler) CancelRequest(id string) {
 	h.reqSvc.CancelRequest(id)
 }
 
-// SaveResponseBody はテンポラリファイルをOSのファイル保存ダイアログで指定先に保存する。
-// 保存後にテンポラリファイルを削除する。キャンセル時は何もしない。
-func (h *HTTPHandler) SaveResponseBody(tempFilePath, contentType string) error {
-	savePath, err := h.dialog.SaveFile(h.ctx, saveDialogOptions(contentType))
-	if err != nil || savePath == "" {
-		return err
+// SaveResponseBody は execution ID で追跡中の一時ファイルを保存ダイアログの選択先へ保存する。
+// 保存したら true を返し、一時ファイルと追跡を削除する。キャンセル時は再保存できるよう保持して false を返す。
+// 保存元は backend が生成・追跡中の一時ファイルに限られ、呼び出し側からパスは指定できない。
+// 未追跡・保存済み・処理中の ID は保存ダイアログを開く前に拒否する。
+func (h *HTTPHandler) SaveResponseBody(executionID string) (bool, error) {
+	if h.responses == nil {
+		return false, httpdomain.ErrResponseUnavailable
 	}
-	if err := copyFile(tempFilePath, savePath); err != nil {
-		return err
+	lease, err := h.responses.AcquireSave(executionID)
+	if err != nil {
+		return false, err
 	}
-	return os.Remove(tempFilePath)
+	savePath, err := h.dialog.SaveFile(h.ctx, saveDialogOptions(lease.ContentType()))
+	if err != nil {
+		lease.Release()
+		return false, errSaveDialog
+	}
+	if savePath == "" {
+		lease.Release()
+		return false, nil
+	}
+	if err := lease.SaveTo(savePath); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// DiscardResponseBody は execution ID で追跡中の一時ファイルを破棄する。
+// frontend がレスポンスを置き換える・閉じるときに呼ぶ。保存処理中の ID は拒否する。
+func (h *HTTPHandler) DiscardResponseBody(executionID string) error {
+	if h.responses == nil {
+		return httpdomain.ErrResponseUnavailable
+	}
+	return h.responses.Discard(executionID)
 }
 
 // SaveResponseBase64 は base64 エンコードされたバイナリボディをデコードし、
@@ -216,19 +235,4 @@ func contentTypeToExtension(contentType string) string {
 	default:
 		return ".bin"
 	}
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src) //nolint:gosec // path comes from OS save dialog
-	if err != nil {
-		return err
-	}
-	defer func() { _ = in.Close() }() //nolint:errcheck // best-effort cleanup
-	out, err := os.Create(dst)        //nolint:gosec // path comes from OS save dialog
-	if err != nil {
-		return err
-	}
-	defer func() { _ = out.Close() }() //nolint:errcheck // best-effort cleanup
-	_, err = io.Copy(out, in)
-	return err
 }

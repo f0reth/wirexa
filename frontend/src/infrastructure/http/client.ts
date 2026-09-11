@@ -5,6 +5,7 @@ import {
   CreateCollection,
   DeleteCollection,
   DeleteItem,
+  DiscardResponseBody,
   GetCollections,
   GetRootItems,
   GetSidebarLayout,
@@ -126,7 +127,6 @@ function fromWailsHttpResponse(res: httpdomain.HTTPResponse): HttpResponse {
     ...res,
     headers: res.headers ?? {},
     bodyTruncated: res.bodyTruncated ?? false,
-    tempFilePath: res.tempFilePath ?? "",
     bodyBase64: res.bodyBase64 ?? false,
     bodyCapped: res.bodyCapped ?? false,
   };
@@ -280,11 +280,16 @@ export async function moveItemToSidebar(
   return MoveItemToSidebar(sourceCollectionId, itemId, sidebarPosition);
 }
 
-export async function saveResponseBody(
-  tempFilePath: string,
-  contentType: string,
-): Promise<void> {
-  return SaveResponseBody(tempFilePath, contentType);
+// saveResponseBody は切り詰められたレスポンスの全文を、送信時の execution ID で保存する。
+// 保存元の一時ファイルは backend が追跡しており、パスはここを通らない。
+// 保存したら true、保存ダイアログをキャンセルしたら false（再度保存できる）。
+export async function saveResponseBody(executionId: string): Promise<boolean> {
+  return SaveResponseBody(executionId);
+}
+
+// discardResponseBody は不要になった切り詰めレスポンスの一時ファイルを破棄させる。
+export async function discardResponseBody(executionId: string): Promise<void> {
+  return DiscardResponseBody(executionId);
 }
 
 // saveResponseBinary はメモリ上の base64 ボディを保存ダイアログの選択先へ書き出す。

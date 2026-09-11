@@ -26,6 +26,10 @@ export function DeleteItem(arg1, arg2) {
   return window['go']['adapters']['HTTPHandler']['DeleteItem'](arg1, arg2);
 }
 
+export function DiscardResponseBody(arg1) {
+  return window['go']['adapters']['HTTPHandler']['DiscardResponseBody'](arg1);
+}
+
 export function GetCollections() {
   return window['go']['adapters']['HTTPHandler']['GetCollections']();
 }
@@ -70,8 +74,8 @@ export function SaveResponseBase64(arg1, arg2) {
   return window['go']['adapters']['HTTPHandler']['SaveResponseBase64'](arg1, arg2);
 }
 
-export function SaveResponseBody(arg1, arg2) {
-  return window['go']['adapters']['HTTPHandler']['SaveResponseBody'](arg1, arg2);
+export function SaveResponseBody(arg1) {
+  return window['go']['adapters']['HTTPHandler']['SaveResponseBody'](arg1);
 }
 
 export function SendRequest(arg1) {

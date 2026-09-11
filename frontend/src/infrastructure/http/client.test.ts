@@ -7,6 +7,7 @@ vi.mock("../../../wailsjs/go/adapters/HTTPHandler", () => ({
   CreateCollection: vi.fn(),
   DeleteCollection: vi.fn(),
   DeleteItem: vi.fn(),
+  DiscardResponseBody: vi.fn(),
   GetCollections: vi.fn(),
   GetRootItems: vi.fn(),
   GetSidebarLayout: vi.fn(),
@@ -29,6 +30,7 @@ import {
   createCollection,
   deleteCollection,
   deleteItem,
+  discardResponseBody,
   getCollections,
   getRootItems,
   getSidebarLayout,
@@ -139,7 +141,6 @@ describe("sendRequest", () => {
       timingMs: 42,
       error: "",
       bodyTruncated: false,
-      tempFilePath: "",
       bodyBase64: false,
       bodyCapped: false,
     });
@@ -163,17 +164,14 @@ describe("sendRequest", () => {
     ]);
   });
 
-  it("maps bodyTruncated and tempFilePath correctly when set", async () => {
+  it("maps bodyTruncated without exposing a temp file path", async () => {
     vi.mocked(Handler.SendRequest).mockResolvedValue(
-      makeWailsResponse({
-        bodyTruncated: true,
-        tempFilePath: "/tmp/response.bin",
-      }) as never,
+      makeWailsResponse({ bodyTruncated: true }) as never,
     );
     const result = await sendRequest(makeDomainRequest());
     expect(result.bodyTruncated).toBe(true);
-    expect(result.tempFilePath).toBe("/tmp/response.bin");
     expect(result.bodyCapped).toBe(false);
+    expect(result).not.toHaveProperty("tempFilePath");
   });
 
   it("maps bodyCapped when the backend hits the absolute size limit", async () => {
@@ -181,7 +179,6 @@ describe("sendRequest", () => {
       makeWailsResponse({
         bodyTruncated: true,
         bodyCapped: true,
-        tempFilePath: "/tmp/response.bin",
       }) as never,
     );
     const result = await sendRequest(makeDomainRequest());
@@ -1013,22 +1010,27 @@ describe("moveItemToSidebar", () => {
 });
 
 describe("saveResponseBody", () => {
-  it("calls SaveResponseBody with the correct params", async () => {
-    vi.mocked(Handler.SaveResponseBody).mockResolvedValue(undefined);
-    await saveResponseBody("/tmp/response.bin", "application/octet-stream");
-    expect(Handler.SaveResponseBody).toHaveBeenCalledWith(
-      "/tmp/response.bin",
-      "application/octet-stream",
-    );
+  it("passes only the execution ID and returns whether it saved", async () => {
+    vi.mocked(Handler.SaveResponseBody).mockResolvedValue(true);
+    await expect(saveResponseBody("exec-1")).resolves.toBe(true);
+    expect(Handler.SaveResponseBody).toHaveBeenCalledWith("exec-1");
   });
 
   it("propagates rejection from the backend", async () => {
     vi.mocked(Handler.SaveResponseBody).mockRejectedValue(
-      new Error("save failed"),
+      new Error("response body unavailable"),
     );
-    await expect(saveResponseBody("/tmp/file", "text/plain")).rejects.toThrow(
-      "save failed",
+    await expect(saveResponseBody("exec-1")).rejects.toThrow(
+      "response body unavailable",
     );
+  });
+});
+
+describe("discardResponseBody", () => {
+  it("passes the execution ID to DiscardResponseBody", async () => {
+    vi.mocked(Handler.DiscardResponseBody).mockResolvedValue(undefined);
+    await discardResponseBody("exec-1");
+    expect(Handler.DiscardResponseBody).toHaveBeenCalledWith("exec-1");
   });
 });
 

@@ -14,6 +14,8 @@ export function DeleteCollection(arg1:string):Promise<void>;
 
 export function DeleteItem(arg1:string,arg2:string):Promise<void>;
 
+export function DiscardResponseBody(arg1:string):Promise<void>;
+
 export function GetCollections():Promise<Array<httpdomain.Collection>>;
 
 export function GetRootItems():Promise<Array<httpdomain.TreeItem>>;
@@ -36,7 +38,7 @@ export function RenameItem(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function SaveResponseBase64(arg1:string,arg2:string):Promise<void>;
 
-export function SaveResponseBody(arg1:string,arg2:string):Promise<void>;
+export function SaveResponseBody(arg1:string):Promise<boolean>;
 
 export function SendRequest(arg1:httpdomain.HTTPRequest):Promise<httpdomain.HTTPResponse>;
 

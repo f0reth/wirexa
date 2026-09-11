@@ -10,7 +10,10 @@ import type {
   RequestBody,
   RequestSettings,
 } from "../../domain/http/types";
-import { DEFAULT_SETTINGS } from "../../domain/http/types";
+import {
+  DEFAULT_SETTINGS,
+  isResponseUnavailableError,
+} from "../../domain/http/types";
 import { generateId } from "../../infrastructure/id/generator";
 import { errorMessage } from "../../shared/error";
 
@@ -18,8 +21,24 @@ export interface RequestApi {
   sendRequest(req: HttpRequest): Promise<HttpResponse>;
   cancelRequest(id: string): Promise<void>;
   updateRequest(collectionId: string, req: HttpRequest): Promise<void>;
+  // 切り詰められたレスポンスの全文を execution ID で保存する。保存したら true。
+  saveResponseBody(executionId: string): Promise<boolean>;
+  // 切り詰められていないバイナリボディを、メモリ上の base64 から保存する。
+  saveResponseBinary(base64Content: string, contentType: string): Promise<void>;
+  discardResponseBody(executionId: string): Promise<void>;
   afterSave?: (collectionId: string, req: HttpRequest) => void;
 }
+
+// 表示中のレスポンスと、それを返した送信の execution ID。
+// 全文の保存・破棄は execution ID で行うため、応答順が入れ替わっても組がずれないよう一体で持つ。
+interface CurrentResponse {
+  executionId: string;
+  response: HttpResponse;
+}
+
+// 切り詰められたレスポンスの全文の保存状態。
+// saved は保存済み（backend の一時ファイルは削除済み）、unavailable は backend が回収済み。
+export type ResponseSaveState = "idle" | "saved" | "unavailable";
 
 export function createRequestState(api: RequestApi, logger: Logger) {
   const [method, setMethod] = createSignal<HttpMethod>("GET");
@@ -40,7 +59,10 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     ...DEFAULT_SETTINGS,
   });
   const [doc, setDoc] = createSignal("");
-  const [response, setResponse] = createSignal<HttpResponse | null>(null);
+  const [current, setCurrent] = createSignal<CurrentResponse | null>(null);
+  const response = () => current()?.response ?? null;
+  const [responseSaveState, setResponseSaveState] =
+    createSignal<ResponseSaveState>("idle");
   // 実行中リクエストの send ID。保存用 ID とは別に送信ごとに採番するため、
   // 同じリクエストを連続送信してもバックエンドの cancels マップでキーが衝突しない。
   const [inFlight, setInFlight] = createSignal<readonly string[]>([]);
@@ -53,11 +75,32 @@ export function createRequestState(api: RequestApi, logger: Logger) {
   >(null);
   const [saveError, setSaveError] = createSignal<string | null>(null);
 
+  // 表示中のレスポンスを置き換える。backend が全文の一時ファイルを追跡している
+  // （切り詰められた）レスポンスは破棄を通知する。通知が届かなくても backend の
+  // 件数・容量上限と TTL で回収されるため、失敗はログに留める。
+  function replaceResponse(next: CurrentResponse | null): void {
+    const prev = current();
+    if (
+      prev &&
+      prev !== next &&
+      prev.response.bodyTruncated &&
+      responseSaveState() === "idle"
+    ) {
+      api.discardResponseBody(prev.executionId).catch((err) =>
+        logger.error("Failed to discard response body", {
+          error: errorMessage(err),
+        }),
+      );
+    }
+    setCurrent(next);
+    setResponseSaveState("idle");
+  }
+
   async function sendRequest(): Promise<void> {
     const m = method();
     const u = url();
     const sendId = generateId();
-    setResponse(null);
+    replaceResponse(null);
     setInFlight((ids) => [...ids, sendId]);
     logger.info("HTTP request sent", { method: m, url: u });
     try {
@@ -73,7 +116,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
         settings: settings(),
         doc: doc(),
       });
-      setResponse(res);
+      replaceResponse({ executionId: sendId, response: res });
       logger.info("HTTP response received", {
         method: m,
         url: u,
@@ -82,19 +125,21 @@ export function createRequestState(api: RequestApi, logger: Logger) {
       });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      setResponse({
-        statusCode: 0,
-        statusText: "",
-        headers: {},
-        body: "",
-        contentType: "",
-        size: 0,
-        timingMs: 0,
-        error: errorMsg,
-        bodyTruncated: false,
-        tempFilePath: "",
-        bodyBase64: false,
-        bodyCapped: false,
+      replaceResponse({
+        executionId: sendId,
+        response: {
+          statusCode: 0,
+          statusText: "",
+          headers: {},
+          body: "",
+          contentType: "",
+          size: 0,
+          timingMs: 0,
+          error: errorMsg,
+          bodyTruncated: false,
+          bodyBase64: false,
+          bodyCapped: false,
+        },
       });
       logger.error("HTTP request failed", {
         method: m,
@@ -112,10 +157,37 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     await Promise.all(ids.map((id) => api.cancelRequest(id)));
   }
 
+  // 表示中のレスポンスボディをファイルへ保存する。切り詰め時は backend が追跡する
+  // 全文を execution ID で、非切り詰めのバイナリはメモリ上の base64 から保存する。
+  async function saveResponseBody(): Promise<void> {
+    const cur = current();
+    if (!cur) return;
+    const { executionId, response: resp } = cur;
+    try {
+      if (!resp.bodyTruncated) {
+        await api.saveResponseBinary(resp.body, resp.contentType);
+        return;
+      }
+      const saved = await api.saveResponseBody(executionId);
+      if (saved && current() === cur) setResponseSaveState("saved");
+    } catch (err) {
+      const msg = errorMessage(err);
+      if (resp.bodyTruncated && isResponseUnavailableError(msg)) {
+        if (current() === cur) setResponseSaveState("unavailable");
+        return;
+      }
+      notify.error("Failed to save response", msg);
+    }
+  }
+
   function loadRequest(req: HttpRequest, collectionId: string): void {
     saveCurrentRequest().catch((err) =>
       notify.error("Failed to save request", errorMessage(err)),
     );
+    // 別のリクエストへ切り替えたら、前のリクエストのレスポンスは表示せず破棄する。
+    if (req.id !== activeRequestId() || collectionId !== activeCollectionId()) {
+      replaceResponse(null);
+    }
     setMethod(req.method);
     setUrl(req.url);
     setHeaders(req.headers);
@@ -132,6 +204,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     saveCurrentRequest().catch((err) =>
       notify.error("Failed to save request", errorMessage(err)),
     );
+    replaceResponse(null);
     setMethod("GET");
     setUrl("");
     setHeaders([]);
@@ -189,6 +262,8 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     doc,
     setDoc,
     response,
+    responseSaveState,
+    saveResponseBody,
     loading,
     activeRequestId,
     activeCollectionId,

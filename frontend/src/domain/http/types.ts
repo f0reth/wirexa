@@ -111,11 +111,19 @@ export interface HttpResponse {
   size: number;
   timingMs: number;
   error: string;
+  // 全文は backend が送信時の execution ID で追跡する一時ファイルにある（パスは公開されない）。
   bodyTruncated: boolean;
-  tempFilePath: string;
   bodyBase64: boolean;
-  // 絶対上限に達して受信を打ち切った。tempFilePath のファイルも全文ではない。
+  // 絶対上限に達して受信を打ち切った。backend の一時ファイルも全文ではない。
   bodyCapped: boolean;
+}
+
+// backend が一時ファイルを回収済み（保存済み・TTL・上限）のときに返すエラー文言。
+// internal/domain/http/errors.go の ErrResponseUnavailable と一致させる。
+export const RESPONSE_UNAVAILABLE_ERROR = "response body unavailable";
+
+export function isResponseUnavailableError(message: string): boolean {
+  return message.includes(RESPONSE_UNAVAILABLE_ERROR);
 }
 
 export interface Collection {

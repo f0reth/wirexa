@@ -3,6 +3,7 @@ package httpinfra
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,41 +26,29 @@ func isolateTempDir(t *testing.T) string {
 
 func TestSweepStaleTempFiles(t *testing.T) {
 	dir := isolateTempDir(t)
-	stale := filepath.Join(dir, "wirexa-response-abc123")
-	keep := filepath.Join(dir, "unrelated.txt")
-	if err := os.WriteFile(stale, []byte("x"), 0o600); err != nil {
-		t.Fatalf("write stale: %v", err)
+	sessionDir := filepath.Join(dir, "wirexa-http-abc123")
+	if err := os.Mkdir(sessionDir, 0o700); err != nil {
+		t.Fatalf("mkdir session dir: %v", err)
 	}
-	if err := os.WriteFile(keep, []byte("x"), 0o600); err != nil {
-		t.Fatalf("write keep: %v", err)
+	inSession := filepath.Join(sessionDir, "response-1")
+	legacy := filepath.Join(dir, "wirexa-response-abc123")
+	keep := filepath.Join(dir, "unrelated.txt")
+	for _, p := range []string{inSession, legacy, keep} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", p, err)
+		}
 	}
 
 	SweepStaleTempFiles()
 
-	if _, err := os.Stat(stale); !os.IsNotExist(err) {
-		t.Fatalf("expected stale temp file removed, err=%v", err)
+	if _, err := os.Stat(sessionDir); !os.IsNotExist(err) {
+		t.Fatalf("expected stale session dir removed, err=%v", err)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatalf("expected legacy temp file removed, err=%v", err)
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("unrelated file must be kept: %v", err)
-	}
-}
-
-func TestNetClient_Cleanup(t *testing.T) {
-	dir := t.TempDir()
-	f := filepath.Join(dir, "wirexa-response-tracked")
-	if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	c := NewNetClient()
-	c.tempFiles.Store("req-1", f)
-
-	c.Cleanup()
-
-	if _, err := os.Stat(f); !os.IsNotExist(err) {
-		t.Fatalf("expected tracked temp file removed, err=%v", err)
-	}
-	if _, ok := c.tempFiles.Load("req-1"); ok {
-		t.Fatalf("expected tempFiles entry deleted")
 	}
 }
 
@@ -73,26 +62,58 @@ func serveBytes(t *testing.T, body []byte) string {
 	return srv.URL
 }
 
-// tempFilesIn は隔離した TEMP ディレクトリに残っている一時ファイルの一覧を返す。
+// tempFilesIn は隔離した TEMP ディレクトリの session directory に残っている一時ファイルの一覧を返す。
 func tempFilesIn(t *testing.T, dir string) []string {
 	t.Helper()
-	matches, err := filepath.Glob(filepath.Join(dir, "wirexa-response-*"))
+	matches, err := filepath.Glob(filepath.Join(dir, "wirexa-http-*", "response-*"))
 	if err != nil {
 		t.Fatalf("glob: %v", err)
 	}
 	return matches
 }
 
-// 上限に収まるレスポンスでは一時ファイルを一切作らないことを確認する。
+// truncatedRequest は maxBody 1MB を超えるレスポンスを返すリクエストを組み立てる。
+func truncatedRequest(t *testing.T, id string, body []byte) domain.HTTPRequest {
+	t.Helper()
+	return domain.HTTPRequest{
+		ID:       id,
+		Method:   http.MethodGet,
+		URL:      serveBytes(t, body),
+		Settings: domain.RequestSettings{MaxResponseBodyMB: 1},
+	}
+}
+
+func TestNetClient_Cleanup(t *testing.T) {
+	dir := isolateTempDir(t)
+	c := NewNetClient()
+	if _, err := c.Do(context.Background(), truncatedRequest(t, "big", make([]byte, 2*1024*1024))); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	if files := tempFilesIn(t, dir); len(files) != 1 {
+		t.Fatalf("expected 1 tracked temp file before Cleanup, found %v", files)
+	}
+
+	c.Cleanup()
+
+	if files := tempFilesIn(t, dir); len(files) != 0 {
+		t.Fatalf("expected tracked temp files removed, found %v", files)
+	}
+	if _, err := c.Responses().AcquireSave("big"); !errors.Is(err, domain.ErrResponseUnavailable) {
+		t.Fatalf("AcquireSave after Cleanup: want ErrResponseUnavailable, got %v", err)
+	}
+}
+
+// 上限に収まるレスポンスでは一時ファイルを一切作らず、execution ID の予約も残さないことを確認する。
 func TestNetClient_WithinLimit_NoTempFile(t *testing.T) {
 	dir := isolateTempDir(t)
 	c := NewNetClient()
 
-	res, err := c.Do(context.Background(), domain.HTTPRequest{
+	req := domain.HTTPRequest{
 		ID:     "small",
 		Method: http.MethodGet,
 		URL:    serveBytes(t, []byte("hello")),
-	})
+	}
+	res, err := c.Do(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
@@ -109,6 +130,10 @@ func TestNetClient_WithinLimit_NoTempFile(t *testing.T) {
 	if files := tempFilesIn(t, dir); len(files) != 0 {
 		t.Fatalf("expected no temp file for a response within the limit, found %v", files)
 	}
+	// 予約が解放されているので、同じ ID で再送できる。
+	if _, err := c.Do(context.Background(), req); err != nil {
+		t.Fatalf("re-send with the same ID after completion: %v", err)
+	}
 }
 
 // 上限超過時に Body が maxBody で切り詰められ、一時ファイルには全文が残ることを確認する。
@@ -118,12 +143,7 @@ func TestNetClient_Truncated_TempFileHoldsFullBody(t *testing.T) {
 	full := bytes.Repeat([]byte("a"), maxBody+512)
 
 	c := NewNetClient()
-	res, err := c.Do(context.Background(), domain.HTTPRequest{
-		ID:       "big",
-		Method:   http.MethodGet,
-		URL:      serveBytes(t, full),
-		Settings: domain.RequestSettings{MaxResponseBodyMB: 1},
-	})
+	res, err := c.Do(context.Background(), truncatedRequest(t, "big", full))
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
@@ -145,9 +165,6 @@ func TestNetClient_Truncated_TempFileHoldsFullBody(t *testing.T) {
 	if len(files) != 1 {
 		t.Fatalf("expected exactly 1 temp file, found %v", files)
 	}
-	if got := c.ConsumeTempFilePath("big"); got != files[0] {
-		t.Fatalf("ConsumeTempFilePath = %q, want %q", got, files[0])
-	}
 	saved, err := os.ReadFile(files[0])
 	if err != nil {
 		t.Fatalf("read temp file: %v", err)
@@ -155,6 +172,13 @@ func TestNetClient_Truncated_TempFileHoldsFullBody(t *testing.T) {
 	if !bytes.Equal(saved, full) {
 		t.Fatalf("temp file holds %d bytes, want the full %d", len(saved), len(full))
 	}
+
+	// 一時ファイルは execution ID で保存できる状態で追跡されている。
+	lease, err := c.Responses().AcquireSave("big")
+	if err != nil {
+		t.Fatalf("AcquireSave: %v", err)
+	}
+	lease.Release()
 }
 
 // 絶対上限に達したら受信を打ち切り、BodyCapped を立てることを確認する。
@@ -198,40 +222,30 @@ func TestNetClient_AbsoluteLimit_CapsBody(t *testing.T) {
 	}
 }
 
-// 同一 req.ID で打ち切りレスポンスを連続受信しても、一時ファイルがオーファン化せず
-// 常に 1 個以下に保たれることを確認する。
-func TestNetClient_TruncatedResend_NoOrphan(t *testing.T) {
+// 同じ execution ID の打ち切りレスポンスが追跡中の間は再送を拒否し、旧エントリを暗黙に置換しない。
+// 破棄した後は同じ ID で再送でき、一時ファイルは常に 1 個以下に保たれる。
+func TestNetClient_TruncatedResend_RejectedUntilDiscard(t *testing.T) {
 	dir := isolateTempDir(t)
-	// maxBody の最小は 1MB。それを超える 2MB を返して打ち切りを発生させる。
-	body := make([]byte, 2*1024*1024)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(body)
-	}))
-	defer srv.Close()
-
 	c := NewNetClient()
-	req := domain.HTTPRequest{
-		ID:       "same-id",
-		Method:   http.MethodGet,
-		URL:      srv.URL,
-		Settings: domain.RequestSettings{MaxResponseBodyMB: 1},
+	req := truncatedRequest(t, "same-id", make([]byte, 2*1024*1024))
+
+	if _, err := c.Do(context.Background(), req); err != nil {
+		t.Fatalf("first Do: %v", err)
+	}
+	if _, err := c.Do(context.Background(), req); !errors.Is(err, domain.ErrResponseBusy) {
+		t.Fatalf("re-send while tracked: want ErrResponseBusy, got %v", err)
+	}
+	if files := tempFilesIn(t, dir); len(files) != 1 {
+		t.Fatalf("the first temp file must be kept, found %v", files)
 	}
 
-	for i := range 2 {
-		res, err := c.Do(context.Background(), req)
-		if err != nil {
-			t.Fatalf("Do #%d: %v", i, err)
-		}
-		if !res.BodyTruncated {
-			t.Fatalf("expected truncated response on iteration %d", i)
-		}
+	if err := c.Responses().Discard("same-id"); err != nil {
+		t.Fatalf("Discard: %v", err)
 	}
-
-	matches, err := filepath.Glob(filepath.Join(dir, "wirexa-response-*"))
-	if err != nil {
-		t.Fatalf("glob: %v", err)
+	if _, err := c.Do(context.Background(), req); err != nil {
+		t.Fatalf("re-send after Discard: %v", err)
 	}
-	if len(matches) > 1 {
-		t.Fatalf("expected at most 1 temp file, found %d: %v", len(matches), matches)
+	if files := tempFilesIn(t, dir); len(files) != 1 {
+		t.Fatalf("expected exactly 1 temp file, found %v", files)
 	}
 }

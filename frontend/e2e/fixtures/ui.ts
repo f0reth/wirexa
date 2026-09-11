@@ -25,6 +25,15 @@ export class FakeControl {
     );
   }
 
+  /** バインディングの呼び出しごとの引数。 */
+  args(name: string): Promise<unknown[][]> {
+    return this.app.page.evaluate(
+      (n) => (window as unknown as { __wirexaFake: FakeBackend }).__wirexaFake
+        .args[n] ?? [],
+      name,
+    );
+  }
+
   /**
    * バインディングが指定回数以上呼ばれるまで待つ。
    * デバウンスされた自動保存を「800ms 寝て待つ」代わりに使う。

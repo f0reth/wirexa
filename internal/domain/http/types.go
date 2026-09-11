@@ -208,10 +208,7 @@ type HTTPResponse struct {
 	Body        string              `json:"body"`
 	ContentType string              `json:"contentType"`
 	Error       string              `json:"error"`
-	// TempFilePath はボディが大きく切り詰められた際に全文を保存したテンポラリファイルのパス。
-	// adapter 層が ConsumeTempFilePath で設定する出力用フィールド（infra は設定しない）。
-	TempFilePath string `json:"tempFilePath"`
-	StatusCode   int    `json:"statusCode"`
+	StatusCode  int                 `json:"statusCode"`
 	// Size は実際に受信したバイト数。BodyCapped が true の場合は絶対上限で頭打ちになるため、
 	// レスポンスの全長とは一致しない。
 	Size          int64 `json:"size"`
@@ -220,7 +217,7 @@ type HTTPResponse struct {
 	// BodyBase64 は Body が非 UTF-8 バイナリのため base64 エンコードされていることを示す。
 	BodyBase64 bool `json:"bodyBase64"`
 	// BodyCapped は絶対上限に達して受信を打ち切ったことを示す。
-	// このとき TempFilePath のファイルもレスポンスの全文ではない。
+	// このとき backend が追跡する一時ファイルもレスポンスの全文ではない。
 	BodyCapped bool `json:"bodyCapped"`
 }
 
