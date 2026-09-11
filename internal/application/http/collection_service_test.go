@@ -531,8 +531,8 @@ func TestCollectionService_GetRootItems_WithItems(t *testing.T) {
 func TestCollectionService_CreateCollection_RepoError(t *testing.T) {
 	// root コレクション作成 (1回) の後に失敗させる。
 	repo := &countingSaveRepo{
-		inMemoryRepo: inMemoryRepo{collections: map[string]*domain.Collection{}},
-		failAfter:    1,
+		collections: map[string]*domain.Collection{},
+		failAfter:   1,
 	}
 	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
 	if err != nil {
@@ -920,8 +920,8 @@ func TestCollectionService_UpdateRequest_NodeIsFolder_ReturnsNotFound(t *testing
 func TestCollectionService_AddFolder_RepoSaveError(t *testing.T) {
 	// root コレクション作成(1回)後に失敗させる。
 	repo := &countingSaveRepo{
-		inMemoryRepo: inMemoryRepo{collections: map[string]*domain.Collection{}},
-		failAfter:    1,
+		collections: map[string]*domain.Collection{},
+		failAfter:   1,
 	}
 	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
 	if err != nil {
@@ -935,8 +935,8 @@ func TestCollectionService_AddFolder_RepoSaveError(t *testing.T) {
 
 func TestCollectionService_AddRequest_RepoSaveError(t *testing.T) {
 	repo := &countingSaveRepo{
-		inMemoryRepo: inMemoryRepo{collections: map[string]*domain.Collection{}},
-		failAfter:    1,
+		collections: map[string]*domain.Collection{},
+		failAfter:   1,
 	}
 	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
 	if err != nil {
