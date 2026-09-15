@@ -52,12 +52,13 @@ type NetClient struct {
 }
 
 // NewNetClient は NetClient を生成する。files は request file の token を解決する registry で、
-// nil の場合はファイルを送る全てのリクエストを拒否する。
-func NewNetClient(files domain.SelectedFileReader) *NetClient {
+// nil の場合はファイルを送る全てのリクエストを拒否する。sessionDir は打ち切りレスポンスの
+// 一時ファイルを置く app 管理ディレクトリ (例: os.UserCacheDir()/Wirexa/http-sessions)。
+func NewNetClient(files domain.SelectedFileReader, sessionDir string) *NetClient {
 	return &NetClient{
 		files:        files,
 		transports:   make(map[transportKey]*http.Transport),
-		responses:    NewResponseStore(),
+		responses:    NewResponseStore(sessionDir),
 		maxTempBytes: defaultMaxTempBytes,
 	}
 }

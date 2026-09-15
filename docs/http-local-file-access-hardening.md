@@ -15,6 +15,7 @@
 - `ready` 状態の TTL 回収は専用 goroutine を持たず、response store の各操作の冒頭で遅延評価する。件数・総容量・同時 spill の上限により、操作が無い間も使用量は有界。
 - 同じパスの再選択には同じ token を返し、256 件の上限を繰り返し選択で使い切らないようにする。
 - request を切り替えると表示中の response をクリアし、その一時ファイルを破棄する。
+- 2026-09-12: 起動時 sweep が削除対象を識別する仕組みを強化した。session directory を `os.TempDir()` 直下から `os.UserCacheDir()/Wirexa/http-sessions` へ移し、marker file の検証を公開済みの固定文字列比較ではなく、インストールごとに生成してこの base directory 内に永続化した乱数シークレットとの比較に変更した（詳細は「6. Response 一時ファイルの回収」）。
 
 主な実装箇所: `internal/infrastructure/http/file_registry.go`、`internal/infrastructure/http/response_store.go`、`internal/infrastructure/http/collection_repository.go`、`internal/adapters/http_handler.go`、`frontend/src/presentation/components/http/file-reference-input.tsx`。
 
@@ -245,7 +246,11 @@ frontend は信頼境界の外側にあるため、`DiscardResponseBody` が呼�
 
 値は設定ではなく安全側の内部定数から開始し、実利用データに基づいて変更する。容量は spill 開始前に 1 response の絶対上限分を予約し、書き込み完了時に実サイズへ精算することで、複数 request が同時に上限をすり抜けないようにする。上限到達時は既存ファイルを無断で消すのではなく、新しい spill を停止して明示的なエラーを返す。TTL 回収は `ready` だけを対象とし、`running` と `saving` を削除しない。
 
-一時ファイルは可能であれば flat な OS temp 直下ではなく、権限 `0700` の Wirexa 専用 session directory 内へ作成する。起動時 sweep は Wirexa が作成した session directory だけを対象にする。
+一時ファイルは flat な OS 共有の一時ディレクトリ (`os.TempDir()`) には作成しない。同じ OS ユーザーに属する無関係なプロセスもこのディレクトリへ自由に書き込めるため、ディレクトリ名の接頭辞が一致するというだけでは Wirexa が作成したものである保証にはならない。代わりに `os.UserCacheDir()/Wirexa/http-sessions` という Wirexa 専用の base directory (権限 `0700`) の下に、実行ごとの session directory (同じく `0700`) を作成する。spill されるレスポンス本文は認証トークンや PII を含みうる一時的なデータであり、cache directory は OS の慣習上こうした一時データの置き場所であってバックアップ対象から除外されるのが一般的なため、永続データを置く `os.UserConfigDir()/Wirexa/` とは意図的に分離する。
+
+起動時 sweep は、この base directory 内で `wirexa-http-*` に一致する session directory のうち、marker file `.wirexa-session` の内容が、インストールごとに一度だけ生成して base directory 直下に永続化する乱数シークレット (32 byte、`crypto/rand` で生成、ファイル名 `.session-secret`、権限 `0600`) と一致するものだけを削除対象とする。marker の内容はソースコード上の固定値ではなく実行時に base directory から読み出す値と比較するため、GitHub 上で公開されている固定文字列を知っているだけでは偽装できない。ただし同一 OS ユーザーに属するプロセスは原理的にこのシークレットファイル自体を読める権限を持ちうるため、この検証は絶対的な保証ではなく、従来の「起動時に固定の公開定数と一致するかだけを見る」実装からの多層防御としての改善という位置づけである。base directory を OS 共有の一時ディレクトリの外へ移したことと合わせて、他ユーザー・他プロセスが偶然/意図的に同じ接頭辞のディレクトリを作ってしまう衝突面自体をなくしている。
+
+本変更前に `os.TempDir()` 直下へ作成された旧 session directory は、この sweep の対象に含めない。旧 marker を信頼し続ける移行用 sweep を別途用意すると、期間限定とはいえ本書が対処した脆弱性を小さく再現することになるため、意図的に行わない。旧 session directory は件数・総容量の上限 (最大 8 件・2 GiB) で有界であり、OS 側の一時ディレクトリ整理 (例: 一定期間アクセスの無いファイルの定期削除) に委ねる。
 
 ## Public API・型の変更案
 

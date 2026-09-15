@@ -12,11 +12,11 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
-// newTestStore は隔離した TEMP ディレクトリを使う ResponseStore を返す。
+// newTestStore は隔離した base directory を使う ResponseStore を返す。
 func newTestStore(t *testing.T) (*ResponseStore, string) {
 	t.Helper()
-	dir := isolateTempDir(t)
-	s := NewResponseStore()
+	dir := t.TempDir()
+	s := NewResponseStore(dir)
 	t.Cleanup(s.Cleanup)
 	return s, dir
 }

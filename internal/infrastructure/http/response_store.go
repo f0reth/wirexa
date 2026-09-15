@@ -1,6 +1,8 @@
 package httpinfra
 
 import (
+	"bytes"
+	"crypto/rand"
 	"errors"
 	"io"
 	"os"
@@ -24,6 +26,17 @@ const (
 	responseSessionDirPrefix = "wirexa-http-"
 	// legacyResponseFilePrefix は session directory 導入前の flat な一時ファイルの接頭辞。
 	legacyResponseFilePrefix = "wirexa-response-"
+
+	// sessionMarkerFile は Wirexa が作成した session directory であることを示す marker file の名前。
+	// 名前が接頭辞に一致するだけの無関係なディレクトリを起動時 sweep が削除しないよう、
+	// 削除前にこの marker の内容が sessionSecret と一致することを検証する。
+	sessionMarkerFile = ".wirexa-session"
+
+	// sessionSecretFile はインストールごとに生成・永続化する乱数シークレットのファイル名。
+	// wirexa-http-* の接頭辞に一致しないため、session directory の sweep 対象 glob には含まれない。
+	sessionSecretFile = ".session-secret"
+	// sessionSecretSize はシークレットのバイト長 (256 bit)。
+	sessionSecretSize = 32
 )
 
 var (
@@ -75,7 +88,9 @@ type ResponseStore struct {
 	now     func() time.Time
 	entries map[string]*responseEntry
 	ops     responseFileOps
-	// dir は 0700 の session directory。最初の spill で作成する。
+	// baseDir は session directory の app 管理の親ディレクトリ (0700)。
+	baseDir string
+	// dir は実際に MkdirTemp で作成した session directory (baseDir 配下、0700)。最初の spill で作成する。
 	dir      string
 	total    int64
 	files    int
@@ -84,12 +99,14 @@ type ResponseStore struct {
 	closed   bool
 }
 
-// NewResponseStore は ResponseStore を生成する。
-func NewResponseStore() *ResponseStore {
+// NewResponseStore は ResponseStore を生成する。baseDir は spill 用一時ファイルの親ディレクトリ
+// (例: os.UserCacheDir()/Wirexa/http-sessions)。存在しなくてよく、最初の spill 時に 0700 で作成する。
+func NewResponseStore(baseDir string) *ResponseStore {
 	return &ResponseStore{
 		now:     time.Now,
 		entries: make(map[string]*responseEntry),
 		ops:     defaultResponseFileOps,
+		baseDir: baseDir,
 	}
 }
 
@@ -159,9 +176,21 @@ func (s *ResponseStore) startSpill(executionID string, reserve int64) (string, e
 		return "", domain.ErrResponseStorageLimit
 	}
 	if s.dir == "" {
+		if err := os.MkdirAll(s.baseDir, 0o700); err != nil {
+			return "", errSpillWrite
+		}
 		// MkdirTemp は 0700 で作成する。
-		dir, err := os.MkdirTemp("", responseSessionDirPrefix+"*")
+		dir, err := os.MkdirTemp(s.baseDir, responseSessionDirPrefix+"*")
 		if err != nil {
+			return "", errSpillWrite
+		}
+		secret, err := sessionSecret(s.baseDir)
+		if err != nil {
+			_ = os.RemoveAll(dir) //nolint:errcheck // best-effort cleanup; 残れば次回起動時 sweep で回収する
+			return "", errSpillWrite
+		}
+		if err := os.WriteFile(filepath.Join(dir, sessionMarkerFile), secret, 0o600); err != nil {
+			_ = os.RemoveAll(dir) //nolint:errcheck // best-effort cleanup; 残れば次回起動時 sweep で回収する
 			return "", errSpillWrite
 		}
 		s.dir = dir
@@ -382,19 +411,83 @@ func copyResponseFile(src, dst string) error {
 	return out.Close()
 }
 
-// SweepStaleTempFiles は前回セッションで残った session directory と、
-// session directory 導入前の flat な一時ファイル (wirexa-response-*) を削除する。
-// 単一インスタンスロックにより同時起動が無いため、接頭辞に一致するものを安全に削除できる。
-func SweepStaleTempFiles() {
-	tmp := os.TempDir()
-	if dirs, err := filepath.Glob(filepath.Join(tmp, responseSessionDirPrefix+"*")); err == nil {
-		for _, d := range dirs {
-			_ = os.RemoveAll(d) //nolint:errcheck // best-effort cleanup
+// sessionSecret は baseDir 直下に永続化された、インストールごとの乱数シークレットを返す。
+// 既に存在すればその内容を読み、無ければ crypto/rand で生成して 0600 で新規作成する。
+// ファイル名 (.session-secret) は wirexa-http-* の接頭辞に一致しないため、
+// SweepStaleTempFiles の session directory glob からは対象にならない。
+func sessionSecret(baseDir string) ([]byte, error) {
+	path := filepath.Join(baseDir, sessionSecretFile)
+	if content, err := os.ReadFile(path); err == nil && len(content) == sessionSecretSize { //nolint:gosec // G304: path is a fixed filename under baseDir.
+		return content, nil
+	}
+	if err := os.MkdirAll(baseDir, 0o700); err != nil {
+		return nil, err
+	}
+	secret := make([]byte, sessionSecretSize)
+	if _, err := rand.Read(secret); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: path is a fixed filename under baseDir.
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			// 単一インスタンスロックにより通常起こらないが、念のため先着プロセスの値を読み直す。
+			return os.ReadFile(path) //nolint:gosec // G304: path is a fixed filename under baseDir.
+		}
+		return nil, err
+	}
+	defer func() { _ = f.Close() }() //nolint:errcheck // best-effort cleanup
+	if _, err := f.Write(secret); err != nil {
+		return nil, err
+	}
+	if err := f.Sync(); err != nil {
+		return nil, err
+	}
+	return secret, nil
+}
+
+// SweepStaleTempFiles は前回セッションで残った session directory (baseDir 配下) と、
+// session directory 導入前の flat な一時ファイル (os.TempDir() 直下の wirexa-response-*、
+// session directory とは無関係な旧移行経路) を削除する。baseDir は Wirexa 専用の
+// app 管理ディレクトリ (例: os.UserCacheDir()/Wirexa/http-sessions) で、OS 共有の temp
+// directory とは異なり他プロセス・他ユーザーが偶然書き込むことはない。それでも同一 OS
+// ユーザーに属する別プロセスが接頭辞を真似る可能性は残るため、session directory は
+// isWirexaSessionDir で、baseDir に永続化された乱数シークレットと marker file の内容を
+// 比較してから削除する。シークレットの読み書きに失敗した場合 (権限エラー等) は
+// session directory の sweep だけを諦め、legacy ファイルの sweep は継続する。
+// この関数は logger 構築前の起動シーケンス最初期に呼ぶため失敗をログへ出す先が無く、
+// 既存の他の best-effort cleanup と同様に沈黙して次回起動時の sweep に任せる。
+func SweepStaleTempFiles(baseDir string) {
+	if info, err := os.Stat(baseDir); err == nil && info.IsDir() {
+		if secret, err := sessionSecret(baseDir); err == nil {
+			if dirs, err := filepath.Glob(filepath.Join(baseDir, responseSessionDirPrefix+"*")); err == nil {
+				for _, d := range dirs {
+					if isWirexaSessionDir(d, secret) {
+						_ = os.RemoveAll(d) //nolint:errcheck // best-effort cleanup
+					}
+				}
+			}
 		}
 	}
+
+	tmp := os.TempDir()
 	if files, err := filepath.Glob(filepath.Join(tmp, legacyResponseFilePrefix+"*")); err == nil {
 		for _, f := range files {
-			_ = os.Remove(f) //nolint:errcheck // best-effort cleanup
+			if info, err := os.Lstat(f); err == nil && info.Mode().IsRegular() {
+				_ = os.Remove(f) //nolint:errcheck // best-effort cleanup
+			}
 		}
 	}
+}
+
+// isWirexaSessionDir は d が Wirexa 自身が作成した session directory であることを確認する。
+// symlink ではない通常のディレクトリで、内部の marker file の内容がインストールごとの
+// 乱数シークレットと一致する場合のみ true を返す。固定の公開定数ではなく実行時に
+// baseDir から読み出した値と比較するため、値を知っているだけでは偽装できない。
+func isWirexaSessionDir(d string, secret []byte) bool {
+	info, err := os.Lstat(d)
+	if err != nil || !info.Mode().IsDir() {
+		return false
+	}
+	content, err := os.ReadFile(filepath.Join(d, sessionMarkerFile)) //nolint:gosec // G304: d comes from a glob under baseDir and is verified to be a plain directory above.
+	return err == nil && len(secret) > 0 && bytes.Equal(content, secret)
 }

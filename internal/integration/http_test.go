@@ -64,7 +64,7 @@ func buildHTTPHandler(t *testing.T, dir string, dialog adapters.FileDialog) *ada
 		t.Fatalf("NewCollectionService: %v", err)
 	}
 	files := httpinfra.NewFileRegistry()
-	netClient := httpinfra.NewNetClient(files)
+	netClient := httpinfra.NewNetClient(files, filepath.Join(dir, "http-sessions"))
 	t.Cleanup(netClient.Cleanup)
 	reqSvc := httpapp.NewHTTPRequestService(netClient, testutil.NoopLogger{})
 	h := &adapters.HTTPHandler{}

@@ -37,7 +37,7 @@ func TestNetClient_FileBodyUsesRegistry(t *testing.T) {
 	}
 	url, body, contentType, _ := captureServer(t)
 
-	_, err = NewNetClient(reg).Do(context.Background(), domain.HTTPRequest{
+	_, err = NewNetClient(reg, t.TempDir()).Do(context.Background(), domain.HTTPRequest{
 		ID:     "file-1",
 		Method: http.MethodPost,
 		URL:    url,
@@ -62,7 +62,7 @@ func TestNetClient_FileBodyIgnoresRawPath(t *testing.T) {
 	path := writeTempFile(t, "secret.txt", "top secret")
 	url, body, _, hits := captureServer(t)
 
-	_, err := NewNetClient(NewFileRegistry()).Do(context.Background(), domain.HTTPRequest{
+	_, err := NewNetClient(NewFileRegistry(), t.TempDir()).Do(context.Background(), domain.HTTPRequest{
 		ID:     "file-raw",
 		Method: http.MethodPost,
 		URL:    url,
@@ -79,7 +79,7 @@ func TestNetClient_FileBodyIgnoresRawPath(t *testing.T) {
 // 解決できない参照はファイルを開く前に拒否し、リクエスト自体を送らない。
 func TestNetClient_FileBodyRejectsUnresolvedReferences(t *testing.T) {
 	url, _, _, hits := captureServer(t)
-	c := NewNetClient(NewFileRegistry())
+	c := NewNetClient(NewFileRegistry(), t.TempDir())
 
 	for i, ref := range []domain.FileReference{
 		{Token: "00112233445566778899aabbccddeeff"},

@@ -97,6 +97,12 @@ func (a *App) initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get config directory: %w", err)
 	}
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return fmt.Errorf("failed to get cache directory: %w", err)
+	}
+	sessionDir := filepath.Join(cacheDir, wirexaConfigDir, "http-sessions")
+
 	a.windowMgr = infra.NewWindowManager(
 		ctx,
 		filepath.Join(configDir, wirexaConfigDir, "window-state.json"),
@@ -104,8 +110,11 @@ func (a *App) initialize(ctx context.Context) error {
 	)
 
 	// 前回セッションで残った打ち切りレスポンスの一時ファイルを掃除する。
-	// startup 済 (= 単一インスタンスロックを通過したプライマリ) なので全削除して安全。
-	httpinfra.SweepStaleTempFiles()
+	// session directory は Wirexa 専用の cache directory 配下にあり、削除前に
+	// インストールごとの乱数シークレットで marker を検証するため、同一 OS ユーザーの
+	// 他プロセスが接頭辞を真似ただけのディレクトリを誤って削除しない
+	// (単一インスタンスロックは「Wirexa の別プロセスがいない」ことしか保証しない)。
+	httpinfra.SweepStaleTempFiles(sessionDir)
 
 	logger, err := infra.NewFileLogger(filepath.Join(configDir, wirexaConfigDir, "logs"))
 	if err != nil {
@@ -145,7 +154,7 @@ func (a *App) initialize(ctx context.Context) error {
 	}
 	// request file はダイアログで選ばれたものだけを session token で参照させる。
 	fileRegistry := httpinfra.NewFileRegistry()
-	a.netClient = httpinfra.NewNetClient(fileRegistry)
+	a.netClient = httpinfra.NewNetClient(fileRegistry, sessionDir)
 	a.reqSvc = httpapp.NewHTTPRequestService(a.netClient, logger)
 	adapters.SetupHTTPHandler(ctx, a.httpHandler, adapters.HTTPHandlerDeps{
 		ReqSvc:    a.reqSvc,
