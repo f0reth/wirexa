@@ -54,6 +54,11 @@ tasks:
     cmds:
       - wails generate module
 
+  go:licenses:
+    desc: Go 依存パッケージのライセンス一覧を生成する
+    cmds:
+      - go tool go-licenses report ./... --template licenses.tpl > THIRD_PARTY_LICENSES.md
+
   # --- Frontend (bun) ---
 
   frontend:install:
@@ -104,7 +109,19 @@ tasks:
     cmds:
       - bun run test:e2e:fullstack
 
+  frontend:licenses:
+    desc: フロントエンド依存パッケージのライセンス一覧を追記する
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - bun run licenses >> ../THIRD_PARTY_LICENSES.md
+
   # --- まとめて実行 ---
+
+  licenses:
+    desc: Go とフロントエンドの依存パッケージのライセンス一覧を THIRD_PARTY_LICENSES.md にまとめる
+    cmds:
+      - task: go:licenses
+      - task: frontend:licenses
 
   test:
     desc: Go とフロントエンドのユニットテストをまとめて実行する
