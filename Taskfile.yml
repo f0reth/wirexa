@@ -1,0 +1,125 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+vars:
+  FRONTEND_DIR: frontend
+
+tasks:
+  default:
+    desc: 利用可能なタスク一覧を表示
+    cmds:
+      - task --list
+    silent: true
+
+  dev:
+    desc: 開発環境を起動する (wails dev)
+    cmds:
+      - wails dev
+
+  build:
+    desc: 本番ビルドを行う (wails build)
+    cmds:
+      - wails build
+
+  # --- Go ---
+
+  go:test:
+    desc: Go のユニットテストを実行する
+    cmds:
+      - go test ./...
+
+  go:test:integration:
+    desc: Go の統合テストを実行する (integration ビルドタグ)
+    cmds:
+      - go test -tags integration ./internal/integration/...
+
+  go:vet:
+    desc: go vet を実行する
+    cmds:
+      - go vet ./...
+
+  go:lint:
+    desc: golangci-lint を実行する
+    cmds:
+      - golangci-lint run
+
+  go:generate:events:
+    desc: イベント名定数を再生成する
+    cmds:
+      - go generate ./internal/domain
+
+  wails:generate:
+    desc: Wails バインディングを再生成する
+    cmds:
+      - wails generate module
+
+  # --- Frontend (bun) ---
+
+  frontend:install:
+    desc: フロントエンドの依存関係をインストールする
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - bun install
+
+  frontend:tsc:
+    desc: フロントエンドの型チェックを実行する
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - bun run tsc
+
+  frontend:test:
+    desc: フロントエンドのユニットテストを実行する (vitest)
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - bun run test
+
+  frontend:lint:
+    desc: フロントエンドの Lint を実行する (biome check)
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - bun run lint
+
+  frontend:format:
+    desc: フロントエンドのコードを整形する (biome check --write)
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - bun run format
+
+  frontend:ci:
+    desc: CI と同じ biome チェックを実行する
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - bun run ci
+
+  frontend:test:e2e:
+    desc: UI e2e テストを実行する (フェイクバックエンド)
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - bun run test:e2e
+
+  frontend:test:e2e:fullstack:
+    desc: フルスタック e2e テストを実行する (実 wails dev, Windows/ローカル専用)
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - bun run test:e2e:fullstack
+
+  # --- まとめて実行 ---
+
+  test:
+    desc: Go とフロントエンドのユニットテストをまとめて実行する
+    cmds:
+      - task: go:test
+      - task: frontend:test
+
+  lint:
+    desc: Go とフロントエンドの Lint をまとめて実行する
+    cmds:
+      - task: go:vet
+      - task: go:lint
+      - task: frontend:lint
+
+  format:
+    desc: フロントエンドのコードを整形する
+    cmds:
+      - task: frontend:format
