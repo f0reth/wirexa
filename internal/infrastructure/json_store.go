@@ -45,6 +45,7 @@ func (s *JSONStore[T]) Load() ([]T, error) {
 			continue
 		}
 		path := filepath.Join(s.dir, e.Name())
+		// #nosec G304 -- path は ReadDir が返した s.dir 直下のエントリ名で、外部入力ではない。
 		data, err := os.ReadFile(path)
 		if err != nil {
 			// 読めないファイルは触らずスキップして起動を継続する。

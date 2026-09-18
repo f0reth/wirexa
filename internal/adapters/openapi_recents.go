@@ -37,6 +37,7 @@ type openapiRecentStore struct {
 // JSONStore.Load と同様に握り潰さずログへ残す。logger は nil でもよい。
 func newOpenapiRecentStore(path string, logger cmn.Logger) *openapiRecentStore {
 	s := &openapiRecentStore{path: path, logger: logger}
+	// #nosec G304 -- path は設定ディレクトリ配下の固定ファイル名で、JS からは指定できない。
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if !os.IsNotExist(err) {
