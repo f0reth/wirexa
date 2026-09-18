@@ -23,9 +23,11 @@ type MQTTMessage struct {
 	ConnectionID string `json:"connectionId"`
 	Topic        string `json:"topic"`
 	Payload      string `json:"payload"`
-	QoS          byte   `json:"qos"`
-	Retained     bool   `json:"retained"`
-	Timestamp    int64  `json:"timestamp"`
+	// Timestamp を byte/bool 群より前に置くのはパディングを避けるため (72B → 64B)。
+	// 受信メッセージは件数が出るので、確保サイズクラスを 80 から 64 に下げておく。
+	Timestamp int64 `json:"timestamp"`
+	QoS       byte  `json:"qos"`
+	Retained  bool  `json:"retained"`
 	// PayloadBase64 は Payload が非 UTF-8 バイナリのため base64 エンコードされていることを示す。
 	PayloadBase64 bool `json:"payloadBase64"`
 }
