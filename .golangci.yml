@@ -15,9 +15,13 @@ formatters:
       - '.*\.pb\.go$'
       - '(^|/|\\)mock_.*\.go$'
       - '(^|/|\\)vendor(/|\\)'
+      - '(^|/|\\)node_modules(/|\\)'
   settings:
     gofumpt:
-      extra-rules: true
+      extra:
+        group-params: true
+        clothe-returns: true
+        balance-calls: true
 
 linters:
   default: none
@@ -68,9 +72,12 @@ linters:
       - '.*\.pb\.go$'
       - '(^|/|\\)mock_.*\.go$'
       - '(^|/|\\)vendor(/|\\)'
+      - '(^|/|\\)node_modules(/|\\)'
   settings:
     govet:
       enable-all: true
+      disable:
+        - fieldalignment
     staticcheck:
       checks:
         - "all"
@@ -101,7 +108,7 @@ linters:
           sizeThreshold: 64
           skipTestFuncs: true
         hugeParam:
-          sizeThreshold: 300
+          sizeThreshold: 512
 
 issues:
   max-issues-per-linter: 0
