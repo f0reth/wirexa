@@ -62,7 +62,7 @@ func (r *fakeRepo) Delete(id string) error {
 
 func newStore(t *testing.T, repo *fakeRepo) *CachedStore[item] {
 	t.Helper()
-	cs, err := NewCachedStore[item](
+	cs, err := NewCachedStore(
 		"item", repo,
 		func(it item) string { return it.ID },
 		func(it *item, id string) { it.ID = id },
@@ -83,7 +83,7 @@ func TestCachedStore_New_LoadsItems(t *testing.T) {
 func TestCachedStore_New_LoadError(t *testing.T) {
 	repo := newFakeRepo()
 	repo.loadErr = errors.New("disk error")
-	_, err := NewCachedStore[item](
+	_, err := NewCachedStore(
 		"item", repo,
 		func(it item) string { return it.ID },
 		func(it *item, id string) { it.ID = id },
@@ -156,8 +156,7 @@ func TestCachedStore_Delete_NotFound(t *testing.T) {
 	cs := newStore(t, repo)
 
 	err := cs.Delete("missing")
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError, got %T: %v", err, err)
 	}
 	// 存在確認で弾かれるので repo.Delete は呼ばれない
@@ -175,8 +174,7 @@ func TestCachedStore_Delete_RepoError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); ok {
 		t.Error("expected repo error, got NotFoundError")
 	}
 	// repo エラー時はキャッシュに残る

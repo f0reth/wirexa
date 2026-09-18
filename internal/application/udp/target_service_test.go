@@ -169,8 +169,7 @@ func TestTargetService_SaveTarget_InvalidReturnsValidationError(t *testing.T) {
 			svc, _ := NewTargetService(repo)
 
 			_, err := svc.SaveTarget(tc.target)
-			var ve *cmn.ValidationError
-			if !errors.As(err, &ve) {
+			if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 				t.Fatalf("expected ValidationError, got %T (%v)", err, err)
 			}
 			// 不正入力は永続化されない。
@@ -199,8 +198,7 @@ func TestTargetService_DeleteTarget_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError, got %T", err)
 	}
 }
@@ -216,8 +214,7 @@ func TestTargetService_DeleteTarget_DoesNotCallRepoForMissingID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError (not repo error), got %T: %v", err, err)
 	}
 }

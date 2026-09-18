@@ -175,8 +175,7 @@ func TestHTTPRequestService_SendRequest_InvalidMethod_ReturnsValidationError(t *
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var ve *cmn.ValidationError
-	if !errors.As(err, &ve) {
+	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 		t.Errorf("expected ValidationError, got %T", err)
 	}
 }

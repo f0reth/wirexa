@@ -531,8 +531,8 @@ func TestCollectionService_GetRootItems_WithItems(t *testing.T) {
 func TestCollectionService_CreateCollection_RepoError(t *testing.T) {
 	// root コレクション作成 (1回) の後に失敗させる。
 	repo := &countingSaveRepo{
-		inMemoryRepo: inMemoryRepo{collections: map[string]*domain.Collection{}},
-		failAfter:    1,
+		collections: map[string]*domain.Collection{},
+		failAfter:   1,
 	}
 	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
 	if err != nil {
@@ -552,8 +552,7 @@ func TestCollectionService_CreateCollection_EmptyNameReturnsValidationError(t *t
 			t.Fatalf("NewCollectionService: %v", err)
 		}
 		_, err = svc.CreateCollection(name)
-		var ve *cmn.ValidationError
-		if !errors.As(err, &ve) {
+		if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 			t.Fatalf("CreateCollection(%q): expected ValidationError, got %T (%v)", name, err, err)
 		}
 		if len(svc.GetCollections()) != 0 {
@@ -639,8 +638,7 @@ func TestCollectionService_MoveItem_IntoOwnSubtree_Rejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when moving folder into its descendant, got nil")
 	}
-	var verr *cmn.ValidationError
-	if !errors.As(err, &verr) {
+	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 		t.Errorf("expected ValidationError, got %T: %v", err, err)
 	}
 	// F とその中身が温存されていること (#6)。
@@ -912,8 +910,7 @@ func TestCollectionService_UpdateRequest_NodeIsFolder_ReturnsNotFound(t *testing
 	if err == nil {
 		t.Fatal("expected error when updating a folder node, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError, got %T", err)
 	}
 }
@@ -923,8 +920,8 @@ func TestCollectionService_UpdateRequest_NodeIsFolder_ReturnsNotFound(t *testing
 func TestCollectionService_AddFolder_RepoSaveError(t *testing.T) {
 	// root コレクション作成(1回)後に失敗させる。
 	repo := &countingSaveRepo{
-		inMemoryRepo: inMemoryRepo{collections: map[string]*domain.Collection{}},
-		failAfter:    1,
+		collections: map[string]*domain.Collection{},
+		failAfter:   1,
 	}
 	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
 	if err != nil {
@@ -938,8 +935,8 @@ func TestCollectionService_AddFolder_RepoSaveError(t *testing.T) {
 
 func TestCollectionService_AddRequest_RepoSaveError(t *testing.T) {
 	repo := &countingSaveRepo{
-		inMemoryRepo: inMemoryRepo{collections: map[string]*domain.Collection{}},
-		failAfter:    1,
+		collections: map[string]*domain.Collection{},
+		failAfter:   1,
 	}
 	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
 	if err != nil {
@@ -1022,8 +1019,7 @@ func TestCollectionService_MoveItemToSidebar_SourceNotFound(t *testing.T) {
 	if err == nil {
 		t.Error("expected error, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError, got %T", err)
 	}
 }
@@ -1035,8 +1031,7 @@ func TestCollectionService_MoveItemToSidebar_ItemNotFound(t *testing.T) {
 	if err == nil {
 		t.Error("expected error, got nil")
 	}
-	var nfe *cmn.NotFoundError
-	if !errors.As(err, &nfe) {
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError, got %T", err)
 	}
 }
