@@ -71,11 +71,14 @@ func (a *App) startup(ctx context.Context) {
 	if err := a.initialize(ctx); err != nil {
 		// GUI アプリではコンソールが無いため、致命的エラーはダイアログで提示してから終了する。
 		log.Printf("startup failed: %v", err) // stderr へのベストエフォート
-		_, _ = runtime.MessageDialog(ctx, runtime.MessageDialogOptions{
+		if _, derr := runtime.MessageDialog(ctx, runtime.MessageDialogOptions{
 			Type:    runtime.ErrorDialog,
 			Title:   "Wirexa - Startup Failed",
 			Message: fmt.Sprintf("The application could not be started.\n\n%v", err),
-		})
+		}); derr != nil {
+			// ダイアログを出せなくても終了処理は続ける。原因を追えるようログだけ残す。
+			log.Printf("startup failed: could not show error dialog: %v", derr)
+		}
 		runtime.Quit(ctx)
 		return
 	}
