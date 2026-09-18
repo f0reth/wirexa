@@ -1,7 +1,7 @@
 package adapters
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"os"
 	"sort"
 	"sync"

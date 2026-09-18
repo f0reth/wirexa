@@ -2,10 +2,10 @@
 package udpdomain
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"math"
 	"strconv"
@@ -25,11 +25,11 @@ func EncodePayload(data []byte, encoding PayloadEncoding) string {
 	case EncodingFixed:
 		return hex.EncodeToString(data)
 	case EncodingJSON:
-		var buf bytes.Buffer
-		if err := json.Indent(&buf, data, "", "  "); err != nil {
+		formatted, err := jsontext.AppendFormat(nil, data, jsontext.WithIndent("  "))
+		if err != nil {
 			return string(data)
 		}
-		return buf.String()
+		return string(formatted)
 	default:
 		return string(data)
 	}
