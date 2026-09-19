@@ -11,7 +11,10 @@ import {
   type MqttMessageView,
 } from "../../application/mqtt/connections";
 import { createMessagesState } from "../../application/mqtt/messages";
-import { createPresetsState } from "../../application/mqtt/presets";
+import {
+  createPresetsState,
+  type PublishDraft,
+} from "../../application/mqtt/presets";
 import { createProfilesState } from "../../application/mqtt/profiles";
 import { createSubscriptionsState } from "../../application/mqtt/subscriptions";
 import { runGuarded } from "../../application/ui/guard";
@@ -91,7 +94,9 @@ export interface PublishContextValue {
   ) => void;
   reorderPresets: (fromIndex: number, toIndex: number) => void;
   selectedPresetId: Accessor<string | null>;
-  setSelectedPresetId: Setter<string | null>;
+  selectPreset: (id: string) => void;
+  draft: Accessor<PublishDraft>;
+  updateDraft: (patch: Partial<PublishDraft>) => void;
   publish: (
     topic: string,
     payload: string,
