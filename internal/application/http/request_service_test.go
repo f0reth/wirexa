@@ -16,7 +16,7 @@ type mockTransport struct {
 	doFn func(req domain.HTTPRequest) (domain.HTTPResponse, error)
 }
 
-func (m *mockTransport) Do(_ context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) { //nolint:gocritic // hugeParam: must match HTTPTransport's value-based contract.
+func (m *mockTransport) Do(_ context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) {
 	if m.doFn != nil {
 		return m.doFn(req)
 	}
@@ -132,7 +132,7 @@ type mockTransportCtx struct {
 	doFn func(ctx context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error)
 }
 
-func (m *mockTransportCtx) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) { //nolint:gocritic // hugeParam: must match HTTPTransport's value-based contract.
+func (m *mockTransportCtx) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) {
 	if m.doFn != nil {
 		return m.doFn(ctx, req)
 	}
