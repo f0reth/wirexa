@@ -16,6 +16,39 @@ import { notifyOnError, runGuarded } from "../ui/guard";
 
 const STORAGE_KEY = "wirexa:http:expandedFolders";
 
+/**
+ * 保存済みのアクティブリクエスト（id とコレクション id）をツリーから探す。
+ * __root__ はサイドバー直下のアイテムなので子を持たず、通常のコレクションは再帰的に探す。
+ */
+export function findRequestById(
+  collections: readonly Collection[],
+  rootItems: readonly TreeItem[],
+  collectionId: string,
+  requestId: string,
+): HttpRequest | null {
+  if (collectionId === ROOT_COLLECTION_ID) {
+    const item = rootItems.find(
+      (i) => i.id === requestId && i.type === "request",
+    );
+    return item?.request ?? null;
+  }
+
+  const collection = collections.find((c) => c.id === collectionId);
+  if (!collection) return null;
+
+  const walk = (items: readonly TreeItem[]): HttpRequest | null => {
+    for (const item of items) {
+      if (item.type === "request" && item.id === requestId && item.request) {
+        return item.request;
+      }
+      const found = walk(item.children);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(collection.items);
+}
+
 function loadExpandedIds(): Record<string, boolean> {
   return loadFromStorage<Record<string, boolean>>(STORAGE_KEY, {});
 }

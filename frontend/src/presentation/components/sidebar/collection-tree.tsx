@@ -1,12 +1,5 @@
 import { Plus } from "lucide-solid";
-import {
-  createEffect,
-  createSignal,
-  For,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
@@ -52,12 +45,6 @@ export function CollectionTree() {
     name: string;
     type: string;
   } | null>(null);
-
-  // コレクションロード後にアクティブリクエストを復元する
-  onMount(async () => {
-    await collectionsCtx.refreshCollections();
-    requestCtx.restoreActiveRequest();
-  });
 
   // 失敗時の通知は application 層が出す。戻り値を持つ操作は例外で失敗が伝わるため、
   // 後続処理（リネーム編集の開始）を走らせないよう null に畳んで分岐する。

@@ -8,9 +8,13 @@ import type {
   HttpRequest,
   TreeItem,
 } from "../../domain/http/types";
-import { DEFAULT_SETTINGS } from "../../domain/http/types";
+import { DEFAULT_SETTINGS, ROOT_COLLECTION_ID } from "../../domain/http/types";
 import type { Notifier } from "../../domain/ui/ports";
-import { type CollectionsApi, createCollectionsState } from "./collections";
+import {
+  type CollectionsApi,
+  createCollectionsState,
+  findRequestById,
+} from "./collections";
 
 function makeNotifier(): Notifier {
   return {
@@ -76,6 +80,72 @@ function withState(
     dispose();
   });
 }
+
+/** 指定 id のリクエストを持つツリーアイテムを作る。 */
+function makeRequestItem(id: string, url: string): TreeItem {
+  return {
+    id,
+    name: id,
+    type: "request",
+    children: [],
+    request: { ...makeRequest(), id, url },
+  };
+}
+
+describe("findRequestById", () => {
+  const rootItems = [makeRequestItem("r-root", "https://root.example")];
+  const collections: Collection[] = [
+    {
+      id: "col-1",
+      name: "col-1",
+      items: [
+        {
+          id: "folder-1",
+          name: "folder-1",
+          type: "folder",
+          children: [
+            makeRequestItem("r-nested", "https://nested.example"),
+            makeTreeItem("folder-2"),
+          ],
+        },
+        makeRequestItem("r-top", "https://top.example"),
+      ],
+    },
+  ];
+
+  it("finds a request directly under the sidebar root", () => {
+    const req = findRequestById(
+      collections,
+      rootItems,
+      ROOT_COLLECTION_ID,
+      "r-root",
+    );
+    expect(req?.url).toBe("https://root.example");
+  });
+
+  it("finds a request nested in a folder", () => {
+    const req = findRequestById(collections, rootItems, "col-1", "r-nested");
+    expect(req?.url).toBe("https://nested.example");
+  });
+
+  it("finds a request at the top level of a collection", () => {
+    const req = findRequestById(collections, rootItems, "col-1", "r-top");
+    expect(req?.url).toBe("https://top.example");
+  });
+
+  it("returns null for an unknown collection, item or wrong pairing", () => {
+    expect(findRequestById(collections, rootItems, "gone", "r-top")).toBeNull();
+    expect(findRequestById(collections, rootItems, "col-1", "gone")).toBeNull();
+    // ルート直下の id を通常コレクション側で探しても見つからない。
+    expect(
+      findRequestById(collections, rootItems, "col-1", "r-root"),
+    ).toBeNull();
+    // フォルダ（request ではない）は対象外。
+    expect(
+      findRequestById(collections, rootItems, "col-1", "folder-1"),
+    ).toBeNull();
+  });
+});
 
 describe("createCollectionsState failure contract", () => {
   it("notifies and swallows the error for operations without a return value", async () => {

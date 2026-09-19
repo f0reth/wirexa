@@ -36,8 +36,6 @@ export function createTargetsState(api: UdpTargetApi, notifier: Notifier) {
     setTargets(reconcile(next));
   }
 
-  refreshTargets();
-
   return {
     targets,
     refreshTargets,

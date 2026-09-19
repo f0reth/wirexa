@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Button } from "../../../components/ui/button";
 import dialog from "../../../components/ui/dialog.module.css";
@@ -112,13 +112,8 @@ function TargetDialog(props: TargetDialogProps) {
 }
 
 export function TargetTree() {
-  const { targets, saveTarget, deleteTarget, refreshTargets, reorderTargets } =
-    useUdpTargets();
+  const { targets, saveTarget, deleteTarget, reorderTargets } = useUdpTargets();
   const { loadTarget } = useUdpSend();
-
-  onMount(() => {
-    refreshTargets();
-  });
 
   const [editingTarget, setEditingTarget] = createSignal<
     UdpTarget | "new" | null

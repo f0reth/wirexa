@@ -3,9 +3,13 @@ import {
   createContext,
   createEffect,
   type JSX,
+  onMount,
   useContext,
 } from "solid-js";
-import { createCollectionsState } from "../../application/http/collections";
+import {
+  createCollectionsState,
+  findRequestById,
+} from "../../application/http/collections";
 import {
   createAutoSaveEffect,
   createRequestState,
@@ -25,7 +29,6 @@ import type {
   SidebarEntry,
   TreeItem,
 } from "../../domain/http/types";
-import { ROOT_COLLECTION_ID } from "../../domain/http/types";
 import * as httpClient from "../../infrastructure/http/client";
 import { createLogger } from "../../infrastructure/logger/client";
 import { createActiveRequestStorage } from "../../infrastructure/storage/local-storage";
@@ -66,7 +69,6 @@ export interface RequestContextValue {
   loadRequest: (req: HttpRequest, collectionId: string) => void;
   newRequest: () => void;
   saveCurrentRequest: () => Promise<void>;
-  restoreActiveRequest: () => void;
 }
 
 export interface CollectionsContextValue {
@@ -152,48 +154,29 @@ export function HttpProvider(props: { children: JSX.Element }) {
     }
   });
 
-  // コレクションロード後にアクティブリクエストを復元する（CollectionTreeから呼ばれる）
+  // コレクションロード後にアクティブリクエストを復元する。
   const restoreActiveRequest = () => {
     if (requestState.activeRequestId()) return;
 
     const saved = activeRequestStorage.load();
     if (!saved) return;
 
-    const { requestId, collectionId } = saved;
-
-    const findInTree = (items: TreeItem[]): HttpRequest | null => {
-      for (const item of items) {
-        if (item.type === "request" && item.id === requestId && item.request) {
-          return item.request;
-        }
-        const found = findInTree(item.children);
-        if (found) return found;
-      }
-      return null;
-    };
-
-    if (collectionId === ROOT_COLLECTION_ID) {
-      const item = collectionsState.rootItems.find(
-        (i) => i.id === requestId && i.type === "request",
-      );
-      if (item?.request) {
-        requestState.loadRequest(item.request, ROOT_COLLECTION_ID);
-      }
-      return;
-    }
-
-    const col = collectionsState.collections.find((c) => c.id === collectionId);
-    if (!col) return;
-    const req = findInTree(col.items);
-    if (req) {
-      requestState.loadRequest(req, collectionId);
-    }
+    const req = findRequestById(
+      collectionsState.collections,
+      collectionsState.rootItems,
+      saved.collectionId,
+      saved.requestId,
+    );
+    if (req) requestState.loadRequest(req, saved.collectionId);
   };
 
-  const contextValue: RequestContextValue = {
-    ...requestState,
-    restoreActiveRequest,
-  };
+  // 起動時のシーケンスはここに集約する（表示中のサイドバーに依存させない）。
+  onMount(async () => {
+    await collectionsState.refreshCollections();
+    restoreActiveRequest();
+  });
+
+  const contextValue: RequestContextValue = { ...requestState };
 
   return (
     <HttpRequestContext.Provider value={contextValue}>

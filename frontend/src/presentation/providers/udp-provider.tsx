@@ -1,4 +1,10 @@
-import { type Accessor, createContext, type JSX, useContext } from "solid-js";
+import {
+  type Accessor,
+  createContext,
+  type JSX,
+  onMount,
+  useContext,
+} from "solid-js";
 import { createUdpReceiveState } from "../../application/udp/receive";
 import {
   createUdpSendState,
@@ -73,6 +79,11 @@ export function UdpProvider(props: { children: JSX.Element }) {
   );
   const targetsState = createTargetsState(udpClient, notify);
   const receiveState = createUdpReceiveState(udpClient, notify);
+
+  // 起動時のシーケンスはここに集約する（TargetTree を表示しなくても一覧を読み込む）。
+  onMount(() => {
+    void targetsState.refreshTargets();
+  });
 
   return (
     <UdpSendContext.Provider value={sendState}>
