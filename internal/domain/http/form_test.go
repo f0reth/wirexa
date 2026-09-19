@@ -77,8 +77,8 @@ func TestParseFormPairs(t *testing.T) {
 func TestEncodeFormPairs(t *testing.T) {
 	tests := []struct {
 		name  string
-		pairs []FormRow
 		want  string
+		pairs []FormRow
 	}{
 		{
 			name:  "行なしは空文字列",

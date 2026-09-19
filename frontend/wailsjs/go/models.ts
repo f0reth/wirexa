@@ -21,8 +21,8 @@ export namespace adapters {
 	export class OpenAPIRecent {
 	    path: string;
 	    name: string;
-	    order: number;
 	    lastOpenedAt: string;
+	    order: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new OpenAPIRecent(source);
@@ -32,8 +32,8 @@ export namespace adapters {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.path = source["path"];
 	        this.name = source["name"];
-	        this.order = source["order"];
 	        this.lastOpenedAt = source["lastOpenedAt"];
+	        this.order = source["order"];
 	    }
 	}
 
@@ -121,9 +121,9 @@ export namespace httpdomain {
 	}
 	export class RequestBody {
 	    contents: Record<string, string>;
+	    type: string;
 	    formData?: FormRow[];
 	    formUrlEncoded?: FormRow[];
-	    type: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RequestBody(source);
@@ -132,9 +132,9 @@ export namespace httpdomain {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.contents = source["contents"];
+	        this.type = source["type"];
 	        this.formData = this.convertValues(source["formData"], FormRow);
 	        this.formUrlEncoded = this.convertValues(source["formUrlEncoded"], FormRow);
-	        this.type = source["type"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -364,8 +364,8 @@ export namespace mqttdomain {
 	    clientId: string;
 	    username: string;
 	    password: string;
-	    useTls: boolean;
 	    profileId: string;
+	    useTls: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionConfig(source);
@@ -378,8 +378,8 @@ export namespace mqttdomain {
 	        this.clientId = source["clientId"];
 	        this.username = source["username"];
 	        this.password = source["password"];
-	        this.useTls = source["useTls"];
 	        this.profileId = source["profileId"];
+	        this.useTls = source["useTls"];
 	    }
 	}
 	export class SubscriptionInfo {
@@ -400,9 +400,9 @@ export namespace mqttdomain {
 	    id: string;
 	    name: string;
 	    broker: string;
-	    connected: boolean;
 	    profileId: string;
 	    subscriptions: SubscriptionInfo[];
+	    connected: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionStatus(source);
@@ -413,9 +413,9 @@ export namespace mqttdomain {
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.broker = source["broker"];
-	        this.connected = source["connected"];
 	        this.profileId = source["profileId"];
 	        this.subscriptions = this.convertValues(source["subscriptions"], SubscriptionInfo);
+	        this.connected = source["connected"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

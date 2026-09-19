@@ -453,11 +453,11 @@ func lastMessage(t *testing.T, e *mockEmitterWithChan) domain.MQTTMessage {
 	t.Helper()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for _, v := range slices.Backward(e.events) {
-		if v.event == cmn.EventMQTTMessage {
-			msg, ok := v.data.(domain.MQTTMessage)
+	for _, event := range slices.Backward(e.events) {
+		if event.event == cmn.EventMQTTMessage {
+			msg, ok := event.data.(domain.MQTTMessage)
 			if !ok {
-				t.Fatalf("message event data is not MQTTMessage: %T", v.data)
+				t.Fatalf("message event data is not MQTTMessage: %T", event.data)
 			}
 			return msg
 		}

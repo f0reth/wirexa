@@ -26,9 +26,9 @@ var errAccessDenied = errors.New("access denied: path was not granted via a file
 // recents seed 経由でしか行われず、JS 入力からは汚染できない。
 type OpenAPIHandler struct {
 	ctx     context.Context
-	mu      sync.Mutex
 	granted map[string]struct{}
 	recents *openapiRecentStore
+	mu      sync.Mutex
 }
 
 // SetupOpenAPIHandler は既存の OpenAPIHandler インスタンスに ctx と recents ストアを

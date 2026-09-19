@@ -31,7 +31,7 @@ func NewHTTPRequestService(transport domain.HTTPTransport, logger cmn.Logger) *H
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
 // ネットワーク障害・入力不正は error を返す。HTTP 4xx/5xx は正常レスポンスとして扱う。
-func (s *HTTPRequestService) SendRequest(req domain.HTTPRequest) (domain.HTTPResponse, error) {
+func (s *HTTPRequestService) SendRequest(req domain.HTTPRequest) (domain.HTTPResponse, error) { //nolint:gocritic // hugeParam: preserve request DTO value semantics across application boundaries.
 	if !validMethods[req.Method] {
 		return domain.HTTPResponse{}, &cmn.ValidationError{Field: "method", Message: req.Method}
 	}

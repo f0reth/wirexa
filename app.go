@@ -43,17 +43,16 @@ const (
 )
 
 type App struct {
+	ctx            context.Context
 	mqttHandler    *adapters.MQTTHandler
 	httpHandler    *adapters.HTTPHandler
 	udpHandler     *adapters.UDPHandler
 	logHandler     *adapters.LogHandler
 	openAPIHandler *adapters.OpenAPIHandler
 	netClient      *httpinfra.NetClient
-	ctx            context.Context
+	windowMgr      *infra.WindowManager
 	ready          bool
 	quitConfirmed  bool
-
-	windowMgr *infra.WindowManager
 }
 
 func NewApp() *App {

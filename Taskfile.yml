@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
 
-version: '3'
+version: "3"
 
 vars:
   FRONTEND_DIR: frontend
@@ -63,55 +63,55 @@ tasks:
 
   frontend:install:
     desc: フロントエンドの依存関係をインストールする
-    dir: '{{.FRONTEND_DIR}}'
+    dir: "{{.FRONTEND_DIR}}"
     cmds:
       - bun install
 
   frontend:tsc:
     desc: フロントエンドの型チェックを実行する
-    dir: '{{.FRONTEND_DIR}}'
+    dir: "{{.FRONTEND_DIR}}"
     cmds:
       - bun run tsc
 
   frontend:test:
     desc: フロントエンドのユニットテストを実行する (vitest)
-    dir: '{{.FRONTEND_DIR}}'
+    dir: "{{.FRONTEND_DIR}}"
     cmds:
       - bun run test
 
   frontend:lint:
     desc: フロントエンドの Lint を実行する (biome check)
-    dir: '{{.FRONTEND_DIR}}'
+    dir: "{{.FRONTEND_DIR}}"
     cmds:
       - bun run lint
 
   frontend:format:
     desc: フロントエンドのコードを整形する (biome check --write)
-    dir: '{{.FRONTEND_DIR}}'
+    dir: "{{.FRONTEND_DIR}}"
     cmds:
       - bun run format
 
   frontend:ci:
     desc: CI と同じ biome チェックを実行する
-    dir: '{{.FRONTEND_DIR}}'
+    dir: "{{.FRONTEND_DIR}}"
     cmds:
       - bun run ci
 
   frontend:test:e2e:
     desc: UI e2e テストを実行する (フェイクバックエンド)
-    dir: '{{.FRONTEND_DIR}}'
+    dir: "{{.FRONTEND_DIR}}"
     cmds:
       - bun run test:e2e
 
   frontend:test:e2e:fullstack:
     desc: フルスタック e2e テストを実行する (実 wails dev, Windows/ローカル専用)
-    dir: '{{.FRONTEND_DIR}}'
+    dir: "{{.FRONTEND_DIR}}"
     cmds:
       - bun run test:e2e:fullstack
 
   frontend:licenses:
     desc: フロントエンド依存パッケージのライセンス一覧を追記する
-    dir: '{{.FRONTEND_DIR}}'
+    dir: "{{.FRONTEND_DIR}}"
     cmds:
       - bun run licenses >> ../THIRD_PARTY_LICENSES.md
 
