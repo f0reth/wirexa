@@ -3,6 +3,7 @@
 import type {
   Collection,
   HttpResponse,
+  RequestBody,
   SidebarEntry,
   TreeItem,
 } from "../../src/domain/http/types";
@@ -15,8 +16,16 @@ export interface FakeSeed {
   collections?: Array<{
     id?: string;
     name: string;
-    requests?: Array<{ id?: string; name: string; url?: string }>;
+    requests?: Array<{
+      id?: string;
+      name: string;
+      url?: string;
+      /** 保存済みのボディ。file 参照の再選択表示などの検証に使う。 */
+      body?: RequestBody;
+    }>;
   }>;
+  /** OpenFilePicker (ファイルダイアログ) で選ばれたことにするファイル。未設定ならキャンセル。 */
+  pickedFile?: { token: string; name: string; contentType: string };
   udpTargets?: Array<{ id?: string; name: string; host: string; port: number }>;
   mqttProfiles?: Array<{ id?: string; name: string; broker?: string }>;
   /** SendRequest が返すレスポンス (既定値に対する上書き)。 */
@@ -25,12 +34,16 @@ export interface FakeSeed {
   httpResponseDelayMs?: number;
   /** SendRequest を必ず失敗させる (接続エラーの検証に使う)。 */
   httpError?: string;
+  /** SaveResponseBody を必ず失敗させる (回収済み一時ファイルの検証に使う)。 */
+  saveResponseError?: string;
 }
 
 /** window に生える、偽バックエンドのテスト用操作面。 */
 export interface FakeBackend {
   /** バインディング名 → 呼び出し回数。固定 sleep の代わりに expect.poll で待つ。 */
   calls: Record<string, number>;
+  /** バインディング名 → 呼び出しごとの引数。RPC 境界に何が渡ったかを検証する。 */
+  args: Record<string, unknown[][]>;
   /** 現在の状態のスナップショット (構造化クローン可能な形)。 */
   snapshot(): {
     collections: Collection[];

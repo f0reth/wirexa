@@ -56,7 +56,7 @@ test("clearing editor content shows no valid spec message in preview", async ({
 
   // エディタをクリア → プレビューが "No valid OpenAPI spec" に戻る
   await page.locator(".cm-content").click();
-  await page.keyboard.press("Control+a");
+  await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.press("Backspace");
 
   await expect(page.getByText("No valid OpenAPI spec")).toBeVisible({

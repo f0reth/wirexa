@@ -1,6 +1,8 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { Logger } from "../../application/logger";
 import type {
+  ContentBodyType,
+  FileReference,
   FormBodyType,
   FormRow,
   HttpMethod,
@@ -14,7 +16,9 @@ import type {
 import {
   DEFAULT_SETTINGS,
   FORM_PAIR_FIELDS,
+  hasUnconfirmedFile,
   isFormBodyType,
+  isResponseUnavailableError,
 } from "../../domain/http/types";
 import type { Notifier } from "../../domain/ui/ports";
 import { generateId } from "../../infrastructure/id/generator";
@@ -29,13 +33,48 @@ export interface RequestApi {
   sendRequest(req: HttpRequest): Promise<HttpResponse>;
   cancelRequest(id: string): Promise<void>;
   updateRequest(collectionId: string, req: HttpRequest): Promise<void>;
-  /** ネイティブのファイル選択ダイアログ。キャンセル時は空文字を返す。 */
-  openFilePicker(): Promise<string>;
-  /** form-data の file 行に自動付与される Content-Type。判定は Go 側が持つ。 */
-  guessFormPartContentType(path: string): Promise<string>;
-  saveResponseBody(tempFilePath: string, contentType: string): Promise<void>;
+  /**
+   * ネイティブのファイル選択ダイアログ。hint はダイアログの初期位置にだけ使われ、
+   * 確定した token はダイアログの選択結果からだけ発行される。キャンセル時は undefined。
+   */
+  openFilePicker(hint: string): Promise<FileReference | undefined>;
+  // 切り詰められたレスポンスの全文を execution ID で保存する。保存したら true。
+  saveResponseBody(executionId: string): Promise<boolean>;
+  // 切り詰められていないバイナリボディを、メモリ上の base64 から保存する。
   saveResponseBinary(base64Content: string, contentType: string): Promise<void>;
+  discardResponseBody(executionId: string): Promise<void>;
   afterSave?: (collectionId: string, req: HttpRequest) => void;
+}
+
+// 表示中のレスポンスと、それを返した送信の execution ID。
+// 全文の保存・破棄は execution ID で行うため、応答順が入れ替わっても組がずれないよう一体で持つ。
+interface CurrentResponse {
+  executionId: string;
+  response: HttpResponse;
+}
+
+// 切り詰められたレスポンスの全文の保存状態。
+// saved は保存済み（backend の一時ファイルは削除済み）、unavailable は backend が回収済み。
+export type ResponseSaveState = "idle" | "saved" | "unavailable";
+
+// 未確定・再選択待ちのファイルがあるときに送信を止める理由。
+const UNCONFIRMED_FILE_ERROR =
+  "Select the file with Browse... before sending. A typed path only sets where the file dialog opens.";
+
+function errorResponse(error: string): HttpResponse {
+  return {
+    statusCode: 0,
+    statusText: "",
+    headers: {},
+    body: "",
+    contentType: "",
+    size: 0,
+    timingMs: 0,
+    error,
+    bodyTruncated: false,
+    bodyBase64: false,
+    bodyCapped: false,
+  };
 }
 
 export function createRequestState(
@@ -61,7 +100,10 @@ export function createRequestState(
     ...DEFAULT_SETTINGS,
   });
   const [doc, setDoc] = createSignal("");
-  const [response, setResponse] = createSignal<HttpResponse | null>(null);
+  const [current, setCurrent] = createSignal<CurrentResponse | null>(null);
+  const response = () => current()?.response ?? null;
+  const [responseSaveState, setResponseSaveState] =
+    createSignal<ResponseSaveState>("idle");
   // 実行中リクエストの send ID。保存用 ID とは別に送信ごとに採番するため、
   // 同じリクエストを連続送信してもバックエンドの cancels マップでキーが衝突しない。
   const [inFlight, setInFlight] = createSignal<readonly string[]>([]);
@@ -74,19 +116,28 @@ export function createRequestState(
   >(null);
   const [saveError, setSaveError] = createSignal<string | null>(null);
 
+  // file 種別は本文を contents に持たない（送信元は file 参照の token だけ）。
+  const contentKey = (): ContentBodyType | null => {
+    const type = body().type;
+    return type === "file" ? null : type;
+  };
+
   // 選択中の body type に対応する本文。json だけは未入力時に雛形を返す。
   const bodyContent = (): string => {
-    const content = body().contents[body().type];
-    if (content === undefined && body().type === "json") {
+    const key = contentKey();
+    const content = key ? body().contents[key] : undefined;
+    if (content === undefined && key === "json") {
       return JSON_BODY_DEFAULT;
     }
     return content ?? "";
   };
 
   const setBodyContent = (content: string): void => {
+    const key = contentKey();
+    if (!key) return;
     setBody({
       ...body(),
-      contents: { ...body().contents, [body().type]: content },
+      contents: { ...body().contents, [key]: content },
     });
   };
 
@@ -114,11 +165,40 @@ export function createRequestState(
     setBody({ ...body(), [field]: rows });
   };
 
+  // 表示中のレスポンスを置き換える。backend が全文の一時ファイルを追跡している
+  // （切り詰められた）レスポンスは破棄を通知する。通知が届かなくても backend の
+  // 件数・容量上限と TTL で回収されるため、失敗はログに留める。
+  function replaceResponse(next: CurrentResponse | null): void {
+    const prev = current();
+    if (
+      prev &&
+      prev !== next &&
+      prev.response.bodyTruncated &&
+      responseSaveState() === "idle"
+    ) {
+      api.discardResponseBody(prev.executionId).catch((err) =>
+        logger.error("Failed to discard response body", {
+          error: errorMessage(err),
+        }),
+      );
+    }
+    setCurrent(next);
+    setResponseSaveState("idle");
+  }
+
   async function sendRequest(): Promise<void> {
     const m = method();
     const u = url();
     const sendId = generateId();
-    setResponse(null);
+    replaceResponse(null);
+    // 入力しただけのパスや保存済みの参照は許可にならないため、backend に送る前に止める。
+    if (hasUnconfirmedFile(body())) {
+      replaceResponse({
+        executionId: sendId,
+        response: errorResponse(UNCONFIRMED_FILE_ERROR),
+      });
+      return;
+    }
     setInFlight((ids) => [...ids, sendId]);
     logger.info("HTTP request sent", { method: m, url: u });
     try {
@@ -134,7 +214,7 @@ export function createRequestState(
         settings: settings(),
         doc: doc(),
       });
-      setResponse(res);
+      replaceResponse({ executionId: sendId, response: res });
       logger.info("HTTP response received", {
         method: m,
         url: u,
@@ -143,19 +223,9 @@ export function createRequestState(
       });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      setResponse({
-        statusCode: 0,
-        statusText: "",
-        headers: {},
-        body: "",
-        contentType: "",
-        size: 0,
-        timingMs: 0,
-        error: errorMsg,
-        bodyTruncated: false,
-        tempFilePath: "",
-        bodyBase64: false,
-        bodyCapped: false,
+      replaceResponse({
+        executionId: sendId,
+        response: errorResponse(errorMsg),
       });
       logger.error("HTTP request failed", {
         method: m,
@@ -167,19 +237,13 @@ export function createRequestState(
     }
   }
 
-  const pickFilePath = (): Promise<string> => api.openFilePicker();
-
-  const guessFormPartContentType = (path: string): Promise<string> =>
-    api.guessFormPartContentType(path);
-
-  // 切り詰め時は temp ファイル（全文）から、非切り詰めバイナリはメモリ上の base64 から保存する。
-  async function saveResponseToFile(): Promise<void> {
-    const resp = response();
-    if (!resp) return;
-    if (resp.bodyTruncated) {
-      await api.saveResponseBody(resp.tempFilePath, resp.contentType);
-    } else {
-      await api.saveResponseBinary(resp.body, resp.contentType);
+  // ファイル選択ダイアログ。hint は初期位置にしか使われず、確定した参照だけを返す。
+  async function pickFile(hint: string): Promise<FileReference | undefined> {
+    try {
+      return await api.openFilePicker(hint);
+    } catch (err) {
+      notifier.error("Failed to open file picker", errorMessage(err));
+      return undefined;
     }
   }
 
@@ -189,10 +253,37 @@ export function createRequestState(
     await Promise.all(ids.map((id) => api.cancelRequest(id)));
   }
 
+  // 表示中のレスポンスボディをファイルへ保存する。切り詰め時は backend が追跡する
+  // 全文を execution ID で、非切り詰めのバイナリはメモリ上の base64 から保存する。
+  async function saveResponseBody(): Promise<void> {
+    const cur = current();
+    if (!cur) return;
+    const { executionId, response: resp } = cur;
+    try {
+      if (!resp.bodyTruncated) {
+        await api.saveResponseBinary(resp.body, resp.contentType);
+        return;
+      }
+      const saved = await api.saveResponseBody(executionId);
+      if (saved && current() === cur) setResponseSaveState("saved");
+    } catch (err) {
+      const msg = errorMessage(err);
+      if (resp.bodyTruncated && isResponseUnavailableError(msg)) {
+        if (current() === cur) setResponseSaveState("unavailable");
+        return;
+      }
+      notifier.error("Failed to save response", msg);
+    }
+  }
+
   function loadRequest(req: HttpRequest, collectionId: string): void {
     saveCurrentRequest().catch((err) =>
       notifier.error("Failed to save request", errorMessage(err)),
     );
+    // 別のリクエストへ切り替えたら、前のリクエストのレスポンスは表示せず破棄する。
+    if (req.id !== activeRequestId() || collectionId !== activeCollectionId()) {
+      replaceResponse(null);
+    }
     setMethod(req.method);
     setUrl(req.url);
     setHeaders(req.headers);
@@ -209,6 +300,7 @@ export function createRequestState(
     saveCurrentRequest().catch((err) =>
       notifier.error("Failed to save request", errorMessage(err)),
     );
+    replaceResponse(null);
     setMethod("GET");
     setUrl("");
     setHeaders([]);
@@ -271,6 +363,8 @@ export function createRequestState(
     doc,
     setDoc,
     response,
+    responseSaveState,
+    saveResponseBody,
     loading,
     activeRequestId,
     activeCollectionId,
@@ -278,9 +372,7 @@ export function createRequestState(
     clearSaveError: () => setSaveError(null),
     sendRequest,
     cancelRequest,
-    pickFilePath,
-    guessFormPartContentType,
-    saveResponseToFile,
+    pickFile,
     loadRequest,
     newRequest,
     saveCurrentRequest,

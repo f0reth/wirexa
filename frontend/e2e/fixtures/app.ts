@@ -43,17 +43,12 @@ export class App {
     return this.page.getByTestId("rename-input");
   }
 
-  /**
-   * リネーム入力を確定する。fill() はイベント順によって onKeyDown が古い値を読むことがあるため、
-   * click → Ctrl+A → type のキーボード操作で入力する。
-   */
+  /** リネーム入力を置き換えて確定する。 */
   async confirmRename(name: string): Promise<void> {
     const input = this.renameInput;
     await expect(input).toBeVisible();
-    await input.click();
-    await this.page.keyboard.press("Control+a");
-    await this.page.keyboard.type(name);
-    await this.page.keyboard.press("Enter");
+    await input.fill(name);
+    await input.press("Enter");
   }
 
   collection(name: string): Locator {

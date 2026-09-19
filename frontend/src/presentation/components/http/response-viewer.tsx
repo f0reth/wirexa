@@ -34,7 +34,8 @@ function formatSize(bytes: number): string {
 }
 
 export function ResponseViewer() {
-  const { response, loading, saveResponseToFile } = useHttpRequest();
+  const { response, loading, responseSaveState, saveResponseBody } =
+    useHttpRequest();
 
   const [responseTab, setResponseTab] = createSignal("body");
   const { copy, isCopied } = createCopyButton();
@@ -47,7 +48,7 @@ export function ResponseViewer() {
   }
 
   function handleSaveToFile() {
-    void saveResponseToFile();
+    void saveResponseBody();
   }
 
   // パースを1回だけ行い、コピー用テキストと表示用HTMLを同時に生成する
@@ -197,14 +198,25 @@ export function ResponseViewer() {
                               >
                                 Show truncated body
                               </button>
-                              <button
-                                type="button"
-                                class={styles.responseBodyLimitBtn}
-                                onClick={handleSaveToFile}
-                              >
-                                Save body to file
-                              </button>
+                              <Show when={responseSaveState() === "idle"}>
+                                <button
+                                  type="button"
+                                  class={styles.responseBodyLimitBtn}
+                                  onClick={handleSaveToFile}
+                                >
+                                  Save body to file
+                                </button>
+                              </Show>
                             </div>
+                            <Show when={responseSaveState() === "saved"}>
+                              <p>Saved the full body to a file.</p>
+                            </Show>
+                            <Show when={responseSaveState() === "unavailable"}>
+                              <p>
+                                The full body is no longer available. Send the
+                                request again to save it.
+                              </p>
+                            </Show>
                           </div>
                         </Show>
 

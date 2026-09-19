@@ -7,12 +7,14 @@ vi.mock("../../../wailsjs/go/adapters/HTTPHandler", () => ({
   CreateCollection: vi.fn(),
   DeleteCollection: vi.fn(),
   DeleteItem: vi.fn(),
+  DiscardResponseBody: vi.fn(),
   GetCollections: vi.fn(),
   GetRootItems: vi.fn(),
   GetSidebarLayout: vi.fn(),
   MoveItem: vi.fn(),
   MoveItemToSidebar: vi.fn(),
   MoveSidebarEntry: vi.fn(),
+  OpenFilePicker: vi.fn(),
   RenameCollection: vi.fn(),
   RenameItem: vi.fn(),
   SaveResponseBase64: vi.fn(),
@@ -29,12 +31,14 @@ import {
   createCollection,
   deleteCollection,
   deleteItem,
+  discardResponseBody,
   getCollections,
   getRootItems,
   getSidebarLayout,
   moveItem,
   moveItemToSidebar,
   moveSidebarEntry,
+  openFilePicker,
   renameCollection,
   renameItem,
   saveResponseBinary,
@@ -139,7 +143,6 @@ describe("sendRequest", () => {
       timingMs: 42,
       error: "",
       bodyTruncated: false,
-      tempFilePath: "",
       bodyBase64: false,
       bodyCapped: false,
     });
@@ -163,17 +166,14 @@ describe("sendRequest", () => {
     ]);
   });
 
-  it("maps bodyTruncated and tempFilePath correctly when set", async () => {
+  it("maps bodyTruncated without exposing a temp file path", async () => {
     vi.mocked(Handler.SendRequest).mockResolvedValue(
-      makeWailsResponse({
-        bodyTruncated: true,
-        tempFilePath: "/tmp/response.bin",
-      }) as never,
+      makeWailsResponse({ bodyTruncated: true }) as never,
     );
     const result = await sendRequest(makeDomainRequest());
     expect(result.bodyTruncated).toBe(true);
-    expect(result.tempFilePath).toBe("/tmp/response.bin");
     expect(result.bodyCapped).toBe(false);
+    expect(result).not.toHaveProperty("tempFilePath");
   });
 
   it("maps bodyCapped when the backend hits the absolute size limit", async () => {
@@ -181,7 +181,6 @@ describe("sendRequest", () => {
       makeWailsResponse({
         bodyTruncated: true,
         bodyCapped: true,
-        tempFilePath: "/tmp/response.bin",
       }) as never,
     );
     const result = await sendRequest(makeDomainRequest());
@@ -322,7 +321,6 @@ describe("getCollections", () => {
         value: "1",
         enabled: true,
         kind: "text",
-        filePath: "",
         contentType: "",
       },
       {
@@ -330,19 +328,18 @@ describe("getCollections", () => {
         value: "2",
         enabled: false,
         kind: "text",
-        filePath: "",
         contentType: "",
       },
     ]);
   });
 
-  it("keeps form row kind, file path and content type from the backend", async () => {
+  it("keeps form row kind, file reference and content type from the backend", async () => {
     const formData = [
       {
         key: "doc",
         value: "",
         kind: "file",
-        filePath: "C:\\tmp\\a.png",
+        file: { name: "a.png", needsReselect: true },
         contentType: "image/png",
         enabled: true,
       },
@@ -367,7 +364,12 @@ describe("getCollections", () => {
         key: "doc",
         value: "",
         kind: "file",
-        filePath: "C:\\tmp\\a.png",
+        file: {
+          token: "",
+          name: "a.png",
+          contentType: "",
+          needsReselect: true,
+        },
         contentType: "image/png",
         enabled: true,
       },
@@ -375,7 +377,6 @@ describe("getCollections", () => {
         key: "meta",
         value: "{}",
         kind: "json",
-        filePath: "",
         contentType: "",
         enabled: true,
       },
@@ -1013,22 +1014,112 @@ describe("moveItemToSidebar", () => {
 });
 
 describe("saveResponseBody", () => {
-  it("calls SaveResponseBody with the correct params", async () => {
-    vi.mocked(Handler.SaveResponseBody).mockResolvedValue(undefined);
-    await saveResponseBody("/tmp/response.bin", "application/octet-stream");
-    expect(Handler.SaveResponseBody).toHaveBeenCalledWith(
-      "/tmp/response.bin",
-      "application/octet-stream",
-    );
+  it("passes only the execution ID and returns whether it saved", async () => {
+    vi.mocked(Handler.SaveResponseBody).mockResolvedValue(true);
+    await expect(saveResponseBody("exec-1")).resolves.toBe(true);
+    expect(Handler.SaveResponseBody).toHaveBeenCalledWith("exec-1");
   });
 
   it("propagates rejection from the backend", async () => {
     vi.mocked(Handler.SaveResponseBody).mockRejectedValue(
-      new Error("save failed"),
+      new Error("response body unavailable"),
     );
-    await expect(saveResponseBody("/tmp/file", "text/plain")).rejects.toThrow(
-      "save failed",
+    await expect(saveResponseBody("exec-1")).rejects.toThrow(
+      "response body unavailable",
     );
+  });
+});
+
+describe("discardResponseBody", () => {
+  it("passes the execution ID to DiscardResponseBody", async () => {
+    vi.mocked(Handler.DiscardResponseBody).mockResolvedValue(undefined);
+    await discardResponseBody("exec-1");
+    expect(Handler.DiscardResponseBody).toHaveBeenCalledWith("exec-1");
+  });
+});
+
+describe("openFilePicker", () => {
+  it("passes the hint and returns the selected file reference", async () => {
+    vi.mocked(Handler.OpenFilePicker).mockResolvedValue({
+      token: "tok",
+      name: "a.png",
+      contentType: "image/png",
+    } as never);
+
+    await expect(openFilePicker("/tmp/a.png")).resolves.toEqual({
+      token: "tok",
+      name: "a.png",
+      contentType: "image/png",
+    });
+    expect(Handler.OpenFilePicker).toHaveBeenCalledWith("/tmp/a.png");
+  });
+
+  it("returns undefined when the dialog is canceled", async () => {
+    vi.mocked(Handler.OpenFilePicker).mockResolvedValue({
+      token: "",
+      name: "",
+      contentType: "",
+    } as never);
+
+    await expect(openFilePicker("")).resolves.toBeUndefined();
+  });
+});
+
+describe("file references", () => {
+  it("maps saved file references that need reselecting", async () => {
+    vi.mocked(Handler.GetRootItems).mockResolvedValue([
+      makeWailsTreeItem({
+        type: "request",
+        id: "r1",
+        request: makeWailsRequest({
+          body: {
+            type: "file",
+            contents: {},
+            file: { name: "a.png", needsReselect: true },
+            formData: [
+              {
+                key: "f",
+                value: "",
+                kind: "file",
+                enabled: true,
+                file: { name: "b.txt", needsReselect: true },
+              },
+            ],
+          },
+        }),
+      }),
+    ] as never);
+
+    const [item] = await getRootItems();
+
+    expect(item.request?.body.file).toEqual({
+      token: "",
+      name: "a.png",
+      contentType: "",
+      needsReselect: true,
+    });
+    expect(item.request?.body.formData?.[0].file).toEqual({
+      token: "",
+      name: "b.txt",
+      contentType: "",
+      needsReselect: true,
+    });
+  });
+
+  it("treats an empty file reference as no selection", async () => {
+    vi.mocked(Handler.GetRootItems).mockResolvedValue([
+      makeWailsTreeItem({
+        type: "request",
+        id: "r1",
+        request: makeWailsRequest({
+          body: { type: "file", contents: {}, file: {} },
+        }),
+      }),
+    ] as never);
+
+    const [item] = await getRootItems();
+
+    expect(item.request?.body.file).toBeUndefined();
   });
 });
 

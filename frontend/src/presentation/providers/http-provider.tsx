@@ -13,10 +13,12 @@ import {
 import {
   createAutoSaveEffect,
   createRequestState,
+  type ResponseSaveState,
 } from "../../application/http/request";
 import { notify } from "../../application/ui/notifications";
 import type {
   Collection,
+  FileReference,
   FormBodyType,
   FormRow,
   HttpMethod,
@@ -56,6 +58,8 @@ export interface RequestContextValue {
   doc: Accessor<string>;
   setDoc: (val: string) => void;
   response: Accessor<HttpResponse | null>;
+  responseSaveState: Accessor<ResponseSaveState>;
+  saveResponseBody: () => Promise<void>;
   loading: Accessor<boolean>;
   activeRequestId: Accessor<string | null>;
   activeCollectionId: Accessor<string | null>;
@@ -63,9 +67,7 @@ export interface RequestContextValue {
   clearSaveError: () => void;
   sendRequest: () => Promise<void>;
   cancelRequest: () => Promise<void>;
-  pickFilePath: () => Promise<string>;
-  guessFormPartContentType: (path: string) => Promise<string>;
-  saveResponseToFile: () => Promise<void>;
+  pickFile: (hint: string) => Promise<FileReference | undefined>;
   loadRequest: (req: HttpRequest, collectionId: string) => void;
   newRequest: () => void;
   saveCurrentRequest: () => Promise<void>;
@@ -127,9 +129,9 @@ export function HttpProvider(props: { children: JSX.Element }) {
       cancelRequest: httpClient.cancelRequest,
       updateRequest: httpClient.updateRequest,
       openFilePicker: httpClient.openFilePicker,
-      guessFormPartContentType: httpClient.guessFormPartContentType,
       saveResponseBody: httpClient.saveResponseBody,
       saveResponseBinary: httpClient.saveResponseBinary,
+      discardResponseBody: httpClient.discardResponseBody,
       afterSave: (colId, req) => collectionsState.patchRequest(colId, req),
     },
     createLogger("frontend:http"),

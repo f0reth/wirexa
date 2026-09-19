@@ -9,6 +9,39 @@ type HTTPTransport interface {
 	Do(ctx context.Context, req HTTPRequest) (HTTPResponse, error)
 }
 
+// SelectedFileReader は file token を解決し、ファイルダイアログで選択されたファイルを読むポート。
+// 空・未登録の token では ErrFileAccessDenied を返し、ファイルを開かない。
+type SelectedFileReader interface {
+	ReadSelectedFile(token string) (SelectedFileContent, error)
+}
+
+// SelectedFileContent は送信用に読み込んだ選択ファイル。
+// Name と ContentType は registry が選択時に決めた値で、frontend から渡された値ではない。
+type SelectedFileContent struct {
+	Name        string
+	ContentType string
+	Data        []byte
+}
+
+// ResponseBodyStore は切り詰められたレスポンス全文の一時ファイルを execution ID で管理するポート。
+// 一時ファイルのパスは外へ出さず、保存は lease を通してのみ行う。
+type ResponseBodyStore interface {
+	// AcquireSave は ready 状態の一時ファイルを saving にして lease を返す。
+	AcquireSave(executionID string) (ResponseBodyLease, error)
+	// Discard は ready 状態の一時ファイルを削除して追跡を終える。
+	Discard(executionID string) error
+}
+
+// ResponseBodyLease は保存中の一時ファイルへの排他的な参照。
+// SaveTo か Release のどちらかを必ず 1 回呼ぶ。
+type ResponseBodyLease interface {
+	ContentType() string
+	// SaveTo は一時ファイルを dst へコピーし、成功したら一時ファイルと追跡を削除する。
+	SaveTo(dst string) error
+	// Release は保存を中止し、再保存できる ready 状態へ戻す。
+	Release()
+}
+
 // CollectionRepository はコレクションの永続化抽象。
 type CollectionRepository interface {
 	Load() ([]Collection, error)

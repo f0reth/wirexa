@@ -1,16 +1,31 @@
 package httpinfra
 
 import (
+	"errors"
 	"io"
 	"mime"
 	"mime/multipart"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
+
+// fakeFiles は SelectedFileReader のテスト用実装。token → 選択済みファイル。
+type fakeFiles map[string]domain.SelectedFileContent
+
+func (f fakeFiles) ReadSelectedFile(token string) (domain.SelectedFileContent, error) {
+	file, ok := f[token]
+	if !ok {
+		return domain.SelectedFileContent{}, domain.ErrFileAccessDenied
+	}
+	return file, nil
+}
+
+var testFiles = fakeFiles{
+	"tok-json": {Name: "hello.json", ContentType: "application/json", Data: []byte(`{"from":"file"}`)},
+	"tok-bin":  {Name: "a.bin", ContentType: "application/octet-stream", Data: []byte("bytes")},
+}
 
 // part は読み戻した multipart の 1 パート。
 type part struct {
@@ -24,7 +39,7 @@ type part struct {
 func readParts(t *testing.T, rows []domain.FormRow) []part {
 	t.Helper()
 
-	buf, contentType, err := buildMultipartBody(rows)
+	buf, contentType, err := buildMultipartBody(rows, testFiles)
 	if err != nil {
 		t.Fatalf("buildMultipartBody() error = %v", err)
 	}
@@ -72,7 +87,7 @@ func TestBuildMultipartBody_SkipsRows(t *testing.T) {
 			row:  domain.FormRow{Key: "", Value: "1", Enabled: true},
 		},
 		{
-			name: "パス未入力の file 行は送らない（まだ書きかけの行）",
+			name: "ファイル未選択の file 行は送らない（まだ書きかけの行）",
 			row:  domain.FormRow{Key: "f", Kind: domain.FormRowKindFile, Enabled: true},
 		},
 	}
@@ -133,71 +148,65 @@ func TestBuildMultipartBody_JSONRow(t *testing.T) {
 }
 
 func TestBuildMultipartBody_FileRow(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "hello.json")
-	if err := os.WriteFile(path, []byte(`{"from":"file"}`), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
-	t.Run("ファイルの中身と filename を載せる", func(t *testing.T) {
+	t.Run("選択済みファイルの中身と filename・Content-Type を載せる", func(t *testing.T) {
 		parts := readParts(t, []domain.FormRow{
-			{Key: "f", FilePath: path, Kind: domain.FormRowKindFile, Enabled: true},
+			{Key: "f", File: domain.FileReference{Token: "tok-json"}, Kind: domain.FormRowKindFile, Enabled: true},
 		})
-		if len(parts) != 1 {
-			t.Fatalf("parts = %+v, want 1 part", parts)
-		}
-		if parts[0].filename != "hello.json" {
-			t.Errorf("filename = %q, want hello.json", parts[0].filename)
-		}
-		if parts[0].body != `{"from":"file"}` {
-			t.Errorf("body = %q, want the file contents", parts[0].body)
-		}
-		// 具体的な MIME は OS 依存なので、拡張子から判定できていることだけ見る。
-		if parts[0].contentType == "" || parts[0].contentType == "application/octet-stream" {
-			t.Errorf("contentType = %q, want a type guessed from .json", parts[0].contentType)
-		}
+		want := []part{{name: "f", filename: "hello.json", contentType: "application/json", body: `{"from":"file"}`}}
+		assertParts(t, parts, want)
 	})
 
-	t.Run("行の Content-Type は拡張子判定より優先する", func(t *testing.T) {
+	t.Run("行の Content-Type は選択時の Content-Type より優先する", func(t *testing.T) {
 		parts := readParts(t, []domain.FormRow{
-			{Key: "f", FilePath: path, Kind: domain.FormRowKindFile, ContentType: "text/plain", Enabled: true},
+			{Key: "f", File: domain.FileReference{Token: "tok-json"}, Kind: domain.FormRowKindFile, ContentType: "text/plain", Enabled: true},
 		})
 		if len(parts) != 1 || parts[0].contentType != "text/plain" {
 			t.Errorf("parts = %+v, want contentType text/plain", parts)
 		}
 	})
 
+	t.Run("frontend から渡された名前と Content-Type は使わない", func(t *testing.T) {
+		parts := readParts(t, []domain.FormRow{
+			{Key: "f", File: domain.FileReference{Token: "tok-json", Name: "evil.exe", ContentType: "application/x-evil"}, Kind: domain.FormRowKindFile, Enabled: true},
+		})
+		want := []part{{name: "f", filename: "hello.json", contentType: "application/json", body: `{"from":"file"}`}}
+		assertParts(t, parts, want)
+	})
+
 	t.Run("Value ではなくファイルの中身を送る", func(t *testing.T) {
 		parts := readParts(t, []domain.FormRow{
-			{Key: "f", Value: "stale text", FilePath: path, Kind: domain.FormRowKindFile, Enabled: true},
+			{Key: "f", Value: "stale text", File: domain.FileReference{Token: "tok-json"}, Kind: domain.FormRowKindFile, Enabled: true},
 		})
 		if len(parts) != 1 || parts[0].body != `{"from":"file"}` {
 			t.Errorf("parts = %+v, want the file contents", parts)
 		}
 	})
 
-	t.Run("読めないファイルはエラーにする", func(t *testing.T) {
-		_, _, err := buildMultipartBody([]domain.FormRow{
-			{Key: "f", FilePath: filepath.Join(dir, "missing.txt"), Kind: domain.FormRowKindFile, Enabled: true},
+	rejected := []struct {
+		name string
+		ref  domain.FileReference
+	}{
+		{name: "未登録の token は拒否する", ref: domain.FileReference{Token: "forged"}},
+		{name: "再選択待ちの参照は拒否する", ref: domain.FileReference{Name: "hello.json", NeedsReselect: true}},
+	}
+	for _, tc := range rejected {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := buildMultipartBody([]domain.FormRow{
+				{Key: "f", File: tc.ref, Kind: domain.FormRowKindFile, Enabled: true},
+			}, testFiles)
+			if !errors.Is(err, domain.ErrFileAccessDenied) {
+				t.Errorf("buildMultipartBody() error = %v, want ErrFileAccessDenied", err)
+			}
 		})
-		if err == nil {
-			t.Error("buildMultipartBody() error = nil, want an error")
-		}
-	})
+	}
 }
 
 // 混在ボディで行の順序が保たれ、種別ごとの扱いが同時に成立することを確認する。
 func TestBuildMultipartBody_MixedRowsKeepOrder(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "a.bin")
-	if err := os.WriteFile(path, []byte("bytes"), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
 	parts := readParts(t, []domain.FormRow{
 		{Key: "z", Value: "first", Kind: domain.FormRowKindText, Enabled: true},
 		{Key: "j", Value: "{}", Kind: domain.FormRowKindJSON, Enabled: true},
-		{Key: "f", FilePath: path, Kind: domain.FormRowKindFile, ContentType: "application/octet-stream", Enabled: true},
+		{Key: "f", File: domain.FileReference{Token: "tok-bin"}, Kind: domain.FormRowKindFile, Enabled: true},
 		{Key: "a", Value: "last", Kind: domain.FormRowKindText, Enabled: true},
 	})
 
@@ -234,7 +243,7 @@ func assertParts(t *testing.T, got, want []part) {
 
 // buildMultipartBody が返す Content-Type は採番済みの boundary を含む必要がある。
 func TestBuildMultipartBody_ContentTypeCarriesBoundary(t *testing.T) {
-	_, contentType, err := buildMultipartBody(nil)
+	_, contentType, err := buildMultipartBody(nil, nil)
 	if err != nil {
 		t.Fatalf("buildMultipartBody() error = %v", err)
 	}

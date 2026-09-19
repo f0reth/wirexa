@@ -10,6 +10,59 @@ export interface KeyValuePair {
   enabled: boolean;
 }
 
+// request file の参照。実パスは持たない。token は backend がファイルダイアログの
+// 選択結果に発行したもので、現在のセッションでだけ有効（永続化されない）。
+export interface FileReference {
+  token?: string;
+  // 表示用の basename。
+  name?: string;
+  // 選択時に推定した表示用の Content-Type。
+  contentType?: string;
+  // 保存済み・移行済みの参照で、送信前にファイルの再選択が必要。
+  needsReselect?: boolean;
+  // 入力欄に入力・ペーストされた文字列。ダイアログの初期位置にだけ使う frontend 専用の値で、
+  // 許可にはならない。Wails の createFrom が未知のフィールドを落とすため RPC にも永続化にも載らない。
+  hint?: string;
+}
+
+// ファイル参照の状態。selected は現在のセッションでダイアログから確定済み、
+// unconfirmed は入力欄に文字列があるだけで未確定、reselect は保存済みで再選択が必要。
+export type FileSelectionState =
+  | "none"
+  | "selected"
+  | "unconfirmed"
+  | "reselect";
+
+export function fileSelectionState(
+  ref: FileReference | undefined,
+): FileSelectionState {
+  if (!ref) return "none";
+  if (ref.token) return "selected";
+  if (ref.hint) return "unconfirmed";
+  if (ref.needsReselect && ref.name) return "reselect";
+  return "none";
+}
+
+// 送信前にダイアログでの確定が必要なファイルがあるか。入力しただけのパスや
+// 保存済みの参照は許可にならないため、backend に送る前に止める。
+export function hasUnconfirmedFile(body: RequestBody): boolean {
+  const pending = (ref: FileReference | undefined) => {
+    const state = fileSelectionState(ref);
+    return state === "unconfirmed" || state === "reselect";
+  };
+  if (body.type === "file") return pending(body.file);
+  if (body.type === "form-data") {
+    return (body.formData ?? []).some(
+      (row) =>
+        row.enabled &&
+        row.key !== "" &&
+        row.kind === "file" &&
+        pending(row.file),
+    );
+  }
+  return false;
+}
+
 // form 系ボディの 1 行。Headers/Params の KeyValuePair と分けているのは、
 // 値の種別とパートごとの Content-Type がヘッダー行には無意味なため。
 export interface FormRow {
@@ -17,8 +70,8 @@ export interface FormRow {
   value: string;
   // 未設定は "text"（kind 導入前に保存された行）。
   kind?: FormRowKind;
-  // file の送信元パス。value と分けて持つので kind を往復しても入力が消えない。
-  filePath?: string;
+  // file の送信元ファイルの参照。value と分けて持つので kind を往復しても入力が消えない。
+  file?: FileReference;
   // 空なら送信時に kind から自動決定する。
   contentType?: string;
   enabled: boolean;
@@ -29,14 +82,14 @@ export interface FormRow {
 // ワイヤ形式（urlencoded / multipart）は Go 側が送信時に生成する。
 export interface RequestBody {
   type: "none" | "json" | "text" | "form-urlencoded" | "form-data" | "file";
+  // file 種別は本文を持たない（送信元は file 参照の token だけで、パスを置かない）。
   contents: Partial<
-    Record<
-      "none" | "json" | "text" | "form-urlencoded" | "form-data" | "file",
-      string
-    >
+    Record<"none" | "json" | "text" | "form-urlencoded" | "form-data", string>
   >;
   formData?: FormRow[];
   formUrlEncoded?: FormRow[];
+  // type が "file" のときの送信元ファイルの参照。
+  file?: FileReference;
 }
 
 // body type と行フィールドの対応。form 系以外は行を持たない。
@@ -111,11 +164,19 @@ export interface HttpResponse {
   size: number;
   timingMs: number;
   error: string;
+  // 全文は backend が送信時の execution ID で追跡する一時ファイルにある（パスは公開されない）。
   bodyTruncated: boolean;
-  tempFilePath: string;
   bodyBase64: boolean;
-  // 絶対上限に達して受信を打ち切った。tempFilePath のファイルも全文ではない。
+  // 絶対上限に達して受信を打ち切った。backend の一時ファイルも全文ではない。
   bodyCapped: boolean;
+}
+
+// backend が一時ファイルを回収済み（保存済み・TTL・上限）のときに返すエラー文言。
+// internal/domain/http/errors.go の ErrResponseUnavailable と一致させる。
+export const RESPONSE_UNAVAILABLE_ERROR = "response body unavailable";
+
+export function isResponseUnavailableError(message: string): boolean {
+  return message.includes(RESPONSE_UNAVAILABLE_ERROR);
 }
 
 export interface Collection {
@@ -158,6 +219,8 @@ const HTTP_METHOD_SET = {
 export const HTTP_METHODS = Object.keys(HTTP_METHOD_SET) as HttpMethod[];
 
 export type BodyType = RequestBody["type"];
+// contents に本文を持つ body type。
+export type ContentBodyType = keyof RequestBody["contents"];
 // BodyType ユニオンに値を追加して下のレコードを更新し忘れると satisfies がコンパイルエラーになる。
 const BODY_TYPE_SET = {
   none: true,

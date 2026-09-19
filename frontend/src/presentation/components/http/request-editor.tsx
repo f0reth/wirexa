@@ -13,6 +13,7 @@ import type { AuthType, BodyType } from "../../../domain/http/types";
 import { AUTH_TYPES, BODY_TYPES } from "../../constants/http";
 import { useHttpRequest } from "../../providers/http-provider";
 import { DocEditor } from "./doc-editor";
+import { FileReferenceInput } from "./file-reference-input";
 import { FormRowEditor } from "./form-row-editor";
 import styles from "./http.module.css";
 import { JsonBodyEditor } from "./json-body-editor";
@@ -45,7 +46,6 @@ export function RequestEditor() {
     setAuth,
     doc,
     setDoc,
-    pickFilePath,
   } = useHttpRequest();
 
   const [requestTab, setRequestTab] = createSignal("params");
@@ -114,24 +114,11 @@ export function RequestEditor() {
               <Switch>
                 <Match when={body().type === "file"}>
                   <div class={styles.filePickerRow}>
-                    <Input
-                      value={bodyContent()}
-                      placeholder="No file selected"
-                      onInput={(e) => setBodyContent(e.currentTarget.value)}
-                      class={styles.filePathInput}
+                    <FileReferenceInput
+                      file={body().file}
+                      onChange={(file) => setBody({ ...body(), file })}
+                      inputClass={styles.filePathInput}
                     />
-                    <button
-                      type="button"
-                      class={styles.fileBrowseButton}
-                      onClick={async () => {
-                        const path = await pickFilePath();
-                        if (path) {
-                          setBodyContent(path);
-                        }
-                      }}
-                    >
-                      Browse...
-                    </button>
                   </div>
                 </Match>
                 <Match when={formBodyType()}>

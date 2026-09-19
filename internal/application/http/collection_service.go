@@ -187,6 +187,7 @@ func (s *CollectionService) AddRequest(collectionID, parentID string, req domain
 	if req.ID == "" {
 		req.ID = uuid.NewString()
 	}
+	req.Body.DropFileContents()
 	item := &domain.TreeItem{
 		Type:     domain.ItemTypeRequest,
 		ID:       req.ID,
@@ -250,6 +251,7 @@ func (s *CollectionService) UpdateRequest(collectionID string, req domain.HTTPRe
 	}
 
 	req.Name = node.Name
+	req.Body.DropFileContents()
 	node.Request = &req
 
 	if err := s.repo.Save(c); err != nil {

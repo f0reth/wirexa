@@ -26,6 +26,10 @@ export function DeleteItem(arg1, arg2) {
   return window['go']['adapters']['HTTPHandler']['DeleteItem'](arg1, arg2);
 }
 
+export function DiscardResponseBody(arg1) {
+  return window['go']['adapters']['HTTPHandler']['DiscardResponseBody'](arg1);
+}
+
 export function GetCollections() {
   return window['go']['adapters']['HTTPHandler']['GetCollections']();
 }
@@ -36,10 +40,6 @@ export function GetRootItems() {
 
 export function GetSidebarLayout() {
   return window['go']['adapters']['HTTPHandler']['GetSidebarLayout']();
-}
-
-export function GuessFormPartContentType(arg1) {
-  return window['go']['adapters']['HTTPHandler']['GuessFormPartContentType'](arg1);
 }
 
 export function MoveItem(arg1, arg2, arg3, arg4, arg5) {
@@ -54,8 +54,8 @@ export function MoveSidebarEntry(arg1, arg2, arg3) {
   return window['go']['adapters']['HTTPHandler']['MoveSidebarEntry'](arg1, arg2, arg3);
 }
 
-export function OpenFilePicker() {
-  return window['go']['adapters']['HTTPHandler']['OpenFilePicker']();
+export function OpenFilePicker(arg1) {
+  return window['go']['adapters']['HTTPHandler']['OpenFilePicker'](arg1);
 }
 
 export function RenameCollection(arg1, arg2) {
@@ -70,8 +70,8 @@ export function SaveResponseBase64(arg1, arg2) {
   return window['go']['adapters']['HTTPHandler']['SaveResponseBase64'](arg1, arg2);
 }
 
-export function SaveResponseBody(arg1, arg2) {
-  return window['go']['adapters']['HTTPHandler']['SaveResponseBody'](arg1, arg2);
+export function SaveResponseBody(arg1) {
+  return window['go']['adapters']['HTTPHandler']['SaveResponseBody'](arg1);
 }
 
 export function SendRequest(arg1) {

@@ -272,7 +272,7 @@ func TestFormRow_EffectiveKind(t *testing.T) {
 	}
 }
 
-// Kind 導入前に保存された行は kind/filePath/contentType を持たない。
+// Kind 導入前に保存された行は kind/file/contentType を持たない。
 // 読み込みで落ちず text 行として扱えることを保証する。
 func TestFormRow_UnmarshalLegacyJSON(t *testing.T) {
 	var b RequestBody
@@ -290,7 +290,7 @@ func TestFormRow_UnmarshalLegacyJSON(t *testing.T) {
 	}
 }
 
-// 未設定の kind/filePath/contentType は omitempty で保存内容を増やさない。
+// 未設定の kind/file/contentType は omitempty / omitzero で出力を増やさない。
 func TestFormRow_MarshalOmitsUnsetFields(t *testing.T) {
 	row := FormRow{Key: "a", Value: "1", Enabled: true}
 	got, err := json.Marshal(row)

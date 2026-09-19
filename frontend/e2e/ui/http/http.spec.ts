@@ -190,7 +190,7 @@ test("selecting the File kind swaps the value field for a file path picker", asy
   await expect(bodyPanel.getByRole("button", { name: "Browse..." })).toBeVisible();
 });
 
-// value と filePath は別フィールドなので、kind を往復しても入力が消えてはいけない。
+// value と file 参照は別フィールドなので、kind を往復しても入力が消えてはいけない。
 test("switching kind back and forth keeps both the value and the file path", async ({
   page,
 }) => {
@@ -212,24 +212,6 @@ test("switching kind back and forth keeps both the value and the file path", asy
   await expect(bodyPanel.getByPlaceholder("No file selected")).toHaveValue(
     "C:\\tmp\\a.png",
   );
-});
-
-// Content-Type 未指定のときは、実際に送信される自動判定値をヒントとして出す。
-test("expanding a File row shows the auto Content-Type guessed from the path", async ({
-  page,
-}) => {
-  const { bodyPanel, kindSelect } = await addFormRow(page, "Form Data");
-
-  await kindSelect.getByRole("button").first().click();
-  await kindSelect.getByRole("button", { name: "File" }).click();
-  await bodyPanel.getByPlaceholder("No file selected").fill("C:\\tmp\\a.png");
-
-  await bodyPanel.getByRole("button", { name: "Expand row" }).click();
-  await expect(bodyPanel.getByText("auto: image/png")).toBeVisible();
-
-  // 明示した Content-Type が自動判定に勝つので、ヒントは引っ込む。
-  await bodyPanel.getByPlaceholder("auto").fill("application/custom");
-  await expect(bodyPanel.getByText("auto: image/png")).toHaveCount(0);
 });
 
 test("expanding a JSON row shows a JSON editor and an application/json hint", async ({

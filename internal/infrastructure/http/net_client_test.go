@@ -26,7 +26,7 @@ func doGet(t *testing.T, body []byte, contentType string) domain.HTTPResponse {
 	}))
 	defer srv.Close()
 
-	res, err := NewNetClient().Do(context.Background(), domain.HTTPRequest{
+	res, err := NewNetClient(nil, t.TempDir()).Do(context.Background(), domain.HTTPRequest{
 		ID:     "test",
 		Method: http.MethodGet,
 		URL:    srv.URL,
@@ -81,7 +81,7 @@ func TestNetClient_ReusesConnection(t *testing.T) {
 	srv.Start()
 	defer srv.Close()
 
-	c := NewNetClient()
+	c := NewNetClient(nil, t.TempDir())
 	defer c.Cleanup()
 	for i := range 3 {
 		if _, err := c.Do(context.Background(), domain.HTTPRequest{
@@ -103,7 +103,7 @@ func TestNetClient_ReusesConnection(t *testing.T) {
 
 // TestNetClient_TransportCache は Transport が設定ごとにキャッシュ・再利用されることを確認する。
 func TestNetClient_TransportCache(t *testing.T) {
-	c := NewNetClient()
+	c := NewNetClient(nil, t.TempDir())
 	defer c.Cleanup()
 
 	base := domain.RequestSettings{ProxyMode: "system"}
@@ -128,7 +128,7 @@ func TestNetClient_TransportCache(t *testing.T) {
 // TestNetClient_TransportCache_Evicts はキャッシュが上限を超えたら破棄されることを確認する
 // (ProxyURL がユーザー入力のため、キーが無制限に増えないこと)。
 func TestNetClient_TransportCache_Evicts(t *testing.T) {
-	c := NewNetClient()
+	c := NewNetClient(nil, t.TempDir())
 	defer c.Cleanup()
 
 	for i := range maxCachedTransports + 1 {
@@ -156,7 +156,7 @@ func TestNetClient_Timeout(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewNetClient()
+	c := NewNetClient(nil, t.TempDir())
 	defer c.Cleanup()
 	_, err := c.Do(context.Background(), domain.HTTPRequest{
 		ID:       "timeout",

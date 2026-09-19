@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -44,45 +43,35 @@ type transportKey struct {
 
 // NetClient は net/http を使った domain.HTTPTransport の実装。
 type NetClient struct {
+	files      domain.SelectedFileReader
 	transports map[transportKey]*http.Transport
-	tempFiles  sync.Map // requestID → tempFilePath (string)
+	responses  *ResponseStore
 	mu         sync.Mutex
 	// maxTempBytes は 1 レスポンスあたり temp ファイルへ書く絶対上限。テストで差し替える。
 	maxTempBytes int64
 }
 
-// NewNetClient は NetClient を生成する。
-func NewNetClient() *NetClient {
+// NewNetClient は NetClient を生成する。files は request file の token を解決する registry で、
+// nil の場合はファイルを送る全てのリクエストを拒否する。sessionDir は打ち切りレスポンスの
+// 一時ファイルを置く app 管理ディレクトリ (例: os.UserCacheDir()/Wirexa/http-sessions)。
+func NewNetClient(files domain.SelectedFileReader, sessionDir string) *NetClient {
 	return &NetClient{
+		files:        files,
 		transports:   make(map[transportKey]*http.Transport),
+		responses:    NewResponseStore(sessionDir),
 		maxTempBytes: defaultMaxTempBytes,
 	}
 }
 
-// ConsumeTempFilePath は指定リクエストIDのテンポラリファイルパスを返し、マップから削除する。
-// 上限超過がなかった場合は空文字列を返す。
-func (c *NetClient) ConsumeTempFilePath(requestID string) string {
-	if v, ok := c.tempFiles.LoadAndDelete(requestID); ok {
-		s, ok := v.(string)
-		if !ok {
-			return ""
-		}
-		return s
-	}
-	return ""
+// Responses は打ち切りレスポンスの一時ファイルを execution ID で追跡するストアを返す。
+func (c *NetClient) Responses() *ResponseStore {
+	return c.responses
 }
 
-// Cleanup は tempFiles に残る打ち切りレスポンスの一時ファイルを全削除し、
-// キャッシュした Transport のアイドルコネクションを閉じる。
-// フロントへ未受け渡し (ConsumeTempFilePath されていない) のまま終了したものを回収する。
+// Cleanup は追跡中の一時ファイルを回収し、キャッシュした Transport のアイドルコネクションを閉じる。
+// 実行中リクエストのキャンセルと待機は呼び出し側で先に済ませる。
 func (c *NetClient) Cleanup() {
-	c.tempFiles.Range(func(k, v any) bool {
-		if s, ok := v.(string); ok {
-			_ = os.Remove(s) //nolint:errcheck // best-effort cleanup
-		}
-		c.tempFiles.Delete(k)
-		return true
-	})
+	c.responses.Cleanup()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -97,22 +86,14 @@ func (c *NetClient) closeTransportsLocked() {
 	}
 }
 
-// SweepStaleTempFiles は前回セッションで残った wirexa-response-* を削除する。
-// 単一インスタンスロックにより同時起動が無いため、全一致を安全に削除できる。
-// フロントへ渡されたまま保存されなかったファイルは tempFiles で追跡できないため、
-// 次回起動時のこの掃除が唯一の回収経路になる。
-func SweepStaleTempFiles() {
-	matches, err := filepath.Glob(filepath.Join(os.TempDir(), "wirexa-response-*"))
-	if err != nil {
-		return
-	}
-	for _, p := range matches {
-		_ = os.Remove(p) //nolint:errcheck // best-effort cleanup
-	}
-}
-
 // Do は HTTPRequest を実行して HTTPResponse を返す。
+// req.ID は送信ごとの execution ID で、打ち切り時の一時ファイルはこの ID で追跡する。
 func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) {
+	if err := c.responses.Begin(req.ID); err != nil {
+		return domain.HTTPResponse{}, err
+	}
+	defer c.responses.Finish(req.ID)
+
 	timeout := resolveTimeout(req.Settings)
 	// タイムアウトは http.Client.Timeout ではなく context で表現し、
 	// RequestUseCase 側のキャンセルと同じ経路に一本化する。
@@ -155,21 +136,22 @@ func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTP
 		contentType = "application/x-www-form-urlencoded"
 	case domain.BodyTypeFormData:
 		var buf *bytes.Buffer
-		buf, contentType, err = buildMultipartBody(req.Body.FormPairs())
+		buf, contentType, err = buildMultipartBody(req.Body.FormPairs(), c.files)
 		if err != nil {
 			return domain.HTTPResponse{}, err
 		}
 		bodyReader = buf
 		forceContentType = true
-	case "file":
-		if bodyContent != "" {
-			var fileData []byte
-			fileData, err = os.ReadFile(bodyContent) //nolint:gosec // user-selected file path
-			if err != nil {
-				return domain.HTTPResponse{}, fmt.Errorf("failed to read file: %w", err)
-			}
-			bodyReader = bytes.NewReader(fileData)
-			contentType = domain.GuessFileContentType(bodyContent)
+	case domain.BodyTypeFile:
+		// 送信元は token を registry で解決したファイルだけ。Contents の文字列 (旧データのパス) は読まない。
+		// filename と Content-Type も frontend の値ではなく registry の値を使う。
+		file, ok, ferr := resolveFile(c.files, req.Body.File)
+		if ferr != nil {
+			return domain.HTTPResponse{}, ferr
+		}
+		if ok {
+			bodyReader = bytes.NewReader(file.Data)
+			contentType = file.ContentType
 		}
 	}
 
@@ -229,6 +211,7 @@ func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTP
 	size := int64(len(body))
 	bodyTruncated := false
 	bodyCapped := false
+	respContentType := resp.Header.Get("Content-Type")
 
 	// maxBody 丁度で読み終えたときだけ、続きがあるかを 1 バイト先読みして確かめる。
 	if size == maxBody {
@@ -243,15 +226,19 @@ func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTP
 		if n > 0 {
 			// 上限超過: 全文をテンポラリファイルへ退避し、Body は先頭 maxBody バイトのまま返す。
 			bodyTruncated = true
-			written, capped, serr := c.spillToTempFile(req.ID, body, peek[:n], resp.Body)
+			limit := c.tempLimit()
+			serr := c.responses.Spill(req.ID, limit, respContentType, func(f *os.File) (int64, error) {
+				written, capped, werr := writeSpill(f, limit, body, peek[:n], resp.Body)
+				size = written
+				bodyCapped = capped
+				return written, werr
+			})
 			if serr != nil {
 				if terr := wrapTimeout(serr, timeout); terr != nil {
 					return domain.HTTPResponse{}, terr
 				}
 				return domain.HTTPResponse{}, serr
 			}
-			size = written
-			bodyCapped = capped
 		}
 	}
 
@@ -260,7 +247,6 @@ func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTP
 		headers[k] = slices.Clone(v)
 	}
 
-	respContentType := resp.Header.Get("Content-Type")
 	// 非 UTF-8 のバイナリボディは string 変換で壊れるため base64 で渡す。
 	bodyStr, bodyBase64 := cmn.EncodeMaybeBase64(body)
 
@@ -287,37 +273,42 @@ func (c *NetClient) tempLimit() int64 {
 	return defaultMaxTempBytes
 }
 
-// spillToTempFile は上限超過したレスポンスの全文をテンポラリファイルへ退避し、
-// 書き出したバイト数と、絶対上限に達して打ち切ったか (capped) を返す。
-// head と peek は既に resp.Body から読み終えている先頭バイト列。
-func (c *NetClient) spillToTempFile(requestID string, head, peek []byte, rest io.Reader) (written int64, capped bool, err error) {
-	tmpFile, err := os.CreateTemp("", "wirexa-response-*")
+// spillWriter は書き込みエラーを読み取りエラーと区別して記録する。
+// os のエラーは一時ファイルのパスを含むため、呼び出し側で分類済みエラーへ置き換える。
+type spillWriter struct {
+	f   *os.File
+	err error
+}
+
+func (w *spillWriter) Write(p []byte) (int, error) {
+	n, err := w.f.Write(p)
 	if err != nil {
-		return 0, false, fmt.Errorf("failed to create temp file: %w", err)
+		w.err = err
 	}
-	tmpName := tmpFile.Name()
+	return n, err
+}
 
-	discard := func() {
-		_ = tmpFile.Close()    //nolint:errcheck // best-effort cleanup
-		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
-	}
-
+// writeSpill は上限超過したレスポンスの全文を f へ書き出し、
+// 書き出したバイト数と、絶対上限 limit に達して打ち切ったか (capped) を返す。
+// head と peek は既に resp.Body から読み終えている先頭バイト列。
+func writeSpill(f *os.File, limit int64, head, peek []byte, rest io.Reader) (written int64, capped bool, err error) {
+	w := &spillWriter{f: f}
 	for _, chunk := range [][]byte{head, peek} {
-		n, werr := tmpFile.Write(chunk)
+		n, werr := w.Write(chunk)
 		written += int64(n)
 		if werr != nil {
-			discard()
-			return 0, false, fmt.Errorf("failed to write temp file: %w", werr)
+			return 0, false, errSpillWrite
 		}
 	}
 
 	// 残りは絶対上限まで。上限に達したら、さらに続きがあるかを先読みして capped を判定する。
-	limit := c.tempLimit()
 	if remaining := limit - written; remaining > 0 {
-		n, cerr := io.Copy(tmpFile, io.LimitReader(rest, remaining))
+		n, cerr := io.Copy(w, io.LimitReader(rest, remaining))
 		written += n
+		if w.err != nil {
+			return 0, false, errSpillWrite
+		}
 		if cerr != nil {
-			discard()
 			return 0, false, fmt.Errorf("failed to read response: %w", cerr)
 		}
 	}
@@ -329,28 +320,13 @@ func (c *NetClient) spillToTempFile(requestID string, head, peek []byte, rest io
 		}
 		// maxBody == limit のときだけ、先読みした 1 バイトで上限を超えうる。切り戻す。
 		if written > limit {
-			if terr := tmpFile.Truncate(limit); terr != nil {
-				discard()
-				return 0, false, fmt.Errorf("failed to write temp file: %w", terr)
+			if terr := f.Truncate(limit); terr != nil {
+				return 0, false, errSpillWrite
 			}
 			written = limit
 			capped = true
 		}
 	}
-
-	if err = tmpFile.Close(); err != nil {
-		_ = os.Remove(tmpName) //nolint:errcheck // best-effort cleanup
-		return 0, false, fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	// 同一 requestID の再送で旧パスを上書きするとオーファン化するため、先に回収削除する。
-	if old, ok := c.tempFiles.LoadAndDelete(requestID); ok {
-		if s, ok := old.(string); ok {
-			_ = os.Remove(s) //nolint:errcheck // best-effort cleanup
-		}
-	}
-	c.tempFiles.Store(requestID, tmpName)
-
 	return written, capped, nil
 }
 

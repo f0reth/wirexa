@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Minus, Plus } from "lucide-solid";
-import { createResource, createSignal, Index, Show } from "solid-js";
+import { createSignal, Index, Show } from "solid-js";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import {
@@ -15,7 +15,7 @@ import type {
 } from "../../../domain/http/types";
 import { FORM_ROW_KINDS_BY_BODY_TYPE } from "../../../domain/http/types";
 import { FORM_ROW_KIND_LABELS } from "../../constants/http";
-import { useHttpRequest } from "../../providers/http-provider";
+import { FileReferenceInput } from "./file-reference-input";
 import styles from "./http.module.css";
 import { JsonBodyEditor } from "./json-body-editor";
 
@@ -28,8 +28,6 @@ interface FormRowEditorProps {
 // form 系ボディの行エディタ。Params/Headers の KeyValueEditor と違い、
 // 値の種別（text/json/file）とパートごとの Content-Type を扱う。
 export function FormRowEditor(props: FormRowEditorProps) {
-  const { pickFilePath, guessFormPartContentType } = useHttpRequest();
-
   // 同時に展開するのは 1 行だけ。Index は位置キーなので行の増減で
   // 展開中の index が別の行を指してしまうのを避ける意味もある。
   const [expanded, setExpanded] = createSignal<number | null>(null);
@@ -63,30 +61,18 @@ export function FormRowEditor(props: FormRowEditorProps) {
   const canExpand = (row: FormRow) =>
     props.bodyType === "form-data" || kindOf(row) === "json";
 
-  const browse = async (index: number) => {
-    const path = await pickFilePath();
-    if (path) update(index, "filePath", path);
-  };
-
   return (
     <div class={styles.kvEditor}>
       <Index each={props.rows}>
         {(row, index) => {
-          // file 行の自動 Content-Type は Go に問い合わせる（拡張子判定は OS 依存で、
-          // ここで再実装すると実際に送られる値とヒントがずれる）。
-          const [autoFileType] = createResource(
-            () =>
-              kindOf(row()) === "file" && row().filePath
-                ? row().filePath
-                : undefined,
-            (path: string) => guessFormPartContentType(path),
-          );
+          // file 行の自動 Content-Type は、送信時と同じく選択時に backend が判定した値を出す
+          // （拡張子判定は OS 依存で、ここで再実装すると実際に送られる値とヒントがずれる）。
           const autoContentType = () => {
             switch (kindOf(row())) {
               case "json":
                 return "application/json";
               case "file":
-                return autoFileType() ?? "";
+                return row().file?.token ? (row().file?.contentType ?? "") : "";
               default:
                 return "none";
             }
@@ -144,22 +130,11 @@ export function FormRowEditor(props: FormRowEditorProps) {
                     />
                   }
                 >
-                  <Input
-                    value={row().filePath ?? ""}
-                    onInput={(e) =>
-                      update(index, "filePath", e.currentTarget.value)
-                    }
-                    placeholder="No file selected"
-                    class={styles.kvInput}
+                  <FileReferenceInput
+                    file={row().file}
+                    onChange={(file) => update(index, "file", file)}
+                    inputClass={styles.kvInput}
                   />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    class={styles.formBrowse}
-                    onClick={() => void browse(index)}
-                  >
-                    Browse...
-                  </Button>
                 </Show>
                 <Show when={canExpand(row())}>
                   <Button

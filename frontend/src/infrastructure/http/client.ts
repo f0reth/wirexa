@@ -5,10 +5,10 @@ import {
   CreateCollection,
   DeleteCollection,
   DeleteItem,
+  DiscardResponseBody,
   GetCollections,
   GetRootItems,
   GetSidebarLayout,
-  GuessFormPartContentType,
   MoveItem,
   MoveItemToSidebar,
   MoveSidebarEntry,
@@ -24,6 +24,7 @@ import { httpdomain } from "../../../wailsjs/go/models";
 import {
   type Collection,
   DEFAULT_SETTINGS,
+  type FileReference,
   type FormRow,
   type HttpRequest,
   type HttpResponse,
@@ -78,13 +79,26 @@ function fromWailsRequestAuth(auth: httpdomain.RequestAuth): RequestAuth {
   };
 }
 
+// ファイル参照が空（未選択）なら undefined にし、UI が未選択と参照ありを区別できるようにする。
+function fromWailsFileReference(
+  ref: httpdomain.FileReference | undefined | null,
+): FileReference | undefined {
+  if (!ref || (!ref.token && !ref.name)) return undefined;
+  return {
+    token: ref.token ?? "",
+    name: ref.name ?? "",
+    contentType: ref.contentType ?? "",
+    needsReselect: ref.needsReselect ?? false,
+  };
+}
+
 // Go の kind は string なのでユニオンへ絞り込む。未設定（kind 導入前の行）と
 // 未知の値はどちらも text 相当として扱い、行を捨てない。
 function fromWailsFormRow(row: httpdomain.FormRow): FormRow {
   return {
     ...row,
     kind: row.kind && isFormRowKind(row.kind) ? row.kind : "text",
-    filePath: row.filePath ?? "",
+    file: fromWailsFileReference(row.file),
     contentType: row.contentType ?? "",
   };
 }
@@ -100,6 +114,7 @@ function fromWailsRequestBody(body: httpdomain.RequestBody): RequestBody {
     contents: (body.contents ?? {}) as RequestBody["contents"],
     formData: body.formData?.map(fromWailsFormRow),
     formUrlEncoded: body.formUrlEncoded?.map(fromWailsFormRow),
+    file: fromWailsFileReference(body.file),
   };
 }
 
@@ -126,7 +141,6 @@ function fromWailsHttpResponse(res: httpdomain.HTTPResponse): HttpResponse {
     ...res,
     headers: res.headers ?? {},
     bodyTruncated: res.bodyTruncated ?? false,
-    tempFilePath: res.tempFilePath ?? "",
     bodyBase64: res.bodyBase64 ?? false,
     bodyCapped: res.bodyCapped ?? false,
   };
@@ -162,16 +176,20 @@ export async function cancelRequest(id: string): Promise<void> {
   return CancelRequest(id);
 }
 
-// openFilePicker はネイティブのファイル選択ダイアログを開き、選択パスを返す。
+// openFilePicker はネイティブのファイル選択ダイアログを開き、選択されたファイルの参照を返す。
+// hint は入力欄の文字列で、ダイアログの初期位置にだけ使われる（許可にはならない）。
+// token はダイアログの選択結果からだけ発行され、キャンセル時は undefined を返す。
 // presentation 層が wailsjs バインディングを直接叩かないようインフラ層でラップする。
-export function openFilePicker(): Promise<string> {
-  return OpenFilePicker();
-}
-
-// guessFormPartContentType は form-data の file 行に自動付与される Content-Type を返す。
-// 拡張子の判定は OS 依存なので、UI のヒントも送信時と同じ Go の判定に問い合わせる。
-export function guessFormPartContentType(path: string): Promise<string> {
-  return GuessFormPartContentType(path);
+export async function openFilePicker(
+  hint: string,
+): Promise<FileReference | undefined> {
+  const selected = await OpenFilePicker(hint);
+  if (!selected?.token) return undefined;
+  return {
+    token: selected.token,
+    name: selected.name,
+    contentType: selected.contentType,
+  };
 }
 
 export async function getCollections(): Promise<Collection[]> {
@@ -280,11 +298,16 @@ export async function moveItemToSidebar(
   return MoveItemToSidebar(sourceCollectionId, itemId, sidebarPosition);
 }
 
-export async function saveResponseBody(
-  tempFilePath: string,
-  contentType: string,
-): Promise<void> {
-  return SaveResponseBody(tempFilePath, contentType);
+// saveResponseBody は切り詰められたレスポンスの全文を、送信時の execution ID で保存する。
+// 保存元の一時ファイルは backend が追跡しており、パスはここを通らない。
+// 保存したら true、保存ダイアログをキャンセルしたら false（再度保存できる）。
+export async function saveResponseBody(executionId: string): Promise<boolean> {
+  return SaveResponseBody(executionId);
+}
+
+// discardResponseBody は不要になった切り詰めレスポンスの一時ファイルを破棄させる。
+export async function discardResponseBody(executionId: string): Promise<void> {
+  return DiscardResponseBody(executionId);
 }
 
 // saveResponseBinary はメモリ上の base64 ボディを保存ダイアログの選択先へ書き出す。

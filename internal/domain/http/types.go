@@ -15,6 +15,31 @@ const (
 	BodyTypeFormURLEncoded = "form-urlencoded"
 )
 
+// BodyTypeFile はファイルの内容をそのままボディにする種別。
+const BodyTypeFile = "file"
+
+// FileReference は request file の参照。実パスは持たず、backend がファイルダイアログの
+// 選択結果に発行した session token と表示用の情報だけを運ぶ。
+// 永続化時は token を捨て、basename と再選択が必要であることだけを保存する。
+type FileReference struct {
+	// Token は現在のセッションでファイルダイアログから発行された token。空なら未選択。
+	Token string `json:"token,omitempty"`
+	// Name は表示用の basename。アクセス判定には使わない。
+	Name string `json:"name,omitempty"`
+	// ContentType は選択時に推定した表示用の Content-Type。アクセス判定には使わない。
+	ContentType string `json:"contentType,omitempty"`
+	// NeedsReselect は保存済み・移行済みの参照で、送信前にファイルの再選択が必要であることを示す。
+	NeedsReselect bool `json:"needsReselect,omitempty"`
+}
+
+// SelectedFile はファイルダイアログでの選択結果。実パスは含まず、backend が発行した
+// session token と表示用の basename・Content-Type だけを返す。キャンセル時は Token が空。
+type SelectedFile struct {
+	Token       string `json:"token"`
+	Name        string `json:"name"`
+	ContentType string `json:"contentType"`
+}
+
 // RequestAuth はリクエスト認証情報を表す。
 type RequestAuth struct {
 	Type     string `json:"type"`     // "none" | "basic" | "bearer"
@@ -70,12 +95,12 @@ type FormRow struct {
 	Value string `json:"value"`
 	// Kind は "" | "text" | "json" | "file"。"" は Kind 導入前の旧データで、text とみなす。
 	Kind string `json:"kind,omitempty"`
-	// FilePath は Kind=="file" のときの送信元パス。Value と分けて持つのは、
-	// kind を切り替えても互いの入力値を失わせないため。
-	FilePath string `json:"filePath,omitempty"`
 	// ContentType は空ならパートごとに Kind から自動決定する。
 	ContentType string `json:"contentType,omitempty"`
-	Enabled     bool   `json:"enabled"`
+	// File は Kind=="file" のときの送信元ファイルの参照。Value と分けて持つのは、
+	// kind を切り替えても互いの入力値を失わせないため。
+	File    FileReference `json:"file,omitzero"`
+	Enabled bool          `json:"enabled"`
 }
 
 // EffectiveKind は Kind 未設定（Kind 導入前に保存された行）を text とみなして返す。
@@ -95,10 +120,12 @@ func (r *FormRow) EffectiveKind() string {
 // map[string][]Struct を壊すため（asMap 経路が `new Array(rows)` で行配列を
 // 二重配列にする）。body type ごとに独立したスライスとして持つ。
 type RequestBody struct {
-	Contents       map[string]string `json:"contents"`
-	Type           string            `json:"type"`
-	FormData       []FormRow         `json:"formData,omitempty"`
-	FormURLEncoded []FormRow         `json:"formUrlEncoded,omitempty"`
+	Contents map[string]string `json:"contents"`
+	// File は Type=="file" のときの送信元ファイルの参照。
+	File           FileReference `json:"file,omitzero"`
+	Type           string        `json:"type"`
+	FormData       []FormRow     `json:"formData,omitempty"`
+	FormURLEncoded []FormRow     `json:"formUrlEncoded,omitempty"`
 }
 
 // formPairsFor は body type に対応する行スライスへのポインタを返す。
@@ -134,6 +161,12 @@ func (b *RequestBody) NormalizeForms() {
 		}
 		delete(b.Contents, bodyType)
 	}
+}
+
+// DropFileContents は Contents の file 種別のキーを捨てる。file ボディの送信元は File の
+// token だけで、Contents に置かれたパス (旧形式) を受理する経路を残さない。
+func (b *RequestBody) DropFileContents() {
+	delete(b.Contents, BodyTypeFile)
 }
 
 // ParseFormPairs は application/x-www-form-urlencoded 文字列を行へ復元する。
@@ -208,10 +241,7 @@ type HTTPResponse struct {
 	Body        string              `json:"body"`
 	ContentType string              `json:"contentType"`
 	Error       string              `json:"error"`
-	// TempFilePath はボディが大きく切り詰められた際に全文を保存したテンポラリファイルのパス。
-	// adapter 層が ConsumeTempFilePath で設定する出力用フィールド（infra は設定しない）。
-	TempFilePath string `json:"tempFilePath"`
-	StatusCode   int    `json:"statusCode"`
+	StatusCode  int                 `json:"statusCode"`
 	// Size は実際に受信したバイト数。BodyCapped が true の場合は絶対上限で頭打ちになるため、
 	// レスポンスの全長とは一致しない。
 	Size          int64 `json:"size"`
@@ -220,7 +250,7 @@ type HTTPResponse struct {
 	// BodyBase64 は Body が非 UTF-8 バイナリのため base64 エンコードされていることを示す。
 	BodyBase64 bool `json:"bodyBase64"`
 	// BodyCapped は絶対上限に達して受信を打ち切ったことを示す。
-	// このとき TempFilePath のファイルもレスポンスの全文ではない。
+	// このとき backend が追跡する一時ファイルもレスポンスの全文ではない。
 	BodyCapped bool `json:"bodyCapped"`
 }
 

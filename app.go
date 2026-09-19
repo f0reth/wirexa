@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -27,12 +28,15 @@ import (
 
 // コンパイル時に各ドメインインターフェースを JSONStore[T] が満たすことを検証
 var (
-	_ httpdomain.CollectionRepository = (*infra.JSONStore[httpdomain.Collection])(nil)
+	_ httpdomain.CollectionRepository = (*httpinfra.CollectionRepository)(nil)
 	_ mqttdomain.ProfileRepository    = (*infra.JSONStore[mqttdomain.BrokerProfile])(nil)
 	_ udpdomain.TargetRepository      = (*infra.JSONStore[udpdomain.UDPTarget])(nil)
 )
 
 const wirexaConfigDir = "Wirexa"
+
+// httpShutdownTimeout は終了時に実行中の HTTP リクエストの終了を待つ上限。
+const httpShutdownTimeout = 3 * time.Second
 
 // ウィンドウの既定・最小サイズ。main.go の options.App と共有する。
 const (
@@ -50,6 +54,7 @@ type App struct {
 	logHandler     *adapters.LogHandler
 	openAPIHandler *adapters.OpenAPIHandler
 	netClient      *httpinfra.NetClient
+	reqSvc         *httpapp.HTTPRequestService
 	windowMgr      *infra.WindowManager
 	ready          bool
 	quitConfirmed  bool
@@ -92,6 +97,12 @@ func (a *App) initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get config directory: %w", err)
 	}
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return fmt.Errorf("failed to get cache directory: %w", err)
+	}
+	sessionDir := filepath.Join(cacheDir, wirexaConfigDir, "http-sessions")
+
 	a.windowMgr = infra.NewWindowManager(
 		ctx,
 		filepath.Join(configDir, wirexaConfigDir, "window-state.json"),
@@ -99,8 +110,11 @@ func (a *App) initialize(ctx context.Context) error {
 	)
 
 	// 前回セッションで残った打ち切りレスポンスの一時ファイルを掃除する。
-	// startup 済 (= 単一インスタンスロックを通過したプライマリ) なので全削除して安全。
-	httpinfra.SweepStaleTempFiles()
+	// session directory は Wirexa 専用の cache directory 配下にあり、削除前に
+	// インストールごとの乱数シークレットで marker を検証するため、同一 OS ユーザーの
+	// 他プロセスが接頭辞を真似ただけのディレクトリを誤って削除しない
+	// (単一インスタンスロックは「Wirexa の別プロセスがいない」ことしか保証しない)。
+	httpinfra.SweepStaleTempFiles(sessionDir)
 
 	logger, err := infra.NewFileLogger(filepath.Join(configDir, wirexaConfigDir, "logs"))
 	if err != nil {
@@ -128,22 +142,27 @@ func (a *App) initialize(ctx context.Context) error {
 	}
 	adapters.SetupMQTTHandler(a.mqttHandler, mqttSvc, profileSvc)
 
-	collRepo, err := infra.NewJSONStore(
-		filepath.Join(configDir, wirexaConfigDir, "collections"),
-		func(c *httpdomain.Collection) string { return c.ID },
-	)
+	// token と実パスを永続化しないよう、runtime model と永続化 DTO を変換する専用リポジトリを使う。
+	collRepo, err := httpinfra.NewCollectionRepository(filepath.Join(configDir, wirexaConfigDir, "collections"), logger)
 	if err != nil {
 		return fmt.Errorf("failed to create collection store: %w", err)
 	}
-	collRepo.SetLogger(logger)
 	layoutRepo := httpinfra.NewSidebarLayoutRepository(filepath.Join(configDir, wirexaConfigDir, "sidebar_layout.json"))
 	collSvc, err := httpapp.NewCollectionService(collRepo, layoutRepo)
 	if err != nil {
 		return fmt.Errorf("failed to initialize collections: %w", err)
 	}
-	a.netClient = httpinfra.NewNetClient()
-	reqSvc := httpapp.NewHTTPRequestService(a.netClient, logger)
-	adapters.SetupHTTPHandler(ctx, a.httpHandler, reqSvc, collSvc, collSvc, a.netClient)
+	// request file はダイアログで選ばれたものだけを session token で参照させる。
+	fileRegistry := httpinfra.NewFileRegistry()
+	a.netClient = httpinfra.NewNetClient(fileRegistry, sessionDir)
+	a.reqSvc = httpapp.NewHTTPRequestService(a.netClient, logger)
+	adapters.SetupHTTPHandler(ctx, a.httpHandler, adapters.HTTPHandlerDeps{
+		ReqSvc:    a.reqSvc,
+		CollSvc:   collSvc,
+		ItemSvc:   collSvc,
+		Responses: a.netClient.Responses(),
+		Files:     fileRegistry,
+	})
 
 	targetRepo, err := infra.NewJSONStore(
 		filepath.Join(configDir, wirexaConfigDir, "udp-targets"),
@@ -210,6 +229,11 @@ func (a *App) shutdown(_ context.Context) {
 	}
 	a.mqttHandler.Shutdown()
 	a.udpHandler.Shutdown()
+	// 実行中の HTTP リクエストを先に止めてから一時ファイルを回収する。
+	// 待機上限を過ぎたリクエストの一時ファイルは次回起動時の sweep に任せる。
+	if a.reqSvc != nil {
+		a.reqSvc.Shutdown(httpShutdownTimeout)
+	}
 	if a.netClient != nil {
 		a.netClient.Cleanup()
 	}

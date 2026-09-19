@@ -101,8 +101,8 @@ export namespace httpdomain {
 	    key: string;
 	    value: string;
 	    kind?: string;
-	    filePath?: string;
 	    contentType?: string;
+	    file: FileReference;
 	    enabled: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -114,13 +114,50 @@ export namespace httpdomain {
 	        this.key = source["key"];
 	        this.value = source["value"];
 	        this.kind = source["kind"];
-	        this.filePath = source["filePath"];
 	        this.contentType = source["contentType"];
+	        this.file = this.convertValues(source["file"], FileReference);
 	        this.enabled = source["enabled"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class FileReference {
+	    token?: string;
+	    name?: string;
+	    contentType?: string;
+	    needsReselect?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new FileReference(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.token = source["token"];
+	        this.name = source["name"];
+	        this.contentType = source["contentType"];
+	        this.needsReselect = source["needsReselect"];
 	    }
 	}
 	export class RequestBody {
 	    contents: Record<string, string>;
+	    file: FileReference;
 	    type: string;
 	    formData?: FormRow[];
 	    formUrlEncoded?: FormRow[];
@@ -132,6 +169,7 @@ export namespace httpdomain {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.contents = source["contents"];
+	        this.file = this.convertValues(source["file"], FileReference);
 	        this.type = source["type"];
 	        this.formData = this.convertValues(source["formData"], FormRow);
 	        this.formUrlEncoded = this.convertValues(source["formUrlEncoded"], FormRow);
@@ -277,13 +315,13 @@ export namespace httpdomain {
 	}
 	
 	
+	
 	export class HTTPResponse {
 	    headers: Record<string, Array<string>>;
 	    statusText: string;
 	    body: string;
 	    contentType: string;
 	    error: string;
-	    tempFilePath: string;
 	    statusCode: number;
 	    size: number;
 	    timingMs: number;
@@ -302,7 +340,6 @@ export namespace httpdomain {
 	        this.body = source["body"];
 	        this.contentType = source["contentType"];
 	        this.error = source["error"];
-	        this.tempFilePath = source["tempFilePath"];
 	        this.statusCode = source["statusCode"];
 	        this.size = source["size"];
 	        this.timingMs = source["timingMs"];
@@ -315,6 +352,22 @@ export namespace httpdomain {
 	
 	
 	
+	export class SelectedFile {
+	    token: string;
+	    name: string;
+	    contentType: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SelectedFile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.token = source["token"];
+	        this.name = source["name"];
+	        this.contentType = source["contentType"];
+	    }
+	}
 	export class SidebarEntry {
 	    kind: string;
 	    id: string;
