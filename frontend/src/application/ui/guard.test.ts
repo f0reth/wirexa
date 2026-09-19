@@ -1,41 +1,68 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { runGuarded } from "./guard";
-import { notify } from "./notifications";
+import { describe, expect, it, vi } from "vitest";
+import type { Notifier } from "../../domain/ui/ports";
+import { notifyOnError, runGuarded } from "./guard";
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
+function makeNotifier(): Notifier {
+  return {
+    error: vi.fn(),
+    success: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+  };
+}
 
 describe("runGuarded", () => {
   it("runs the fn side effects and does not notify on success", async () => {
-    const errorSpy = vi.spyOn(notify, "error");
+    const notifier = makeNotifier();
     let ran = false;
-    await runGuarded("Failed", async () => {
+    await runGuarded(notifier, "Failed", async () => {
       ran = true;
     });
     expect(ran).toBe(true);
-    expect(errorSpy).not.toHaveBeenCalled();
+    expect(notifier.error).not.toHaveBeenCalled();
   });
 
   it("notifies with the Error message when fn throws an Error", async () => {
-    const errorSpy = vi.spyOn(notify, "error").mockReturnValue("id");
-    await runGuarded("Failed to add folder", async () => {
+    const notifier = makeNotifier();
+    await runGuarded(notifier, "Failed to add folder", async () => {
       throw new Error("boom");
     });
-    expect(errorSpy).toHaveBeenCalledWith("Failed to add folder", "boom");
+    expect(notifier.error).toHaveBeenCalledWith("Failed to add folder", "boom");
   });
 
   it("notifies with String(err) when fn throws a non-Error", async () => {
-    const errorSpy = vi.spyOn(notify, "error").mockReturnValue("id");
-    await runGuarded("Failed", async () => {
+    const notifier = makeNotifier();
+    await runGuarded(notifier, "Failed", async () => {
       throw "nope";
     });
-    expect(errorSpy).toHaveBeenCalledWith("Failed", "nope");
+    expect(notifier.error).toHaveBeenCalledWith("Failed", "nope");
   });
 
   it("accepts an fn that returns a value", async () => {
-    const errorSpy = vi.spyOn(notify, "error");
-    await runGuarded("Failed", () => Promise.resolve("ignored"));
-    expect(errorSpy).not.toHaveBeenCalled();
+    const notifier = makeNotifier();
+    await runGuarded(notifier, "Failed", () => Promise.resolve("ignored"));
+    expect(notifier.error).not.toHaveBeenCalled();
+  });
+});
+
+describe("notifyOnError", () => {
+  it("returns the value and does not notify on success", async () => {
+    const notifier = makeNotifier();
+    const value = await notifyOnError(notifier, "Failed", async () => "ok");
+    expect(value).toBe("ok");
+    expect(notifier.error).not.toHaveBeenCalled();
+  });
+
+  it("notifies and rethrows so the caller can branch on failure", async () => {
+    const notifier = makeNotifier();
+    await expect(
+      notifyOnError(notifier, "Failed to create collection", async () => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+    expect(notifier.error).toHaveBeenCalledWith(
+      "Failed to create collection",
+      "boom",
+    );
   });
 });

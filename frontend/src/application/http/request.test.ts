@@ -2,6 +2,7 @@ import { createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { HttpRequest, HttpResponse } from "../../domain/http/types";
 import { DEFAULT_SETTINGS } from "../../domain/http/types";
+import type { Notifier } from "../../domain/ui/ports";
 import type { Logger } from "../logger";
 import {
   createRequestState,
@@ -10,6 +11,15 @@ import {
 } from "./request";
 
 const noopLogger: Logger = { info: () => {}, error: () => {} };
+
+function makeNotifier(): Notifier {
+  return {
+    error: vi.fn(),
+    success: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+  };
+}
 
 function makeResponse(): HttpResponse {
   return {
@@ -76,7 +86,7 @@ describe("createRequestState send id", () => {
   it("assigns a fresh send id per request instead of an empty id", async () => {
     await createRoot(async (dispose) => {
       const { api, sent, settleAll } = makeApi();
-      const state = createRequestState(api, noopLogger);
+      const state = createRequestState(api, noopLogger, makeNotifier());
       state.setUrl("https://example.com");
 
       const first = state.sendRequest();
@@ -95,7 +105,7 @@ describe("createRequestState send id", () => {
   it("does not reuse the saved request id as the send id", async () => {
     await createRoot(async (dispose) => {
       const { api, sent, settleAll } = makeApi();
-      const state = createRequestState(api, noopLogger);
+      const state = createRequestState(api, noopLogger, makeNotifier());
       state.loadRequest(makeRequest("saved-1"), "col-1");
 
       const done = state.sendRequest();
@@ -111,7 +121,7 @@ describe("createRequestState send id", () => {
   it("cancels every in-flight send id", async () => {
     await createRoot(async (dispose) => {
       const { api, sent, settleAll } = makeApi();
-      const state = createRequestState(api, noopLogger);
+      const state = createRequestState(api, noopLogger, makeNotifier());
 
       const first = state.sendRequest();
       const second = state.sendRequest();
@@ -132,7 +142,7 @@ describe("createRequestState send id", () => {
   it("keeps loading true until the last in-flight request settles", async () => {
     await createRoot(async (dispose) => {
       const { api, settleAll } = makeApi();
-      const state = createRequestState(api, noopLogger);
+      const state = createRequestState(api, noopLogger, makeNotifier());
 
       const first = state.sendRequest();
       expect(state.loading()).toBe(true);
@@ -160,7 +170,7 @@ function makeStateWithResponse(resp: HttpResponse) {
     saveResponseBody: vi.fn(async () => {}),
     saveResponseBinary: vi.fn(async () => {}),
   };
-  return { api, state: createRequestState(api, noopLogger) };
+  return { api, state: createRequestState(api, noopLogger, makeNotifier()) };
 }
 
 describe("createRequestState saveResponseToFile", () => {
@@ -216,7 +226,7 @@ describe("createRequestState saveResponseToFile", () => {
 /** createRoot 内で state を作り、テスト本体を実行する。 */
 function withState(fn: (state: RequestState) => void): void {
   createRoot((dispose) => {
-    fn(createRequestState(makeApi().api, noopLogger));
+    fn(createRequestState(makeApi().api, noopLogger, makeNotifier()));
     dispose();
   });
 }

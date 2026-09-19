@@ -35,7 +35,7 @@ interface OpenApiFilesContextValue extends FilesState {
   selectFile: (path: string) => Promise<void>;
   saveActiveFile: () => Promise<boolean>;
   newUntitled: () => Promise<void>;
-  openDropped: (content: string, name: string) => Promise<void>;
+  openDroppedFile: (file: File) => Promise<void>;
 }
 
 interface OpenApiEditorContextValue extends EditorState {
@@ -52,7 +52,7 @@ function basename(path: string): string {
 type ConfirmChoice = "save" | "discard" | "cancel";
 
 export function OpenApiProvider(props: { children: JSX.Element }) {
-  const filesState = createFilesState();
+  const filesState = createFilesState(notify);
   const editorState = createEditorState();
 
   // 未保存確認ダイアログの状態。resolve でユーザーの選択を返す。
@@ -115,7 +115,9 @@ export function OpenApiProvider(props: { children: JSX.Element }) {
   }
 
   async function openFile(): Promise<void> {
-    await runGuarded("Failed to open file", () => guardSwitch(doOpenFile));
+    await runGuarded(notify, "Failed to open file", () =>
+      guardSwitch(doOpenFile),
+    );
   }
 
   async function doSelectFile(path: string): Promise<void> {
@@ -130,7 +132,7 @@ export function OpenApiProvider(props: { children: JSX.Element }) {
   }
 
   async function selectFile(path: string): Promise<void> {
-    await runGuarded("Failed to open file", () =>
+    await runGuarded(notify, "Failed to open file", () =>
       guardSwitch(() => doSelectFile(path)),
     );
   }
@@ -164,10 +166,14 @@ export function OpenApiProvider(props: { children: JSX.Element }) {
     });
   }
 
-  async function openDropped(content: string, name: string): Promise<void> {
-    await guardSwitch(() => {
-      filesState.setActiveDoc({ kind: "untitled", name });
-      editorState.loadContent(content, parseSpec);
+  // ドロップされたファイルは内容の読み出しも含めてここで扱う（失敗時の通知を 1 箇所にまとめる）。
+  async function openDroppedFile(file: File): Promise<void> {
+    await runGuarded(notify, "Failed to open dropped file", async () => {
+      const content = await file.text();
+      await guardSwitch(() => {
+        filesState.setActiveDoc({ kind: "untitled", name: file.name });
+        editorState.loadContent(content, parseSpec);
+      });
     });
   }
 
@@ -200,7 +206,7 @@ export function OpenApiProvider(props: { children: JSX.Element }) {
         selectFile,
         saveActiveFile,
         newUntitled,
-        openDropped,
+        openDroppedFile,
       }}
     >
       <OpenApiEditorContext.Provider

@@ -1,7 +1,6 @@
 import { clsx } from "clsx";
 import { ChevronLeft, ChevronRight, Save } from "lucide-solid";
 import { onMount, Show } from "solid-js";
-import { runGuarded } from "../../../application/ui/guard";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -51,10 +50,7 @@ export function OpenApiClient() {
     const file = e.dataTransfer?.files?.[0];
     if (!file) return;
     e.preventDefault();
-    await runGuarded("Failed to open dropped file", async () => {
-      const content = await file.text();
-      await filesCtx.openDropped(content, file.name);
-    });
+    await filesCtx.openDroppedFile(file);
   };
 
   return (

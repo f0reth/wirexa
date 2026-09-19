@@ -2,6 +2,7 @@ import { createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { ConnectionPersistence } from "../../domain/mqtt/ports";
 import type { BrokerProfile, ConnectionStatus } from "../../domain/mqtt/types";
+import type { Notifier } from "../../domain/ui/ports";
 import type { Logger } from "../logger";
 import {
   createConnectionsState,
@@ -11,6 +12,15 @@ import {
 
 const noopLogger: Logger = { info: () => {}, error: () => {} };
 const noopEvent: MqttEventListener = () => () => {};
+
+function makeNotifier(): Notifier {
+  return {
+    error: vi.fn(),
+    success: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+  };
+}
 
 function makeProfile(id: string, name = id): BrokerProfile {
   return {
@@ -49,6 +59,7 @@ function setup(
   profiles: BrokerProfile[],
   lastProfileId: string | null = null,
 ) {
+  const notifier = makeNotifier();
   return createRoot((dispose) => {
     const state = createConnectionsState(
       makeApi(async () => live),
@@ -57,10 +68,11 @@ function setup(
       () => profiles,
       async () => {},
       noopLogger,
+      notifier,
       1000,
       1000,
     );
-    return { state, dispose };
+    return { state, notifier, dispose };
   });
 }
 
@@ -177,12 +189,46 @@ describe("createConnectionsState restore", () => {
         () => profiles,
         async () => {},
         noopLogger,
+        makeNotifier(),
         1000,
         1000,
       );
       await state.restore();
       await state.restore();
       expect(api.getConnections).toHaveBeenCalledTimes(1);
+      dispose();
+    });
+  });
+});
+
+describe("createConnectionsState notifications", () => {
+  it("notifies through the injected notifier when connect fails", async () => {
+    const profiles = [makeProfile("p1")];
+    const notifier = makeNotifier();
+    await createRoot(async (dispose) => {
+      const api = makeApi(async () => []);
+      api.connect = vi.fn(async () => {
+        throw new Error("no route to host");
+      });
+      const state = createConnectionsState(
+        api,
+        noopEvent,
+        makePersistence(null),
+        () => profiles,
+        async () => {},
+        noopLogger,
+        notifier,
+        1000,
+        1000,
+      );
+
+      // 失敗しても例外は伝播せず、通知だけが出る。
+      await state.handleConnect("p1");
+
+      expect(notifier.error).toHaveBeenCalledWith(
+        "Failed to connect",
+        "no route to host",
+      );
       dispose();
     });
   });

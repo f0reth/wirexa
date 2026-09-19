@@ -1,17 +1,19 @@
 import { createSignal } from "solid-js";
 import type { ActiveDoc, OpenApiFile } from "../../domain/openapi/types";
+import type { Notifier } from "../../domain/ui/ports";
 import {
   getRecents,
   moveRecent,
   removeRecent,
 } from "../../infrastructure/openapi/file-io";
+import { runGuarded } from "../ui/guard";
 
 /**
  * createFilesState は「最近使ったファイル一覧」とアクティブ文書の状態を管理する。
  * recents は Go 側（設定ディレクトリの JSON）を単一の真実とし、localStorage は使わない。
  * Go の許可リストへの登録はダイアログ/保存経由でしか起きないため、JS からは汚染できない。
  */
-export function createFilesState() {
+export function createFilesState(notifier: Notifier) {
   const [files, setFiles] = createSignal<OpenApiFile[]>([]);
   const [activeDoc, setActiveDoc] = createSignal<ActiveDoc>(null);
 
@@ -35,8 +37,10 @@ export function createFilesState() {
   }
 
   async function moveFile(path: string, newIndex: number): Promise<void> {
-    await moveRecent(path, newIndex);
-    await refreshRecents();
+    await runGuarded(notifier, "Failed to reorder file", async () => {
+      await moveRecent(path, newIndex);
+      await refreshRecents();
+    });
   }
 
   return {

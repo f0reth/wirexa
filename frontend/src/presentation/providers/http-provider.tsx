@@ -10,6 +10,7 @@ import {
   createAutoSaveEffect,
   createRequestState,
 } from "../../application/http/request";
+import { notify } from "../../application/ui/notifications";
 import type {
   Collection,
   FormBodyType,
@@ -117,7 +118,7 @@ const HttpRequestContext = createContext<RequestContextValue>();
 const HttpCollectionsContext = createContext<CollectionsContextValue>();
 
 export function HttpProvider(props: { children: JSX.Element }) {
-  const collectionsState = createCollectionsState(httpClient);
+  const collectionsState = createCollectionsState(httpClient, notify);
   const requestState = createRequestState(
     {
       sendRequest: httpClient.sendRequest,
@@ -130,9 +131,10 @@ export function HttpProvider(props: { children: JSX.Element }) {
       afterSave: (colId, req) => collectionsState.patchRequest(colId, req),
     },
     createLogger("frontend:http"),
+    notify,
   );
 
-  createAutoSaveEffect(requestState);
+  createAutoSaveEffect(requestState, notify);
 
   // アクティブリクエストをlocalStorageに永続化する
   const activeRequestStorage = createActiveRequestStorage();

@@ -6,9 +6,9 @@ import type {
   UdpListenSession,
   UdpReceivedMessage,
 } from "../../domain/udp/types";
+import type { Notifier } from "../../domain/ui/ports";
 import { errorMessage } from "../../shared/error";
 import { runGuarded } from "../ui/guard";
-import { notify } from "../ui/notifications";
 
 export interface UdpReceiveApi {
   startListen(port: number, encoding: string): Promise<UdpListenSession>;
@@ -17,7 +17,7 @@ export interface UdpReceiveApi {
   onMessage(cb: (msg: UdpReceivedMessage) => void): () => void;
 }
 
-export function createUdpReceiveState(api: UdpReceiveApi) {
+export function createUdpReceiveState(api: UdpReceiveApi, notifier: Notifier) {
   const [sessions, setSessions] = createStore<UdpListenSession[]>([]);
   const [messages, setMessages] = createStore<UdpReceivedMessage[]>([]);
   const [listenPort, setListenPort] = createSignal(0);
@@ -34,7 +34,7 @@ export function createUdpReceiveState(api: UdpReceiveApi) {
   // 起動時にバックエンドの実リスニングセッションを復元する。
   // webview リロード後もバックエンドは受信を継続しているため、UI 状態を実状態に同期する。
   async function refreshListeners(): Promise<void> {
-    await runGuarded("Failed to restore listeners", async () => {
+    await runGuarded(notifier, "Failed to restore listeners", async () => {
       const list = await api.getListeners();
       setSessions(reconcile(list));
     });
@@ -49,15 +49,17 @@ export function createUdpReceiveState(api: UdpReceiveApi) {
     } catch (err: unknown) {
       const msg = errorMessage(err);
       setError(msg);
-      notify.error("Failed to start listening", msg);
+      notifier.error("Failed to start listening", msg);
     } finally {
       setLoading(false);
     }
   }
 
   async function stopListen(sessionId: string): Promise<void> {
-    await api.stopListen(sessionId);
-    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    await runGuarded(notifier, "Failed to stop listening", async () => {
+      await api.stopListen(sessionId);
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    });
   }
 
   function clearMessages(): void {

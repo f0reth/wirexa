@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import type { Logger } from "../../application/logger";
-import { notify } from "../../application/ui/notifications";
+import type { Notifier } from "../../domain/ui/ports";
 import { errorMessage } from "../../shared/error";
 import type { ConnectionStateExt } from "./connections";
 import { makeSubscription } from "./subscription";
@@ -18,6 +18,7 @@ export function createSubscriptionsState(
   ) => void,
   api: SubscriptionApi,
   logger: Logger,
+  notifier: Notifier,
 ) {
   const [newTopic, setNewTopic] = createSignal("");
   const [newQos, setNewQos] = createSignal<number>(0);
@@ -51,7 +52,7 @@ export function createSubscriptionsState(
           topic: t,
           error: String(err),
         });
-        notify.error(`Failed to subscribe to ${t}`, errorMessage(err));
+        notifier.error(`Failed to subscribe to ${t}`, errorMessage(err));
         return;
       }
       const newSub = makeSubscription(t, q);
@@ -82,7 +83,7 @@ export function createSubscriptionsState(
           topic: sub.topic,
           error: String(err),
         });
-        notify.error(
+        notifier.error(
           `Failed to unsubscribe from ${sub.topic}`,
           errorMessage(err),
         );
@@ -112,7 +113,7 @@ export function createSubscriptionsState(
       try {
         await api.subscribe(connId, "#", 0);
       } catch (err) {
-        notify.error("Failed to start topic scan", errorMessage(err));
+        notifier.error("Failed to start topic scan", errorMessage(err));
         updateConnection(connId, (state) => ({ ...state, isScanning: false }));
       }
     } else {

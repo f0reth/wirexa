@@ -4,7 +4,17 @@ import type {
   UdpListenSession,
   UdpReceivedMessage,
 } from "../../domain/udp/types";
+import type { Notifier } from "../../domain/ui/ports";
 import { createUdpReceiveState, type UdpReceiveApi } from "./receive";
+
+function makeNotifier(): Notifier {
+  return {
+    error: vi.fn(),
+    success: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+  };
+}
 
 function makeApi(listeners: UdpListenSession[]): UdpReceiveApi {
   return {
@@ -31,7 +41,7 @@ describe("createUdpReceiveState restore", () => {
     ];
 
     await createRoot(async (dispose) => {
-      const state = createUdpReceiveState(makeApi(listeners));
+      const state = createUdpReceiveState(makeApi(listeners), makeNotifier());
       await flush();
       expect(state.sessions.map((s) => s.id)).toEqual(["s1", "s2"]);
       expect(state.sessions[0].port).toBe(9000);
@@ -41,7 +51,7 @@ describe("createUdpReceiveState restore", () => {
 
   it("starts with an empty sessions store when nothing is listening", async () => {
     await createRoot(async (dispose) => {
-      const state = createUdpReceiveState(makeApi([]));
+      const state = createUdpReceiveState(makeApi([]), makeNotifier());
       await flush();
       expect(state.sessions).toHaveLength(0);
       dispose();

@@ -1,10 +1,8 @@
 import { FilePlus, FolderOpen } from "lucide-solid";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
-import { notify } from "../../../application/ui/notifications";
 import { Button } from "../../../components/ui/button";
 import { ScrollArea } from "../../../components/ui/scroll-area";
-import { errorMessage } from "../../../shared/error";
 import { useOpenApiFiles } from "../../providers/openapi-provider";
 import {
   OPENAPI_DROP_INDEX_ATTR,
@@ -47,9 +45,7 @@ export function OpenApiFileTree() {
       const path = dragFilePath();
       const idx = dropIndex();
       if (path !== null && idx !== null) {
-        filesCtx.moveFile(path, idx).catch((err) => {
-          notify.error("Failed to reorder file", errorMessage(err));
-        });
+        void filesCtx.moveFile(path, idx);
       }
       setDragFilePath(null);
       setDropIndex(null);

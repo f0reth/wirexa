@@ -9,7 +9,6 @@ import {
   isVarLengthFieldType,
   totalFieldBytes,
 } from "../../../application/udp/field-validation";
-import { notify } from "../../../application/ui/notifications";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
@@ -20,7 +19,6 @@ import {
   PAYLOAD_ENCODINGS,
   type PayloadEncoding,
 } from "../../../domain/udp/types";
-import { errorMessage } from "../../../shared/error";
 import { useUdpSend } from "../../providers/udp-provider";
 import {
   FIELD_VALUE_INPUT_TYPES,
@@ -264,9 +262,7 @@ export function SendForm() {
         class={styles.sendButton}
         disabled={loading()}
         onClick={() => {
-          send().catch((err: unknown) => {
-            notify.error("Failed to send packet", errorMessage(err));
-          });
+          void send();
         }}
       >
         {loading() ? "Sending..." : "Send"}

@@ -1,13 +1,12 @@
 import { type Accessor, createSignal } from "solid-js";
-import type { Notification, NotificationLevel } from "../../domain/ui/ports";
+import type {
+  Notification,
+  NotificationLevel,
+  NotifyOptions,
+} from "../../domain/ui/ports";
 import { generateId } from "../../infrastructure/id/generator";
 
-export type { Notification, NotificationLevel };
-
-export interface NotifyOptions {
-  /** 同一 key のアクティブ通知が既にあれば新規追加を抑制する（連続発火のスパム防止）。 */
-  key?: string;
-}
+export type { Notification, NotificationLevel, NotifyOptions };
 
 interface PushInput {
   level: NotificationLevel;

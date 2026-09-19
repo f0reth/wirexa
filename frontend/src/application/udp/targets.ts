@@ -1,11 +1,13 @@
 import { createStore, reconcile } from "solid-js/store";
 import type { UdpTarget } from "../../domain/udp/types";
+import type { Notifier } from "../../domain/ui/ports";
 import {
   loadFromStorage,
   saveToStorage,
 } from "../../infrastructure/storage/local-storage";
 import { moveItem } from "../../shared/array";
 import { applyOrder } from "../shared/order";
+import { notifyOnError, runGuarded } from "../ui/guard";
 
 const TARGET_ORDER_KEY = "udp:targetOrder";
 
@@ -15,7 +17,7 @@ export interface UdpTargetApi {
   deleteTarget(id: string): Promise<void>;
 }
 
-export function createTargetsState(api: UdpTargetApi) {
+export function createTargetsState(api: UdpTargetApi, notifier: Notifier) {
   const [targets, setTargets] = createStore<UdpTarget[]>([]);
 
   async function refreshTargets(): Promise<void> {
@@ -40,14 +42,18 @@ export function createTargetsState(api: UdpTargetApi) {
     targets,
     refreshTargets,
     reorderTargets,
-    saveTarget: async (t: UdpTarget) => {
-      const saved = await api.saveTarget(t);
-      await refreshTargets();
-      return saved;
-    },
+    // 戻り値を持つため、失敗時は通知したうえで例外を伝える（呼び出し側がダイアログを閉じない）。
+    saveTarget: async (t: UdpTarget) =>
+      notifyOnError(notifier, "Failed to save target", async () => {
+        const saved = await api.saveTarget(t);
+        await refreshTargets();
+        return saved;
+      }),
     deleteTarget: async (id: string) => {
-      await api.deleteTarget(id);
-      await refreshTargets();
+      await runGuarded(notifier, "Failed to delete target", async () => {
+        await api.deleteTarget(id);
+        await refreshTargets();
+      });
     },
   };
 }

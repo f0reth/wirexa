@@ -5,6 +5,7 @@ import {
   type FixedLengthFieldState,
 } from "../../application/udp/send";
 import { createTargetsState } from "../../application/udp/targets";
+import { notify } from "../../application/ui/notifications";
 import type {
   Endianness,
   PayloadEncoding,
@@ -65,9 +66,13 @@ const UdpTargetsContext = createContext<UdpTargetsContextValue>();
 const UdpReceiveContext = createContext<UdpReceiveContextValue>();
 
 export function UdpProvider(props: { children: JSX.Element }) {
-  const sendState = createUdpSendState(udpClient, createLogger("frontend:udp"));
-  const targetsState = createTargetsState(udpClient);
-  const receiveState = createUdpReceiveState(udpClient);
+  const sendState = createUdpSendState(
+    udpClient,
+    createLogger("frontend:udp"),
+    notify,
+  );
+  const targetsState = createTargetsState(udpClient, notify);
+  const receiveState = createUdpReceiveState(udpClient, notify);
 
   return (
     <UdpSendContext.Provider value={sendState}>

@@ -10,8 +10,10 @@ import type {
   UdpTarget,
 } from "../../domain/udp/types";
 import { FIELD_TYPE_SIZES } from "../../domain/udp/types";
+import type { Notifier } from "../../domain/ui/ports";
 import { generateId } from "../../infrastructure/id/generator";
 import { withLoading } from "../../shared/async-op";
+import { errorMessage } from "../../shared/error";
 
 /** UI 管理用 id を付加したアプリケーション層のフィールド型。 */
 export type FixedLengthFieldState = FixedLengthField & { id: string };
@@ -20,7 +22,11 @@ export interface UdpSendApi {
   send(req: UdpSendRequest): Promise<UdpSendResult>;
 }
 
-export function createUdpSendState(api: UdpSendApi, logger: Logger) {
+export function createUdpSendState(
+  api: UdpSendApi,
+  logger: Logger,
+  notifier: Notifier,
+) {
   const [selectedTarget, setSelectedTarget] = createSignal<UdpTarget | null>(
     null,
   );
@@ -116,7 +122,7 @@ export function createUdpSendState(api: UdpSendApi, logger: Logger) {
       });
     } catch (err) {
       logger.error("UDP send failed", { host: h, port: p, error: String(err) });
-      throw err;
+      notifier.error("Failed to send packet", errorMessage(err));
     }
   }
 

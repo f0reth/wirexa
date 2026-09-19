@@ -1,12 +1,10 @@
 import { createSignal, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
-import { notify } from "../../../application/ui/notifications";
 import { Button } from "../../../components/ui/button";
 import dialog from "../../../components/ui/dialog.module.css";
 import { createFocusTrap } from "../../../components/ui/focus-trap";
 import { Input } from "../../../components/ui/input";
 import type { UdpTarget } from "../../../domain/udp/types";
-import { errorMessage } from "../../../shared/error";
 import { useUdpSend, useUdpTargets } from "../../providers/udp-provider";
 import { ProfileList } from "./profile-list";
 import styles from "./sidebar.module.css";
@@ -126,8 +124,10 @@ export function TargetTree() {
     UdpTarget | "new" | null
   >(null);
 
+  // 保存に失敗したときはダイアログを閉じない（通知は application 層が出す）。
   const handleSave = async (t: UdpTarget) => {
-    await saveTarget(t);
+    const saved = await saveTarget(t).catch(() => null);
+    if (!saved) return;
     setEditingTarget(null);
   };
 
@@ -142,9 +142,7 @@ export function TargetTree() {
         onItemClick={(t) => loadTarget(t)}
         onEdit={(t) => setEditingTarget(t)}
         onDelete={(t) => {
-          deleteTarget(t.id).catch((err: unknown) => {
-            notify.error("Failed to delete target", errorMessage(err));
-          });
+          void deleteTarget(t.id);
         }}
         onReorder={reorderTargets}
         editAriaLabel="Edit target"

@@ -1,7 +1,6 @@
 import { clsx } from "clsx";
 import { GripVertical, Plus, Send, Trash2 } from "lucide-solid";
 import { batch, createEffect, createSignal, For, on, Show } from "solid-js";
-import { runGuarded } from "../../../application/ui/guard";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -185,13 +184,11 @@ function PublishForm(props: {
     if (!props.publishTopic().trim()) return;
     // retain 付きの空ペイロードは retained メッセージの削除を意味するので許可する。
     if (!props.publishRetain() && !props.publishPayload().trim()) return;
-    await runGuarded("Failed to publish message", () =>
-      publish(
-        props.publishTopic(),
-        props.publishPayload(),
-        props.publishQos(),
-        props.publishRetain(),
-      ),
+    await publish(
+      props.publishTopic(),
+      props.publishPayload(),
+      props.publishQos(),
+      props.publishRetain(),
     );
   };
 

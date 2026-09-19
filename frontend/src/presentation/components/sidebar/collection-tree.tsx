@@ -8,7 +8,6 @@ import {
   Show,
 } from "solid-js";
 import { Portal } from "solid-js/web";
-import { runGuarded } from "../../../application/ui/guard";
 import { Button } from "../../../components/ui/button";
 import { ConfirmDialog } from "../../../components/ui/confirm-dialog";
 import { ScrollArea } from "../../../components/ui/scroll-area";
@@ -60,10 +59,12 @@ export function CollectionTree() {
     requestCtx.restoreActiveRequest();
   });
 
+  // 失敗時の通知は application 層が出す。戻り値を持つ操作は例外で失敗が伝わるため、
+  // 後続処理（リネーム編集の開始）を走らせないよう null に畳んで分岐する。
   const handleAddRootRequest = async () => {
     setAddMenuOpen(false);
-    await runGuarded("Failed to add request", async () => {
-      const item = await collectionsCtx.addRequest(ROOT_COLLECTION_ID, "", {
+    const item = await collectionsCtx
+      .addRequest(ROOT_COLLECTION_ID, "", {
         id: "",
         name: "New Request",
         method: "GET",
@@ -74,51 +75,42 @@ export function CollectionTree() {
         auth: { type: "none", username: "", password: "", token: "" },
         settings: { ...DEFAULT_SETTINGS },
         doc: "",
-      });
-      if (item?.id) setRenamingItemId(item.id);
-    });
+      })
+      .catch(() => null);
+    if (item?.id) setRenamingItemId(item.id);
   };
 
   const handleCreateCollection = async () => {
-    await runGuarded("Failed to create collection", async () => {
-      const collection =
-        await collectionsCtx.createCollection("New Collection");
-      if (collection?.id) {
-        setRenamingCollectionId(collection.id);
-      }
-    });
+    const collection = await collectionsCtx
+      .createCollection("New Collection")
+      .catch(() => null);
+    if (collection?.id) {
+      setRenamingCollectionId(collection.id);
+    }
   };
 
   const handleRenameCollection = async (id: string, newName: string) => {
     const trimmed = newName.trim();
     if (!trimmed) return;
-    await runGuarded("Failed to rename collection", () =>
-      collectionsCtx.renameCollection(id, trimmed),
-    );
+    await collectionsCtx.renameCollection(id, trimmed);
   };
 
   const handleDeleteCollection = async (id: string) => {
-    await runGuarded("Failed to delete collection", () =>
-      collectionsCtx.deleteCollection(id),
-    );
+    await collectionsCtx.deleteCollection(id);
   };
 
   const handleAddFolder = async (collectionId: string, parentId: string) => {
-    await runGuarded("Failed to add folder", async () => {
-      const item = await collectionsCtx.addFolder(
-        collectionId,
-        parentId,
-        "New Folder",
-      );
-      if (item?.id) {
-        setRenamingItemId(item.id);
-      }
-    });
+    const item = await collectionsCtx
+      .addFolder(collectionId, parentId, "New Folder")
+      .catch(() => null);
+    if (item?.id) {
+      setRenamingItemId(item.id);
+    }
   };
 
   const handleAddRequest = async (collectionId: string, parentId: string) => {
-    await runGuarded("Failed to add request", async () => {
-      const item = await collectionsCtx.addRequest(collectionId, parentId, {
+    const item = await collectionsCtx
+      .addRequest(collectionId, parentId, {
         id: "",
         name: "New Request",
         method: "GET",
@@ -129,17 +121,15 @@ export function CollectionTree() {
         auth: { type: "none", username: "", password: "", token: "" },
         settings: { ...DEFAULT_SETTINGS },
         doc: "",
-      });
-      if (item?.id) {
-        setRenamingItemId(item.id);
-      }
-    });
+      })
+      .catch(() => null);
+    if (item?.id) {
+      setRenamingItemId(item.id);
+    }
   };
 
   const handleDeleteItem = async (collectionId: string, itemId: string) => {
-    await runGuarded("Failed to delete item", () =>
-      collectionsCtx.deleteItem(collectionId, itemId),
-    );
+    await collectionsCtx.deleteItem(collectionId, itemId);
   };
 
   const handleRenameItem = async (
@@ -149,34 +139,30 @@ export function CollectionTree() {
   ) => {
     const trimmed = newName.trim();
     if (!trimmed) return;
-    await runGuarded("Failed to rename item", () =>
-      collectionsCtx.renameItem(collectionId, itemId, trimmed),
-    );
+    await collectionsCtx.renameItem(collectionId, itemId, trimmed);
   };
 
   const handleDropToSidebar = async (di: DragItem, position: number) => {
-    await runGuarded("Failed to move item", async () => {
-      if (di.kind === "collection") {
-        await collectionsCtx.moveSidebarEntry(
-          "collection",
-          di.collectionId,
-          position,
-        );
-      } else {
-        // アイテムドラッグ
-        if (di.collectionId === ROOT_COLLECTION_ID) {
-          // __root__ 内のアイテムをサイドバーゾーン間で並び替える
-          await collectionsCtx.moveSidebarEntry("item", di.itemId, position);
-        } else {
-          // 通常コレクションから sidebar ゾーンへ（__root__ への移動）
-          await collectionsCtx.moveItemToSidebar(
-            di.collectionId,
-            di.itemId,
-            position,
-          );
-        }
-      }
-    });
+    if (di.kind === "collection") {
+      await collectionsCtx.moveSidebarEntry(
+        "collection",
+        di.collectionId,
+        position,
+      );
+      return;
+    }
+    // アイテムドラッグ
+    if (di.collectionId === ROOT_COLLECTION_ID) {
+      // __root__ 内のアイテムをサイドバーゾーン間で並び替える
+      await collectionsCtx.moveSidebarEntry("item", di.itemId, position);
+    } else {
+      // 通常コレクションから sidebar ゾーンへ（__root__ への移動）
+      await collectionsCtx.moveItemToSidebar(
+        di.collectionId,
+        di.itemId,
+        position,
+      );
+    }
   };
 
   const handleMoveItem = async (
@@ -186,14 +172,12 @@ export function CollectionTree() {
     targetParentId: string,
     position: number,
   ) => {
-    await runGuarded("Failed to move item", () =>
-      collectionsCtx.moveItem(
-        sourceCollectionId,
-        itemId,
-        targetCollectionId,
-        targetParentId,
-        position,
-      ),
+    await collectionsCtx.moveItem(
+      sourceCollectionId,
+      itemId,
+      targetCollectionId,
+      targetParentId,
+      position,
     );
   };
 

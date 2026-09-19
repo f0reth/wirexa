@@ -14,6 +14,8 @@ import { createMessagesState } from "../../application/mqtt/messages";
 import { createPresetsState } from "../../application/mqtt/presets";
 import { createProfilesState } from "../../application/mqtt/profiles";
 import { createSubscriptionsState } from "../../application/mqtt/subscriptions";
+import { runGuarded } from "../../application/ui/guard";
+import { notify } from "../../application/ui/notifications";
 import { MQTT_MAX_MESSAGES, MQTT_MAX_TOPICS } from "../../config/limits";
 import type {
   BrokerProfile,
@@ -121,6 +123,7 @@ export function MqttProvider(props: { children: JSX.Element }) {
     profiles,
     saveProfile,
     mqttLogger,
+    notify,
     MQTT_MAX_MESSAGES,
     MQTT_MAX_TOPICS,
   );
@@ -130,6 +133,7 @@ export function MqttProvider(props: { children: JSX.Element }) {
     connState.updateConnection,
     mqttClient,
     mqttLogger,
+    notify,
   );
   const msgState = createMessagesState(
     connState.activeConnection,
@@ -154,7 +158,9 @@ export function MqttProvider(props: { children: JSX.Element }) {
   ): Promise<void> => {
     const connId = connState.activeConnectionId();
     if (!connId) return;
-    await mqttClient.publish(connId, topic, payload, qos, retain);
+    await runGuarded(notify, "Failed to publish message", () =>
+      mqttClient.publish(connId, topic, payload, qos, retain),
+    );
   };
 
   return (

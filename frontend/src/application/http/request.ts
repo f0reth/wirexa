@@ -1,6 +1,5 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { Logger } from "../../application/logger";
-import { notify } from "../../application/ui/notifications";
 import type {
   FormBodyType,
   FormRow,
@@ -17,6 +16,7 @@ import {
   FORM_PAIR_FIELDS,
   isFormBodyType,
 } from "../../domain/http/types";
+import type { Notifier } from "../../domain/ui/ports";
 import { generateId } from "../../infrastructure/id/generator";
 import { errorMessage } from "../../shared/error";
 
@@ -38,7 +38,11 @@ export interface RequestApi {
   afterSave?: (collectionId: string, req: HttpRequest) => void;
 }
 
-export function createRequestState(api: RequestApi, logger: Logger) {
+export function createRequestState(
+  api: RequestApi,
+  logger: Logger,
+  notifier: Notifier,
+) {
   const [method, setMethod] = createSignal<HttpMethod>("GET");
   const [url, setUrl] = createSignal("");
   const [headers, setHeaders] = createSignal<KeyValuePair[]>([]);
@@ -187,7 +191,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
 
   function loadRequest(req: HttpRequest, collectionId: string): void {
     saveCurrentRequest().catch((err) =>
-      notify.error("Failed to save request", errorMessage(err)),
+      notifier.error("Failed to save request", errorMessage(err)),
     );
     setMethod(req.method);
     setUrl(req.url);
@@ -203,7 +207,7 @@ export function createRequestState(api: RequestApi, logger: Logger) {
 
   function newRequest(): void {
     saveCurrentRequest().catch((err) =>
-      notify.error("Failed to save request", errorMessage(err)),
+      notifier.error("Failed to save request", errorMessage(err)),
     );
     setMethod("GET");
     setUrl("");
@@ -287,6 +291,7 @@ export type RequestState = ReturnType<typeof createRequestState>;
 
 export function createAutoSaveEffect(
   state: RequestState,
+  notifier: Notifier,
   debounceMs = 500,
 ): void {
   let saveVersion = 0;
@@ -306,7 +311,7 @@ export function createAutoSaveEffect(
     const timer = setTimeout(() => {
       if (version !== saveVersion) return;
       state.saveCurrentRequest().catch((err) => {
-        notify.error("Failed to auto-save request", errorMessage(err), {
+        notifier.error("Failed to auto-save request", errorMessage(err), {
           key: "http-autosave",
         });
       });
