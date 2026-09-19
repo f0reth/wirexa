@@ -135,6 +135,7 @@ tasks:
       - task: go:vet
       - task: go:lint
       - task: frontend:lint
+      - task: frontend:tsc
 
   format:
     desc: フロントエンドのコードを整形する
