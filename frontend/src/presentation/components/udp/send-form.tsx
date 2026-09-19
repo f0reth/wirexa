@@ -2,11 +2,9 @@ import { clsx } from "clsx";
 import { createMemo, For, Show } from "solid-js";
 import {
   type ByteCountStatus,
-  fieldByteCountLabel,
+  fieldByteCountInfo,
   fieldByteCountStatus,
-  fieldValueInputType,
-  fieldValueLabel,
-  fieldValuePlaceholder,
+  fieldValueKind,
   isValidFieldValue,
   isVarLengthFieldType,
   totalFieldBytes,
@@ -24,6 +22,12 @@ import {
 } from "../../../domain/udp/types";
 import { errorMessage } from "../../../shared/error";
 import { useUdpSend } from "../../providers/udp-provider";
+import {
+  FIELD_VALUE_INPUT_TYPES,
+  FIELD_VALUE_LABELS,
+  FIELD_VALUE_PLACEHOLDERS,
+  byteCountLabel as formatByteCount,
+} from "./field-display";
 import styles from "./udp.module.css";
 
 const BYTE_COUNT_CLASSES: Record<ByteCountStatus, string> = {
@@ -123,11 +127,13 @@ export function SendForm() {
               const isValueValid = () => isValidFieldValue(field);
               const byteCountClass = () =>
                 BYTE_COUNT_CLASSES[fieldByteCountStatus(field)];
-              const byteCountLabel = () => fieldByteCountLabel(field);
-              const valueLabel = () => fieldValueLabel(field.fieldType);
+              const byteCountLabel = () =>
+                formatByteCount(fieldByteCountInfo(field));
+              const valueKind = () => fieldValueKind(field.fieldType);
+              const valueLabel = () => FIELD_VALUE_LABELS[valueKind()];
               const valuePlaceholder = () =>
-                fieldValuePlaceholder(field.fieldType);
-              const valueInputType = () => fieldValueInputType(field.fieldType);
+                FIELD_VALUE_PLACEHOLDERS[valueKind()];
+              const valueInputType = () => FIELD_VALUE_INPUT_TYPES[valueKind()];
 
               return (
                 <div class={styles.fieldItem}>

@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   fieldByteCount,
-  fieldByteCountLabel,
+  fieldByteCountInfo,
   fieldByteCountStatus,
-  fieldValueInputType,
-  fieldValueLabel,
-  fieldValuePlaceholder,
+  fieldValueKind,
   hexByteCount,
   isValidAscii,
   isValidFieldValue,
@@ -153,63 +151,54 @@ describe("fieldByteCountStatus", () => {
   });
 });
 
-describe("fieldByteCountLabel", () => {
-  it("shows the used/declared length for variable-length fields", () => {
+describe("fieldByteCountInfo", () => {
+  it("reports the used/declared length for variable-length fields", () => {
     expect(
-      fieldByteCountLabel({ fieldType: "string", value: "abc", length: 4 }),
-    ).toBe("3/4");
+      fieldByteCountInfo({ fieldType: "string", value: "abc", length: 4 }),
+    ).toEqual({ kind: "var-length", bytes: 3, length: 4 });
     expect(
-      fieldByteCountLabel({ fieldType: "bytes", value: "0a 1b", length: 4 }),
-    ).toBe("2/4");
+      fieldByteCountInfo({ fieldType: "bytes", value: "0a 1b", length: 4 }),
+    ).toEqual({ kind: "var-length", bytes: 2, length: 4 });
   });
 
   it("reports the reason a variable-length value is invalid", () => {
     expect(
-      fieldByteCountLabel({ fieldType: "string", value: "あ", length: 4 }),
-    ).toBe("non-ASCII");
+      fieldByteCountInfo({ fieldType: "string", value: "あ", length: 4 }),
+    ).toEqual({ kind: "non-ascii" });
     expect(
-      fieldByteCountLabel({ fieldType: "bytes", value: "0a1", length: 4 }),
-    ).toBe("invalid hex");
+      fieldByteCountInfo({ fieldType: "bytes", value: "0a1", length: 4 }),
+    ).toEqual({ kind: "invalid-hex" });
   });
 
-  it("shows the fixed size for numeric fields", () => {
+  it("reports the fixed size for numeric fields", () => {
     expect(
-      fieldByteCountLabel({ fieldType: "uint16", value: "1", length: 2 }),
-    ).toBe("2 bytes");
+      fieldByteCountInfo({ fieldType: "uint16", value: "1", length: 2 }),
+    ).toEqual({ kind: "fixed-size", bytes: 2 });
     expect(
-      fieldByteCountLabel({ fieldType: "float64", value: "", length: 8 }),
-    ).toBe("8 bytes");
+      fieldByteCountInfo({ fieldType: "float64", value: "", length: 8 }),
+    ).toEqual({ kind: "fixed-size", bytes: 8 });
   });
 
   it("reports out of range for numeric fields outside their type", () => {
     expect(
-      fieldByteCountLabel({ fieldType: "uint8", value: "256", length: 1 }),
-    ).toBe("out of range");
+      fieldByteCountInfo({ fieldType: "uint8", value: "256", length: 1 }),
+    ).toEqual({ kind: "out-of-range" });
   });
 });
 
-describe("fieldValueLabel / fieldValuePlaceholder / fieldValueInputType", () => {
-  it("labels the value input per field type", () => {
-    expect(fieldValueLabel("bytes")).toBe("Value (hex)");
-    expect(fieldValueLabel("string")).toBe("Value (ASCII)");
-    expect(fieldValueLabel("uint8")).toBe("Value");
+describe("fieldValueKind", () => {
+  it("separates ASCII, hex, integer and float inputs", () => {
+    expect(fieldValueKind("string")).toBe("ascii");
+    expect(fieldValueKind("bytes")).toBe("hex");
+    expect(fieldValueKind("uint8")).toBe("integer");
+    expect(fieldValueKind("int32")).toBe("integer");
+    expect(fieldValueKind("float32")).toBe("float");
+    expect(fieldValueKind("float64")).toBe("float");
   });
 
-  it("uses a placeholder matching the field type", () => {
-    expect(fieldValuePlaceholder("bytes")).toBe("0a 1b 2c");
-    expect(fieldValuePlaceholder("string")).toBe("hello");
-    expect(fieldValuePlaceholder("float32")).toBe("1.0");
-    expect(fieldValuePlaceholder("float64")).toBe("1.0");
-    expect(fieldValuePlaceholder("int32")).toBe("0");
-  });
-
-  it("falls back to a text input where number input would lose precision", () => {
-    expect(fieldValueInputType("int64")).toBe("text");
-    expect(fieldValueInputType("uint64")).toBe("text");
-    expect(fieldValueInputType("string")).toBe("text");
-    expect(fieldValueInputType("bytes")).toBe("text");
-    expect(fieldValueInputType("int32")).toBe("number");
-    expect(fieldValueInputType("float64")).toBe("number");
+  it("separates 64bit integers, where a number input would lose precision", () => {
+    expect(fieldValueKind("int64")).toBe("wide-integer");
+    expect(fieldValueKind("uint64")).toBe("wide-integer");
   });
 });
 

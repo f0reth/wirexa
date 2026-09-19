@@ -16,6 +16,22 @@ export type FieldInput = FieldValueInput & Pick<FixedLengthField, "length">;
 /** バイト数バッジの状態。CSS クラスへの対応付けは presentation 層が行う。 */
 export type ByteCountStatus = "ok" | "warn" | "error";
 
+/** バイト数バッジに出す内容。表示文言への対応付けは presentation 層が行う。 */
+export type ByteCountInfo =
+  | { kind: "non-ascii" }
+  | { kind: "invalid-hex" }
+  | { kind: "out-of-range" }
+  | { kind: "var-length"; bytes: number; length: number }
+  | { kind: "fixed-size"; bytes: number };
+
+/** 値入力欄の種別。ラベル・placeholder・input type への対応付けは presentation 層が行う。 */
+export type FieldValueKind =
+  | "ascii"
+  | "hex"
+  | "integer"
+  | "wide-integer"
+  | "float";
+
 export function isValidAscii(value: string): boolean {
   return [...value].every((c) => (c.codePointAt(0) ?? 0) <= 0x7f);
 }
@@ -56,42 +72,35 @@ export function fieldByteCountStatus(field: FieldInput): ByteCountStatus {
   return "ok";
 }
 
-export function fieldByteCountLabel(field: FieldInput): string {
+export function fieldByteCountInfo(field: FieldInput): ByteCountInfo {
   if (field.fieldType === "string") {
-    if (!isValidAscii(field.value)) return "non-ASCII";
-    return `${fieldByteCount(field)}/${field.length}`;
+    if (!isValidAscii(field.value)) return { kind: "non-ascii" };
+    return {
+      kind: "var-length",
+      bytes: fieldByteCount(field),
+      length: field.length,
+    };
   }
   if (field.fieldType === "bytes") {
-    if (!isValidHex(field.value)) return "invalid hex";
-    return `${fieldByteCount(field)}/${field.length}`;
+    if (!isValidHex(field.value)) return { kind: "invalid-hex" };
+    return {
+      kind: "var-length",
+      bytes: fieldByteCount(field),
+      length: field.length,
+    };
   }
-  if (field.value !== "" && !isValidFieldValue(field)) return "out of range";
-  return `${FIELD_TYPE_SIZES[field.fieldType]} bytes`;
+  if (field.value !== "" && !isValidFieldValue(field))
+    return { kind: "out-of-range" };
+  return { kind: "fixed-size", bytes: FIELD_TYPE_SIZES[field.fieldType] ?? 0 };
 }
 
-export function fieldValueLabel(fieldType: FieldType): string {
-  if (fieldType === "bytes") return "Value (hex)";
-  if (fieldType === "string") return "Value (ASCII)";
-  return "Value";
-}
-
-export function fieldValuePlaceholder(fieldType: FieldType): string {
-  if (fieldType === "bytes") return "0a 1b 2c";
-  if (fieldType === "string") return "hello";
-  if (fieldType === "float32" || fieldType === "float64") return "1.0";
-  return "0";
-}
-
-/** 64bit 整数は number 入力だと桁が落ちるため text 扱いにする。 */
-export function fieldValueInputType(fieldType: FieldType): "text" | "number" {
-  if (
-    fieldType === "string" ||
-    fieldType === "bytes" ||
-    fieldType === "int64" ||
-    fieldType === "uint64"
-  )
-    return "text";
-  return "number";
+/** 64bit 整数は number 入力だと桁が落ちるため、専用の種別に分けている。 */
+export function fieldValueKind(fieldType: FieldType): FieldValueKind {
+  if (fieldType === "string") return "ascii";
+  if (fieldType === "bytes") return "hex";
+  if (fieldType === "int64" || fieldType === "uint64") return "wide-integer";
+  if (fieldType === "float32" || fieldType === "float64") return "float";
+  return "integer";
 }
 
 /** 固定長ペイロード全体のバイト数。可変長型は宣言された length を使う。 */
