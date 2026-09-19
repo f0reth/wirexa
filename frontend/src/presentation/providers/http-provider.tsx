@@ -59,6 +59,9 @@ export interface RequestContextValue {
   clearSaveError: () => void;
   sendRequest: () => Promise<void>;
   cancelRequest: () => Promise<void>;
+  pickFilePath: () => Promise<string>;
+  guessFormPartContentType: (path: string) => Promise<string>;
+  saveResponseToFile: () => Promise<void>;
   loadRequest: (req: HttpRequest, collectionId: string) => void;
   newRequest: () => void;
   saveCurrentRequest: () => Promise<void>;
@@ -120,6 +123,10 @@ export function HttpProvider(props: { children: JSX.Element }) {
       sendRequest: httpClient.sendRequest,
       cancelRequest: httpClient.cancelRequest,
       updateRequest: httpClient.updateRequest,
+      openFilePicker: httpClient.openFilePicker,
+      guessFormPartContentType: httpClient.guessFormPartContentType,
+      saveResponseBody: httpClient.saveResponseBody,
+      saveResponseBinary: httpClient.saveResponseBinary,
       afterSave: (colId, req) => collectionsState.patchRequest(colId, req),
     },
     createLogger("frontend:http"),

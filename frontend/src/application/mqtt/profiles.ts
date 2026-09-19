@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import type { BrokerProfile } from "../../domain/mqtt/types";
+import { generateId } from "../../infrastructure/id/generator";
 import {
   loadFromStorage,
   saveToStorage,
@@ -8,6 +9,19 @@ import { moveItem } from "../../shared/array";
 import { applyOrder } from "../shared/order";
 
 const PROFILE_ORDER_KEY = "mqtt:profileOrder";
+
+/** 新規作成ダイアログの初期プロファイル。 */
+export function createEmptyProfile(): BrokerProfile {
+  return {
+    id: generateId(),
+    name: "",
+    broker: "mqtt://localhost:1883",
+    clientId: "",
+    username: "",
+    password: "",
+    useTls: false,
+  };
+}
 
 export interface ProfileApi {
   getProfiles(): Promise<BrokerProfile[]>;

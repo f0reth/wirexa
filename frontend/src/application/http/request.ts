@@ -29,6 +29,12 @@ export interface RequestApi {
   sendRequest(req: HttpRequest): Promise<HttpResponse>;
   cancelRequest(id: string): Promise<void>;
   updateRequest(collectionId: string, req: HttpRequest): Promise<void>;
+  /** ネイティブのファイル選択ダイアログ。キャンセル時は空文字を返す。 */
+  openFilePicker(): Promise<string>;
+  /** form-data の file 行に自動付与される Content-Type。判定は Go 側が持つ。 */
+  guessFormPartContentType(path: string): Promise<string>;
+  saveResponseBody(tempFilePath: string, contentType: string): Promise<void>;
+  saveResponseBinary(base64Content: string, contentType: string): Promise<void>;
   afterSave?: (collectionId: string, req: HttpRequest) => void;
 }
 
@@ -157,6 +163,22 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     }
   }
 
+  const pickFilePath = (): Promise<string> => api.openFilePicker();
+
+  const guessFormPartContentType = (path: string): Promise<string> =>
+    api.guessFormPartContentType(path);
+
+  // 切り詰め時は temp ファイル（全文）から、非切り詰めバイナリはメモリ上の base64 から保存する。
+  async function saveResponseToFile(): Promise<void> {
+    const resp = response();
+    if (!resp) return;
+    if (resp.bodyTruncated) {
+      await api.saveResponseBody(resp.tempFilePath, resp.contentType);
+    } else {
+      await api.saveResponseBinary(resp.body, resp.contentType);
+    }
+  }
+
   async function cancelRequest(): Promise<void> {
     const ids = inFlight();
     if (ids.length === 0) return;
@@ -252,6 +274,9 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     clearSaveError: () => setSaveError(null),
     sendRequest,
     cancelRequest,
+    pickFilePath,
+    guessFormPartContentType,
+    saveResponseToFile,
     loadRequest,
     newRequest,
     saveCurrentRequest,

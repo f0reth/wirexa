@@ -56,6 +56,10 @@ function makeApi() {
     },
     cancelRequest: vi.fn(async () => {}),
     updateRequest: vi.fn(async () => {}),
+    openFilePicker: vi.fn(async () => ""),
+    guessFormPartContentType: vi.fn(async () => ""),
+    saveResponseBody: vi.fn(async () => {}),
+    saveResponseBinary: vi.fn(async () => {}),
   };
   return {
     api,
@@ -140,6 +144,70 @@ describe("createRequestState send id", () => {
       expect(state.loading()).toBe(false);
       await state.cancelRequest();
       expect(api.cancelRequest).not.toHaveBeenCalled();
+      dispose();
+    });
+  });
+});
+
+/** 指定のレスポンスを返す API と、それを受け取った state を作る。 */
+function makeStateWithResponse(resp: HttpResponse) {
+  const api: RequestApi = {
+    sendRequest: async () => resp,
+    cancelRequest: vi.fn(async () => {}),
+    updateRequest: vi.fn(async () => {}),
+    openFilePicker: vi.fn(async () => ""),
+    guessFormPartContentType: vi.fn(async () => ""),
+    saveResponseBody: vi.fn(async () => {}),
+    saveResponseBinary: vi.fn(async () => {}),
+  };
+  return { api, state: createRequestState(api, noopLogger) };
+}
+
+describe("createRequestState saveResponseToFile", () => {
+  it("saves a truncated body from the temp file", async () => {
+    await createRoot(async (dispose) => {
+      const { api, state } = makeStateWithResponse({
+        ...makeResponse(),
+        bodyTruncated: true,
+        tempFilePath: "C:/tmp/body.bin",
+        contentType: "application/octet-stream",
+      });
+      await state.sendRequest();
+      await state.saveResponseToFile();
+
+      expect(api.saveResponseBody).toHaveBeenCalledWith(
+        "C:/tmp/body.bin",
+        "application/octet-stream",
+      );
+      expect(api.saveResponseBinary).not.toHaveBeenCalled();
+      dispose();
+    });
+  });
+
+  it("saves a non-truncated body from the in-memory base64", async () => {
+    await createRoot(async (dispose) => {
+      const { api, state } = makeStateWithResponse({
+        ...makeResponse(),
+        body: "AAEC",
+        bodyBase64: true,
+        contentType: "image/png",
+      });
+      await state.sendRequest();
+      await state.saveResponseToFile();
+
+      expect(api.saveResponseBinary).toHaveBeenCalledWith("AAEC", "image/png");
+      expect(api.saveResponseBody).not.toHaveBeenCalled();
+      dispose();
+    });
+  });
+
+  it("does nothing while no response exists", async () => {
+    await createRoot(async (dispose) => {
+      const { api, state } = makeStateWithResponse(makeResponse());
+      await state.saveResponseToFile();
+
+      expect(api.saveResponseBody).not.toHaveBeenCalled();
+      expect(api.saveResponseBinary).not.toHaveBeenCalled();
       dispose();
     });
   });

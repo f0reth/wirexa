@@ -10,7 +10,6 @@ import {
 import { TabList, TabPanel } from "../../../components/ui/tabs";
 import { Textarea } from "../../../components/ui/textarea";
 import type { AuthType, BodyType } from "../../../domain/http/types";
-import { openFilePicker } from "../../../infrastructure/http/client";
 import { AUTH_TYPES, BODY_TYPES } from "../../constants/http";
 import { useHttpRequest } from "../../providers/http-provider";
 import { DocEditor } from "./doc-editor";
@@ -46,6 +45,7 @@ export function RequestEditor() {
     setAuth,
     doc,
     setDoc,
+    pickFilePath,
   } = useHttpRequest();
 
   const [requestTab, setRequestTab] = createSignal("params");
@@ -124,7 +124,7 @@ export function RequestEditor() {
                       type="button"
                       class={styles.fileBrowseButton}
                       onClick={async () => {
-                        const path = await openFilePicker();
+                        const path = await pickFilePath();
                         if (path) {
                           setBodyContent(path);
                         }

@@ -14,11 +14,8 @@ import type {
   FormRowKind,
 } from "../../../domain/http/types";
 import { FORM_ROW_KINDS_BY_BODY_TYPE } from "../../../domain/http/types";
-import {
-  guessFormPartContentType,
-  openFilePicker,
-} from "../../../infrastructure/http/client";
 import { FORM_ROW_KIND_LABELS } from "../../constants/http";
+import { useHttpRequest } from "../../providers/http-provider";
 import styles from "./http.module.css";
 import { JsonBodyEditor } from "./json-body-editor";
 
@@ -31,6 +28,8 @@ interface FormRowEditorProps {
 // form 系ボディの行エディタ。Params/Headers の KeyValueEditor と違い、
 // 値の種別（text/json/file）とパートごとの Content-Type を扱う。
 export function FormRowEditor(props: FormRowEditorProps) {
+  const { pickFilePath, guessFormPartContentType } = useHttpRequest();
+
   // 同時に展開するのは 1 行だけ。Index は位置キーなので行の増減で
   // 展開中の index が別の行を指してしまうのを避ける意味もある。
   const [expanded, setExpanded] = createSignal<number | null>(null);
@@ -65,7 +64,7 @@ export function FormRowEditor(props: FormRowEditorProps) {
     props.bodyType === "form-data" || kindOf(row) === "json";
 
   const browse = async (index: number) => {
-    const path = await openFilePicker();
+    const path = await pickFilePath();
     if (path) update(index, "filePath", path);
   };
 

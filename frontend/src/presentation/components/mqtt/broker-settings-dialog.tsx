@@ -6,25 +6,13 @@ import {
   parseBrokerUrl,
 } from "../../../application/mqtt/broker-url";
 import { isValidProfileDraft } from "../../../application/mqtt/profile-validation";
+import { createEmptyProfile } from "../../../application/mqtt/profiles";
 import { Button } from "../../../components/ui/button";
 import dialog from "../../../components/ui/dialog.module.css";
 import { createFocusTrap } from "../../../components/ui/focus-trap";
 import { Input } from "../../../components/ui/input";
 import type { BrokerProfile } from "../../../domain/mqtt/types";
-import { generateId } from "../../../infrastructure/id/generator";
 import styles from "./broker.module.css";
-
-function createEmptyProfile(): BrokerProfile {
-  return {
-    id: generateId(),
-    name: "",
-    broker: "mqtt://localhost:1883",
-    clientId: "",
-    username: "",
-    password: "",
-    useTls: false,
-  };
-}
 
 export function BrokerSettingsDialog(props: {
   profile?: BrokerProfile;
