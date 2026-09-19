@@ -1,5 +1,11 @@
 import { clsx } from "clsx";
 import { createMemo, createSignal, Show } from "solid-js";
+import {
+  composeBrokerUrl,
+  defaultPort,
+  parseBrokerUrl,
+} from "../../../application/mqtt/broker-url";
+import { isValidProfileDraft } from "../../../application/mqtt/profile-validation";
 import { Button } from "../../../components/ui/button";
 import dialog from "../../../components/ui/dialog.module.css";
 import { createFocusTrap } from "../../../components/ui/focus-trap";
@@ -7,35 +13,6 @@ import { Input } from "../../../components/ui/input";
 import type { BrokerProfile } from "../../../domain/mqtt/types";
 import { generateId } from "../../../infrastructure/id/generator";
 import styles from "./broker.module.css";
-
-function defaultPort(scheme: string): string {
-  const map: Record<string, string> = {
-    mqtt: "1883",
-    mqtts: "8883",
-    tcp: "1883",
-    ws: "9001",
-    wss: "8884",
-  };
-  return map[scheme] ?? "1883";
-}
-
-function parseBrokerUrl(url: string): {
-  scheme: string;
-  host: string;
-  port: string;
-} {
-  const match = url.match(/^(mqtt|mqtts|tcp|ws|wss):\/\/([^:]+)(?::(\d+))?$/);
-  if (!match) return { scheme: "mqtt", host: "localhost", port: "1883" };
-  return {
-    scheme: match[1],
-    host: match[2],
-    port: match[3] ?? defaultPort(match[1]),
-  };
-}
-
-function composeBrokerUrl(scheme: string, host: string, port: string): string {
-  return `${scheme}://${host}:${port}`;
-}
 
 function createEmptyProfile(): BrokerProfile {
   return {
@@ -80,16 +57,13 @@ export function BrokerSettingsDialog(props: {
     setPort(defaultPort(s));
   };
 
-  const isValid = createMemo(() => {
-    const portNum = Number(port());
-    return (
-      draft().name.trim().length > 0 &&
-      host().trim().length > 0 &&
-      Number.isInteger(portNum) &&
-      portNum >= 1 &&
-      portNum <= 65535
-    );
-  });
+  const isValid = createMemo(() =>
+    isValidProfileDraft({
+      name: draft().name,
+      host: host(),
+      port: port(),
+    }),
+  );
 
   const handleSave = () => {
     if (!isValid()) return;

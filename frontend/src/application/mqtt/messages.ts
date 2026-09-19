@@ -1,5 +1,47 @@
 import { createEffect, untrack } from "solid-js";
+import { topicMatches } from "../../domain/mqtt/topic";
 import type { ConnectionStateExt, MqttMessageView } from "./connections";
+
+/** トピックにワイルドカードが含まれるか。含む場合はパターン照合が必要になる。 */
+function hasWildcard(topic: string): boolean {
+  return topic.includes("#") || topic.includes("+");
+}
+
+/**
+ * トピックフィルターの選択肢を作る。
+ * 購読トピックそのものに加え、ワイルドカード購読に一致した実トピックも列挙する。
+ */
+export function collectFilterTopics(
+  subscriptions: readonly { topic: string }[],
+  messages: readonly { topic: string }[],
+): string[] {
+  const result = new Set<string>();
+
+  for (const sub of subscriptions) {
+    result.add(sub.topic);
+    if (hasWildcard(sub.topic)) {
+      for (const msg of messages) {
+        if (topicMatches(sub.topic, msg.topic)) {
+          result.add(msg.topic);
+        }
+      }
+    }
+  }
+
+  return Array.from(result).sort();
+}
+
+/** フィルターが空なら元の配列をそのまま返す（参照の同一性を保つ）。 */
+export function filterMessagesByTopic(
+  messages: MqttMessageView[],
+  filter: string,
+): MqttMessageView[] {
+  if (!filter) return messages;
+  if (hasWildcard(filter)) {
+    return messages.filter((m) => topicMatches(filter, m.topic));
+  }
+  return messages.filter((m) => m.topic === filter);
+}
 
 export function createMessagesState(
   activeConnection: () => ConnectionStateExt | null,

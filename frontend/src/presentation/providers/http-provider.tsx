@@ -12,6 +12,8 @@ import {
 } from "../../application/http/request";
 import type {
   Collection,
+  FormBodyType,
+  FormRow,
   HttpMethod,
   HttpRequest,
   HttpResponse,
@@ -38,6 +40,11 @@ export interface RequestContextValue {
   setParams: (val: KeyValuePair[]) => void;
   body: Accessor<RequestBody>;
   setBody: (val: RequestBody) => void;
+  bodyContent: Accessor<string>;
+  setBodyContent: (content: string) => void;
+  formBodyType: Accessor<FormBodyType | null>;
+  formPairs: Accessor<FormRow[]>;
+  setFormPairs: (rows: FormRow[]) => void;
   auth: Accessor<RequestAuth>;
   setAuth: (val: RequestAuth) => void;
   settings: Accessor<RequestSettings>;

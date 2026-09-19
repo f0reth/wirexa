@@ -2,6 +2,8 @@ import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { Logger } from "../../application/logger";
 import { notify } from "../../application/ui/notifications";
 import type {
+  FormBodyType,
+  FormRow,
   HttpMethod,
   HttpRequest,
   HttpResponse,
@@ -10,9 +12,18 @@ import type {
   RequestBody,
   RequestSettings,
 } from "../../domain/http/types";
-import { DEFAULT_SETTINGS } from "../../domain/http/types";
+import {
+  DEFAULT_SETTINGS,
+  FORM_PAIR_FIELDS,
+  isFormBodyType,
+} from "../../domain/http/types";
 import { generateId } from "../../infrastructure/id/generator";
 import { errorMessage } from "../../shared/error";
+
+const JSON_BODY_DEFAULT = '{\n  "": ""\n}';
+
+// 行が無いときに毎回新しい配列を作らないよう、空配列の同一性を固定する。
+const EMPTY_PAIRS: FormRow[] = [];
 
 export interface RequestApi {
   sendRequest(req: HttpRequest): Promise<HttpResponse>;
@@ -52,6 +63,46 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     string | null
   >(null);
   const [saveError, setSaveError] = createSignal<string | null>(null);
+
+  // 選択中の body type に対応する本文。json だけは未入力時に雛形を返す。
+  const bodyContent = (): string => {
+    const content = body().contents[body().type];
+    if (content === undefined && body().type === "json") {
+      return JSON_BODY_DEFAULT;
+    }
+    return content ?? "";
+  };
+
+  const setBodyContent = (content: string): void => {
+    setBody({
+      ...body(),
+      contents: { ...body().contents, [body().type]: content },
+    });
+  };
+
+  // form 系の行は body の専用フィールドそのものを読み書きする。
+  // 文字列へ畳んで導出し直すと空キー行が直列化で落ちて Add が効かなくなるため、
+  // Params/Headers と同じく実体の state を編集対象にする。
+  const formBodyType = (): FormBodyType | null => {
+    const type = body().type;
+    return isFormBodyType(type) ? type : null;
+  };
+
+  const formField = () => {
+    const type = formBodyType();
+    return type ? FORM_PAIR_FIELDS[type] : null;
+  };
+
+  const formPairs = (): FormRow[] => {
+    const field = formField();
+    return field ? (body()[field] ?? EMPTY_PAIRS) : EMPTY_PAIRS;
+  };
+
+  const setFormPairs = (rows: FormRow[]): void => {
+    const field = formField();
+    if (!field) return;
+    setBody({ ...body(), [field]: rows });
+  };
 
   async function sendRequest(): Promise<void> {
     const m = method();
@@ -182,6 +233,11 @@ export function createRequestState(api: RequestApi, logger: Logger) {
     setParams,
     body,
     setBody,
+    bodyContent,
+    setBodyContent,
+    formBodyType,
+    formPairs,
+    setFormPairs,
     auth,
     setAuth,
     settings,

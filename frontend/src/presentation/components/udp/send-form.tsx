@@ -1,15 +1,24 @@
 import { clsx } from "clsx";
 import { createMemo, For, Show } from "solid-js";
+import {
+  type ByteCountStatus,
+  fieldByteCountLabel,
+  fieldByteCountStatus,
+  fieldValueInputType,
+  fieldValueLabel,
+  fieldValuePlaceholder,
+  isValidFieldValue,
+  isVarLengthFieldType,
+  totalFieldBytes,
+} from "../../../application/udp/field-validation";
 import { notify } from "../../../application/ui/notifications";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
 import {
   ENDIANNESSES,
-  FIELD_TYPE_SIZES,
   FIELD_TYPES,
   type FieldType,
-  isValidNumericFieldValue,
   PAYLOAD_ENCODINGS,
   type PayloadEncoding,
 } from "../../../domain/udp/types";
@@ -17,18 +26,11 @@ import { errorMessage } from "../../../shared/error";
 import { useUdpSend } from "../../providers/udp-provider";
 import styles from "./udp.module.css";
 
-function isValidAscii(value: string): boolean {
-  return [...value].every((c) => (c.codePointAt(0) ?? 0) <= 0x7f);
-}
-
-function isValidHex(value: string): boolean {
-  const cleaned = value.replace(/\s/g, "");
-  return cleaned.length % 2 === 0 && /^[0-9a-fA-F]*$/.test(cleaned);
-}
-
-function hexByteCount(value: string): number {
-  return value.replace(/\s/g, "").length / 2;
-}
+const BYTE_COUNT_CLASSES: Record<ByteCountStatus, string> = {
+  ok: styles.byteCountOk,
+  warn: styles.byteCountWarn,
+  error: styles.byteCountError,
+};
 
 export function SendForm() {
   const {
@@ -50,12 +52,7 @@ export function SendForm() {
     send,
   } = useUdpSend();
 
-  const totalBytes = createMemo(() =>
-    fixedLengthFields.reduce((sum, field) => {
-      const fixedSize = FIELD_TYPE_SIZES[field.fieldType];
-      return sum + (fixedSize !== undefined ? fixedSize : field.length);
-    }, 0),
-  );
+  const totalBytes = createMemo(() => totalFieldBytes(fixedLengthFields));
 
   return (
     <div class={styles.sendForm}>
@@ -122,65 +119,15 @@ export function SendForm() {
 
           <For each={fixedLengthFields}>
             {(field, index) => {
-              const ft = () => field.fieldType;
-              const isVarLength = () => ft() === "string" || ft() === "bytes";
-              const fixedSize = () => FIELD_TYPE_SIZES[ft()];
-
-              const isValueValid = () => {
-                if (ft() === "string") return isValidAscii(field.value);
-                if (ft() === "bytes") return isValidHex(field.value);
-                return isValidNumericFieldValue(field.value, ft());
-              };
-
-              const byteCount = () => {
-                if (ft() === "bytes") return hexByteCount(field.value);
-                return field.value.length;
-              };
-
-              const byteCountClass = () => {
-                if (!isValueValid()) return styles.byteCountError;
-                if (isVarLength() && byteCount() > field.length)
-                  return styles.byteCountWarn;
-                return styles.byteCountOk;
-              };
-
-              const byteCountLabel = () => {
-                if (ft() === "string") {
-                  if (!isValidAscii(field.value)) return "non-ASCII";
-                  return `${byteCount()}/${field.length}`;
-                }
-                if (ft() === "bytes") {
-                  if (!isValidHex(field.value)) return "invalid hex";
-                  return `${byteCount()}/${field.length}`;
-                }
-                if (field.value !== "" && !isValueValid())
-                  return "out of range";
-                return `${fixedSize()} bytes`;
-              };
-
-              const valueLabel = () => {
-                if (ft() === "bytes") return "Value (hex)";
-                if (ft() === "string") return "Value (ASCII)";
-                return "Value";
-              };
-
-              const valuePlaceholder = () => {
-                if (ft() === "bytes") return "0a 1b 2c";
-                if (ft() === "string") return "hello";
-                if (ft() === "float32" || ft() === "float64") return "1.0";
-                return "0";
-              };
-
-              const valueInputType = () => {
-                if (
-                  ft() === "string" ||
-                  ft() === "bytes" ||
-                  ft() === "int64" ||
-                  ft() === "uint64"
-                )
-                  return "text";
-                return "number";
-              };
+              const isVarLength = () => isVarLengthFieldType(field.fieldType);
+              const isValueValid = () => isValidFieldValue(field);
+              const byteCountClass = () =>
+                BYTE_COUNT_CLASSES[fieldByteCountStatus(field)];
+              const byteCountLabel = () => fieldByteCountLabel(field);
+              const valueLabel = () => fieldValueLabel(field.fieldType);
+              const valuePlaceholder = () =>
+                fieldValuePlaceholder(field.fieldType);
+              const valueInputType = () => fieldValueInputType(field.fieldType);
 
               return (
                 <div class={styles.fieldItem}>

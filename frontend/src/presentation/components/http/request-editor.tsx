@@ -9,8 +9,7 @@ import {
 } from "../../../components/ui/select";
 import { TabList, TabPanel } from "../../../components/ui/tabs";
 import { Textarea } from "../../../components/ui/textarea";
-import type { AuthType, BodyType, FormRow } from "../../../domain/http/types";
-import { FORM_PAIR_FIELDS, isFormBodyType } from "../../../domain/http/types";
+import type { AuthType, BodyType } from "../../../domain/http/types";
 import { openFilePicker } from "../../../infrastructure/http/client";
 import { AUTH_TYPES, BODY_TYPES } from "../../constants/http";
 import { useHttpRequest } from "../../providers/http-provider";
@@ -20,11 +19,6 @@ import styles from "./http.module.css";
 import { JsonBodyEditor } from "./json-body-editor";
 import { KeyValueEditor } from "./key-value-editor";
 import { RequestSettingsPanel } from "./request-settings-panel";
-
-const JSON_BODY_DEFAULT = '{\n  "": ""\n}';
-
-// 行が無いときに毎回新しい配列を作らないよう、空配列の同一性を固定する。
-const EMPTY_PAIRS: FormRow[] = [];
 
 const TABS = [
   { value: "params", label: "Params" },
@@ -43,45 +37,16 @@ export function RequestEditor() {
     setHeaders,
     body,
     setBody,
+    bodyContent,
+    setBodyContent,
+    formBodyType,
+    formPairs,
+    setFormPairs,
     auth,
     setAuth,
     doc,
     setDoc,
   } = useHttpRequest();
-
-  const bodyContent = () => {
-    const content = body().contents[body().type];
-    if (content === undefined && body().type === "json") {
-      return JSON_BODY_DEFAULT;
-    }
-    return content ?? "";
-  };
-  const setBodyContent = (content: string) =>
-    setBody({
-      ...body(),
-      contents: { ...body().contents, [body().type]: content },
-    });
-
-  // form 系の行は body の専用フィールドそのものを読み書きする。
-  // 文字列へ畳んで導出し直すと空キー行が直列化で落ちて Add が効かなくなるため、
-  // Params/Headers と同じく実体の state を FormRowEditor に直結させる。
-  const formBodyType = () => {
-    const type = body().type;
-    return isFormBodyType(type) ? type : null;
-  };
-  const formField = () => {
-    const type = formBodyType();
-    return type ? FORM_PAIR_FIELDS[type] : null;
-  };
-  const formPairs = () => {
-    const field = formField();
-    return field ? (body()[field] ?? EMPTY_PAIRS) : EMPTY_PAIRS;
-  };
-  const setFormPairs = (rows: FormRow[]) => {
-    const field = formField();
-    if (!field) return;
-    setBody({ ...body(), [field]: rows });
-  };
 
   const [requestTab, setRequestTab] = createSignal("params");
 
