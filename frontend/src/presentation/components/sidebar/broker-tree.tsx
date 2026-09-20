@@ -59,20 +59,21 @@ export function BrokerTree() {
     }
   };
 
+  // 新規作成では ID がサーバ採番されるため、保存後の戻り値で接続を作る。
   const handleProfileSave = async (profile: BrokerProfile) => {
-    await saveProfile(profile);
+    const saved = await saveProfile(profile);
     setEditingProfile(null);
-    createOfflineConnection(profile);
+    createOfflineConnection(saved);
   };
 
   const handleProfileSaveAndConnect = async (profile: BrokerProfile) => {
-    await saveProfile(profile);
+    const saved = await saveProfile(profile);
     setEditingProfile(null);
-    const existingConn = getConnectionForProfile(profile.id);
+    const existingConn = getConnectionForProfile(saved.id);
     if (existingConn) {
       handleReconnect(existingConn.connectionId);
     } else {
-      handleConnect(profile.id);
+      handleConnect(saved.id);
     }
   };
 

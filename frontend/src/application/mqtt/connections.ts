@@ -125,7 +125,7 @@ export function createConnectionsState(
   onEvent: MqttEventListener,
   persistence: ConnectionPersistence,
   profiles: () => BrokerProfile[],
-  saveProfile: (p: BrokerProfile) => Promise<void>,
+  saveProfile: (p: BrokerProfile) => Promise<BrokerProfile>,
   logger: Logger,
   notifier: Notifier,
   maxMessages: number,

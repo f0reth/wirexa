@@ -444,8 +444,10 @@ const UdpHandler = {
   GetTargets: counted("GetTargets", async () => clone(db.udpTargets)),
 
   SaveTarget: mutates("SaveTarget", (target: UdpTarget) => {
+    const index = db.udpTargets.findIndex((t) => t.id === target.id);
+    // Go 側と同じく、未知の非空 ID は新規作成として受理しない。
+    if (target.id && index < 0) throw new Error(`target not found: ${target.id}`);
     const saved: UdpTarget = { ...target, id: target.id || newId("target") };
-    const index = db.udpTargets.findIndex((t) => t.id === saved.id);
     if (index >= 0) db.udpTargets[index] = saved;
     else db.udpTargets.push(saved);
     return clone(saved);
@@ -487,13 +489,18 @@ const MqttHandler = {
   GetProfiles: counted("GetProfiles", async () => clone(db.mqttProfiles)),
 
   SaveProfile: mutates("SaveProfile", (profile: BrokerProfile) => {
+    const index = db.mqttProfiles.findIndex((p) => p.id === profile.id);
+    // Go 側と同じく、未知の非空 ID は新規作成として受理しない。
+    if (profile.id && index < 0) {
+      throw new Error(`profile not found: ${profile.id}`);
+    }
     const saved: BrokerProfile = {
       ...profile,
       id: profile.id || newId("profile"),
     };
-    const index = db.mqttProfiles.findIndex((p) => p.id === saved.id);
     if (index >= 0) db.mqttProfiles[index] = saved;
     else db.mqttProfiles.push(saved);
+    return clone(saved);
   }),
 
   DeleteProfile: mutates("DeleteProfile", (id: string) => {

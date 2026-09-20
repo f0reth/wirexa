@@ -255,7 +255,7 @@ describe("getProfiles", () => {
 
 describe("saveProfile", () => {
   it("passes all profile fields to the backend", async () => {
-    vi.mocked(Handler.SaveProfile).mockResolvedValue(undefined);
+    vi.mocked(Handler.SaveProfile).mockResolvedValue(makeProfile() as never);
     const profile = makeProfile({
       id: "profile-1",
       name: "Local",
@@ -275,6 +275,14 @@ describe("saveProfile", () => {
       password: "pass",
       useTls: false,
     });
+  });
+
+  it("returns the saved profile from the backend", async () => {
+    // 新規作成では ID がサーバ採番されるため、戻り値をそのまま返す。
+    const saved = makeProfile({ id: "server-generated-id" });
+    vi.mocked(Handler.SaveProfile).mockResolvedValue(saved as never);
+    const result = await saveProfile(makeProfile({ id: "" }));
+    expect(result).toEqual(saved);
   });
 
   it("propagates rejection from the backend", async () => {

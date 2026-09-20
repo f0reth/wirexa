@@ -1,6 +1,5 @@
 import { createSignal } from "solid-js";
 import type { BrokerProfile } from "../../domain/mqtt/types";
-import { generateId } from "../../infrastructure/id/generator";
 import {
   loadFromStorage,
   saveToStorage,
@@ -10,10 +9,10 @@ import { applyOrder } from "../shared/order";
 
 const PROFILE_ORDER_KEY = "mqtt:profileOrder";
 
-/** 新規作成ダイアログの初期プロファイル。 */
+/** 新規作成ダイアログの初期プロファイル。ID はサーバが採番するので空にする。 */
 export function createEmptyProfile(): BrokerProfile {
   return {
-    id: generateId(),
+    id: "",
     name: "",
     broker: "mqtt://localhost:1883",
     clientId: "",
@@ -25,7 +24,8 @@ export function createEmptyProfile(): BrokerProfile {
 
 export interface ProfileApi {
   getProfiles(): Promise<BrokerProfile[]>;
-  saveProfile(profile: BrokerProfile): Promise<void>;
+  /** 保存済みプロファイルを返す。新規作成では ID がサーバ採番されている。 */
+  saveProfile(profile: BrokerProfile): Promise<BrokerProfile>;
   deleteProfile(id: string): Promise<void>;
 }
 
@@ -38,20 +38,23 @@ export function createProfilesState(api: ProfileApi) {
     setProfiles(applyOrder(loaded, order));
   }
 
-  async function saveProfile(profile: BrokerProfile): Promise<void> {
-    await api.saveProfile(profile);
+  // 新規作成では ID がサーバ採番されるため、state と order キーには
+  // 引数ではなく保存結果の ID を使う。
+  async function saveProfile(profile: BrokerProfile): Promise<BrokerProfile> {
+    const saved = await api.saveProfile(profile);
     setProfiles((prev) => {
-      const idx = prev.findIndex((p) => p.id === profile.id);
+      const idx = prev.findIndex((p) => p.id === saved.id);
       const next =
         idx >= 0
-          ? prev.map((p) => (p.id === profile.id ? profile : p))
-          : [...prev, profile];
+          ? prev.map((p) => (p.id === saved.id ? saved : p))
+          : [...prev, saved];
       saveToStorage(
         PROFILE_ORDER_KEY,
         next.map((p) => p.id),
       );
       return next;
     });
+    return saved;
   }
 
   async function deleteProfile(id: string): Promise<void> {

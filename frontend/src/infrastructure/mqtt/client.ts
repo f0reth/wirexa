@@ -62,7 +62,7 @@ export function getProfiles(): Promise<BrokerProfile[]> {
   return GetProfiles() as Promise<BrokerProfile[]>;
 }
 
-export function saveProfile(profile: BrokerProfile): Promise<void> {
+export function saveProfile(profile: BrokerProfile): Promise<BrokerProfile> {
   return SaveProfile({
     id: profile.id,
     name: profile.name,

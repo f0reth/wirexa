@@ -38,7 +38,7 @@ import {
 // --- MqttConnectionContext ---
 export interface ConnectionContextValue {
   profiles: Accessor<BrokerProfile[]>;
-  saveProfile: (p: BrokerProfile) => Promise<void>;
+  saveProfile: (p: BrokerProfile) => Promise<BrokerProfile>;
   deleteProfile: (id: string) => Promise<void>;
   connections: Record<string, ConnectionState>;
   activeConnectionId: Accessor<string | null>;
