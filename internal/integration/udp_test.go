@@ -254,6 +254,36 @@ func TestUDP_TargetCRUD(t *testing.T) {
 	}
 }
 
+// TestUDP_SaveTarget_RejectsTraversalID は RPC 由来のトラバーサル ID が
+// ハンドラ経由で拒否され、ストア外にファイルが作られないことを確認する。
+func TestUDP_SaveTarget_RejectsTraversalID(t *testing.T) {
+	base := t.TempDir()
+	dir := filepath.Join(base, "targets")
+	emitter := newMockEmitter()
+	h := newUDPHandlerWithDir(t, emitter, dir)
+
+	for _, id := range traversalIDs {
+		t.Run(id, func(t *testing.T) {
+			if _, err := h.SaveTarget(udpdomain.UDPTarget{
+				ID:   id,
+				Name: "Attack",
+				Host: "127.0.0.1",
+				Port: 9000,
+			}); err == nil {
+				t.Fatalf("SaveTarget(%q) = nil, want error", id)
+			}
+			if err := h.DeleteTarget(id); err == nil {
+				t.Errorf("DeleteTarget(%q) = nil, want error", id)
+			}
+			if targets := h.GetTargets(); len(targets) != 0 {
+				t.Errorf("expected 0 targets, got %d", len(targets))
+			}
+		})
+	}
+
+	assertNoFilesOutside(t, base, "targets")
+}
+
 // TestUDP_Shutdown は全セッションが停止することを確認する。
 func TestUDP_Shutdown(t *testing.T) {
 	emitter := newMockEmitter()

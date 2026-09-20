@@ -7,12 +7,12 @@ import (
 	"maps"
 	"net"
 	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/listeners"
@@ -362,13 +362,16 @@ func TestMQTT_ProfileCRUD(t *testing.T) {
 		t.Fatalf("expected 0 profiles initially, got %d", len(profiles))
 	}
 
-	profile := mqttdomain.BrokerProfile{
-		ID:     uuid.NewString(),
+	// 新規作成は ID を空で渡し、採番後のプロファイルを受け取る。
+	created, err := h.SaveProfile(mqttdomain.BrokerProfile{
 		Name:   "LocalBroker",
 		Broker: brokerAddr,
-	}
-	if err := h.SaveProfile(profile); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("SaveProfile: %v", err)
+	}
+	if created.ID == "" {
+		t.Fatal("expected server-generated ID, got empty")
 	}
 
 	profiles := h.GetProfiles()
@@ -382,7 +385,7 @@ func TestMQTT_ProfileCRUD(t *testing.T) {
 	// 更新
 	saved := profiles[0]
 	saved.Name = "Updated"
-	if err := h.SaveProfile(saved); err != nil {
+	if _, err := h.SaveProfile(saved); err != nil {
 		t.Fatalf("SaveProfile (update): %v", err)
 	}
 	profiles = h.GetProfiles()
@@ -402,6 +405,35 @@ func TestMQTT_ProfileCRUD(t *testing.T) {
 	if err := h.DeleteProfile("nonexistent"); err == nil {
 		t.Error("expected error for nonexistent profile, got nil")
 	}
+}
+
+// TestMQTT_SaveProfile_RejectsTraversalID は RPC 由来のトラバーサル ID が
+// ハンドラ経由で拒否され、ストア外にファイルが作られないことを確認する。
+func TestMQTT_SaveProfile_RejectsTraversalID(t *testing.T) {
+	base := t.TempDir()
+	dir := filepath.Join(base, "profiles")
+	emitter := newMQTTMockEmitter()
+	h := newMQTTHandlerWithDir(t, emitter, dir)
+
+	for _, id := range traversalIDs {
+		t.Run(id, func(t *testing.T) {
+			if _, err := h.SaveProfile(mqttdomain.BrokerProfile{
+				ID:     id,
+				Name:   "Attack",
+				Broker: brokerAddr,
+			}); err == nil {
+				t.Fatalf("SaveProfile(%q) = nil, want error", id)
+			}
+			if err := h.DeleteProfile(id); err == nil {
+				t.Errorf("DeleteProfile(%q) = nil, want error", id)
+			}
+			if profiles := h.GetProfiles(); len(profiles) != 0 {
+				t.Errorf("expected 0 profiles, got %d", len(profiles))
+			}
+		})
+	}
+
+	assertNoFilesOutside(t, base, "profiles")
 }
 
 // TestMQTT_Shutdown は全接続が切断されることを確認する。
@@ -432,12 +464,11 @@ func TestMQTT_ProfilePersistenceRoundTrip(t *testing.T) {
 
 	// 1 回目: プロファイルを保存
 	h1 := newMQTTHandlerWithDir(t, emitter, dir)
-	profile := mqttdomain.BrokerProfile{
-		ID:     uuid.NewString(),
+	profile, err := h1.SaveProfile(mqttdomain.BrokerProfile{
 		Name:   "PersistProfile",
 		Broker: brokerAddr,
-	}
-	if err := h1.SaveProfile(profile); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("SaveProfile: %v", err)
 	}
 

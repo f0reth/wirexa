@@ -6,8 +6,33 @@ package integration
 
 import (
 	"net"
+	"os"
 	"testing"
 )
+
+// traversalIDs は RPC 経由で持ち込まれうる、ストア外を指す ID の一覧。
+var traversalIDs = []string{
+	"../escaped",
+	"../../../escaped",
+	`..\escaped`,
+	"sub/escaped",
+	"CON",
+}
+
+// assertNoFilesOutside は base 直下に allowed 以外のエントリが無いことを検証する。
+// ストア (base/allowed) の外へファイルが漏れていないことの確認に使う。
+func assertNoFilesOutside(t *testing.T, base, allowed string) {
+	t.Helper()
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		t.Fatalf("ReadDir(%q): %v", base, err)
+	}
+	for _, e := range entries {
+		if e.Name() != allowed {
+			t.Errorf("unexpected entry outside the store: %q", e.Name())
+		}
+	}
+}
 
 // freePort はポート 0 でリッスンして空きポート番号を返す。
 //
