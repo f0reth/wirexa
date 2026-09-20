@@ -116,8 +116,8 @@ func TestCachedStore_Save_GeneratesIDWhenEmpty(t *testing.T) {
 	}
 }
 
-func TestCachedStore_Save_KeepsProvidedID(t *testing.T) {
-	cs := newStore(t, newFakeRepo())
+func TestCachedStore_Save_KeepsExistingID(t *testing.T) {
+	cs := newStore(t, newFakeRepo(item{ID: "x", Name: "Old"}))
 	saved, err := cs.Save(item{ID: "x", Name: "WithID"})
 	if err != nil {
 		t.Fatalf("Save: %v", err)
@@ -125,18 +125,40 @@ func TestCachedStore_Save_KeepsProvidedID(t *testing.T) {
 	if saved.ID != "x" {
 		t.Errorf("ID = %q, want x", saved.ID)
 	}
+	if saved.Name != "WithID" {
+		t.Errorf("Name = %q, want WithID", saved.Name)
+	}
+}
+
+func TestCachedStore_Save_RejectsUnknownID(t *testing.T) {
+	// クライアントが指定した未知の ID は新規作成として受理しない
+	// (ID はそのままファイル名になるため、採番はサーバ側に閉じる)。
+	repo := newFakeRepo()
+	cs := newStore(t, repo)
+
+	_, err := cs.Save(item{ID: "../escaped", Name: "Attack"})
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
+		t.Fatalf("expected NotFoundError, got %T: %v", err, err)
+	}
+	// 存在確認で弾かれるので repo.Save は呼ばれない。
+	if len(repo.saved) != 0 {
+		t.Errorf("repo.Save should not be called, got %v", repo.saved)
+	}
+	if len(cs.GetAll()) != 0 {
+		t.Error("cache should not be updated for an unknown ID")
+	}
 }
 
 func TestCachedStore_Save_RepoError(t *testing.T) {
-	repo := newFakeRepo()
+	repo := newFakeRepo(item{ID: "x", Name: "Old"})
 	repo.saveErr = errors.New("write error")
 	cs := newStore(t, repo)
 	if _, err := cs.Save(item{ID: "x"}); err == nil {
 		t.Fatal("expected error, got nil")
 	}
 	// repo.Save が失敗したらキャッシュは更新されない
-	if len(cs.GetAll()) != 0 {
-		t.Error("cache should not be updated on repo save error")
+	if got := cs.GetAll(); len(got) != 1 || got[0].Name != "Old" {
+		t.Errorf("cache should not be updated on repo save error, got %+v", got)
 	}
 }
 

@@ -112,14 +112,15 @@ func TestTargetService_SaveTarget_NewWithoutID(t *testing.T) {
 	}
 }
 
-func TestTargetService_SaveTarget_NewWithID(t *testing.T) {
+func TestTargetService_SaveTarget_RejectsUnknownID(t *testing.T) {
+	// クライアント指定の未知の ID は新規作成として受理しない。
 	svc, _ := NewTargetService(newTargetRepo())
-	target, err := svc.SaveTarget(domain.UDPTarget{ID: "t99", Name: "WithID", Host: "host", Port: 1234})
-	if err != nil {
-		t.Fatalf("SaveTarget: %v", err)
+	_, err := svc.SaveTarget(domain.UDPTarget{ID: "../escaped", Name: "Attack", Host: "host", Port: 1234})
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
+		t.Fatalf("expected NotFoundError, got %T: %v", err, err)
 	}
-	if target.ID != "t99" {
-		t.Errorf("ID = %q, want t99", target.ID)
+	if len(svc.GetTargets()) != 0 {
+		t.Error("expected 0 targets after rejected save")
 	}
 }
 

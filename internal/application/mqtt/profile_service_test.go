@@ -107,7 +107,8 @@ func TestProfileService_GetProfiles_ReturnsCopy(t *testing.T) {
 
 func TestProfileService_SaveProfile_AddNew(t *testing.T) {
 	svc, _ := NewProfileService(newProfileRepo())
-	p := domain.BrokerProfile{ID: "p1", Name: "NewProfile", Broker: "tcp://localhost:1883"}
+	// 新規作成は ID を空で渡す (ID はサーバ側で採番する)。
+	p := domain.BrokerProfile{Name: "NewProfile", Broker: "tcp://localhost:1883"}
 	if err := svc.SaveProfile(p); err != nil {
 		t.Fatalf("SaveProfile: %v", err)
 	}
@@ -117,6 +118,18 @@ func TestProfileService_SaveProfile_AddNew(t *testing.T) {
 	}
 	if profiles[0].Name != "NewProfile" {
 		t.Errorf("Name = %q, want %q", profiles[0].Name, "NewProfile")
+	}
+}
+
+func TestProfileService_SaveProfile_RejectsUnknownID(t *testing.T) {
+	// クライアント指定の未知の ID は新規作成として受理しない。
+	svc, _ := NewProfileService(newProfileRepo())
+	err := svc.SaveProfile(domain.BrokerProfile{ID: "../escaped", Name: "Attack"})
+	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
+		t.Fatalf("expected NotFoundError, got %T: %v", err, err)
+	}
+	if len(svc.GetProfiles()) != 0 {
+		t.Error("expected 0 profiles after rejected save")
 	}
 }
 
@@ -146,7 +159,8 @@ func TestProfileService_SaveProfile_RepoError(t *testing.T) {
 		saveErr:  errors.New("write error"),
 	}
 	svc, _ := NewProfileService(repo)
-	err := svc.SaveProfile(domain.BrokerProfile{ID: "p1", Name: "X"})
+	// repo まで到達させるため新規作成 (空 ID) で呼ぶ。
+	err := svc.SaveProfile(domain.BrokerProfile{Name: "X"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -221,8 +235,7 @@ func TestProfileService_DeleteProfile_RepoError(t *testing.T) {
 func TestProfileService_MultipleProfiles(t *testing.T) {
 	svc, _ := NewProfileService(newProfileRepo())
 	for _, name := range []string{"Alpha", "Beta", "Gamma"} {
-		id := name + "-id"
-		if err := svc.SaveProfile(domain.BrokerProfile{ID: id, Name: name}); err != nil {
+		if err := svc.SaveProfile(domain.BrokerProfile{Name: name}); err != nil {
 			t.Fatalf("SaveProfile(%q): %v", name, err)
 		}
 	}

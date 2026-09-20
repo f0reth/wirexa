@@ -65,13 +65,19 @@ func (s *CachedStore[T]) GetAll() []T {
 	return result
 }
 
-// Save はアイテムを保存（追加または更新）する。ID が空の場合は UUID を採番する。
+// Save はアイテムを保存する。ID が空なら新規作成として UUID を採番し、
+// 非空ならロード済みの既存アイテムの更新として扱う。
+// クライアント指定の未知の ID は新規作成として受理せず NotFoundError を返す
+// (ID をそのままファイル名にするため、採番はサーバ側に閉じる)。
 // 採番後のアイテムを返す。
 func (s *CachedStore[T]) Save(item T) (T, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.getID(item) == "" {
+	if id := s.getID(item); id == "" {
 		s.setID(&item, uuid.NewString())
+	} else if _, ok := s.items[id]; !ok {
+		var zero T
+		return zero, &cmn.NotFoundError{Resource: s.resource, ID: id}
 	}
 	if err := s.repo.Save(&item); err != nil {
 		var zero T
