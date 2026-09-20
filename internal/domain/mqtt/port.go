@@ -23,6 +23,8 @@ type ProfileRepository interface {
 // ProfileUseCase は MQTT プロファイル管理のユースケース入力ポート。
 type ProfileUseCase interface {
 	GetProfiles() []BrokerProfile
-	SaveProfile(profile BrokerProfile) error
+	// SaveProfile は保存済みプロファイルを返す。新規作成 (空 ID) では
+	// サーバ側で採番した ID が入るため、呼び出し元は戻り値を使う。
+	SaveProfile(profile BrokerProfile) (BrokerProfile, error)
 	DeleteProfile(id string) error
 }

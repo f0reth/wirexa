@@ -14,7 +14,7 @@ export function GetProfiles():Promise<Array<mqttdomain.BrokerProfile>>;
 
 export function Publish(arg1:string,arg2:string,arg3:string,arg4:number,arg5:boolean):Promise<void>;
 
-export function SaveProfile(arg1:mqttdomain.BrokerProfile):Promise<void>;
+export function SaveProfile(arg1:mqttdomain.BrokerProfile):Promise<mqttdomain.BrokerProfile>;
 
 export function Shutdown():Promise<void>;
 

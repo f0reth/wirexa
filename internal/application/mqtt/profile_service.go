@@ -33,10 +33,10 @@ func (s *ProfileService) GetProfiles() []domain.BrokerProfile {
 	return s.store.GetAll()
 }
 
-// SaveProfile はプロファイルを保存（追加または更新）する。
-func (s *ProfileService) SaveProfile(profile domain.BrokerProfile) error {
-	_, err := s.store.Save(profile)
-	return err
+// SaveProfile はプロファイルを保存し、保存済みプロファイルを返す。
+// ID が空の場合は新規作成として採番し、未知の非空 ID は NotFoundError を返す。
+func (s *ProfileService) SaveProfile(profile domain.BrokerProfile) (domain.BrokerProfile, error) {
+	return s.store.Save(profile)
 }
 
 // DeleteProfile はプロファイルを削除する。存在しない ID の場合は NotFoundError を返す。

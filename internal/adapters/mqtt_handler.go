@@ -58,8 +58,9 @@ func (h *MQTTHandler) GetProfiles() []mqttdomain.BrokerProfile {
 	return h.profileSvc.GetProfiles()
 }
 
-// SaveProfile は MQTT ブローカープロファイルを保存する。
-func (h *MQTTHandler) SaveProfile(profile mqttdomain.BrokerProfile) error {
+// SaveProfile は MQTT ブローカープロファイルを保存し、保存済みプロファイルを返す。
+// 新規作成 (空 ID) ではサーバ側で採番した ID が入る。
+func (h *MQTTHandler) SaveProfile(profile mqttdomain.BrokerProfile) (mqttdomain.BrokerProfile, error) {
 	return h.profileSvc.SaveProfile(profile)
 }
 
