@@ -9,40 +9,49 @@ The SolidJS/TypeScript frontend is under `frontend/src/`, with matching architec
 ## Build, Test, and Development Commands
 
 Run development, build, generation, formatting, lint, and test operations through
-Taskfile tasks. Do not invoke the underlying `go`, `bun`, `wails`, or
-`golangci-lint` commands directly when an equivalent task exists.
+Taskfile tasks. Narrower operations the Taskfile does not cover — such as running
+a single test — may call the underlying tool directly, for example
+`go test ./internal/application/http/ -run TestName` or
+`bunx vitest run src/shared/array.test.ts` inside `frontend/`.
 
-- `task setup`: install Go and frontend dependencies plus Playwright Chromium.
-- `task dev`: run the desktop app with frontend hot reload.
-- `task dev:frontend`: run only the Vite development server.
-- `task build`: build the desktop app in `build/bin/`.
-- `task build:release`: build the optimized distributable desktop app.
-- `task build:frontend`: type-check and build the UI.
+- `task dev`: run the desktop app with frontend hot reload (`wails dev`).
+- `task build`: build the desktop app (`wails build`).
 - `task test`: run Go and frontend unit tests.
-- `task test:go:integration`: run backend integration tests.
-- `task test:e2e`: run Playwright UI tests with the fake backend.
-- `task test:e2e:fullstack`: run Playwright tests against the real backend.
-- `task test:all`: run every unit, integration, and E2E test suite.
-- `task lint`: run Go and frontend lint checks.
-- `task format`: format Go and frontend sources.
-- `task typecheck`: type-check the frontend.
-- `task check`: run unit tests, type-checking, and lint checks.
-- `task ci`: run the local CI-equivalent checks except fullstack E2E.
-- `task --list`: show all available tasks, including narrower component tasks.
+- `task lint`: run `go vet`, `golangci-lint`, Biome, and the frontend type check.
+- `task format`: format the frontend with Biome.
+- `task go:test` / `task go:vet` / `task go:lint`: the Go halves of the above.
+- `task go:test:integration`: run backend integration tests (`integration` build tag).
+- `task frontend:install`: install frontend dependencies with bun.
+- `task frontend:tsc`: type-check the frontend.
+- `task frontend:ci`: run the Biome check that CI runs.
+- `task frontend:test:e2e`: run Playwright UI tests with the fake backend.
+- `task frontend:test:e2e:fullstack`: run Playwright tests against the real backend
+  (Windows/local only; not part of CI). Install the browser first with
+  `bun run test:e2e:setup` in `frontend/`.
+- `task licenses`: regenerate `THIRD_PARTY_LICENSES.md`.
+- `task --list`: show all available tasks.
 
-Pass additional tool arguments after `--`, for example `task test:go -- -race`.
-After changing exported Go bindings, run `task generate` and commit the resulting
-`frontend/wailsjs/` updates. Use `task generate:check` to verify that committed
-bindings are current.
+`task go:test` and `task go:vet` require `frontend/dist/index.html` to exist,
+because of the `//go:embed` in `main.go`.
+
+After changing a bound Go struct or handler method, run `task wails:generate` and
+commit the resulting `frontend/wailsjs/` updates; CI fails on stale bindings
+(`git diff --exit-code frontend/wailsjs`). After changing an event name in
+`internal/domain/events.go`, run `task go:generate:events` to regenerate
+`frontend/src/shared/wails-events.ts`; a new event also has to be added to the
+list in `tools/gen-events/main.go`.
 
 ## Coding Style & Naming Conventions
 
-Run `task format` to format Go with `gofumpt` and `goimports` and TypeScript with
-Biome. Follow standard Go naming (`MixedCaps`, short package names) and handle
-errors explicitly. TypeScript uses two-space indentation, double quotes, and
-organized imports. Use kebab-case filenames such as `request-service.ts`; name
-tests `*_test.go`, `*.test.ts`, or `*.spec.ts` according to their runner. Keep
-protocol-specific code in its HTTP, MQTT, UDP, or OpenAPI package.
+Run `task format` to format TypeScript with Biome. Go formatting is enforced by
+golangci-lint, which has `gofumpt` and `goimports` enabled as formatters, so
+`task go:lint` reports formatting problems as issues. Follow standard Go naming
+(`MixedCaps`, short package names) and handle errors explicitly. TypeScript uses
+two-space indentation, double quotes, and organized imports. Use kebab-case
+filenames such as `request-service.ts`; name tests `*_test.go`, `*.test.ts`, or
+`*.spec.ts` according to their runner. Keep protocol-specific code in its HTTP,
+MQTT, UDP, or OpenAPI package. Write code comments and commit messages in
+Japanese.
 
 ## Testing Guidelines
 
