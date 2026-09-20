@@ -63,6 +63,13 @@ func (s *JSONStore[T]) Load() ([]T, error) {
 			}
 			continue
 		}
+		// ファイルの中身に書かれた ID はそのままドメイン型とキャッシュのキーになる。
+		// ストア外を指す ID でキャッシュを汚さないよう、規則に反する項目はスキップする
+		// (JSON としては妥当なので破損ファイルと違い .corrupt へは退避しない)。
+		if err := domain.ValidateID(s.getID(&item)); err != nil {
+			s.logf("json_store: skipping item with unsafe id", "file", e.Name(), "error", err)
+			continue
+		}
 		items = append(items, item)
 	}
 	return items, nil
@@ -89,14 +96,37 @@ func (s *JSONStore[T]) logf(msg string, args ...any) {
 	}
 }
 
+// resolve は ID からストア内のファイルパスを組み立てる。
+// ID 規則の検証とパス封じ込めの 2 段構えで、規則の取りこぼしがあっても
+// ストア外を指すパスを返さないようにする。
+func (s *JSONStore[T]) resolve(id string) (string, error) {
+	if err := domain.ValidateID(id); err != nil {
+		return "", err
+	}
+	name := id + ".json"
+	dest := filepath.Join(s.dir, name)
+	rel, err := filepath.Rel(s.dir, dest)
+	if err != nil || rel != name {
+		return "", &domain.ValidationError{Field: "id", Message: "resolves outside the store directory"}
+	}
+	return dest, nil
+}
+
 // Save はアイテムを JSON ファイルに書き込む。
 // tmp ファイル経由の原子的置き換えで書き込み中断によるデータ破損を防ぐ。
 func (s *JSONStore[T]) Save(item *T) error {
-	dest := filepath.Join(s.dir, s.getID(item)+".json")
+	dest, err := s.resolve(s.getID(item))
+	if err != nil {
+		return err
+	}
 	return WriteJSONFile(dest, item, 0o600)
 }
 
 // Delete はアイテムの JSON ファイルを削除する。
 func (s *JSONStore[T]) Delete(id string) error {
-	return os.Remove(filepath.Join(s.dir, id+".json"))
+	dest, err := s.resolve(id)
+	if err != nil {
+		return err
+	}
+	return os.Remove(dest)
 }

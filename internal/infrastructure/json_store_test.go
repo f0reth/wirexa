@@ -2,9 +2,12 @@ package infrastructure
 
 import (
 	"encoding/json/v2"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/f0reth/Wirexa/internal/domain"
 )
 
 type testItem struct {
@@ -245,6 +248,119 @@ func TestJSONStore_Save_CreatesValidJSON(t *testing.T) {
 	}
 	if loaded.ID != "json1" || loaded.Name != "JSON Test" {
 		t.Errorf("loaded = %+v", loaded)
+	}
+}
+
+// attackIDs はストア外のファイルへ到達しようとする ID の一覧。
+var attackIDs = []struct {
+	name string
+	id   string
+}{
+	{"parent traversal", "../escaped"},
+	{"deep traversal", "../../escaped"},
+	{"windows traversal", `..\escaped`},
+	{"absolute path", "/tmp/escaped"},
+	{"drive path", `C:\escaped`},
+	{"subdir", "sub/escaped"},
+	{"empty", ""},
+	{"dot dot", ".."},
+	{"reserved device", "CON"},
+	{"reserved device with ext", "com1.backup"},
+}
+
+func TestJSONStore_Save_RejectsUnsafeID(t *testing.T) {
+	for _, tc := range attackIDs {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			dir := filepath.Join(base, "store")
+			store, err := NewJSONStore(dir, func(item *testItem) string { return item.ID })
+			if err != nil {
+				t.Fatalf("NewJSONStore: %v", err)
+			}
+
+			item := testItem{ID: tc.id, Name: "Attack"}
+			err = store.Save(&item)
+			if _, ok := errors.AsType[*domain.ValidationError](err); !ok {
+				t.Fatalf("Save(%q) = %v (%T), want *domain.ValidationError", tc.id, err, err)
+			}
+
+			// ストアの親ディレクトリにファイルが作られていない。
+			entries, err := os.ReadDir(base)
+			if err != nil {
+				t.Fatalf("ReadDir: %v", err)
+			}
+			if len(entries) != 1 || entries[0].Name() != "store" {
+				t.Errorf("unexpected entries outside the store: %v", entries)
+			}
+			// ストア内にも何も書かれていない。
+			inner, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatalf("ReadDir(store): %v", err)
+			}
+			if len(inner) != 0 {
+				t.Errorf("expected empty store, got %v", inner)
+			}
+		})
+	}
+}
+
+func TestJSONStore_Delete_RejectsUnsafeID(t *testing.T) {
+	for _, tc := range attackIDs {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			dir := filepath.Join(base, "store")
+			store, err := NewJSONStore(dir, func(item *testItem) string { return item.ID })
+			if err != nil {
+				t.Fatalf("NewJSONStore: %v", err)
+			}
+
+			// ストア外に事前配置したファイルが削除されないことを確認する。
+			outside := filepath.Join(base, "escaped.json")
+			if werr := os.WriteFile(outside, []byte(`{"id":"escaped"}`), 0o600); werr != nil {
+				t.Fatalf("write outside file: %v", werr)
+			}
+
+			err = store.Delete(tc.id)
+			if _, ok := errors.AsType[*domain.ValidationError](err); !ok {
+				t.Fatalf("Delete(%q) = %v (%T), want *domain.ValidationError", tc.id, err, err)
+			}
+			if _, statErr := os.Stat(outside); statErr != nil {
+				t.Errorf("file outside the store should survive: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestJSONStore_Load_SkipsUnsafeID(t *testing.T) {
+	store := newTestStore(t)
+	dir := store.dir
+
+	// 外部で作られた「中身の ID が不正」なファイルを混在させる。
+	if err := os.WriteFile(
+		filepath.Join(dir, "evil.json"),
+		[]byte(`{"id":"../escaped","name":"Evil"}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("write evil.json: %v", err)
+	}
+	valid := testItem{ID: "good", Name: "Valid"}
+	if err := store.Save(&valid); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	items, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item (unsafe id skipped), got %d: %+v", len(items), items)
+	}
+	if items[0].ID != "good" {
+		t.Errorf("loaded item ID = %q, want good", items[0].ID)
+	}
+	// 破損ファイルではないので退避はしない。
+	if _, statErr := os.Stat(filepath.Join(dir, "evil.json")); statErr != nil {
+		t.Errorf("evil.json should be left in place: %v", statErr)
 	}
 }
 
