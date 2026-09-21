@@ -18,9 +18,44 @@ const (
 	testReqName      = "Req"
 )
 
+// inMemoryRepo はコレクションリポジトリのフェイク。
+// failSave / failDelete に ID を登録すると、その ID の書き込みだけを失敗させられる。
+// saves は Save が成功した順にコレクション ID を記録し、書き込み順序の検証に使う。
+// 保存・読み出しでディープコピーを取るのは、実ファイルと同じく呼び出し側の
+// オブジェクトと保存済みの内容が共有されないようにするため。
 type inMemoryRepo struct {
 	collections map[string]*domain.Collection
+	failSave    map[string]error
+	failDelete  map[string]error
+	saves       []string
 	mu          sync.Mutex
+}
+
+// newFakeRepo は cols を保存済みとして持つ inMemoryRepo を生成する。
+func newFakeRepo(cols ...*domain.Collection) *inMemoryRepo {
+	r := &inMemoryRepo{
+		collections: make(map[string]*domain.Collection, len(cols)),
+		failSave:    map[string]error{},
+		failDelete:  map[string]error{},
+	}
+	for _, c := range cols {
+		r.collections[c.ID] = c.Clone()
+	}
+	return r
+}
+
+// snapshot は保存済みコレクションの写しを返す。存在しない場合は nil。
+func (r *inMemoryRepo) snapshot(id string) *domain.Collection {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.collections[id].Clone()
+}
+
+// saveOrder は Save が成功した順に並んだコレクション ID を返す。
+func (r *inMemoryRepo) saveOrder() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string{}, r.saves...)
 }
 
 type inMemoryLayoutRepo struct {
@@ -69,14 +104,20 @@ func (r *inMemoryRepo) Load() ([]domain.Collection, error) {
 func (r *inMemoryRepo) Save(c *domain.Collection) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	cp := *c
-	r.collections[c.ID] = &cp
+	if err := r.failSave[c.ID]; err != nil {
+		return err
+	}
+	r.saves = append(r.saves, c.ID)
+	r.collections[c.ID] = c.Clone()
 	return nil
 }
 
 func (r *inMemoryRepo) Delete(id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := r.failDelete[id]; err != nil {
+		return err
+	}
 	delete(r.collections, id)
 	return nil
 }
