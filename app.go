@@ -148,7 +148,7 @@ func (a *App) initialize(ctx context.Context) error {
 		return fmt.Errorf("failed to create collection store: %w", err)
 	}
 	layoutRepo := httpinfra.NewSidebarLayoutRepository(filepath.Join(configDir, wirexaConfigDir, "sidebar_layout.json"))
-	collSvc, err := httpapp.NewCollectionService(collRepo, layoutRepo)
+	collSvc, err := httpapp.NewCollectionService(collRepo, layoutRepo, logger)
 	if err != nil {
 		return fmt.Errorf("failed to initialize collections: %w", err)
 	}
