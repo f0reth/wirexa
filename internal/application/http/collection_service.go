@@ -385,11 +385,14 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 		return &cmn.NotFoundError{Resource: cmn.ResourceParent, ID: targetParentID}
 	}
 
+	// 移動先を先に書いてから移動元を書く。途中でプロセスが消えると巻き戻しは
+	// 走らないが、この順序なら残骸は「両方に存在する」重複であり、起動時に回収できる。
+	// 先に移動元を書くとアイテムの喪失になり、これは検出も回収もできない。
 	uow := s.begin()
-	uow.SaveCollection(src, srcNext)
 	if !sameCollection {
 		uow.SaveCollection(dst, dstNext)
 	}
+	uow.SaveCollection(src, srcNext)
 	if err := uow.Err(); err != nil {
 		uow.Rollback()
 		return err
@@ -471,11 +474,12 @@ func (s *CollectionService) MoveItemToSidebar(sourceCollectionID, itemID string,
 	srcNext.RemoveNode(itemID)
 	rootNext.AppendItem("", item)
 
+	// MoveItem と同じ理由で __root__ を先に書いてから移動元を書く。
 	uow := s.begin()
-	uow.SaveCollection(src, srcNext)
 	if !fromRoot {
 		uow.SaveCollection(root, rootNext)
 	}
+	uow.SaveCollection(src, srcNext)
 	if err := uow.Err(); err != nil {
 		uow.Rollback()
 		return err

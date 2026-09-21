@@ -56,6 +56,13 @@ func newFakeRepo(cols ...*domain.Collection) *inMemoryRepo {
 	return r
 }
 
+// failSaveFromNth は id への n 回目以降の Save を失敗させる。
+func (r *inMemoryRepo) failSaveFromNth(id string, n int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.failSaveFrom[id] = n
+}
+
 // failSaveAlways は id への Save を常に失敗させる。
 func (r *inMemoryRepo) failSaveAlways(id string) {
 	r.mu.Lock()
@@ -1182,6 +1189,16 @@ func TestCollectionService_ConcurrentReadWrite(t *testing.T) {
 
 // --- copy-on-write: 保存失敗時にキャッシュもディスクも変わらない ---
 
+// newSvcWithLogger は logger 付きで CollectionService を組み立てる。
+func newSvcWithLogger(t *testing.T, repo *inMemoryRepo, logger cmn.Logger) *CollectionService {
+	t.Helper()
+	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{}, logger)
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	return svc
+}
+
 // newSvcWithRepo は失敗注入できるフェイクリポジトリから CollectionService を組み立てる。
 func newSvcWithRepo(t *testing.T, repo *inMemoryRepo, layoutRepo *inMemoryLayoutRepo) *CollectionService {
 	t.Helper()
@@ -1371,5 +1388,81 @@ func TestCollectionService_MoveSidebarEntry_SaveError_LeavesLayoutUnchanged(t *t
 	after := layoutRepo.snapshot()
 	if len(after) != len(before) || after[0].ID != c1.ID {
 		t.Errorf("layout = %v, want unchanged %v", after, before)
+	}
+}
+
+// --- 書き込み順序: 追加してから削除 ---
+
+// lastSaves は保存順の末尾 n 件を返す。準備段階の書き込みを除いて検証するために使う。
+func lastSaves(repo *inMemoryRepo, n int) []string {
+	order := repo.saveOrder()
+	if len(order) < n {
+		return order
+	}
+	return order[len(order)-n:]
+}
+
+func TestCollectionService_MoveItem_AcrossCollections_WritesTargetFirst(t *testing.T) {
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
+	src := mustCreate(t, svc, "Src")
+	dst := mustCreate(t, svc, "Dst")
+	if _, err := svc.AddRequest(src.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+
+	if err := svc.MoveItem(src.ID, "r1", dst.ID, "", -1); err != nil {
+		t.Fatalf("MoveItem: %v", err)
+	}
+	// クラッシュ時の残骸が喪失ではなく重複になることの根拠なので順序を直接固定する。
+	got := lastSaves(repo, 2)
+	if len(got) != 2 || got[0] != dst.ID || got[1] != src.ID {
+		t.Errorf("save order = %v, want [target source] = [%s %s]", got, dst.ID, src.ID)
+	}
+}
+
+func TestCollectionService_MoveItemToSidebar_WritesRootFirst(t *testing.T) {
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
+	col := mustCreate(t, svc, "Col")
+	if _, err := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+
+	if err := svc.MoveItemToSidebar(col.ID, "r1", 0); err != nil {
+		t.Fatalf("MoveItemToSidebar: %v", err)
+	}
+	got := lastSaves(repo, 2)
+	if len(got) != 2 || got[0] != domain.RootCollectionID || got[1] != col.ID {
+		t.Errorf("save order = %v, want [%s %s]", got, domain.RootCollectionID, col.ID)
+	}
+}
+
+func TestCollectionService_MoveItem_RollbackFailure_ReturnsOriginalErrorAndLogs(t *testing.T) {
+	repo := newFakeRepo()
+	logger := &recordingLogger{}
+	svc := newSvcWithLogger(t, repo, logger)
+	src := mustCreate(t, svc, "Src")
+	dst := mustCreate(t, svc, "Dst")
+	if _, err := svc.AddRequest(src.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+
+	// 移動先の書き込みは通り、移動元の書き込みと移動先の巻き戻しが失敗する状況を作る。
+	// 移動先は作成時とこの移動で2回書かれるので、3回目 (巻き戻し) から失敗させる。
+	repo.failSaveFromNth(dst.ID, 3)
+	repo.failSaveAlways(src.ID)
+	logger.errors = 0
+
+	err := svc.MoveItem(src.ID, "r1", dst.ID, "", -1)
+	if !errors.Is(err, errFakeSave) {
+		t.Fatalf("MoveItem error = %v, want the original save error", err)
+	}
+	if logger.errors == 0 {
+		t.Error("rollback failure was not logged")
+	}
+	// 巻き戻しに失敗してもキャッシュは操作前のまま (差し替えは永続化成功後のみ)。
+	if _, _, ok := findColItem(t, svc, src.ID, "r1"); !ok {
+		t.Error("r1 disappeared from the source collection in the cache")
 	}
 }
