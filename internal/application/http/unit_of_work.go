@@ -24,6 +24,11 @@ type unitOfWork struct {
 	err    error
 }
 
+// begin は CollectionService のリポジトリとロガーを束ねた unitOfWork を開始する。
+func (s *CollectionService) begin() *unitOfWork {
+	return &unitOfWork{repo: s.repo, logger: s.logger}
+}
+
 // SaveCollection は next を保存する。prev は保存前の内容で、nil の場合 (新規作成) の
 // 巻き戻しは削除になる。prev は巻き戻しでそのまま書き戻すため、呼び出し側は以後
 // prev を変更してはならない (キャッシュ上の現行オブジェクトをそのまま渡す)。

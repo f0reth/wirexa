@@ -44,8 +44,8 @@ func assertMigrated(t *testing.T, req *domain.HTTPRequest, wantKeys ...string) {
 // リクエストが、読み込み時にフォーム行へ復元されることを確認する。
 // 復元し損ねるとフロントには行が無いように見え、autosave で旧データが消える。
 func TestCollectionService_MigratesLegacyFormBodies(t *testing.T) {
-	repo := &inMemoryRepo{collections: map[string]*domain.Collection{
-		"col1": {
+	repo := newFakeRepo(
+		&domain.Collection{
 			ID:   "col1",
 			Name: "Col",
 			Items: []*domain.TreeItem{
@@ -77,7 +77,7 @@ func TestCollectionService_MigratesLegacyFormBodies(t *testing.T) {
 				},
 			},
 		},
-		domain.RootCollectionID: {
+		&domain.Collection{
 			ID:   domain.RootCollectionID,
 			Name: domain.RootCollectionID,
 			Items: []*domain.TreeItem{
@@ -89,9 +89,9 @@ func TestCollectionService_MigratesLegacyFormBodies(t *testing.T) {
 				},
 			},
 		},
-	}}
+	)
 
-	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
+	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{}, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}

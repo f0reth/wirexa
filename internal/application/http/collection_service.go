@@ -23,19 +23,36 @@ const (
 // CollectionService はコレクション管理ユースケースを提供する。
 // サイドバーレイアウトの操作は SidebarLayoutService に委譲し、
 // 自身はコレクションキャッシュ用のロック(mu)のみを保持する。
+//
+// 変更系メソッドは copy-on-write で動く。キャッシュ上のコレクションを直接
+// 書き換えず、Clone したコピーへ変更を適用し、永続化がすべて成功してから
+// キャッシュのエントリを丸ごと差し替える。これによりエラーを返した操作は
+// メモリ上にも何も残さない。
+//
+// ロック順序は CollectionService.mu → SidebarLayoutService.mu の一方向とする。
+// 逆向き（レイアウトロックを保持したままコレクションロックを取る）経路を
+// 作ってはならない。レイアウト突合に必要なコレクション情報は、レイアウト操作を
+// 始める前に読み出しておく。
 type CollectionService struct {
 	repo   domain.CollectionRepository
 	layout *SidebarLayoutService
+	logger cmn.Logger
 	cache  map[string]*domain.Collection
 	mu     sync.RWMutex
 }
 
 // NewCollectionService は CollectionService を生成する。
 // コンストラクタ内でリポジトリからコレクションを読み込む。
-func NewCollectionService(repo domain.CollectionRepository, layoutRepo domain.SidebarLayoutRepository) (*CollectionService, error) {
+// logger は nil を許容し、その場合 best-effort な処理の失敗記録をスキップする。
+func NewCollectionService(
+	repo domain.CollectionRepository,
+	layoutRepo domain.SidebarLayoutRepository,
+	logger cmn.Logger,
+) (*CollectionService, error) {
 	svc := &CollectionService{
 		repo:   repo,
 		layout: NewSidebarLayoutService(layoutRepo),
+		logger: logger,
 		cache:  make(map[string]*domain.Collection),
 	}
 	cols, err := repo.Load()
@@ -112,59 +129,68 @@ func (s *CollectionService) CreateCollection(name string) (domain.Collection, er
 	if strings.TrimSpace(name) == "" {
 		return domain.Collection{}, &cmn.ValidationError{Field: "name", Message: cmn.MsgRequired}
 	}
-	c := domain.Collection{
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	c := &domain.Collection{
 		ID:    uuid.NewString(),
 		Name:  name,
 		Items: []*domain.TreeItem{},
 	}
-	if err := s.repo.Save(&c); err != nil {
-		return domain.Collection{}, fmt.Errorf("failed to save collection: %w", err)
+	uow := s.begin()
+	uow.SaveCollection(nil, c)
+	if err := uow.Err(); err != nil {
+		uow.Rollback()
+		return domain.Collection{}, err
 	}
-	s.mu.Lock()
-	s.cache[c.ID] = &c
-	s.mu.Unlock()
+	s.cache[c.ID] = c
 
 	// レイアウトファイルに末尾エントリを追加する。
 	if err := s.layout.Update(layoutAppend(domain.SidebarEntry{Kind: sidebarKindCollection, ID: c.ID})); err != nil {
-		return domain.Collection{}, fmt.Errorf("failed to update sidebar layout: %w", err)
+		return domain.Collection{}, err
 	}
-	return c, nil
+	return *c, nil
 }
 
 // DeleteCollection は ID でコレクションを削除する。
 func (s *CollectionService) DeleteCollection(id string) error {
-	s.mu.RLock()
-	if _, ok := s.cache[id]; !ok {
-		s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	c, ok := s.cache[id]
+	if !ok {
 		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: id}
 	}
-	s.mu.RUnlock()
-
-	if err := s.repo.Delete(id); err != nil {
-		return fmt.Errorf("failed to delete collection: %w", err)
+	uow := s.begin()
+	uow.DeleteCollection(c)
+	if err := uow.Err(); err != nil {
+		uow.Rollback()
+		return err
 	}
-	s.mu.Lock()
 	delete(s.cache, id)
-	s.mu.Unlock()
 
-	if err := s.layout.Update(layoutRemove(sidebarKindCollection, id)); err != nil {
-		return fmt.Errorf("failed to update sidebar layout: %w", err)
-	}
-	return nil
+	return s.layout.Update(layoutRemove(sidebarKindCollection, id))
 }
 
 // RenameCollection はコレクション名を変更する。
 func (s *CollectionService) RenameCollection(id, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	c, ok := s.cache[id]
 	if !ok {
 		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: id}
 	}
-	c.Name = name
-	if err := s.repo.Save(c); err != nil {
-		return fmt.Errorf("failed to save collection: %w", err)
+	next := c.Clone()
+	next.Name = name
+
+	uow := s.begin()
+	uow.SaveCollection(c, next)
+	if err := uow.Err(); err != nil {
+		uow.Rollback()
+		return err
 	}
+	s.cache[id] = next
 	return nil
 }
 
@@ -202,23 +228,7 @@ func (s *CollectionService) AddRequest(collectionID, parentID string, req domain
 }
 
 // addItem は組み立て済みの TreeItem をコレクションへ追加し、必要ならサイドバーにも反映する。
-// キャッシュ更新はロック区間内で完結させ、レイアウト追加はロック解放後に委譲する
-// (レイアウトロックとのネストによるデッドロックを避けるため)。
 func (s *CollectionService) addItem(collectionID, parentID string, item *domain.TreeItem) error {
-	if err := s.appendItemToCache(collectionID, parentID, item); err != nil {
-		return err
-	}
-	// root コレクションのルート直下に追加した場合、サイドバーレイアウトにも追加する。
-	if collectionID == domain.RootCollectionID && parentID == "" {
-		if err := s.layout.Update(layoutAppend(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID})); err != nil {
-			return fmt.Errorf("failed to update sidebar layout: %w", err)
-		}
-	}
-	return nil
-}
-
-// appendItemToCache はロックを取り、キャッシュへ item を追加して永続化する。
-func (s *CollectionService) appendItemToCache(collectionID, parentID string, item *domain.TreeItem) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -226,11 +236,22 @@ func (s *CollectionService) appendItemToCache(collectionID, parentID string, ite
 	if !ok {
 		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: collectionID}
 	}
-	if !c.AppendItem(parentID, item) {
+	next := c.Clone()
+	if !next.AppendItem(parentID, item) {
 		return &cmn.NotFoundError{Resource: cmn.ResourceParent, ID: parentID}
 	}
-	if err := s.repo.Save(c); err != nil {
-		return fmt.Errorf("failed to save collection: %w", err)
+
+	uow := s.begin()
+	uow.SaveCollection(c, next)
+	if err := uow.Err(); err != nil {
+		uow.Rollback()
+		return err
+	}
+	s.cache[collectionID] = next
+
+	// root コレクションのルート直下に追加した場合、サイドバーレイアウトにも追加する。
+	if collectionID == domain.RootCollectionID && parentID == "" {
+		return s.layout.Update(layoutAppend(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID}))
 	}
 	return nil
 }
@@ -245,7 +266,8 @@ func (s *CollectionService) UpdateRequest(collectionID string, req domain.HTTPRe
 		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: collectionID}
 	}
 
-	node, _, ok := c.FindNode(req.ID)
+	next := c.Clone()
+	node, _, ok := next.FindNode(req.ID)
 	if !ok || node.Type != domain.ItemTypeRequest {
 		return &cmn.NotFoundError{Resource: cmn.ResourceRequest, ID: req.ID}
 	}
@@ -254,9 +276,13 @@ func (s *CollectionService) UpdateRequest(collectionID string, req domain.HTTPRe
 	req.Body.DropFileContents()
 	node.Request = &req
 
-	if err := s.repo.Save(c); err != nil {
-		return fmt.Errorf("failed to save collection: %w", err)
+	uow := s.begin()
+	uow.SaveCollection(c, next)
+	if err := uow.Err(); err != nil {
+		uow.Rollback()
+		return err
 	}
+	s.cache[collectionID] = next
 	return nil
 }
 
@@ -270,7 +296,8 @@ func (s *CollectionService) RenameItem(collectionID, itemID, name string) error 
 		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: collectionID}
 	}
 
-	node, _, ok := c.FindNode(itemID)
+	next := c.Clone()
+	node, _, ok := next.FindNode(itemID)
 	if !ok {
 		return &cmn.NotFoundError{Resource: sidebarKindItem, ID: itemID}
 	}
@@ -280,9 +307,13 @@ func (s *CollectionService) RenameItem(collectionID, itemID, name string) error 
 		node.Request.Name = name
 	}
 
-	if err := s.repo.Save(c); err != nil {
-		return fmt.Errorf("failed to save collection: %w", err)
+	uow := s.begin()
+	uow.SaveCollection(c, next)
+	if err := uow.Err(); err != nil {
+		uow.Rollback()
+		return err
 	}
+	s.cache[collectionID] = next
 	return nil
 }
 
@@ -302,14 +333,24 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: targetCollectionID}
 	}
 
-	item, _, ok := src.FindNode(itemID)
+	// 同一コレクション内移動では1つのクローンを src/dst 兼用にする。
+	// コレクションを跨ぐ場合は両方をクローンし、src のクローンから外したノードを
+	// dst のクローンへ挿入する。
+	sameCollection := sourceCollectionID == targetCollectionID
+	srcNext := src.Clone()
+	dstNext := srcNext
+	if !sameCollection {
+		dstNext = dst.Clone()
+	}
+
+	item, _, ok := srcNext.FindNode(itemID)
 	if !ok {
 		return &cmn.NotFoundError{Resource: sidebarKindItem, ID: itemID}
 	}
 
 	// 挿入先を RemoveNode の前に検証する。失敗時はソースを一切変更しない (#6)。
 	if targetParentID != "" {
-		parent, _, ok := dst.FindNode(targetParentID)
+		parent, _, ok := dstNext.FindNode(targetParentID)
 		if !ok || parent.Type != domain.ItemTypeFolder {
 			return &cmn.NotFoundError{Resource: cmn.ResourceParent, ID: targetParentID}
 		}
@@ -320,12 +361,12 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 	}
 
 	// 同一コレクション内移動の場合、削除前に挿入先インデックスを補正する。
-	if sourceCollectionID == targetCollectionID && position > 0 {
+	if sameCollection && position > 0 {
 		var targetItems []*domain.TreeItem
 		if targetParentID == "" {
-			targetItems = dst.Items
+			targetItems = dstNext.Items
 		} else {
-			targetNode, _, ok := dst.FindNode(targetParentID)
+			targetNode, _, ok := dstNext.FindNode(targetParentID)
 			if ok {
 				targetItems = targetNode.Children
 			}
@@ -338,20 +379,23 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 		}
 	}
 
-	src.RemoveNode(itemID)
+	srcNext.RemoveNode(itemID)
 
-	if !dst.InsertItem(targetParentID, item, position) {
+	if !dstNext.InsertItem(targetParentID, item, position) {
 		return &cmn.NotFoundError{Resource: cmn.ResourceParent, ID: targetParentID}
 	}
 
-	if sourceCollectionID != targetCollectionID {
-		if err := s.repo.Save(src); err != nil {
-			return fmt.Errorf("failed to save source collection: %w", err)
-		}
+	uow := s.begin()
+	uow.SaveCollection(src, srcNext)
+	if !sameCollection {
+		uow.SaveCollection(dst, dstNext)
 	}
-	if err := s.repo.Save(dst); err != nil {
-		return fmt.Errorf("failed to save target collection: %w", err)
+	if err := uow.Err(); err != nil {
+		uow.Rollback()
+		return err
 	}
+	s.cache[sourceCollectionID] = srcNext
+	s.cache[targetCollectionID] = dstNext
 	return nil
 }
 
@@ -398,40 +442,46 @@ func (s *CollectionService) MoveSidebarEntry(kind, id string, position int) erro
 
 // MoveItemToSidebar はアイテムを指定コレクションから __root__ へ移動し、
 // サイドバーレイアウトの指定位置に挿入する。
-// コレクション更新（mu）を終えてロックを解放した後にレイアウト挿入を委譲する。
-// 2つの操作の間に他ゴルーチンの割り込みが入り得る点は許容している。
 func (s *CollectionService) MoveItemToSidebar(sourceCollectionID, itemID string, sidebarPosition int) error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	src, ok := s.cache[sourceCollectionID]
 	if !ok {
-		s.mu.Unlock()
 		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: sourceCollectionID}
 	}
 	root, ok := s.cache[domain.RootCollectionID]
 	if !ok {
-		s.mu.Unlock()
 		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: domain.RootCollectionID}
 	}
 
-	item, _, ok := src.FindNode(itemID)
+	// 移動元が __root__ 自身の場合は1つのクローンを src/root 兼用にする。
+	fromRoot := sourceCollectionID == domain.RootCollectionID
+	srcNext := src.Clone()
+	rootNext := srcNext
+	if !fromRoot {
+		rootNext = root.Clone()
+	}
+
+	item, _, ok := srcNext.FindNode(itemID)
 	if !ok {
-		s.mu.Unlock()
 		return &cmn.NotFoundError{Resource: sidebarKindItem, ID: itemID}
 	}
 
-	src.RemoveNode(itemID)
-	root.AppendItem("", item)
+	srcNext.RemoveNode(itemID)
+	rootNext.AppendItem("", item)
 
-	if err := s.repo.Save(src); err != nil {
-		s.mu.Unlock()
-		return fmt.Errorf("failed to save source collection: %w", err)
+	uow := s.begin()
+	uow.SaveCollection(src, srcNext)
+	if !fromRoot {
+		uow.SaveCollection(root, rootNext)
 	}
-	if err := s.repo.Save(root); err != nil {
-		s.mu.Unlock()
-		return fmt.Errorf("failed to save root collection: %w", err)
+	if err := uow.Err(); err != nil {
+		uow.Rollback()
+		return err
 	}
-	s.mu.Unlock()
+	s.cache[sourceCollectionID] = srcNext
+	s.cache[domain.RootCollectionID] = rootNext
 
 	return s.layout.Update(layoutInsertItem(itemID, sidebarPosition))
 }
@@ -446,19 +496,22 @@ func (s *CollectionService) DeleteItem(collectionID, itemID string) error {
 		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: collectionID}
 	}
 
-	if !c.RemoveNode(itemID) {
+	next := c.Clone()
+	if !next.RemoveNode(itemID) {
 		return &cmn.NotFoundError{Resource: sidebarKindItem, ID: itemID}
 	}
 
-	if err := s.repo.Save(c); err != nil {
-		return fmt.Errorf("failed to save collection: %w", err)
+	uow := s.begin()
+	uow.SaveCollection(c, next)
+	if err := uow.Err(); err != nil {
+		uow.Rollback()
+		return err
 	}
+	s.cache[collectionID] = next
 
 	// root コレクションのアイテムはサイドバーレイアウトからも削除する。
 	if collectionID == domain.RootCollectionID {
-		if err := s.layout.Update(layoutRemove(sidebarKindItem, itemID)); err != nil {
-			return fmt.Errorf("failed to update sidebar layout: %w", err)
-		}
+		return s.layout.Update(layoutRemove(sidebarKindItem, itemID))
 	}
 	return nil
 }

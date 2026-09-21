@@ -9,6 +9,7 @@ import (
 
 	httpapp "github.com/f0reth/Wirexa/internal/application/http"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
+	"github.com/f0reth/Wirexa/internal/testutil"
 )
 
 const (
@@ -229,7 +230,7 @@ func TestLegacyBaseName(t *testing.T) {
 func TestCollectionRepository_NoSavePathPersistsTokens(t *testing.T) {
 	repo, dir := newTestRepo(t)
 	layout := NewSidebarLayoutRepository(filepath.Join(t.TempDir(), "layout.json"))
-	svc, err := httpapp.NewCollectionService(repo, layout)
+	svc, err := httpapp.NewCollectionService(repo, layout, testutil.NoopLogger{})
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -297,7 +298,7 @@ func TestCollectionRepository_LoadedServiceHidesLegacyPaths(t *testing.T) {
 			t.Fatalf("write: %v", err)
 		}
 	}
-	svc, err := httpapp.NewCollectionService(repo, NewSidebarLayoutRepository(filepath.Join(t.TempDir(), "layout.json")))
+	svc, err := httpapp.NewCollectionService(repo, NewSidebarLayoutRepository(filepath.Join(t.TempDir(), "layout.json")), testutil.NoopLogger{})
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}

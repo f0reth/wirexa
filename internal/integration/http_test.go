@@ -59,7 +59,7 @@ func buildHTTPHandler(t *testing.T, dir string, dialog adapters.FileDialog) *ada
 		t.Fatalf("NewCollectionRepository: %v", err)
 	}
 	layoutRepo := httpinfra.NewSidebarLayoutRepository(filepath.Join(dir, "sidebar_layout.json"))
-	collSvc, err := httpapp.NewCollectionService(repo, layoutRepo)
+	collSvc, err := httpapp.NewCollectionService(repo, layoutRepo, testutil.NoopLogger{})
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -1125,7 +1125,7 @@ func TestHTTP_CorruptStorage(t *testing.T) {
 		t.Fatalf("NewCollectionRepository: %v", err)
 	}
 	layoutRepo := httpinfra.NewSidebarLayoutRepository(filepath.Join(dir, "layout.json"))
-	if _, err = httpapp.NewCollectionService(repo, layoutRepo); err != nil {
+	if _, err = httpapp.NewCollectionService(repo, layoutRepo, testutil.NoopLogger{}); err != nil {
 		t.Fatalf("NewCollectionService should tolerate corrupt storage: %v", err)
 	}
 

@@ -18,30 +18,56 @@ const (
 	testReqName      = "Req"
 )
 
+// errFakeSave はフェイクリポジトリが注入する保存エラー。
+var errFakeSave = errors.New("save error")
+
 // inMemoryRepo はコレクションリポジトリのフェイク。
-// failSave / failDelete に ID を登録すると、その ID の書き込みだけを失敗させられる。
+// failSaveFrom / failDelete に ID を登録すると、その ID の書き込みだけを失敗させられる。
 // saves は Save が成功した順にコレクション ID を記録し、書き込み順序の検証に使う。
 // 保存・読み出しでディープコピーを取るのは、実ファイルと同じく呼び出し側の
 // オブジェクトと保存済みの内容が共有されないようにするため。
 type inMemoryRepo struct {
 	collections map[string]*domain.Collection
-	failSave    map[string]error
-	failDelete  map[string]error
-	saves       []string
-	mu          sync.Mutex
+	// failSaveFrom は ID ごとに「何回目の Save から失敗させるか」(1 始まり) を持つ。
+	// 2 以上を入れると最初の書き込みだけ成功させられるため、
+	// 「本体の書き込みは通ったが巻き戻しの書き戻しが失敗する」状況を作れる。
+	failSaveFrom map[string]int
+	saveCounts   map[string]int
+	failDelete   map[string]error
+	saves        []string
+	// failAllSavesFrom は ID を問わず n 回目以降の Save を失敗させる。0 なら無効。
+	// 採番される ID を事前に知れない新規作成の失敗注入に使う。
+	failAllSavesFrom int
+	saveCount        int
+	mu               sync.Mutex
 }
 
 // newFakeRepo は cols を保存済みとして持つ inMemoryRepo を生成する。
 func newFakeRepo(cols ...*domain.Collection) *inMemoryRepo {
 	r := &inMemoryRepo{
-		collections: make(map[string]*domain.Collection, len(cols)),
-		failSave:    map[string]error{},
-		failDelete:  map[string]error{},
+		collections:  make(map[string]*domain.Collection, len(cols)),
+		failSaveFrom: map[string]int{},
+		saveCounts:   map[string]int{},
+		failDelete:   map[string]error{},
 	}
 	for _, c := range cols {
 		r.collections[c.ID] = c.Clone()
 	}
 	return r
+}
+
+// failSaveAlways は id への Save を常に失敗させる。
+func (r *inMemoryRepo) failSaveAlways(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.failSaveFrom[id] = 1
+}
+
+// failAllSavesFromNth は ID を問わず n 回目以降の Save を失敗させる。
+func (r *inMemoryRepo) failAllSavesFromNth(n int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.failAllSavesFrom = n
 }
 
 // snapshot は保存済みコレクションの写しを返す。存在しない場合は nil。
@@ -104,8 +130,13 @@ func (r *inMemoryRepo) Load() ([]domain.Collection, error) {
 func (r *inMemoryRepo) Save(c *domain.Collection) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err := r.failSave[c.ID]; err != nil {
-		return err
+	r.saveCount++
+	r.saveCounts[c.ID]++
+	if r.failAllSavesFrom > 0 && r.saveCount >= r.failAllSavesFrom {
+		return errFakeSave
+	}
+	if n, ok := r.failSaveFrom[c.ID]; ok && r.saveCounts[c.ID] >= n {
+		return errFakeSave
 	}
 	r.saves = append(r.saves, c.ID)
 	r.collections[c.ID] = c.Clone()
@@ -123,7 +154,7 @@ func (r *inMemoryRepo) Delete(id string) error {
 }
 
 func TestCollectionService_Create(t *testing.T) {
-	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, &inMemoryLayoutRepo{})
+	svc, err := NewCollectionService(newFakeRepo(), &inMemoryLayoutRepo{}, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -140,7 +171,7 @@ func TestCollectionService_Create(t *testing.T) {
 }
 
 func TestCollectionService_DeleteNotFound(t *testing.T) {
-	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, &inMemoryLayoutRepo{})
+	svc, err := NewCollectionService(newFakeRepo(), &inMemoryLayoutRepo{}, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -151,7 +182,7 @@ func TestCollectionService_DeleteNotFound(t *testing.T) {
 
 func newSvc(t *testing.T) *CollectionService {
 	t.Helper()
-	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, &inMemoryLayoutRepo{})
+	svc, err := NewCollectionService(newFakeRepo(), &inMemoryLayoutRepo{}, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -508,8 +539,8 @@ func TestCollectionService_DeleteItem_ItemNotFound(t *testing.T) {
 
 func TestCollectionService_NewCollectionService_LoadsExisting(t *testing.T) {
 	existing := &domain.Collection{ID: "c1", Name: "Existing", Items: []*domain.TreeItem{}}
-	repo := &inMemoryRepo{collections: map[string]*domain.Collection{"c1": existing}}
-	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
+	repo := newFakeRepo(existing)
+	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{}, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -529,24 +560,10 @@ func (r *errorLoadRepo) Load() ([]domain.Collection, error) {
 	return nil, errors.New("load error")
 }
 
-type countingSaveRepo struct {
-	inMemoryRepo
-	saveCount int
-	failAfter int
-}
-
-func (r *countingSaveRepo) Save(c *domain.Collection) error {
-	r.saveCount++
-	if r.saveCount > r.failAfter {
-		return errors.New("save error")
-	}
-	return r.inMemoryRepo.Save(c)
-}
-
 // --- NewCollectionService ---
 
 func TestNewCollectionService_RepoLoadError(t *testing.T) {
-	_, err := NewCollectionService(&errorLoadRepo{}, &inMemoryLayoutRepo{})
+	_, err := NewCollectionService(&errorLoadRepo{}, &inMemoryLayoutRepo{}, nil)
 	if err == nil {
 		t.Error("expected error from repo.Load, got nil")
 	}
@@ -578,11 +595,9 @@ func TestCollectionService_GetRootItems_WithItems(t *testing.T) {
 
 func TestCollectionService_CreateCollection_RepoError(t *testing.T) {
 	// root コレクション作成 (1回) の後に失敗させる。
-	repo := &countingSaveRepo{
-		collections: map[string]*domain.Collection{},
-		failAfter:   1,
-	}
-	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
+	repo := newFakeRepo()
+	repo.failAllSavesFromNth(2)
+	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{}, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -594,8 +609,8 @@ func TestCollectionService_CreateCollection_RepoError(t *testing.T) {
 
 func TestCollectionService_CreateCollection_EmptyNameReturnsValidationError(t *testing.T) {
 	for _, name := range []string{"", "   ", "\t\n"} {
-		repo := &inMemoryRepo{collections: map[string]*domain.Collection{}}
-		svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
+		repo := newFakeRepo()
+		svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{}, nil)
 		if err != nil {
 			t.Fatalf("NewCollectionService: %v", err)
 		}
@@ -766,7 +781,7 @@ func TestCollectionService_GetSidebarLayout_ExistingLayout(t *testing.T) {
 			{Kind: sidebarKindCollection, ID: "c2"},
 		},
 	}
-	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	svc, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -782,11 +797,11 @@ func TestCollectionService_GetSidebarLayout_ExistingLayout(t *testing.T) {
 func TestCollectionService_GetSidebarLayout_FirstCall(t *testing.T) {
 	// 複数コレクションを持つ状態で初回 GetSidebarLayout を呼ぶと
 	// 名前順にコレクションがレイアウトに並ぶことを確認する。
-	cols := map[string]*domain.Collection{
-		"c1": {ID: "c1", Name: "B", Items: []*domain.TreeItem{}},
-		"c2": {ID: "c2", Name: "A", Items: []*domain.TreeItem{}},
+	cols := []*domain.Collection{
+		{ID: "c1", Name: "B", Items: []*domain.TreeItem{}},
+		{ID: "c2", Name: "A", Items: []*domain.TreeItem{}},
 	}
-	svc, err := NewCollectionService(&inMemoryRepo{collections: cols}, &inMemoryLayoutRepo{})
+	svc, err := NewCollectionService(newFakeRepo(cols...), &inMemoryLayoutRepo{}, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -828,7 +843,7 @@ func TestCollectionService_MoveSidebarEntry_Success(t *testing.T) {
 			{Kind: sidebarKindCollection, ID: "c3"},
 		},
 	}
-	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	svc, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -931,8 +946,8 @@ func TestCollectionService_DeleteItem_FromRootCollection_UpdatesLayout(t *testin
 	layoutRepo := &inMemoryLayoutRepo{
 		layout: []domain.SidebarEntry{{Kind: sidebarKindItem, ID: "r1"}},
 	}
-	repo := &inMemoryRepo{collections: map[string]*domain.Collection{domain.RootCollectionID: root}}
-	svc, err := NewCollectionService(repo, layoutRepo)
+	repo := newFakeRepo(root)
+	svc, err := NewCollectionService(repo, layoutRepo, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -967,11 +982,9 @@ func TestCollectionService_UpdateRequest_NodeIsFolder_ReturnsNotFound(t *testing
 
 func TestCollectionService_AddFolder_RepoSaveError(t *testing.T) {
 	// root コレクション作成(1回)後に失敗させる。
-	repo := &countingSaveRepo{
-		collections: map[string]*domain.Collection{},
-		failAfter:   1,
-	}
-	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
+	repo := newFakeRepo()
+	repo.failAllSavesFromNth(2)
+	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{}, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -982,11 +995,9 @@ func TestCollectionService_AddFolder_RepoSaveError(t *testing.T) {
 }
 
 func TestCollectionService_AddRequest_RepoSaveError(t *testing.T) {
-	repo := &countingSaveRepo{
-		collections: map[string]*domain.Collection{},
-		failAfter:   1,
-	}
-	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{})
+	repo := newFakeRepo()
+	repo.failAllSavesFromNth(2)
+	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{}, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -1000,7 +1011,7 @@ func TestCollectionService_AddRequest_RepoSaveError(t *testing.T) {
 
 func TestCollectionService_CreateCollection_LayoutRepoError(t *testing.T) {
 	layoutRepo := &inMemoryLayoutRepo{}
-	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	svc, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -1014,7 +1025,7 @@ func TestCollectionService_CreateCollection_LayoutRepoError(t *testing.T) {
 
 func TestCollectionService_AddFolder_LayoutRepoError(t *testing.T) {
 	layoutRepo := &inMemoryLayoutRepo{}
-	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	svc, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -1028,7 +1039,7 @@ func TestCollectionService_AddFolder_LayoutRepoError(t *testing.T) {
 
 func TestCollectionService_DeleteCollection_LayoutRepoError(t *testing.T) {
 	layoutRepo := &inMemoryLayoutRepo{}
-	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	svc, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -1045,7 +1056,7 @@ func TestCollectionService_DeleteCollection_LayoutRepoError(t *testing.T) {
 
 func TestNewCollectionService_LayoutRepoLoadError(t *testing.T) {
 	layoutRepo := &inMemoryLayoutRepo{loadErr: errors.New("layout load error")}
-	_, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	_, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
 	if err == nil {
 		t.Error("expected error from layoutRepo.Load, got nil")
 	}
@@ -1053,7 +1064,7 @@ func TestNewCollectionService_LayoutRepoLoadError(t *testing.T) {
 
 func TestNewCollectionService_LayoutRepoSaveError(t *testing.T) {
 	layoutRepo := &inMemoryLayoutRepo{saveErr: errors.New("layout save error")}
-	_, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	_, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
 	if err == nil {
 		t.Error("expected error from layoutRepo.Save, got nil")
 	}
@@ -1109,7 +1120,7 @@ func TestCollectionService_MoveSidebarEntry_OutOfBoundsPosition_AppendsToEnd(t *
 			{Kind: sidebarKindCollection, ID: "c3"},
 		},
 	}
-	svc, err := NewCollectionService(&inMemoryRepo{collections: map[string]*domain.Collection{}}, layoutRepo)
+	svc, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
@@ -1166,5 +1177,199 @@ func TestCollectionService_ConcurrentReadWrite(t *testing.T) {
 	}
 	for range goroutines * 2 {
 		<-done
+	}
+}
+
+// --- copy-on-write: 保存失敗時にキャッシュもディスクも変わらない ---
+
+// newSvcWithRepo は失敗注入できるフェイクリポジトリから CollectionService を組み立てる。
+func newSvcWithRepo(t *testing.T, repo *inMemoryRepo, layoutRepo *inMemoryLayoutRepo) *CollectionService {
+	t.Helper()
+	svc, err := NewCollectionService(repo, layoutRepo, nil)
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	return svc
+}
+
+// cachedCollection はキャッシュ上のコレクションを返す。
+func cachedCollection(t *testing.T, svc *CollectionService, id string) *domain.Collection {
+	t.Helper()
+	svc.mu.RLock()
+	defer svc.mu.RUnlock()
+	c, ok := svc.cache[id]
+	if !ok {
+		t.Fatalf("collection %q not found in cache", id)
+	}
+	return c
+}
+
+func TestCollectionService_RenameCollection_SaveError_LeavesCacheUnchanged(t *testing.T) {
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
+	col := mustCreate(t, svc, "OldName")
+	repo.failSaveAlways(col.ID)
+
+	if err := svc.RenameCollection(col.ID, "NewName"); err == nil {
+		t.Fatal("expected error from repo.Save, got nil")
+	}
+	if got := cachedCollection(t, svc, col.ID).Name; got != "OldName" {
+		t.Errorf("cached name = %q, want OldName", got)
+	}
+	if got := repo.snapshot(col.ID).Name; got != "OldName" {
+		t.Errorf("persisted name = %q, want OldName", got)
+	}
+}
+
+func TestCollectionService_UpdateRequest_SaveError_LeavesCacheUnchanged(t *testing.T) {
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
+	col := mustCreate(t, svc, "Col")
+	if _, err := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1", URL: "http://old.example.com"}); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	repo.failSaveAlways(col.ID)
+
+	err := svc.UpdateRequest(col.ID, domain.HTTPRequest{ID: "r1", URL: "http://new.example.com"})
+	if err == nil {
+		t.Fatal("expected error from repo.Save, got nil")
+	}
+	node, _, ok := findColItem(t, svc, col.ID, "r1")
+	if !ok {
+		t.Fatal("r1 not found in cache")
+	}
+	if node.Request.URL != "http://old.example.com" {
+		t.Errorf("cached URL = %q, want the pre-update value", node.Request.URL)
+	}
+	if got := repo.snapshot(col.ID).Items[0].Request.URL; got != "http://old.example.com" {
+		t.Errorf("persisted URL = %q, want the pre-update value", got)
+	}
+}
+
+func TestCollectionService_RenameItem_SaveError_LeavesCacheUnchanged(t *testing.T) {
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
+	col := mustCreate(t, svc, "Col")
+	if _, err := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "OldReq"}); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	repo.failSaveAlways(col.ID)
+
+	if err := svc.RenameItem(col.ID, "r1", "NewReq"); err == nil {
+		t.Fatal("expected error from repo.Save, got nil")
+	}
+	node, _, _ := findColItem(t, svc, col.ID, "r1")
+	if node.Name != "OldReq" {
+		t.Errorf("cached name = %q, want OldReq", node.Name)
+	}
+	if got := repo.snapshot(col.ID).Items[0].Name; got != "OldReq" {
+		t.Errorf("persisted name = %q, want OldReq", got)
+	}
+}
+
+func TestCollectionService_DeleteItem_SaveError_KeepsItem(t *testing.T) {
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
+	col := mustCreate(t, svc, "Col")
+	if _, err := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	repo.failSaveAlways(col.ID)
+
+	if err := svc.DeleteItem(col.ID, "r1"); err == nil {
+		t.Fatal("expected error from repo.Save, got nil")
+	}
+	if _, _, ok := findColItem(t, svc, col.ID, "r1"); !ok {
+		t.Error("r1 disappeared from the cache although the save failed")
+	}
+	if len(repo.snapshot(col.ID).Items) != 1 {
+		t.Error("r1 disappeared from the repository although the save failed")
+	}
+}
+
+func TestCollectionService_AddItem_SaveError_LeavesCacheUnchanged(t *testing.T) {
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
+	col := mustCreate(t, svc, "Col")
+	repo.failSaveAlways(col.ID)
+
+	if _, err := svc.AddFolder(col.ID, "", "Folder"); err == nil {
+		t.Fatal("expected error from repo.Save, got nil")
+	}
+	if items := cachedCollection(t, svc, col.ID).Items; len(items) != 0 {
+		t.Errorf("cached items = %d, want 0 (保存に失敗した追加は残らない)", len(items))
+	}
+	if items := repo.snapshot(col.ID).Items; len(items) != 0 {
+		t.Errorf("persisted items = %d, want 0", len(items))
+	}
+}
+
+func TestCollectionService_MoveItem_SourceSaveError_RollsBackTarget(t *testing.T) {
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
+	src := mustCreate(t, svc, "Src")
+	dst := mustCreate(t, svc, "Dst")
+	if _, err := svc.AddRequest(src.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	repo.failSaveAlways(src.ID)
+
+	if err := svc.MoveItem(src.ID, "r1", dst.ID, "", -1); err == nil {
+		t.Fatal("expected error from repo.Save, got nil")
+	}
+	// キャッシュは操作前のまま。
+	if _, _, ok := findColItem(t, svc, src.ID, "r1"); !ok {
+		t.Error("r1 disappeared from the source collection in the cache")
+	}
+	if items := cachedCollection(t, svc, dst.ID).Items; len(items) != 0 {
+		t.Errorf("cached target items = %d, want 0", len(items))
+	}
+	// ディスク上も操作前のまま（移動先の書き込みは巻き戻される）。
+	if items := repo.snapshot(dst.ID).Items; len(items) != 0 {
+		t.Errorf("persisted target items = %d, want 0 (rollback されるべき)", len(items))
+	}
+	if items := repo.snapshot(src.ID).Items; len(items) != 1 {
+		t.Errorf("persisted source items = %d, want 1", len(items))
+	}
+}
+
+func TestCollectionService_MoveItemToSidebar_SourceSaveError_RollsBackRoot(t *testing.T) {
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
+	col := mustCreate(t, svc, "Col")
+	if _, err := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	repo.failSaveAlways(col.ID)
+
+	if err := svc.MoveItemToSidebar(col.ID, "r1", 0); err == nil {
+		t.Fatal("expected error from repo.Save, got nil")
+	}
+	if _, _, ok := findColItem(t, svc, col.ID, "r1"); !ok {
+		t.Error("r1 disappeared from the source collection in the cache")
+	}
+	if items := svc.GetRootItems(); len(items) != 0 {
+		t.Errorf("root items = %d, want 0", len(items))
+	}
+	if items := repo.snapshot(domain.RootCollectionID).Items; len(items) != 0 {
+		t.Errorf("persisted root items = %d, want 0 (rollback されるべき)", len(items))
+	}
+}
+
+func TestCollectionService_MoveSidebarEntry_SaveError_LeavesLayoutUnchanged(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{}
+	svc := newSvcWithRepo(t, newFakeRepo(), layoutRepo)
+	c1 := mustCreate(t, svc, "C1")
+	c2 := mustCreate(t, svc, "C2")
+	before := layoutRepo.snapshot()
+	layoutRepo.saveErr = errors.New("save error")
+
+	if err := svc.MoveSidebarEntry(sidebarKindCollection, c2.ID, 0); err == nil {
+		t.Fatal("expected error from layout Save, got nil")
+	}
+	layoutRepo.saveErr = nil
+	after := layoutRepo.snapshot()
+	if len(after) != len(before) || after[0].ID != c1.ID {
+		t.Errorf("layout = %v, want unchanged %v", after, before)
 	}
 }

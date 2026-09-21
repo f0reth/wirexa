@@ -1,7 +1,6 @@
 package httpapp
 
 import (
-	"errors"
 	"testing"
 
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
@@ -42,7 +41,7 @@ func TestUnitOfWork_AllSucceed(t *testing.T) {
 func TestUnitOfWork_SecondFails_RollbackRestoresFirst(t *testing.T) {
 	repo := newFakeRepo(col("c1", "Old1"), col("c2", "Old2"))
 	prev1, prev2 := repo.snapshot("c1"), repo.snapshot("c2")
-	repo.failSave["c2"] = errors.New("save error")
+	repo.failSaveAlways("c2")
 	uow := &unitOfWork{repo: repo}
 
 	uow.SaveCollection(prev1, col("c1", "New1"))
@@ -68,7 +67,7 @@ func TestUnitOfWork_SecondFails_RollbackRestoresFirst(t *testing.T) {
 
 func TestUnitOfWork_RollbackOfNewCollectionDeletesIt(t *testing.T) {
 	repo := newFakeRepo()
-	repo.failSave["c2"] = errors.New("save error")
+	repo.failSaveAlways("c2")
 	uow := &unitOfWork{repo: repo}
 
 	uow.SaveCollection(nil, col("c1", "New1"))
@@ -85,7 +84,7 @@ func TestUnitOfWork_RollbackOfNewCollectionDeletesIt(t *testing.T) {
 
 func TestUnitOfWork_DeleteCollection_RollbackRestoresIt(t *testing.T) {
 	repo := newFakeRepo(col("c1", "Old1"), col("c2", "Old2"))
-	repo.failSave["c2"] = errors.New("save error")
+	repo.failSaveAlways("c2")
 	uow := &unitOfWork{repo: repo}
 
 	uow.DeleteCollection(repo.snapshot("c1"))
@@ -109,12 +108,12 @@ func TestUnitOfWork_RollbackFailure_IsLoggedAndContinues(t *testing.T) {
 	uow.SaveCollection(prev1, col("c1", "New1"))
 	uow.SaveCollection(prev2, col("c2", "New2"))
 	// c2 の巻き戻しだけが失敗し、c1 の巻き戻しは実行される状態を作る。
-	repo.failSave["c2"] = errors.New("save error")
+	repo.failSaveAlways("c2")
 	uow.SaveCollection(prev3, col("c3", "New3"))
 	if uow.Err() != nil {
 		t.Fatalf("Err = %v, want nil before the rollback", uow.Err())
 	}
-	repo.failSave["c3"] = errors.New("save error")
+	repo.failSaveAlways("c3")
 
 	uow.Rollback()
 	if logger.errors != 2 {
@@ -131,6 +130,6 @@ func TestUnitOfWork_RollbackWithoutLogger(t *testing.T) {
 	prev := repo.snapshot("c1")
 	uow := &unitOfWork{repo: repo}
 	uow.SaveCollection(prev, col("c1", "New1"))
-	repo.failSave["c1"] = errors.New("save error")
+	repo.failSaveAlways("c1")
 	uow.Rollback()
 }
