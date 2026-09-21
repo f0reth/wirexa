@@ -2,6 +2,7 @@ package httpapp
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"testing"
@@ -1524,5 +1525,28 @@ func TestCollectionService_MoveItem_RollbackFailure_ReturnsOriginalErrorAndLogs(
 	// 巻き戻しに失敗してもキャッシュは操作前のまま (差し替えは永続化成功後のみ)。
 	if _, _, ok := findColItem(t, svc, src.ID, "r1"); !ok {
 		t.Error("r1 disappeared from the source collection in the cache")
+	}
+}
+
+func TestCollectionService_ConcurrentUpdateWithSaveFailures(t *testing.T) {
+	// 保存失敗を注入しながら並行更新しても、キャッシュとリポジトリが食い違わないことを
+	// 確認する (CI は -race 付きで実行する)。
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
+	col := mustCreate(t, svc, "Col")
+	// 2回目以降の保存を失敗させ、成功と失敗が混ざる状態にする。
+	repo.failSaveFromNth(col.ID, 2)
+
+	const goroutines = 10
+	var wg sync.WaitGroup
+	for i := range goroutines {
+		wg.Go(func() { svc.RenameCollection(col.ID, fmt.Sprintf("Renamed%d", i)) })
+		wg.Go(func() { svc.GetCollections() })
+	}
+	wg.Wait()
+
+	// 保存に失敗した名前がキャッシュへ漏れていないこと。
+	if got, want := cachedCollection(t, svc, col.ID).Name, repo.snapshot(col.ID).Name; got != want {
+		t.Errorf("cached name = %q, persisted name = %q; they must not diverge", got, want)
 	}
 }

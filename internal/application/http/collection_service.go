@@ -76,13 +76,45 @@ func NewCollectionService(
 		svc.cache[root.ID] = root
 	}
 
-	// レイアウトの読み込み失敗（JSON として壊れている）は初期化失敗として扱う。
-	// 保存は行わない。レイアウトは導出値で、読み出しのたびに実データと突合される。
-	if _, err := svc.layout.Load(); err != nil {
+	svc.recoverDuplicateItems()
+	if err := svc.reconcileLayoutAtStartup(); err != nil {
 		return nil, fmt.Errorf("failed to initialize sidebar layout: %w", err)
 	}
 
 	return svc, nil
+}
+
+// recoverDuplicateItems は「追加してから削除」の途中でプロセスが消えた場合に残る
+// 重複アイテムを回収し、内容が変わったコレクションを保存する。
+// 保存失敗は best-effort。メモリ上は回収済みなので動作は整合し、次回起動で再試行される。
+func (s *CollectionService) recoverDuplicateItems() {
+	for id, next := range dropDuplicateItems(s.cache) {
+		s.cache[id] = next
+		if err := s.repo.Save(next); err != nil {
+			s.logError("failed to persist duplicate item recovery", err)
+		}
+	}
+}
+
+// reconcileLayoutAtStartup は保存済みレイアウトを実データと突合し、変化していれば保存する。
+// 読み込み失敗（JSON として壊れている）は初期化失敗として返すが、保存失敗は
+// best-effort とする。レイアウトは読み出し時にも突合されるため、書けない状況でも
+// 整合した並びを返せるからで、これにより読み取り専用ディレクトリやディスクフルでも
+// コレクションが読めている限りアプリは起動する。
+func (s *CollectionService) reconcileLayoutAtStartup() error {
+	layout, err := s.layout.Load()
+	if err != nil {
+		return err
+	}
+	cols, rootItems := s.snapshotForLayout()
+	next, changed := reconcileSidebarLayout(layout, cols, rootItems)
+	if !changed {
+		return nil
+	}
+	if err := s.layout.Save(next); err != nil {
+		s.logError("failed to persist sidebar layout reconciliation", err)
+	}
+	return nil
 }
 
 // normalizeItemForms はツリーを再帰的に走査し、各リクエストの form 系ボディを移行する。
