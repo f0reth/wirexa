@@ -277,6 +277,112 @@ func TestCollection_InsertItem_ParentIsRequest(t *testing.T) {
 	}
 }
 
+// buildRequestTree は Clone の検証用に、可変状態を一通り持つコレクションを組み立てる。
+//
+//	col
+//	└── f1 (folder)
+//	    └── r1 (request: headers / params / contents / formData)
+func buildRequestTree() *Collection {
+	r1 := &TreeItem{
+		Type: ItemTypeRequest,
+		ID:   "r1",
+		Name: "Request1",
+		Request: &HTTPRequest{
+			ID:      "r1",
+			Name:    "Request1",
+			Headers: []KeyValuePair{{Key: "X-H", Value: "h", Enabled: true}},
+			Params:  []KeyValuePair{{Key: "q", Value: "p", Enabled: true}},
+			Body: RequestBody{
+				Type:     BodyTypeFormData,
+				Contents: map[string]string{"json": `{"k":"v"}`},
+				FormData: []FormRow{{Key: "k", Value: "v", Enabled: true}},
+			},
+		},
+		Children: []*TreeItem{},
+	}
+	f1 := &TreeItem{Type: ItemTypeFolder, ID: "f1", Name: "Folder1", Children: []*TreeItem{r1}}
+	return &Collection{ID: "col1", Name: "Col", Items: []*TreeItem{f1}}
+}
+
+func TestCollection_Clone_IsDeep(t *testing.T) {
+	col := buildRequestTree()
+	clone := col.Clone()
+
+	// クローン側を一通り書き換える。
+	clone.Name = "Renamed"
+	clone.Items = append(clone.Items, &TreeItem{Type: ItemTypeRequest, ID: "added"})
+	f1, _, ok := clone.FindNode("f1")
+	if !ok {
+		t.Fatal("f1 not found in clone")
+	}
+	f1.Name = "RenamedFolder"
+	r1, _, ok := clone.FindNode("r1")
+	if !ok {
+		t.Fatal("r1 not found in clone")
+	}
+	r1.Name = "RenamedRequest"
+	r1.Request.Headers[0].Value = "changed"
+	r1.Request.Params[0].Value = "changed"
+	r1.Request.Body.Contents["json"] = "changed"
+	r1.Request.Body.FormData[0].Value = "changed"
+
+	// 元のコレクションは一切変化していないこと。
+	orig := buildRequestTree()
+	if col.Name != orig.Name {
+		t.Errorf("Name = %q, want %q", col.Name, orig.Name)
+	}
+	if len(col.Items) != len(orig.Items) {
+		t.Errorf("len(Items) = %d, want %d", len(col.Items), len(orig.Items))
+	}
+	origF1, _, _ := orig.FindNode("f1")
+	gotF1, _, _ := col.FindNode("f1")
+	if gotF1.Name != origF1.Name {
+		t.Errorf("f1.Name = %q, want %q", gotF1.Name, origF1.Name)
+	}
+	origR1, _, _ := orig.FindNode("r1")
+	gotR1, _, _ := col.FindNode("r1")
+	if gotR1.Name != origR1.Name {
+		t.Errorf("r1.Name = %q, want %q", gotR1.Name, origR1.Name)
+	}
+	if gotR1.Request.Headers[0].Value != origR1.Request.Headers[0].Value {
+		t.Errorf("Headers[0].Value = %q, want %q", gotR1.Request.Headers[0].Value, origR1.Request.Headers[0].Value)
+	}
+	if gotR1.Request.Params[0].Value != origR1.Request.Params[0].Value {
+		t.Errorf("Params[0].Value = %q, want %q", gotR1.Request.Params[0].Value, origR1.Request.Params[0].Value)
+	}
+	if gotR1.Request.Body.Contents["json"] != origR1.Request.Body.Contents["json"] {
+		t.Errorf("Body.Contents[json] = %q, want %q", gotR1.Request.Body.Contents["json"], origR1.Request.Body.Contents["json"])
+	}
+	if gotR1.Request.Body.FormData[0].Value != origR1.Request.Body.FormData[0].Value {
+		t.Errorf("Body.FormData[0].Value = %q, want %q", gotR1.Request.Body.FormData[0].Value, origR1.Request.Body.FormData[0].Value)
+	}
+}
+
+func TestCollection_Clone_RemoveNodeDoesNotAffectOriginal(t *testing.T) {
+	col := buildRequestTree()
+	clone := col.Clone()
+
+	if !clone.RemoveNode("r1") {
+		t.Fatal("RemoveNode on clone returned false")
+	}
+	if _, _, ok := col.FindNode("r1"); !ok {
+		t.Error("r1 was removed from the original collection")
+	}
+}
+
+func TestCollection_Clone_NilRequestAndNilItems(t *testing.T) {
+	// Request を持たないフォルダと nil の Items でも panic しないこと。
+	col := &Collection{ID: "c", Name: "C"}
+	clone := col.Clone()
+	if clone.Items != nil {
+		t.Errorf("Items = %v, want nil", clone.Items)
+	}
+	folder := &TreeItem{Type: ItemTypeFolder, ID: "f", Children: []*TreeItem{}}
+	if got := folder.Clone(); got.Request != nil {
+		t.Errorf("Request = %v, want nil", got.Request)
+	}
+}
+
 func TestTreeItem_Contains(t *testing.T) {
 	col := buildTree()
 	f1, _, ok := col.FindNode("f1")

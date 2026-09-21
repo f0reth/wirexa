@@ -1,9 +1,11 @@
 package httpdomain
 
 import (
+	"maps"
 	"mime"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
@@ -283,6 +285,65 @@ const RootCollectionID = "__root__"
 type SidebarEntry struct {
 	Kind string `json:"kind"` // "collection" | "item"
 	ID   string `json:"id"`
+}
+
+// Clone はコレクションのディープコピーを返す。
+// 返り値は元のコレクションと一切の可変状態を共有しない。
+// 変更系ユースケースはコピー上で変更し、永続化が成功してからキャッシュへ差し替える。
+func (c *Collection) Clone() *Collection {
+	if c == nil {
+		return nil
+	}
+	cp := *c
+	cp.Items = cloneItems(c.Items)
+	return &cp
+}
+
+// cloneItems はツリーアイテムのスライスをディープコピーする。
+// nil と空スライスは区別して保つ (JSON の null と [] が入れ替わらないようにする)。
+func cloneItems(items []*TreeItem) []*TreeItem {
+	if items == nil {
+		return nil
+	}
+	cp := make([]*TreeItem, len(items))
+	for i, item := range items {
+		cp[i] = item.Clone()
+	}
+	return cp
+}
+
+// Clone はツリーアイテムのディープコピーを返す。子孫とリクエストも複製する。
+func (t *TreeItem) Clone() *TreeItem {
+	if t == nil {
+		return nil
+	}
+	cp := *t
+	cp.Request = t.Request.Clone()
+	cp.Children = cloneItems(t.Children)
+	return &cp
+}
+
+// Clone はリクエストのディープコピーを返す。
+func (r *HTTPRequest) Clone() *HTTPRequest {
+	if r == nil {
+		return nil
+	}
+	cp := *r
+	cp.Headers = slices.Clone(r.Headers)
+	cp.Params = slices.Clone(r.Params)
+	cp.Body = r.Body.Clone()
+	return &cp
+}
+
+// Clone はリクエストボディのディープコピーを返す。
+// FormRow と FileReference は文字列と bool だけの値型なので、
+// スライスを複製すれば行の内容は共有されない。
+func (b *RequestBody) Clone() RequestBody {
+	cp := *b
+	cp.Contents = maps.Clone(b.Contents)
+	cp.FormData = slices.Clone(b.FormData)
+	cp.FormURLEncoded = slices.Clone(b.FormURLEncoded)
+	return cp
 }
 
 // findNode はツリーを再帰的に走査してIDに一致するノードとその親を返す。
