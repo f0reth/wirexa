@@ -125,7 +125,7 @@ func (s *CollectionService) CreateCollection(name string) (domain.Collection, er
 	s.mu.Unlock()
 
 	// レイアウトファイルに末尾エントリを追加する。
-	if err := s.layout.Append(domain.SidebarEntry{Kind: sidebarKindCollection, ID: c.ID}); err != nil {
+	if err := s.layout.Update(layoutAppend(domain.SidebarEntry{Kind: sidebarKindCollection, ID: c.ID})); err != nil {
 		return domain.Collection{}, fmt.Errorf("failed to update sidebar layout: %w", err)
 	}
 	return c, nil
@@ -147,7 +147,7 @@ func (s *CollectionService) DeleteCollection(id string) error {
 	delete(s.cache, id)
 	s.mu.Unlock()
 
-	if err := s.layout.Remove(sidebarKindCollection, id); err != nil {
+	if err := s.layout.Update(layoutRemove(sidebarKindCollection, id)); err != nil {
 		return fmt.Errorf("failed to update sidebar layout: %w", err)
 	}
 	return nil
@@ -210,7 +210,7 @@ func (s *CollectionService) addItem(collectionID, parentID string, item *domain.
 	}
 	// root コレクションのルート直下に追加した場合、サイドバーレイアウトにも追加する。
 	if collectionID == domain.RootCollectionID && parentID == "" {
-		if err := s.layout.Append(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID}); err != nil {
+		if err := s.layout.Update(layoutAppend(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID})); err != nil {
 			return fmt.Errorf("failed to update sidebar layout: %w", err)
 		}
 	}
@@ -393,7 +393,7 @@ func (s *CollectionService) computeInitialLayout() []domain.SidebarEntry {
 
 // MoveSidebarEntry はサイドバー上のエントリを指定位置に移動する。
 func (s *CollectionService) MoveSidebarEntry(kind, id string, position int) error {
-	return s.layout.Move(kind, id, position)
+	return s.layout.Update(layoutMove(kind, id, position))
 }
 
 // MoveItemToSidebar はアイテムを指定コレクションから __root__ へ移動し、
@@ -433,7 +433,7 @@ func (s *CollectionService) MoveItemToSidebar(sourceCollectionID, itemID string,
 	}
 	s.mu.Unlock()
 
-	return s.layout.InsertItem(itemID, sidebarPosition)
+	return s.layout.Update(layoutInsertItem(itemID, sidebarPosition))
 }
 
 // DeleteItem はコレクションからアイテムをサブツリーごと削除する。
@@ -456,7 +456,7 @@ func (s *CollectionService) DeleteItem(collectionID, itemID string) error {
 
 	// root コレクションのアイテムはサイドバーレイアウトからも削除する。
 	if collectionID == domain.RootCollectionID {
-		if err := s.layout.Remove(sidebarKindItem, itemID); err != nil {
+		if err := s.layout.Update(layoutRemove(sidebarKindItem, itemID)); err != nil {
 			return fmt.Errorf("failed to update sidebar layout: %w", err)
 		}
 	}

@@ -49,6 +49,13 @@ func (r *inMemoryLayoutRepo) Save(layout []domain.SidebarEntry) error {
 	return nil
 }
 
+// snapshot は保存済みレイアウトの写しを返す（ディスク上の内容の検証用）。
+func (r *inMemoryLayoutRepo) snapshot() []domain.SidebarEntry {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]domain.SidebarEntry{}, r.layout...)
+}
+
 func (r *inMemoryRepo) Load() ([]domain.Collection, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
