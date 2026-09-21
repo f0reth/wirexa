@@ -117,33 +117,3 @@ func (l *SidebarLayoutService) Save(layout []domain.SidebarEntry) error {
 	}
 	return nil
 }
-
-// GetOrInit はレイアウトを返す。空の場合は computeInitial で初期値を生成して保存する。
-// computeInitial はレイアウトロックを保持していない状態で呼ばれる。呼び出し側は
-// コレクションロックを取得して初期値を計算するため、ロックのネストを避けてこの順序を守る。
-func (l *SidebarLayoutService) GetOrInit(computeInitial func() []domain.SidebarEntry) ([]domain.SidebarEntry, error) {
-	layout, err := l.Load()
-	if err != nil {
-		return nil, err
-	}
-	if len(layout) > 0 {
-		return layout, nil
-	}
-
-	initial := computeInitial()
-
-	// 他ゴルーチンが先に初期化した場合はそちらを優先する（ダブルチェック）。
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	existing, err := l.repo.Load()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load sidebar layout: %w", err)
-	}
-	if len(existing) > 0 {
-		return existing, nil
-	}
-	if err := l.repo.Save(initial); err != nil {
-		return nil, fmt.Errorf("failed to save initial sidebar layout: %w", err)
-	}
-	return initial, nil
-}

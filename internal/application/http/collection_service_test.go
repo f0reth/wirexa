@@ -781,24 +781,32 @@ func TestCollectionService_MoveItem_ToFolder(t *testing.T) {
 
 // --- GetSidebarLayout ---
 
-func TestCollectionService_GetSidebarLayout_ExistingLayout(t *testing.T) {
-	layoutRepo := &inMemoryLayoutRepo{
-		layout: []domain.SidebarEntry{
-			{Kind: sidebarKindCollection, ID: "c1"},
-			{Kind: sidebarKindCollection, ID: "c2"},
-		},
+// newSvcWithOrderedLayout はコレクション ID を並べたレイアウトを保存済みにして
+// CollectionService を組み立てる。実データと突合されるため、コレクション本体も
+// リポジトリに用意する。
+func newSvcWithOrderedLayout(t *testing.T, ids ...string) (*CollectionService, *inMemoryLayoutRepo) {
+	t.Helper()
+	cols := make([]*domain.Collection, 0, len(ids))
+	layout := make([]domain.SidebarEntry, 0, len(ids))
+	for _, id := range ids {
+		cols = append(cols, &domain.Collection{ID: id, Name: id, Items: []*domain.TreeItem{}})
+		layout = append(layout, domain.SidebarEntry{Kind: sidebarKindCollection, ID: id})
 	}
-	svc, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
+	layoutRepo := &inMemoryLayoutRepo{layout: layout}
+	svc, err := NewCollectionService(newFakeRepo(cols...), layoutRepo, nil)
 	if err != nil {
 		t.Fatalf("NewCollectionService: %v", err)
 	}
+	return svc, layoutRepo
+}
+
+func TestCollectionService_GetSidebarLayout_ExistingLayout(t *testing.T) {
+	svc, _ := newSvcWithOrderedLayout(t, "c1", "c2")
 	layout, err := svc.GetSidebarLayout()
 	if err != nil {
 		t.Fatalf("GetSidebarLayout: %v", err)
 	}
-	if len(layout) != 2 || layout[0].ID != "c1" || layout[1].ID != "c2" {
-		t.Errorf("unexpected layout: %v", layout)
-	}
+	assertLayout(t, layout, "c:c1", "c:c2")
 }
 
 func TestCollectionService_GetSidebarLayout_FirstCall(t *testing.T) {
@@ -843,17 +851,7 @@ func TestCollectionService_MoveSidebarEntry_NotFound(t *testing.T) {
 }
 
 func TestCollectionService_MoveSidebarEntry_Success(t *testing.T) {
-	layoutRepo := &inMemoryLayoutRepo{
-		layout: []domain.SidebarEntry{
-			{Kind: sidebarKindCollection, ID: "c1"},
-			{Kind: sidebarKindCollection, ID: "c2"},
-			{Kind: sidebarKindCollection, ID: "c3"},
-		},
-	}
-	svc, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
-	if err != nil {
-		t.Fatalf("NewCollectionService: %v", err)
-	}
+	svc, _ := newSvcWithOrderedLayout(t, "c1", "c2", "c3")
 	// c3 を position 0 に移動 → [c3, c1, c2]
 	if err := svc.MoveSidebarEntry(sidebarKindCollection, "c3", 0); err != nil {
 		t.Fatalf("MoveSidebarEntry: %v", err)
@@ -1016,47 +1014,111 @@ func TestCollectionService_AddRequest_RepoSaveError(t *testing.T) {
 
 // --- layoutRepo エラー伝搬 ---
 
-func TestCollectionService_CreateCollection_LayoutRepoError(t *testing.T) {
+// レイアウトは導出値なので、その書き込みに失敗してもコレクション本体の変更は成功する。
+// 欠落・stale なエントリは読み出し時の突合で修復される。
+
+func TestCollectionService_CreateCollection_LayoutRepoError_StillSucceeds(t *testing.T) {
 	layoutRepo := &inMemoryLayoutRepo{}
-	svc, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
-	if err != nil {
-		t.Fatalf("NewCollectionService: %v", err)
-	}
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, layoutRepo)
 	layoutRepo.loadErr = errors.New("layout load error")
 
-	_, err = svc.CreateCollection("ShouldFail")
-	if err == nil {
-		t.Error("expected error from layoutRepo, got nil")
+	col, err := svc.CreateCollection("Col")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
 	}
+	if repo.snapshot(col.ID) == nil {
+		t.Error("collection was not persisted")
+	}
+	layoutRepo.loadErr = nil
+	layout, err := svc.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	assertLayout(t, layout, "c:"+col.ID)
 }
 
-func TestCollectionService_AddFolder_LayoutRepoError(t *testing.T) {
+func TestCollectionService_AddFolder_LayoutRepoError_StillSucceeds(t *testing.T) {
 	layoutRepo := &inMemoryLayoutRepo{}
-	svc, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
-	if err != nil {
-		t.Fatalf("NewCollectionService: %v", err)
-	}
+	svc := newSvcWithRepo(t, newFakeRepo(), layoutRepo)
 	layoutRepo.loadErr = errors.New("layout load error")
 
-	_, err = svc.AddFolder(domain.RootCollectionID, "", "Folder")
-	if err == nil {
-		t.Error("expected error from layoutRepo, got nil")
+	item, err := svc.AddFolder(domain.RootCollectionID, "", "Folder")
+	if err != nil {
+		t.Fatalf("AddFolder: %v", err)
 	}
+	layoutRepo.loadErr = nil
+	layout, err := svc.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	assertLayout(t, layout, "i:"+item.ID)
 }
 
-func TestCollectionService_DeleteCollection_LayoutRepoError(t *testing.T) {
+func TestCollectionService_DeleteCollection_LayoutRepoError_StillSucceeds(t *testing.T) {
 	layoutRepo := &inMemoryLayoutRepo{}
-	svc, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
-	if err != nil {
-		t.Fatalf("NewCollectionService: %v", err)
-	}
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, layoutRepo)
 	col := mustCreate(t, svc, "Col")
 	layoutRepo.loadErr = errors.New("layout load error")
 
-	err = svc.DeleteCollection(col.ID)
-	if err == nil {
-		t.Error("expected error from layoutRepo, got nil")
+	if err := svc.DeleteCollection(col.ID); err != nil {
+		t.Fatalf("DeleteCollection: %v", err)
 	}
+	if repo.snapshot(col.ID) != nil {
+		t.Error("collection was not deleted from the repository")
+	}
+	// レイアウトには stale エントリが残るが、読み出し時の突合で除去される。
+	layoutRepo.loadErr = nil
+	layout, err := svc.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	assertLayout(t, layout)
+}
+
+func TestCollectionService_DeleteItem_LayoutRepoError_StillSucceeds(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{}
+	svc := newSvcWithRepo(t, newFakeRepo(), layoutRepo)
+	item, addErr := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
+	if addErr != nil {
+		t.Fatalf("AddRequest: %v", addErr)
+	}
+	layoutRepo.loadErr = errors.New("layout load error")
+
+	if err := svc.DeleteItem(domain.RootCollectionID, item.ID); err != nil {
+		t.Fatalf("DeleteItem: %v", err)
+	}
+	layoutRepo.loadErr = nil
+	layout, err := svc.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	assertLayout(t, layout)
+}
+
+func TestCollectionService_MoveItemToSidebar_LayoutRepoError_StillSucceeds(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{}
+	svc := newSvcWithRepo(t, newFakeRepo(), layoutRepo)
+	col := mustCreate(t, svc, "Col")
+	if _, err := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	layoutRepo.loadErr = errors.New("layout load error")
+
+	if err := svc.MoveItemToSidebar(col.ID, "r1", 0); err != nil {
+		t.Fatalf("MoveItemToSidebar: %v", err)
+	}
+	if items := svc.GetRootItems(); len(items) != 1 || items[0].ID != "r1" {
+		t.Errorf("root items = %v, want [r1]", items)
+	}
+	// 指定位置には入らないが、突合によりサイドバー末尾に現れる。
+	layoutRepo.loadErr = nil
+	layout, err := svc.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	assertLayout(t, layout, "c:"+col.ID, "i:r1")
 }
 
 // --- NewCollectionService: layoutRepo エラー ---
@@ -1069,12 +1131,20 @@ func TestNewCollectionService_LayoutRepoLoadError(t *testing.T) {
 	}
 }
 
-func TestNewCollectionService_LayoutRepoSaveError(t *testing.T) {
+func TestNewCollectionService_LayoutRepoSaveError_StillStarts(t *testing.T) {
+	// レイアウトの保存失敗は起動を止めない。読み取り専用ディレクトリなどでも
+	// コレクションが読めている限りアプリは立ち上がり、突合済みの並びで動作する。
 	layoutRepo := &inMemoryLayoutRepo{saveErr: errors.New("layout save error")}
-	_, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
-	if err == nil {
-		t.Error("expected error from layoutRepo.Save, got nil")
+	existing := &domain.Collection{ID: "c1", Name: "C1", Items: []*domain.TreeItem{}}
+	svc, err := NewCollectionService(newFakeRepo(existing), layoutRepo, nil)
+	if err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
 	}
+	layout, err := svc.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	assertLayout(t, layout, "c:c1")
 }
 
 // --- MoveItemToSidebar: error cases ---
@@ -1120,17 +1190,7 @@ func TestCollectionService_MoveItemToSidebar_NegativePosition_AppendsToEnd(t *te
 // --- MoveSidebarEntry: out-of-bounds position ---
 
 func TestCollectionService_MoveSidebarEntry_OutOfBoundsPosition_AppendsToEnd(t *testing.T) {
-	layoutRepo := &inMemoryLayoutRepo{
-		layout: []domain.SidebarEntry{
-			{Kind: sidebarKindCollection, ID: "c1"},
-			{Kind: sidebarKindCollection, ID: "c2"},
-			{Kind: sidebarKindCollection, ID: "c3"},
-		},
-	}
-	svc, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
-	if err != nil {
-		t.Fatalf("NewCollectionService: %v", err)
-	}
+	svc, _ := newSvcWithOrderedLayout(t, "c1", "c2", "c3")
 	// position < 0 → 末尾追加
 	if err := svc.MoveSidebarEntry(sidebarKindCollection, "c1", -1); err != nil {
 		t.Fatalf("MoveSidebarEntry: %v", err)

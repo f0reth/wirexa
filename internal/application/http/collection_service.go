@@ -76,7 +76,9 @@ func NewCollectionService(
 		svc.cache[root.ID] = root
 	}
 
-	if _, err := svc.GetSidebarLayout(); err != nil {
+	// レイアウトの読み込み失敗（JSON として壊れている）は初期化失敗として扱う。
+	// 保存は行わない。レイアウトは導出値で、読み出しのたびに実データと突合される。
+	if _, err := svc.layout.Load(); err != nil {
 		return nil, fmt.Errorf("failed to initialize sidebar layout: %w", err)
 	}
 
@@ -146,9 +148,7 @@ func (s *CollectionService) CreateCollection(name string) (domain.Collection, er
 	s.cache[c.ID] = c
 
 	// レイアウトファイルに末尾エントリを追加する。
-	if err := s.layout.Update(layoutAppend(domain.SidebarEntry{Kind: sidebarKindCollection, ID: c.ID})); err != nil {
-		return domain.Collection{}, err
-	}
+	s.applyLayoutBestEffort(layoutAppend(domain.SidebarEntry{Kind: sidebarKindCollection, ID: c.ID}))
 	return *c, nil
 }
 
@@ -169,7 +169,8 @@ func (s *CollectionService) DeleteCollection(id string) error {
 	}
 	delete(s.cache, id)
 
-	return s.layout.Update(layoutRemove(sidebarKindCollection, id))
+	s.applyLayoutBestEffort(layoutRemove(sidebarKindCollection, id))
+	return nil
 }
 
 // RenameCollection はコレクション名を変更する。
@@ -251,7 +252,7 @@ func (s *CollectionService) addItem(collectionID, parentID string, item *domain.
 
 	// root コレクションのルート直下に追加した場合、サイドバーレイアウトにも追加する。
 	if collectionID == domain.RootCollectionID && parentID == "" {
-		return s.layout.Update(layoutAppend(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID}))
+		s.applyLayoutBestEffort(layoutAppend(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID}))
 	}
 	return nil
 }
@@ -403,44 +404,65 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 }
 
 // GetSidebarLayout はサイドバーレイアウトを返す。
-// ファイルが存在しない場合は既存コレクションを名前順で並べた初期値を生成して保存する。
-// 初期値計算（mu.RLock）はレイアウトロックを保持していない状態で行われるため、
-// 2つのロックがネストせずデッドロックの危険がない。
+// 保存済みレイアウトをその時点のコレクションと突合して正規化してから返す（保存はしない）。
+// レイアウトは並び順のヒントであって存在の正ではないため、レイアウト書き込みが
+// 失敗していても、frontend は常に実データと整合した並びを受け取る。
 func (s *CollectionService) GetSidebarLayout() ([]domain.SidebarEntry, error) {
-	return s.layout.GetOrInit(s.computeInitialLayout)
+	cols, rootItems := s.snapshotForLayout()
+	layout, err := s.layout.Load()
+	if err != nil {
+		return nil, err
+	}
+	next, _ := reconcileSidebarLayout(layout, cols, rootItems)
+	return next, nil
 }
 
-// computeInitialLayout はコレクション順とルートアイテムからレイアウト初期値を生成する。
-func (s *CollectionService) computeInitialLayout() []domain.SidebarEntry {
+// snapshotForLayout は突合に必要なコレクション一覧（__root__ を除く）と
+// __root__ 直下アイテムを読み出す。レイアウトロックを取る前に呼び、
+// 突合の入力をあらかじめ確定させることでロックのネストを避ける。
+func (s *CollectionService) snapshotForLayout() ([]*domain.Collection, []*domain.TreeItem) {
 	s.mu.RLock()
+	defer s.mu.RUnlock()
 	cols := make([]*domain.Collection, 0, len(s.cache))
 	for _, c := range s.cache {
 		if c.ID != domain.RootCollectionID {
 			cols = append(cols, c)
 		}
 	}
-	rootItems := s.cache[domain.RootCollectionID]
-	s.mu.RUnlock()
-
-	sort.Slice(cols, func(i, j int) bool {
-		return cols[i].Name < cols[j].Name
-	})
-
-	initial := make([]domain.SidebarEntry, 0, len(cols))
-	for _, c := range cols {
-		initial = append(initial, domain.SidebarEntry{Kind: sidebarKindCollection, ID: c.ID})
+	var rootItems []*domain.TreeItem
+	if root, ok := s.cache[domain.RootCollectionID]; ok {
+		rootItems = root.Items
 	}
-	if rootItems != nil {
-		for _, item := range rootItems.Items {
-			initial = append(initial, domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID})
-		}
-	}
-	return initial
+	return cols, rootItems
 }
 
 // MoveSidebarEntry はサイドバー上のエントリを指定位置に移動する。
+// 並び替えそのものが目的なので、保存失敗はエラーとして呼び出し側へ返す。
+// 移動前に突合するのは、frontend が GetSidebarLayout の（突合済みの）並びを見て
+// 移動先を決めるため。ファイルにまだ無いエントリの移動を取りこぼさない。
 func (s *CollectionService) MoveSidebarEntry(kind, id string, position int) error {
-	return s.layout.Update(layoutMove(kind, id, position))
+	cols, rootItems := s.snapshotForLayout()
+	return s.layout.Update(func(layout []domain.SidebarEntry) ([]domain.SidebarEntry, error) {
+		reconciled, _ := reconcileSidebarLayout(layout, cols, rootItems)
+		return layoutMove(kind, id, position)(reconciled)
+	})
+}
+
+// applyLayoutBestEffort はレイアウトを更新し、失敗してもログに残して続行する。
+// レイアウトは導出値で、欠落・stale は読み出し時の突合で修復されるため、
+// コレクション本体の変更をレイアウトの保存失敗で巻き戻さない。
+func (s *CollectionService) applyLayoutBestEffort(mutate layoutMutator) {
+	if err := s.layout.Update(mutate); err != nil {
+		s.logError("failed to update sidebar layout", err)
+	}
+}
+
+// logError は logger が設定されている場合だけエラーを記録する。
+func (s *CollectionService) logError(msg string, err error) {
+	if s.logger == nil {
+		return
+	}
+	s.logger.Error(msg, "source", "http", "error", err)
 }
 
 // MoveItemToSidebar はアイテムを指定コレクションから __root__ へ移動し、
@@ -487,7 +509,10 @@ func (s *CollectionService) MoveItemToSidebar(sourceCollectionID, itemID string,
 	s.cache[sourceCollectionID] = srcNext
 	s.cache[domain.RootCollectionID] = rootNext
 
-	return s.layout.Update(layoutInsertItem(itemID, sidebarPosition))
+	// レイアウトへの挿入は best-effort。失敗した場合アイテムはサイドバー末尾に現れる
+	// (指定位置には入らないが、読み出し時の突合で並び自体は整合する)。
+	s.applyLayoutBestEffort(layoutInsertItem(itemID, sidebarPosition))
+	return nil
 }
 
 // DeleteItem はコレクションからアイテムをサブツリーごと削除する。
@@ -515,7 +540,7 @@ func (s *CollectionService) DeleteItem(collectionID, itemID string) error {
 
 	// root コレクションのアイテムはサイドバーレイアウトからも削除する。
 	if collectionID == domain.RootCollectionID {
-		return s.layout.Update(layoutRemove(sidebarKindItem, itemID))
+		s.applyLayoutBestEffort(layoutRemove(sidebarKindItem, itemID))
 	}
 	return nil
 }
