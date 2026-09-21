@@ -1242,3 +1242,98 @@ func TestHTTP_SendRequest_RawPathsAreNeverRead(t *testing.T) {
 		}
 	}
 }
+
+// writeCollectionJSON は collections/ に手書きの JSON を置く。
+// クラッシュが残す状態をディスク上に直接作るために使う。
+func writeCollectionJSON(t *testing.T, dir, id, body string) {
+	t.Helper()
+	collDir := filepath.Join(dir, "collections")
+	if err := os.MkdirAll(collDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(collDir, id+".json"), []byte(body), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+}
+
+// collectionJSON は1件のリクエストだけを持つコレクションの JSON を返す。
+func collectionJSON(id, name, itemID string) string {
+	const tmpl = `{"id":%[1]q,"name":%[2]q,"items":[{"type":"request","id":%[3]q,"name":%[3]q,"children":[],
+		"request":{"id":%[3]q,"name":%[3]q,"method":"GET","url":"http://example.com","doc":"",
+		"headers":[],"params":[],"auth":{"type":"none","username":"","password":"","token":""},
+		"settings":{},"body":{"type":"json","contents":{}}}}]}`
+	return fmt.Sprintf(tmpl, id, name, itemID)
+}
+
+// TestHTTP_RecoversDuplicateItemsOnStartup は、移動の途中でプロセスが消えて
+// アイテムが2つのコレクションに残った状態から起動すると、1つへ回収されることを
+// 確認する。プロセスを実際に強制終了させる代わりに、クラッシュが残す状態を
+// ディスク上に直接作る (この方が OS を問わず決定的に回せる)。
+func TestHTTP_RecoversDuplicateItemsOnStartup(t *testing.T) {
+	dir := t.TempDir()
+	writeCollectionJSON(t, dir, "col-a", collectionJSON("col-a", "Alpha", "dup-item"))
+	writeCollectionJSON(t, dir, "col-b", collectionJSON("col-b", "Beta", "dup-item"))
+
+	h := newHTTPHandlerWithDir(t, dir)
+
+	// 残るのはコレクション ID の昇順で最初に現れた col-a 側。
+	for _, c := range h.GetCollections() {
+		want := 0
+		if c.ID == "col-a" {
+			want = 1
+		}
+		if len(c.Items) != want {
+			t.Errorf("%s items = %d, want %d", c.ID, len(c.Items), want)
+		}
+	}
+
+	// ディスク上のコレクションファイルも回収済みになっている。
+	h2 := newHTTPHandlerWithDir(t, dir)
+	total := 0
+	for _, c := range h2.GetCollections() {
+		total += len(c.Items)
+	}
+	if total != 1 {
+		t.Errorf("items after reload = %d, want 1 (回収がディスクに永続化されていない)", total)
+	}
+}
+
+// TestHTTP_ReconcilesSidebarLayoutOnStartup は、実データと食い違うレイアウトが
+// 起動時に修復され、ディスク上のファイルも書き換わることを確認する。
+func TestHTTP_ReconcilesSidebarLayoutOnStartup(t *testing.T) {
+	dir := t.TempDir()
+	writeCollectionJSON(t, dir, "col-a", collectionJSON("col-a", "Alpha", "r1"))
+	writeCollectionJSON(t, dir, "col-b", collectionJSON("col-b", "Beta", "r2"))
+	// 存在しないコレクション ID と重複エントリを含み、col-b が欠けたレイアウト。
+	layoutPath := filepath.Join(dir, "sidebar_layout.json")
+	layout := `[{"kind":"collection","id":"gone"},{"kind":"collection","id":"col-a"},
+		{"kind":"collection","id":"col-a"}]`
+	if err := os.WriteFile(layoutPath, []byte(layout), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	h := newHTTPHandlerWithDir(t, dir)
+	got, err := h.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	want := []httpdomain.SidebarEntry{
+		{Kind: "collection", ID: "col-a"},
+		{Kind: "collection", ID: "col-b"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("layout = %v, want %v", got, want)
+	}
+
+	// ディスク上の sidebar_layout.json も書き換わっている。
+	raw, err := os.ReadFile(layoutPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(raw), "gone") {
+		t.Errorf("sidebar_layout.json still holds the stale entry:\n%s", raw)
+	}
+	if !strings.Contains(string(raw), "col-b") {
+		t.Errorf("sidebar_layout.json is missing the added collection:\n%s", raw)
+	}
+}
