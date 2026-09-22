@@ -167,13 +167,17 @@ function fromWailsCollection(col: httpdomain.Collection): Collection {
   };
 }
 
-export async function sendRequest(req: HttpRequest): Promise<HttpResponse> {
-  const result = await SendRequest(toWailsRequest(req));
+// executionId は送信ごとの実行 ID。キャンセル・レスポンスの保存と破棄に使う。
+export async function sendRequest(
+  executionId: string,
+  req: HttpRequest,
+): Promise<HttpResponse> {
+  const result = await SendRequest(executionId, toWailsRequest(req));
   return fromWailsHttpResponse(result);
 }
 
-export async function cancelRequest(id: string): Promise<void> {
-  return CancelRequest(id);
+export async function cancelRequest(executionId: string): Promise<void> {
+  return CancelRequest(executionId);
 }
 
 // openFilePicker はネイティブのファイル選択ダイアログを開き、選択されたファイルの参照を返す。
