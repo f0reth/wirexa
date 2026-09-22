@@ -1,6 +1,7 @@
 package httpapp
 
 import (
+	"context"
 	"testing"
 
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
@@ -51,9 +52,9 @@ func TestHTTPRequestService_SendRequest_DropsFileContents(t *testing.T) {
 		got = r
 		return domain.HTTPResponse{StatusCode: 200}, nil
 	}}
-	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
 
-	if _, err := svc.SendRequest(domain.HTTPRequest{Method: "POST", URL: "http://example.com", Body: fileBody()}); err != nil {
+	if _, err := svc.SendRequest("exec-1", domain.HTTPRequest{Method: "POST", URL: "http://example.com", Body: fileBody()}); err != nil {
 		t.Fatalf("SendRequest: %v", err)
 	}
 	if _, ok := got.Body.Contents[domain.BodyTypeFile]; ok {

@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,26 +15,38 @@ import (
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
 
-// mockTransport は HTTPTransport のインメモリモック。
+// mockTransport は HTTPTransport のインメモリモック。渡された execution ID を記録する。
 type mockTransport struct {
-	doFn func(req domain.HTTPRequest) (domain.HTTPResponse, error)
+	doFn    func(req domain.HTTPRequest) (domain.HTTPResponse, error)
+	mu      sync.Mutex
+	execIDs []string
 }
 
-func (m *mockTransport) Do(_ context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) {
+func (m *mockTransport) Do(_ context.Context, executionID string, req domain.HTTPRequest) (domain.HTTPResponse, error) {
+	m.mu.Lock()
+	m.execIDs = append(m.execIDs, executionID)
+	m.mu.Unlock()
 	if m.doFn != nil {
 		return m.doFn(req)
 	}
 	return domain.HTTPResponse{StatusCode: 200}, nil
 }
 
+// executions は Do に渡された execution ID を呼ばれた順に返す。
+func (m *mockTransport) executions() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.execIDs)
+}
+
 func TestHTTPRequestService_SendRequest_ValidMethods(t *testing.T) {
 	validMethods := []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
 	transport := &mockTransport{}
-	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
 
 	for _, method := range validMethods {
 		t.Run(method, func(t *testing.T) {
-			resp, err := svc.SendRequest(domain.HTTPRequest{Method: method, URL: "http://example.com"})
+			resp, err := svc.SendRequest("exec-"+method, domain.HTTPRequest{Method: method, URL: "http://example.com"})
 			if err != nil {
 				t.Fatalf("SendRequest(%q): unexpected error %v", method, err)
 			}
@@ -45,11 +60,11 @@ func TestHTTPRequestService_SendRequest_ValidMethods(t *testing.T) {
 func TestHTTPRequestService_SendRequest_InvalidMethods(t *testing.T) {
 	invalidMethods := []string{"get", "post", "TRACE", "CONNECT", "", "INVALID", "get "}
 	transport := &mockTransport{}
-	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
 
 	for _, method := range invalidMethods {
 		t.Run("invalid_"+method, func(t *testing.T) {
-			_, err := svc.SendRequest(domain.HTTPRequest{Method: method, URL: "http://example.com"})
+			_, err := svc.SendRequest("exec-1", domain.HTTPRequest{Method: method, URL: "http://example.com"})
 			if err == nil {
 				t.Fatalf("SendRequest(%q): expected error, got nil", method)
 			}
@@ -64,9 +79,9 @@ func TestHTTPRequestService_SendRequest_TransportError(t *testing.T) {
 			return domain.HTTPResponse{}, wantErr
 		},
 	}
-	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
 
-	_, err := svc.SendRequest(domain.HTTPRequest{Method: "GET", URL: "http://example.com"})
+	_, err := svc.SendRequest("exec-1", domain.HTTPRequest{Method: "GET", URL: "http://example.com"})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("expected network error, got %v", err)
 	}
@@ -85,9 +100,9 @@ func TestHTTPRequestService_SendRequest_TransportResponse(t *testing.T) {
 			return wantResp, nil
 		},
 	}
-	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
 
-	got, err := svc.SendRequest(domain.HTTPRequest{Method: "GET", URL: "http://example.com"})
+	got, err := svc.SendRequest("exec-1", domain.HTTPRequest{Method: "GET", URL: "http://example.com"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,9 +122,10 @@ func TestHTTPRequestService_SendRequest_PassesRequestToTransport(t *testing.T) {
 			return domain.HTTPResponse{StatusCode: 200}, nil
 		},
 	}
-	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
 
 	input := domain.HTTPRequest{
+		ID:     "saved-1",
 		Method: "POST",
 		URL:    "http://example.com/api",
 		Headers: []domain.KeyValuePair{
@@ -118,7 +134,7 @@ func TestHTTPRequestService_SendRequest_PassesRequestToTransport(t *testing.T) {
 		Body: domain.RequestBody{Type: "json", Contents: map[string]string{"json": `{"x":1}`}},
 		Auth: domain.RequestAuth{Type: "bearer", Token: "tok123"},
 	}
-	svc.SendRequest(input)
+	svc.SendRequest("exec-1", input)
 
 	if capturedReq.URL != input.URL {
 		t.Errorf("URL = %q, want %q", capturedReq.URL, input.URL)
@@ -126,53 +142,83 @@ func TestHTTPRequestService_SendRequest_PassesRequestToTransport(t *testing.T) {
 	if capturedReq.Auth.Token != "tok123" {
 		t.Errorf("Auth.Token = %q, want %q", capturedReq.Auth.Token, "tok123")
 	}
+	// 永続 ID は execution ID に差し替えられず、そのまま transport へ渡る。
+	if capturedReq.ID != "saved-1" {
+		t.Errorf("req.ID = %q, want %q", capturedReq.ID, "saved-1")
+	}
+	if got := transport.executions(); !slices.Equal(got, []string{"exec-1"}) {
+		t.Errorf("execution IDs = %v, want [exec-1]", got)
+	}
 }
 
-// mockTransportCtx はコンテキストを受け取る doFn を持つ transport モック。
+// execution ID が形式を満たさない場合は ValidationError を返し、transport を呼ばない。
+func TestHTTPRequestService_SendRequest_InvalidExecutionID(t *testing.T) {
+	cases := map[string]string{
+		"empty":        "",
+		"too_long":     strings.Repeat("a", maxExecutionIDLen+1),
+		"invalid_char": "exec/1",
+		"space":        "exec 1",
+	}
+	for name, execID := range cases {
+		t.Run(name, func(t *testing.T) {
+			transport := &mockTransport{}
+			svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
+			_, err := svc.SendRequest(execID, domain.HTTPRequest{Method: "GET", URL: "http://example.com"})
+			if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
+				t.Fatalf("SendRequest(%q): want ValidationError, got %v", execID, err)
+			}
+			if got := transport.executions(); len(got) != 0 {
+				t.Errorf("transport must not be called, got %v", got)
+			}
+		})
+	}
+}
+
+// mockTransportCtx はコンテキストと execution ID を受け取る doFn を持つ transport モック。
 type mockTransportCtx struct {
-	doFn func(ctx context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error)
+	doFn func(ctx context.Context, executionID string, req domain.HTTPRequest) (domain.HTTPResponse, error)
 }
 
-func (m *mockTransportCtx) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) {
+func (m *mockTransportCtx) Do(ctx context.Context, executionID string, req domain.HTTPRequest) (domain.HTTPResponse, error) {
 	if m.doFn != nil {
-		return m.doFn(ctx, req)
+		return m.doFn(ctx, executionID, req)
 	}
 	return domain.HTTPResponse{StatusCode: 200}, nil
 }
 
 func TestHTTPRequestService_CancelRequest_NonExistentID(_ *testing.T) {
-	svc := NewHTTPRequestService(&mockTransport{}, testutil.NoopLogger{})
+	svc := NewHTTPRequestService(context.Background(), &mockTransport{}, testutil.NoopLogger{})
 	svc.CancelRequest("no-such-id")
 }
 
 func TestHTTPRequestService_CancelRequest_ValidID(t *testing.T) {
 	started := make(chan struct{})
 	transport := &mockTransportCtx{
-		doFn: func(ctx context.Context, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
+		doFn: func(ctx context.Context, _ string, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
 			close(started)
 			<-ctx.Done()
 			return domain.HTTPResponse{}, ctx.Err()
 		},
 	}
-	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
 
-	const reqID = "req-cancel-test"
+	const execID = "exec-cancel-test"
 	done := make(chan error, 1)
 	go func() {
-		_, err := svc.SendRequest(domain.HTTPRequest{ID: reqID, Method: "GET", URL: "http://example.com"})
+		_, err := svc.SendRequest(execID, domain.HTTPRequest{ID: "saved-1", Method: "GET", URL: "http://example.com"})
 		done <- err
 	}()
 
 	<-started
-	svc.CancelRequest(reqID)
+	svc.CancelRequest(execID)
 	if err := <-done; err == nil {
 		t.Error("expected context cancellation error, got nil")
 	}
 }
 
 func TestHTTPRequestService_SendRequest_InvalidMethod_ReturnsValidationError(t *testing.T) {
-	svc := NewHTTPRequestService(&mockTransport{}, testutil.NoopLogger{})
-	_, err := svc.SendRequest(domain.HTTPRequest{Method: "INVALID", URL: "http://example.com"})
+	svc := NewHTTPRequestService(context.Background(), &mockTransport{}, testutil.NoopLogger{})
+	_, err := svc.SendRequest("exec-1", domain.HTTPRequest{Method: "INVALID", URL: "http://example.com"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -181,59 +227,32 @@ func TestHTTPRequestService_SendRequest_InvalidMethod_ReturnsValidationError(t *
 	}
 }
 
-func TestHTTPRequestService_SendRequest_EmptyID_DoesNotPanic(t *testing.T) {
-	transport := &mockTransport{}
-	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
-	resp, err := svc.SendRequest(domain.HTTPRequest{ID: "", Method: "GET", URL: "http://example.com"})
-	if err != nil {
-		t.Fatalf("SendRequest with empty ID: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected 200, got %d", resp.StatusCode)
-	}
-}
-
-func TestHTTPRequestService_SendRequest_EmptyID_AssignsExecutionID(t *testing.T) {
-	var got string
-	transport := &mockTransport{doFn: func(r domain.HTTPRequest) (domain.HTTPResponse, error) {
-		got = r.ID
-		return domain.HTTPResponse{StatusCode: 200}, nil
-	}}
-	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
-	if _, err := svc.SendRequest(domain.HTTPRequest{Method: "GET", URL: "http://example.com"}); err != nil {
-		t.Fatalf("SendRequest: %v", err)
-	}
-	if got == "" {
-		t.Fatal("transport must receive a non-empty execution ID")
-	}
-}
-
 // 同じ execution ID の並行送信は拒否し、先行リクエストのキャンセル登録を上書きしない。
 func TestHTTPRequestService_SendRequest_RejectsDuplicateExecutionID(t *testing.T) {
 	started := make(chan struct{})
 	transport := &mockTransportCtx{
-		doFn: func(ctx context.Context, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
+		doFn: func(ctx context.Context, _ string, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
 			close(started)
 			<-ctx.Done()
 			return domain.HTTPResponse{}, ctx.Err()
 		},
 	}
-	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
 
-	const reqID = "exec-dup"
+	const execID = "exec-dup"
 	done := make(chan error, 1)
 	go func() {
-		_, err := svc.SendRequest(domain.HTTPRequest{ID: reqID, Method: "GET", URL: "http://example.com"})
+		_, err := svc.SendRequest(execID, domain.HTTPRequest{Method: "GET", URL: "http://example.com"})
 		done <- err
 	}()
 	<-started
 
-	if _, err := svc.SendRequest(domain.HTTPRequest{ID: reqID, Method: "GET", URL: "http://example.com"}); !errors.Is(err, domain.ErrExecutionInProgress) {
+	if _, err := svc.SendRequest(execID, domain.HTTPRequest{Method: "GET", URL: "http://example.com"}); !errors.Is(err, domain.ErrExecutionInProgress) {
 		t.Fatalf("duplicate send: want ErrExecutionInProgress, got %v", err)
 	}
 
 	// 先行リクエストは引き続きキャンセルできる。
-	svc.CancelRequest(reqID)
+	svc.CancelRequest(execID)
 	select {
 	case err := <-done:
 		if err == nil {
@@ -247,17 +266,17 @@ func TestHTTPRequestService_SendRequest_RejectsDuplicateExecutionID(t *testing.T
 func TestHTTPRequestService_Shutdown_CancelsInFlightAndRejectsNewSends(t *testing.T) {
 	started := make(chan struct{})
 	transport := &mockTransportCtx{
-		doFn: func(ctx context.Context, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
+		doFn: func(ctx context.Context, _ string, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
 			close(started)
 			<-ctx.Done()
 			return domain.HTTPResponse{}, ctx.Err()
 		},
 	}
-	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := svc.SendRequest(domain.HTTPRequest{ID: "exec-1", Method: "GET", URL: "http://example.com"})
+		_, err := svc.SendRequest("exec-1", domain.HTTPRequest{Method: "GET", URL: "http://example.com"})
 		done <- err
 	}()
 	<-started
@@ -268,7 +287,7 @@ func TestHTTPRequestService_Shutdown_CancelsInFlightAndRejectsNewSends(t *testin
 	if err := <-done; err == nil {
 		t.Fatal("expected the in-flight request to be canceled")
 	}
-	if _, err := svc.SendRequest(domain.HTTPRequest{ID: "exec-2", Method: "GET", URL: "http://example.com"}); err == nil {
+	if _, err := svc.SendRequest("exec-2", domain.HTTPRequest{Method: "GET", URL: "http://example.com"}); err == nil {
 		t.Fatal("SendRequest after Shutdown must fail")
 	}
 }
@@ -277,15 +296,15 @@ func TestHTTPRequestService_Shutdown_ReturnsFalseOnTimeout(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{})
 	transport := &mockTransportCtx{
-		doFn: func(_ context.Context, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
+		doFn: func(_ context.Context, _ string, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
 			close(started)
 			<-release // キャンセルに応じない transport を模す
 			return domain.HTTPResponse{}, nil
 		},
 	}
-	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
 	go func() {
-		_, _ = svc.SendRequest(domain.HTTPRequest{ID: "stuck", Method: "GET", URL: "http://example.com"})
+		_, _ = svc.SendRequest("stuck", domain.HTTPRequest{Method: "GET", URL: "http://example.com"})
 	}()
 	<-started
 	defer close(release)
@@ -295,26 +314,57 @@ func TestHTTPRequestService_Shutdown_ReturnsFalseOnTimeout(t *testing.T) {
 	}
 }
 
+// 注入した親 context のキャンセルは実行中リクエストの context まで伝わる。
+func TestHTTPRequestService_ParentContextCancel_CancelsInFlight(t *testing.T) {
+	started := make(chan struct{})
+	transport := &mockTransportCtx{
+		doFn: func(ctx context.Context, _ string, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
+			close(started)
+			<-ctx.Done()
+			return domain.HTTPResponse{}, ctx.Err()
+		},
+	}
+	parent, cancelParent := context.WithCancel(context.Background())
+	svc := NewHTTPRequestService(parent, transport, testutil.NoopLogger{})
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := svc.SendRequest("exec-1", domain.HTTPRequest{Method: "GET", URL: "http://example.com"})
+		done <- err
+	}()
+	<-started
+
+	cancelParent()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected the in-flight request to be canceled by the parent context")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceling the parent context did not reach the in-flight request")
+	}
+}
+
 func TestHTTPRequestService_ConcurrentSendAndCancel(_ *testing.T) {
 	// go test -race でデータ競合が検出されないことを確認する。
 	// transport に入った時点でキャンセル登録済みなので、started 受信後に CancelRequest する。
 	const n = 10
 	started := make(chan struct{}, n)
 	transport := &mockTransportCtx{
-		doFn: func(ctx context.Context, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
+		doFn: func(ctx context.Context, _ string, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
 			started <- struct{}{}
 			<-ctx.Done()
 			return domain.HTTPResponse{}, ctx.Err()
 		},
 	}
-	svc := NewHTTPRequestService(transport, testutil.NoopLogger{})
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
 
 	done := make(chan struct{}, n)
 	ids := make([]string, n)
 	for i := range n {
-		ids[i] = "req-" + string(rune('a'+i))
+		ids[i] = "exec-" + string(rune('a'+i))
 		go func(id string) {
-			svc.SendRequest(domain.HTTPRequest{ID: id, Method: "GET", URL: "http://example.com"})
+			svc.SendRequest(id, domain.HTTPRequest{ID: "saved-1", Method: "GET", URL: "http://example.com"})
 			done <- struct{}{}
 		}(ids[i])
 	}
