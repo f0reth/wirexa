@@ -10,13 +10,13 @@ test.beforeEach(async ({ page }) => {
   ).toBeVisible();
 });
 
-/** SendRequest に渡った n 番目のリクエストの execution ID。 */
+/** SendRequest に渡った n 番目の execution ID (第 1 引数)。 */
 async function sentExecutionId(
   fake: { args(name: string): Promise<unknown[][]> },
   n = 0,
 ): Promise<string> {
   const calls = await fake.args("SendRequest");
-  return (calls[n][0] as { id: string }).id;
+  return calls[n][0] as string;
 }
 
 test.describe("truncated response body", () => {
