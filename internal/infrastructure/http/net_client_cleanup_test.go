@@ -117,10 +117,11 @@ func tempFilesIn(t *testing.T, dir string) []string {
 }
 
 // truncatedRequest は maxBody 1MB を超えるレスポンスを返すリクエストを組み立てる。
-func truncatedRequest(t *testing.T, id string, body []byte) domain.HTTPRequest {
+// ID は保存済みリクエストの永続 ID で、一時ファイルの追跡には使われない。
+func truncatedRequest(t *testing.T, body []byte) domain.HTTPRequest {
 	t.Helper()
 	return domain.HTTPRequest{
-		ID:       id,
+		ID:       "saved-1",
 		Method:   http.MethodGet,
 		URL:      serveBytes(t, body),
 		Settings: domain.RequestSettings{MaxResponseBodyMB: 1},
@@ -130,7 +131,7 @@ func truncatedRequest(t *testing.T, id string, body []byte) domain.HTTPRequest {
 func TestNetClient_Cleanup(t *testing.T) {
 	dir := t.TempDir()
 	c := NewNetClient(nil, dir)
-	if _, err := c.Do(context.Background(), truncatedRequest(t, "big", make([]byte, 2*1024*1024))); err != nil {
+	if _, err := c.Do(context.Background(), "exec-big", truncatedRequest(t, make([]byte, 2*1024*1024))); err != nil {
 		t.Fatalf("Do: %v", err)
 	}
 	if files := tempFilesIn(t, dir); len(files) != 1 {
@@ -142,7 +143,7 @@ func TestNetClient_Cleanup(t *testing.T) {
 	if files := tempFilesIn(t, dir); len(files) != 0 {
 		t.Fatalf("expected tracked temp files removed, found %v", files)
 	}
-	if _, err := c.Responses().AcquireSave("big"); !errors.Is(err, domain.ErrResponseUnavailable) {
+	if _, err := c.Responses().AcquireSave("exec-big"); !errors.Is(err, domain.ErrResponseUnavailable) {
 		t.Fatalf("AcquireSave after Cleanup: want ErrResponseUnavailable, got %v", err)
 	}
 }
@@ -153,11 +154,11 @@ func TestNetClient_WithinLimit_NoTempFile(t *testing.T) {
 	c := NewNetClient(nil, dir)
 
 	req := domain.HTTPRequest{
-		ID:     "small",
+		ID:     "saved-1",
 		Method: http.MethodGet,
 		URL:    serveBytes(t, []byte("hello")),
 	}
-	res, err := c.Do(context.Background(), req)
+	res, err := c.Do(context.Background(), "exec-small", req)
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
@@ -174,9 +175,9 @@ func TestNetClient_WithinLimit_NoTempFile(t *testing.T) {
 	if files := tempFilesIn(t, dir); len(files) != 0 {
 		t.Fatalf("expected no temp file for a response within the limit, found %v", files)
 	}
-	// 予約が解放されているので、同じ ID で再送できる。
-	if _, err := c.Do(context.Background(), req); err != nil {
-		t.Fatalf("re-send with the same ID after completion: %v", err)
+	// 予約が解放されているので、同じ execution ID で再送できる。
+	if _, err := c.Do(context.Background(), "exec-small", req); err != nil {
+		t.Fatalf("re-send with the same execution ID after completion: %v", err)
 	}
 }
 
@@ -187,7 +188,7 @@ func TestNetClient_Truncated_TempFileHoldsFullBody(t *testing.T) {
 	full := bytes.Repeat([]byte("a"), maxBody+512)
 
 	c := NewNetClient(nil, dir)
-	res, err := c.Do(context.Background(), truncatedRequest(t, "big", full))
+	res, err := c.Do(context.Background(), "exec-big", truncatedRequest(t, full))
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
@@ -218,7 +219,7 @@ func TestNetClient_Truncated_TempFileHoldsFullBody(t *testing.T) {
 	}
 
 	// 一時ファイルは execution ID で保存できる状態で追跡されている。
-	lease, err := c.Responses().AcquireSave("big")
+	lease, err := c.Responses().AcquireSave("exec-big")
 	if err != nil {
 		t.Fatalf("AcquireSave: %v", err)
 	}
@@ -235,8 +236,8 @@ func TestNetClient_AbsoluteLimit_CapsBody(t *testing.T) {
 	c := NewNetClient(nil, dir)
 	c.maxTempBytes = hardLimit
 
-	res, err := c.Do(context.Background(), domain.HTTPRequest{
-		ID:     "huge",
+	res, err := c.Do(context.Background(), "exec-huge", domain.HTTPRequest{
+		ID:     "saved-1",
 		Method: http.MethodGet,
 		URL:    serveBytes(t, full),
 		// maxBody は maxTempBytes までクランプされるので、大きな値を指定しても上限は hardLimit になる。
@@ -271,25 +272,55 @@ func TestNetClient_AbsoluteLimit_CapsBody(t *testing.T) {
 func TestNetClient_TruncatedResend_RejectedUntilDiscard(t *testing.T) {
 	dir := t.TempDir()
 	c := NewNetClient(nil, dir)
-	req := truncatedRequest(t, "same-id", make([]byte, 2*1024*1024))
+	req := truncatedRequest(t, make([]byte, 2*1024*1024))
 
-	if _, err := c.Do(context.Background(), req); err != nil {
+	// 追跡は execution ID 単位なので、再送を拒否させるには同じ execution ID を使う。
+	if _, err := c.Do(context.Background(), "exec-same", req); err != nil {
 		t.Fatalf("first Do: %v", err)
 	}
-	if _, err := c.Do(context.Background(), req); !errors.Is(err, domain.ErrResponseBusy) {
+	if _, err := c.Do(context.Background(), "exec-same", req); !errors.Is(err, domain.ErrResponseBusy) {
 		t.Fatalf("re-send while tracked: want ErrResponseBusy, got %v", err)
 	}
 	if files := tempFilesIn(t, dir); len(files) != 1 {
 		t.Fatalf("the first temp file must be kept, found %v", files)
 	}
 
-	if err := c.Responses().Discard("same-id"); err != nil {
+	if err := c.Responses().Discard("exec-same"); err != nil {
 		t.Fatalf("Discard: %v", err)
 	}
-	if _, err := c.Do(context.Background(), req); err != nil {
+	if _, err := c.Do(context.Background(), "exec-same", req); err != nil {
 		t.Fatalf("re-send after Discard: %v", err)
 	}
 	if files := tempFilesIn(t, dir); len(files) != 1 {
 		t.Fatalf("expected exactly 1 temp file, found %v", files)
 	}
+}
+
+// 同じ保存済みリクエストでも execution ID が異なれば一時ファイルは別々に追跡され、
+// 一方の Discard が他方を消さないことを確認する。
+func TestNetClient_TruncatedSameRequest_TrackedPerExecution(t *testing.T) {
+	dir := t.TempDir()
+	c := NewNetClient(nil, dir)
+	req := truncatedRequest(t, make([]byte, 2*1024*1024))
+
+	for _, execID := range []string{"exec-1", "exec-2"} {
+		if _, err := c.Do(context.Background(), execID, req); err != nil {
+			t.Fatalf("Do(%s): %v", execID, err)
+		}
+	}
+	if files := tempFilesIn(t, dir); len(files) != 2 {
+		t.Fatalf("expected 1 temp file per execution, found %v", files)
+	}
+
+	if err := c.Responses().Discard("exec-1"); err != nil {
+		t.Fatalf("Discard(exec-1): %v", err)
+	}
+	if files := tempFilesIn(t, dir); len(files) != 1 {
+		t.Fatalf("discarding one execution must keep the other, found %v", files)
+	}
+	lease, err := c.Responses().AcquireSave("exec-2")
+	if err != nil {
+		t.Fatalf("AcquireSave(exec-2) after discarding exec-1: %v", err)
+	}
+	lease.Release()
 }
