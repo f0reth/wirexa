@@ -26,7 +26,7 @@ func doGet(t *testing.T, body []byte, contentType string) domain.HTTPResponse {
 	}))
 	defer srv.Close()
 
-	res, err := NewNetClient(nil, t.TempDir()).Do(context.Background(), domain.HTTPRequest{
+	res, err := NewNetClient(nil, t.TempDir()).Do(context.Background(), "exec-1", domain.HTTPRequest{
 		ID:     "test",
 		Method: http.MethodGet,
 		URL:    srv.URL,
@@ -84,7 +84,7 @@ func TestNetClient_ReusesConnection(t *testing.T) {
 	c := NewNetClient(nil, t.TempDir())
 	defer c.Cleanup()
 	for i := range 3 {
-		if _, err := c.Do(context.Background(), domain.HTTPRequest{
+		if _, err := c.Do(context.Background(), fmt.Sprintf("exec-%d", i), domain.HTTPRequest{
 			ID:     fmt.Sprintf("req-%d", i),
 			Method: http.MethodGet,
 			URL:    srv.URL,
@@ -158,7 +158,7 @@ func TestNetClient_Timeout(t *testing.T) {
 
 	c := NewNetClient(nil, t.TempDir())
 	defer c.Cleanup()
-	_, err := c.Do(context.Background(), domain.HTTPRequest{
+	_, err := c.Do(context.Background(), "exec-1", domain.HTTPRequest{
 		ID:       "timeout",
 		Method:   http.MethodGet,
 		URL:      srv.URL,

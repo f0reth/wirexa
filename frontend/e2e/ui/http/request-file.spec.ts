@@ -24,10 +24,10 @@ async function chooseBodyType(page: Page, label: string) {
   return bodyPanel;
 }
 
-/** SendRequest に最後に渡ったリクエスト。 */
+/** SendRequest に最後に渡ったリクエスト (第 2 引数)。 */
 async function lastSent(fake: FakeControl): Promise<HttpRequest> {
   const calls = await fake.args("SendRequest");
-  return calls[calls.length - 1][0] as HttpRequest;
+  return calls[calls.length - 1][1] as HttpRequest;
 }
 
 test.describe("file body", () => {

@@ -38,6 +38,6 @@ export function SaveResponseBase64(arg1:string,arg2:string):Promise<void>;
 
 export function SaveResponseBody(arg1:string):Promise<boolean>;
 
-export function SendRequest(arg1:httpdomain.HTTPRequest):Promise<httpdomain.HTTPResponse>;
+export function SendRequest(arg1:string,arg2:httpdomain.HTTPRequest):Promise<httpdomain.HTTPResponse>;
 
 export function UpdateRequest(arg1:string,arg2:httpdomain.HTTPRequest):Promise<void>;

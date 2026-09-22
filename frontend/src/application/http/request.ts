@@ -30,8 +30,9 @@ const JSON_BODY_DEFAULT = '{\n  "": ""\n}';
 const EMPTY_PAIRS: FormRow[] = [];
 
 export interface RequestApi {
-  sendRequest(req: HttpRequest): Promise<HttpResponse>;
-  cancelRequest(id: string): Promise<void>;
+  // executionId は送信ごとの実行 ID で、req.id (保存済みリクエストの ID) とは独立している。
+  sendRequest(executionId: string, req: HttpRequest): Promise<HttpResponse>;
+  cancelRequest(executionId: string): Promise<void>;
   updateRequest(collectionId: string, req: HttpRequest): Promise<void>;
   /**
    * ネイティブのファイル選択ダイアログ。hint はダイアログの初期位置にだけ使われ、
@@ -104,8 +105,8 @@ export function createRequestState(
   const response = () => current()?.response ?? null;
   const [responseSaveState, setResponseSaveState] =
     createSignal<ResponseSaveState>("idle");
-  // 実行中リクエストの send ID。保存用 ID とは別に送信ごとに採番するため、
-  // 同じリクエストを連続送信してもバックエンドの cancels マップでキーが衝突しない。
+  // 実行中リクエストの execution ID。保存済みリクエストの ID とは別に送信ごとに採番するため、
+  // 同じリクエストを並行送信してもバックエンドの cancels マップでキーが衝突しない。
   const [inFlight, setInFlight] = createSignal<readonly string[]>([]);
   const loading = () => inFlight().length > 0;
   const [activeRequestId, setActiveRequestId] = createSignal<string | null>(
@@ -189,21 +190,23 @@ export function createRequestState(
   async function sendRequest(): Promise<void> {
     const m = method();
     const u = url();
-    const sendId = generateId();
+    // 送信ごとの実行 ID。保存済みリクエストの ID とは別に採番する。
+    const executionId = generateId();
     replaceResponse(null);
     // 入力しただけのパスや保存済みの参照は許可にならないため、backend に送る前に止める。
     if (hasUnconfirmedFile(body())) {
       replaceResponse({
-        executionId: sendId,
+        executionId,
         response: errorResponse(UNCONFIRMED_FILE_ERROR),
       });
       return;
     }
-    setInFlight((ids) => [...ids, sendId]);
+    setInFlight((ids) => [...ids, executionId]);
     logger.info("HTTP request sent", { method: m, url: u });
     try {
-      const res = await api.sendRequest({
-        id: sendId,
+      const res = await api.sendRequest(executionId, {
+        // 保存済みリクエストの ID。未保存 (新規タブ) なら空。
+        id: activeRequestId() ?? "",
         name: "",
         method: m,
         url: u,
@@ -214,7 +217,7 @@ export function createRequestState(
         settings: settings(),
         doc: doc(),
       });
-      replaceResponse({ executionId: sendId, response: res });
+      replaceResponse({ executionId, response: res });
       logger.info("HTTP response received", {
         method: m,
         url: u,
@@ -224,7 +227,7 @@ export function createRequestState(
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       replaceResponse({
-        executionId: sendId,
+        executionId,
         response: errorResponse(errorMsg),
       });
       logger.error("HTTP request failed", {
@@ -233,7 +236,7 @@ export function createRequestState(
         error: errorMsg,
       });
     } finally {
-      setInFlight((ids) => ids.filter((id) => id !== sendId));
+      setInFlight((ids) => ids.filter((id) => id !== executionId));
     }
   }
 

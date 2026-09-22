@@ -231,8 +231,25 @@ function fileAccessDenied(req: HttpRequest): boolean {
   return false;
 }
 
-function sendRequest(req: HttpRequest): Promise<HttpResponse> {
+// Go の HTTPRequestService と同じ規則で execution ID を検証する。
+// キーの形式を揃えておくことで、偽バックエンドが本物より緩く振る舞わないようにする。
+function validExecutionId(executionId: string): boolean {
+  return (
+    executionId.length > 0 &&
+    executionId.length <= 64 &&
+    /^[A-Za-z0-9_-]+$/.test(executionId)
+  );
+}
+
+function sendRequest(
+  executionId: string,
+  req: HttpRequest,
+): Promise<HttpResponse> {
   return new Promise<HttpResponse>((resolve, reject) => {
+    if (!validExecutionId(executionId)) {
+      reject(new Error(`invalid executionID: ${executionId}`));
+      return;
+    }
     if (fileAccessDenied(req)) {
       reject(
         new Error(
@@ -242,14 +259,14 @@ function sendRequest(req: HttpRequest): Promise<HttpResponse> {
       return;
     }
     const timer = setTimeout(() => {
-      inFlight.delete(req.id);
+      inFlight.delete(executionId);
       if (seed.httpError) reject(new Error(seed.httpError));
       else resolve({ ...DEFAULT_RESPONSE, ...seed.httpResponse });
     }, seed.httpResponseDelayMs ?? 0);
 
-    inFlight.set(req.id, () => {
+    inFlight.set(executionId, () => {
       clearTimeout(timer);
-      inFlight.delete(req.id);
+      inFlight.delete(executionId);
       reject(new Error("request canceled"));
     });
   });
@@ -412,10 +429,13 @@ const HttpHandler = {
     },
   ),
 
-  SendRequest: counted("SendRequest", (req: HttpRequest) => sendRequest(req)),
+  SendRequest: counted(
+    "SendRequest",
+    (executionId: string, req: HttpRequest) => sendRequest(executionId, req),
+  ),
 
-  CancelRequest: counted("CancelRequest", async (id: string) => {
-    inFlight.get(id)?.();
+  CancelRequest: counted("CancelRequest", async (executionId: string) => {
+    inFlight.get(executionId)?.();
   }),
 
   // ダイアログで seed.pickedFile が選ばれたものとして返す (未設定ならキャンセル)。

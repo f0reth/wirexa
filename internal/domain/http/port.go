@@ -5,8 +5,10 @@ import "context"
 
 // HTTPTransport はHTTPリクエスト実行を担うポート。
 // Application層はこのインターフェースを通じてネットワークI/Oを行う。
+// executionID は送信ごとの実行 ID で、打ち切り時の一時ファイルはこの ID で追跡する。
+// req.ID は保存済みリクエストの永続 ID であり、実行の識別には使わない。
 type HTTPTransport interface {
-	Do(ctx context.Context, req HTTPRequest) (HTTPResponse, error)
+	Do(ctx context.Context, executionID string, req HTTPRequest) (HTTPResponse, error)
 }
 
 // SelectedFileReader は file token を解決し、ファイルダイアログで選択されたファイルを読むポート。
@@ -56,9 +58,12 @@ type SidebarLayoutRepository interface {
 }
 
 // RequestUseCase は HTTP リクエスト送信のユースケース入力ポート。
+// executionID は送信ごとに呼び出し側が採番する実行 ID で、キャンセル・レスポンスの保存と破棄を
+// この ID で関連付ける。保存済みリクエストの永続 ID (req.ID) とは独立している。
 type RequestUseCase interface {
-	SendRequest(req HTTPRequest) (HTTPResponse, error)
-	CancelRequest(id string)
+	SendRequest(executionID string, req HTTPRequest) (HTTPResponse, error)
+	// CancelRequest は指定 execution ID の実行をキャンセルする。
+	CancelRequest(executionID string)
 }
 
 // CollectionUseCase はコレクション自体のCRUDユースケース入力ポート。

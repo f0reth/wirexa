@@ -155,7 +155,7 @@ func (a *App) initialize(ctx context.Context) error {
 	// request file はダイアログで選ばれたものだけを session token で参照させる。
 	fileRegistry := httpinfra.NewFileRegistry()
 	a.netClient = httpinfra.NewNetClient(fileRegistry, sessionDir)
-	a.reqSvc = httpapp.NewHTTPRequestService(a.netClient, logger)
+	a.reqSvc = httpapp.NewHTTPRequestService(ctx, a.netClient, logger)
 	adapters.SetupHTTPHandler(ctx, a.httpHandler, adapters.HTTPHandlerDeps{
 		ReqSvc:    a.reqSvc,
 		CollSvc:   collSvc,

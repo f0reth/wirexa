@@ -63,10 +63,13 @@ function makeTruncatedResponse(body = "partial"): HttpResponse {
 /** sendRequest を任意のタイミングで解決できる API を作る。 */
 function makeApi() {
   const sent: HttpRequest[] = [];
+  // 送信ごとの execution ID。sent と同じ index で対応する。
+  const execIds: string[] = [];
   // 送信順の index で個別に解決できるよう、解決済みの枠は undefined にして詰めない。
   const pending: Array<((res: HttpResponse) => void) | undefined> = [];
   const api = {
-    sendRequest: (req: HttpRequest) => {
+    sendRequest: (executionId: string, req: HttpRequest) => {
+      execIds.push(executionId);
       sent.push(req);
       return new Promise<HttpResponse>((resolve) => {
         pending.push(resolve);
@@ -82,6 +85,7 @@ function makeApi() {
   return {
     api,
     sent,
+    execIds,
     /** 送信済みリクエストをすべて解決する。 */
     settleAll: async () => {
       pending.forEach((resolve, i) => {
@@ -98,10 +102,10 @@ function makeApi() {
   };
 }
 
-describe("createRequestState send id", () => {
-  it("assigns a fresh send id per request instead of an empty id", async () => {
+describe("createRequestState execution id", () => {
+  it("assigns a fresh execution id per request instead of an empty id", async () => {
     await createRoot(async (dispose) => {
-      const { api, sent, settleAll } = makeApi();
+      const { api, execIds, settleAll } = makeApi();
       const state = createRequestState(api, noopLogger, makeNotifier());
       state.setUrl("https://example.com");
 
@@ -110,17 +114,17 @@ describe("createRequestState send id", () => {
       await settleAll();
       await Promise.all([first, second]);
 
-      expect(sent).toHaveLength(2);
-      expect(sent[0].id).not.toBe("");
-      expect(sent[1].id).not.toBe("");
-      expect(sent[0].id).not.toBe(sent[1].id);
+      expect(execIds).toHaveLength(2);
+      expect(execIds[0]).not.toBe("");
+      expect(execIds[1]).not.toBe("");
+      expect(execIds[0]).not.toBe(execIds[1]);
       dispose();
     });
   });
 
-  it("does not reuse the saved request id as the send id", async () => {
+  it("sends the saved request id separately from the execution id", async () => {
     await createRoot(async (dispose) => {
-      const { api, sent, settleAll } = makeApi();
+      const { api, sent, execIds, settleAll } = makeApi();
       const state = createRequestState(api, noopLogger, makeNotifier());
       state.loadRequest(makeRequest("saved-1"), "col-1");
 
@@ -128,15 +132,32 @@ describe("createRequestState send id", () => {
       await settleAll();
       await done;
 
-      expect(sent[0].id).not.toBe("saved-1");
+      expect(sent[0].id).toBe("saved-1");
+      expect(execIds[0]).not.toBe("saved-1");
       expect(state.activeRequestId()).toBe("saved-1");
+      dispose();
+    });
+  });
+
+  it("sends an empty request id when the request is not saved", async () => {
+    await createRoot(async (dispose) => {
+      const { api, sent, execIds, settleAll } = makeApi();
+      const state = createRequestState(api, noopLogger, makeNotifier());
+      state.setUrl("https://example.com");
+
+      const done = state.sendRequest();
+      await settleAll();
+      await done;
+
+      expect(sent[0].id).toBe("");
+      expect(execIds[0]).not.toBe("");
       dispose();
     });
   });
 
   it("cancels every in-flight send id", async () => {
     await createRoot(async (dispose) => {
-      const { api, sent, settleAll } = makeApi();
+      const { api, execIds, settleAll } = makeApi();
       const state = createRequestState(api, noopLogger, makeNotifier());
 
       const first = state.sendRequest();
@@ -145,8 +166,8 @@ describe("createRequestState send id", () => {
 
       await state.cancelRequest();
       expect(api.cancelRequest).toHaveBeenCalledTimes(2);
-      expect(api.cancelRequest).toHaveBeenCalledWith(sent[0].id);
-      expect(api.cancelRequest).toHaveBeenCalledWith(sent[1].id);
+      expect(api.cancelRequest).toHaveBeenCalledWith(execIds[0]);
+      expect(api.cancelRequest).toHaveBeenCalledWith(execIds[1]);
 
       await settleAll();
       await Promise.all([first, second]);
@@ -278,7 +299,7 @@ describe("createRequestState form pairs", () => {
 describe("createRequestState response body lifecycle", () => {
   it("discards the previous truncated body when a new send starts", async () => {
     await createRoot(async (dispose) => {
-      const { api, sent, settle } = makeApi();
+      const { api, execIds, settle } = makeApi();
       const state = createRequestState(api, noopLogger, makeNotifier());
 
       const first = state.sendRequest();
@@ -286,7 +307,7 @@ describe("createRequestState response body lifecycle", () => {
       await first;
 
       const second = state.sendRequest();
-      expect(api.discardResponseBody).toHaveBeenCalledWith(sent[0].id);
+      expect(api.discardResponseBody).toHaveBeenCalledWith(execIds[0]);
       settle(1, makeResponse());
       await second;
       dispose();
@@ -312,7 +333,7 @@ describe("createRequestState response body lifecycle", () => {
 
   it("saves by execution ID and does not discard after a successful save", async () => {
     await createRoot(async (dispose) => {
-      const { api, sent, settle } = makeApi();
+      const { api, execIds, settle } = makeApi();
       const state = createRequestState(api, noopLogger, makeNotifier());
 
       const send = state.sendRequest();
@@ -320,7 +341,7 @@ describe("createRequestState response body lifecycle", () => {
       await send;
       await state.saveResponseBody();
 
-      expect(api.saveResponseBody).toHaveBeenCalledWith(sent[0].id);
+      expect(api.saveResponseBody).toHaveBeenCalledWith(execIds[0]);
       expect(state.responseSaveState()).toBe("saved");
 
       state.newRequest();
@@ -366,7 +387,7 @@ describe("createRequestState response body lifecycle", () => {
 
   it("clears and discards the response when switching to another request", async () => {
     await createRoot(async (dispose) => {
-      const { api, sent, settle } = makeApi();
+      const { api, execIds, settle } = makeApi();
       const state = createRequestState(api, noopLogger, makeNotifier());
       state.loadRequest(makeRequest("a"), "col-1");
 
@@ -380,7 +401,7 @@ describe("createRequestState response body lifecycle", () => {
       expect(state.response()).not.toBeNull();
 
       state.loadRequest(makeRequest("b"), "col-1");
-      expect(api.discardResponseBody).toHaveBeenCalledWith(sent[0].id);
+      expect(api.discardResponseBody).toHaveBeenCalledWith(execIds[0]);
       expect(state.response()).toBeNull();
       dispose();
     });
@@ -388,7 +409,7 @@ describe("createRequestState response body lifecycle", () => {
 
   it("keeps the displayed response paired with its execution ID when responses arrive out of order", async () => {
     await createRoot(async (dispose) => {
-      const { api, sent, settle } = makeApi();
+      const { api, execIds, settle } = makeApi();
       const state = createRequestState(api, noopLogger, makeNotifier());
 
       const first = state.sendRequest();
@@ -399,9 +420,9 @@ describe("createRequestState response body lifecycle", () => {
       await first;
 
       expect(state.response()?.body).toBe("first");
-      expect(api.discardResponseBody).toHaveBeenCalledWith(sent[1].id);
+      expect(api.discardResponseBody).toHaveBeenCalledWith(execIds[1]);
       await state.saveResponseBody();
-      expect(api.saveResponseBody).toHaveBeenCalledWith(sent[0].id);
+      expect(api.saveResponseBody).toHaveBeenCalledWith(execIds[0]);
       dispose();
     });
   });

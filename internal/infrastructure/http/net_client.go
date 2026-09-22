@@ -87,12 +87,12 @@ func (c *NetClient) closeTransportsLocked() {
 }
 
 // Do は HTTPRequest を実行して HTTPResponse を返す。
-// req.ID は送信ごとの execution ID で、打ち切り時の一時ファイルはこの ID で追跡する。
-func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTPResponse, error) {
-	if err := c.responses.Begin(req.ID); err != nil {
+// executionID は送信ごとの実行 ID で、打ち切り時の一時ファイルはこの ID で追跡する。
+func (c *NetClient) Do(ctx context.Context, executionID string, req domain.HTTPRequest) (domain.HTTPResponse, error) {
+	if err := c.responses.Begin(executionID); err != nil {
 		return domain.HTTPResponse{}, err
 	}
-	defer c.responses.Finish(req.ID)
+	defer c.responses.Finish(executionID)
 
 	timeout := resolveTimeout(req.Settings)
 	// タイムアウトは http.Client.Timeout ではなく context で表現し、
@@ -227,7 +227,7 @@ func (c *NetClient) Do(ctx context.Context, req domain.HTTPRequest) (domain.HTTP
 			// 上限超過: 全文をテンポラリファイルへ退避し、Body は先頭 maxBody バイトのまま返す。
 			bodyTruncated = true
 			limit := c.tempLimit()
-			serr := c.responses.Spill(req.ID, limit, respContentType, func(f *os.File) (int64, error) {
+			serr := c.responses.Spill(executionID, limit, respContentType, func(f *os.File) (int64, error) {
 				written, capped, werr := writeSpill(f, limit, body, peek[:n], resp.Body)
 				size = written
 				bodyCapped = capped

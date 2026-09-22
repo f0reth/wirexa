@@ -131,7 +131,7 @@ describe("sendRequest", () => {
       makeWailsResponse() as never,
     );
 
-    const result = await sendRequest(makeDomainRequest());
+    const result = await sendRequest("exec-1", makeDomainRequest());
 
     expect(result).toEqual({
       statusCode: 200,
@@ -158,7 +158,7 @@ describe("sendRequest", () => {
       }) as never,
     );
 
-    const result = await sendRequest(makeDomainRequest());
+    const result = await sendRequest("exec-1", makeDomainRequest());
 
     expect(result.headers["Set-Cookie"]).toEqual([
       "a=1; Path=/",
@@ -170,7 +170,7 @@ describe("sendRequest", () => {
     vi.mocked(Handler.SendRequest).mockResolvedValue(
       makeWailsResponse({ bodyTruncated: true }) as never,
     );
-    const result = await sendRequest(makeDomainRequest());
+    const result = await sendRequest("exec-1", makeDomainRequest());
     expect(result.bodyTruncated).toBe(true);
     expect(result.bodyCapped).toBe(false);
     expect(result).not.toHaveProperty("tempFilePath");
@@ -183,7 +183,7 @@ describe("sendRequest", () => {
         bodyCapped: true,
       }) as never,
     );
-    const result = await sendRequest(makeDomainRequest());
+    const result = await sendRequest("exec-1", makeDomainRequest());
     expect(result.bodyCapped).toBe(true);
   });
 
@@ -191,7 +191,7 @@ describe("sendRequest", () => {
     vi.mocked(Handler.SendRequest).mockResolvedValue(
       makeWailsResponse({ bodyBase64: true, body: "AAECaGk=" }) as never,
     );
-    const result = await sendRequest(makeDomainRequest());
+    const result = await sendRequest("exec-1", makeDomainRequest());
     expect(result.bodyBase64).toBe(true);
     expect(result.body).toBe("AAECaGk=");
   });
@@ -200,7 +200,7 @@ describe("sendRequest", () => {
     vi.mocked(Handler.SendRequest).mockResolvedValue(
       makeWailsResponse() as never,
     );
-    const result = await sendRequest(makeDomainRequest());
+    const result = await sendRequest("exec-1", makeDomainRequest());
     expect(result.bodyBase64).toBe(false);
   });
 
@@ -217,7 +217,7 @@ describe("sendRequest", () => {
       }) as never,
     );
 
-    const result = await sendRequest(makeDomainRequest());
+    const result = await sendRequest("exec-1", makeDomainRequest());
 
     expect(result.error).toBe("connection refused");
     expect(result.statusCode).toBe(0);
@@ -233,7 +233,7 @@ describe("sendRequest", () => {
       }) as never,
     );
 
-    const result = await sendRequest(makeDomainRequest());
+    const result = await sendRequest("exec-1", makeDomainRequest());
 
     expect(result.statusCode).toBe(404);
     expect(result.statusText).toBe("Not Found");
@@ -243,15 +243,27 @@ describe("sendRequest", () => {
     vi.mocked(Handler.SendRequest).mockResolvedValue(
       makeWailsResponse() as never,
     );
-    await sendRequest(makeDomainRequest());
+    await sendRequest("exec-1", makeDomainRequest());
     expect(Handler.SendRequest).toHaveBeenCalledOnce();
+  });
+
+  // execution ID は第 1 引数。保存済みリクエストの ID はリクエスト側に載る。
+  it("passes the execution id ahead of the request", async () => {
+    vi.mocked(Handler.SendRequest).mockResolvedValue(
+      makeWailsResponse() as never,
+    );
+    await sendRequest("exec-1", { ...makeDomainRequest(), id: "saved-1" });
+
+    const [executionId, sent] = vi.mocked(Handler.SendRequest).mock.calls[0];
+    expect(executionId).toBe("exec-1");
+    expect(sent.id).toBe("saved-1");
   });
 
   it("propagates rejection from the backend", async () => {
     vi.mocked(Handler.SendRequest).mockRejectedValue(
       new Error("network error"),
     );
-    await expect(sendRequest(makeDomainRequest())).rejects.toThrow(
+    await expect(sendRequest("exec-1", makeDomainRequest())).rejects.toThrow(
       "network error",
     );
   });
@@ -269,12 +281,12 @@ describe("sendRequest", () => {
       { key: "disabled", value: "no", enabled: false },
     ];
 
-    await sendRequest({
+    await sendRequest("exec-1", {
       ...makeDomainRequest(),
       body: { type: "form-data" as const, contents: {}, formData },
     });
 
-    const sent = vi.mocked(Handler.SendRequest).mock.calls[0][0];
+    const sent = vi.mocked(Handler.SendRequest).mock.calls[0][1];
     expect(sent.body.formData).toEqual(formData);
   });
 });

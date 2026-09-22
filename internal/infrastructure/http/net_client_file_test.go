@@ -37,7 +37,7 @@ func TestNetClient_FileBodyUsesRegistry(t *testing.T) {
 	}
 	url, body, contentType, _ := captureServer(t)
 
-	_, err = NewNetClient(reg, t.TempDir()).Do(context.Background(), domain.HTTPRequest{
+	_, err = NewNetClient(reg, t.TempDir()).Do(context.Background(), "exec-1", domain.HTTPRequest{
 		ID:     "file-1",
 		Method: http.MethodPost,
 		URL:    url,
@@ -62,7 +62,7 @@ func TestNetClient_FileBodyIgnoresRawPath(t *testing.T) {
 	path := writeTempFile(t, "secret.txt", "top secret")
 	url, body, _, hits := captureServer(t)
 
-	_, err := NewNetClient(NewFileRegistry(), t.TempDir()).Do(context.Background(), domain.HTTPRequest{
+	_, err := NewNetClient(NewFileRegistry(), t.TempDir()).Do(context.Background(), "exec-1", domain.HTTPRequest{
 		ID:     "file-raw",
 		Method: http.MethodPost,
 		URL:    url,
@@ -85,7 +85,7 @@ func TestNetClient_FileBodyRejectsUnresolvedReferences(t *testing.T) {
 		{Token: "00112233445566778899aabbccddeeff"},
 		{Name: "old.bin", NeedsReselect: true},
 	} {
-		_, err := c.Do(context.Background(), domain.HTTPRequest{
+		_, err := c.Do(context.Background(), "exec-"+string(rune('a'+i)), domain.HTTPRequest{
 			ID:     "denied-" + string(rune('a'+i)),
 			Method: http.MethodPost,
 			URL:    url,
