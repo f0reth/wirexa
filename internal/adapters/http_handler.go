@@ -120,19 +120,21 @@ func isDir(path string) bool {
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
-// req.ID は送信ごとの execution ID。ボディが切り詰められた場合、全文の一時ファイルは
-// backend がこの ID で追跡し、SaveResponseBody / DiscardResponseBody で参照する。
-func (h *HTTPHandler) SendRequest(req httpdomain.HTTPRequest) (httpdomain.HTTPResponse, error) {
-	res, err := h.reqSvc.SendRequest(req)
+// executionID は呼び出し側が送信ごとに採番する実行 ID。ボディが切り詰められた場合、
+// 全文の一時ファイルは backend がこの ID で追跡し、
+// SaveResponseBody / DiscardResponseBody / CancelRequest で参照する。
+// req.ID は保存済みリクエストの ID で、実行の識別には使わない。
+func (h *HTTPHandler) SendRequest(executionID string, req httpdomain.HTTPRequest) (httpdomain.HTTPResponse, error) {
+	res, err := h.reqSvc.SendRequest(executionID, req)
 	if err != nil {
 		return httpdomain.HTTPResponse{}, err
 	}
 	return res, nil
 }
 
-// CancelRequest は指定 ID の実行中 HTTP リクエストをキャンセルする。
-func (h *HTTPHandler) CancelRequest(id string) {
-	h.reqSvc.CancelRequest(id)
+// CancelRequest は指定 execution ID の実行中 HTTP リクエストをキャンセルする。
+func (h *HTTPHandler) CancelRequest(executionID string) {
+	h.reqSvc.CancelRequest(executionID)
 }
 
 // SaveResponseBody は execution ID で追跡中の一時ファイルを保存ダイアログの選択先へ保存する。
