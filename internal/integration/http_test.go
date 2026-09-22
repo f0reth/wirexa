@@ -66,7 +66,7 @@ func buildHTTPHandler(t *testing.T, dir string, dialog adapters.FileDialog) *ada
 	files := httpinfra.NewFileRegistry()
 	netClient := httpinfra.NewNetClient(files, filepath.Join(dir, "http-sessions"))
 	t.Cleanup(netClient.Cleanup)
-	reqSvc := httpapp.NewHTTPRequestService(netClient, testutil.NoopLogger{})
+	reqSvc := httpapp.NewHTTPRequestService(context.Background(), netClient, testutil.NoopLogger{})
 	h := &adapters.HTTPHandler{}
 	adapters.SetupHTTPHandler(context.Background(), h, adapters.HTTPHandlerDeps{
 		ReqSvc:    reqSvc,
@@ -176,7 +176,7 @@ func TestHTTP_SendRequest_2xx(t *testing.T) {
 
 	for _, method := range []string{"GET", "POST"} {
 		t.Run(method, func(t *testing.T) {
-			resp, err := h.SendRequest(httpdomain.HTTPRequest{
+			resp, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 				Method: method,
 				URL:    srv.URL,
 			})
@@ -210,7 +210,7 @@ func TestHTTP_SendRequest_4xx5xx(t *testing.T) {
 			defer srv.Close()
 
 			h := newHTTPHandler(t)
-			resp, err := h.SendRequest(httpdomain.HTTPRequest{
+			resp, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 				Method: "GET",
 				URL:    srv.URL,
 			})
@@ -235,7 +235,7 @@ func TestHTTP_SendRequest_HeadersAndParams(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HTTPRequest{
+	_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 		Method: "GET",
 		URL:    srv.URL,
 		Headers: []httpdomain.KeyValuePair{
@@ -266,7 +266,7 @@ func TestHTTP_SendRequest_DuplicateRequestHeaders(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HTTPRequest{
+	_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 		Method: "GET",
 		URL:    srv.URL,
 		Headers: []httpdomain.KeyValuePair{
@@ -294,7 +294,7 @@ func TestHTTP_SendRequest_MultiValueResponseHeaders(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	resp, err := h.SendRequest(httpdomain.HTTPRequest{Method: "GET", URL: srv.URL})
+	resp, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{Method: "GET", URL: srv.URL})
 	if err != nil {
 		t.Fatalf("SendRequest: %v", err)
 	}
@@ -315,12 +315,12 @@ func TestHTTP_CancelRequest(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	// キャンセルは送信時の execution ID で行う (空 ID は backend が内部採番するため指定できない)。
+	// キャンセルは送信時の execution ID で行う。保存済みリクエストの ID とは無関係。
 	const executionID = "exec-cancel"
 	done := make(chan error, 1)
 	go func() {
-		_, err := h.SendRequest(httpdomain.HTTPRequest{
-			ID:     executionID,
+		_, err := h.SendRequest(executionID, httpdomain.HTTPRequest{
+			ID:     "saved-1",
 			Method: "GET",
 			URL:    srv.URL,
 		})
@@ -342,6 +342,58 @@ func TestHTTP_CancelRequest(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("SendRequest did not return after cancel")
+	}
+}
+
+// TestHTTP_CancelRequest_SameSavedRequestInParallel は同じ保存済みリクエストを 2 本並行実行し、
+// 片方の execution ID だけをキャンセルしても他方は完走することを確認する。
+func TestHTTP_CancelRequest_SameSavedRequestInParallel(t *testing.T) {
+	blocked := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("hang") == "1" {
+			close(blocked)
+			<-r.Context().Done() // キャンセルされるまでブロック
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	h := newHTTPHandler(t)
+	// 2 本とも同じ保存済みリクエスト (同じ ID) を送る。
+	saved := httpdomain.HTTPRequest{ID: "saved-1", Method: "GET", URL: srv.URL}
+
+	canceled := make(chan error, 1)
+	go func() {
+		hang := saved
+		hang.URL = srv.URL + "?hang=1"
+		_, err := h.SendRequest("exec-hang", hang)
+		canceled <- err
+	}()
+
+	select {
+	case <-blocked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("server did not receive the first request in time")
+	}
+
+	// 同じ保存済みリクエストでも execution ID が違えば拒否されず、独立して完走する。
+	resp, err := h.SendRequest("exec-ok", saved)
+	if err != nil {
+		t.Fatalf("parallel send of the same saved request: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	h.CancelRequest("exec-hang")
+	select {
+	case err := <-canceled:
+		if err == nil {
+			t.Fatal("expected the canceled execution to fail")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceling one execution ID did not reach its request")
 	}
 }
 
@@ -596,7 +648,7 @@ func TestHTTP_SendRequest_DisabledHeaderExcluded(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HTTPRequest{
+	_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 		Method: "GET",
 		URL:    srv.URL,
 		Headers: []httpdomain.KeyValuePair{
@@ -626,7 +678,7 @@ func TestHTTP_SendRequest_DisabledParamExcluded(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HTTPRequest{
+	_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 		Method: "GET",
 		URL:    srv.URL,
 		Params: []httpdomain.KeyValuePair{
@@ -648,7 +700,7 @@ func TestHTTP_SendRequest_DisabledParamExcluded(t *testing.T) {
 // TestHTTP_SendRequest_InvalidMethod は無効な HTTP メソッドで ValidationError が返ることを確認する。
 func TestHTTP_SendRequest_InvalidMethod(t *testing.T) {
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HTTPRequest{
+	_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 		Method: "INVALID",
 		URL:    "http://example.com",
 	})
@@ -669,7 +721,7 @@ func TestHTTP_SendRequest_Auth(t *testing.T) {
 		defer srv.Close()
 
 		h := newHTTPHandler(t)
-		_, err := h.SendRequest(httpdomain.HTTPRequest{
+		_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 			Method: "GET",
 			URL:    srv.URL,
 			Auth:   httpdomain.RequestAuth{Type: "basic", Username: "user", Password: "pass"},
@@ -694,7 +746,7 @@ func TestHTTP_SendRequest_Auth(t *testing.T) {
 		defer srv.Close()
 
 		h := newHTTPHandler(t)
-		_, err := h.SendRequest(httpdomain.HTTPRequest{
+		_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 			Method: "GET",
 			URL:    srv.URL,
 			Auth:   httpdomain.RequestAuth{Type: "bearer", Token: "mytoken123"},
@@ -759,7 +811,7 @@ func TestHTTP_SendRequest_BodyTypes(t *testing.T) {
 			defer srv.Close()
 
 			h := newHTTPHandler(t)
-			_, err := h.SendRequest(httpdomain.HTTPRequest{
+			_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 				Method: "POST",
 				URL:    srv.URL,
 				Body:   tc.body,
@@ -804,7 +856,7 @@ func TestHTTP_SendRequest_FormURLEncodedBody(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HTTPRequest{
+	_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 		Method: "POST",
 		URL:    srv.URL,
 		Body: httpdomain.RequestBody{
@@ -837,7 +889,7 @@ func TestHTTP_SendRequest_FormDataBody(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HTTPRequest{
+	_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 		Method: "POST",
 		URL:    srv.URL,
 		Body: httpdomain.RequestBody{
@@ -891,7 +943,7 @@ func TestHTTP_SendRequest_FormDataKinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenFilePicker: %v", err)
 	}
-	_, err = h.SendRequest(httpdomain.HTTPRequest{
+	_, err = h.SendRequest("exec-1", httpdomain.HTTPRequest{
 		Method: "POST",
 		URL:    srv.URL,
 		Body: httpdomain.RequestBody{
@@ -962,7 +1014,7 @@ func TestHTTP_SendRequest_FormDataOverridesUserContentType(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HTTPRequest{
+	_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 		Method:  "POST",
 		URL:     srv.URL,
 		Headers: []httpdomain.KeyValuePair{{Key: "Content-Type", Value: "text/plain", Enabled: true}},
@@ -993,7 +1045,7 @@ func TestHTTP_SendRequest_FormURLEncodedKeepsUserContentType(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HTTPRequest{
+	_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 		Method:  "POST",
 		URL:     srv.URL,
 		Headers: []httpdomain.KeyValuePair{{Key: "Content-Type", Value: "application/custom", Enabled: true}},
@@ -1018,7 +1070,7 @@ func TestHTTP_SendRequest_UnreachableServer(t *testing.T) {
 	srv.Close() // サーバーを先に閉じる
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HTTPRequest{
+	_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 		Method: "GET",
 		URL:    srv.URL,
 	})
@@ -1039,7 +1091,7 @@ func TestHTTP_SendRequest_Timeout(t *testing.T) {
 	defer srv.Close()
 
 	h := newHTTPHandler(t)
-	_, err := h.SendRequest(httpdomain.HTTPRequest{
+	_, err := h.SendRequest("exec-1", httpdomain.HTTPRequest{
 		Method:   "GET",
 		URL:      srv.URL,
 		Settings: httpdomain.RequestSettings{TimeoutSec: 1},
@@ -1061,11 +1113,12 @@ func TestHTTP_SendRequest_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, n)
 
-	for range n {
+	for i := range n {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := h.SendRequest(httpdomain.HTTPRequest{
+			// 同じリクエストの並行送信でも execution ID は送信ごとに別になる。
+			_, err := h.SendRequest(fmt.Sprintf("exec-%d", i), httpdomain.HTTPRequest{
 				Method: "GET",
 				URL:    srv.URL,
 			})
@@ -1162,8 +1215,8 @@ func TestHTTP_SendRequest_FileBodyViaDialogToken(t *testing.T) {
 		t.Fatalf("selected = %+v, want the basename and an opaque token", picked)
 	}
 
-	_, err = h.SendRequest(httpdomain.HTTPRequest{
-		ID:     "exec-file",
+	_, err = h.SendRequest("exec-file", httpdomain.HTTPRequest{
+		ID:     "saved-file",
 		Method: "POST",
 		URL:    srv.URL,
 		Body: httpdomain.RequestBody{
@@ -1219,7 +1272,7 @@ func TestHTTP_SendRequest_RawPathsAreNeverRead(t *testing.T) {
 	h := newHTTPHandler(t)
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := h.SendRequest(httpdomain.HTTPRequest{ID: fmt.Sprintf("raw-%d", i), Method: "POST", URL: srv.URL, Body: tc.body})
+			_, err := h.SendRequest(fmt.Sprintf("exec-%d", i), httpdomain.HTTPRequest{ID: "saved-1", Method: "POST", URL: srv.URL, Body: tc.body})
 			if tc.wantErr == nil && err != nil {
 				t.Fatalf("SendRequest: %v", err)
 			}

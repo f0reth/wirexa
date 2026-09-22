@@ -263,6 +263,59 @@ func TestHTTPRequestService_SendRequest_RejectsDuplicateExecutionID(t *testing.T
 	}
 }
 
+// 同じ保存済みリクエスト (同じ req.ID) でも execution ID が違えば並行送信でき、
+// 片方をキャンセルしても他方は完走する。
+func TestHTTPRequestService_SendRequest_SameRequestIDInParallel(t *testing.T) {
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	transport := &mockTransportCtx{
+		doFn: func(ctx context.Context, executionID string, _ domain.HTTPRequest) (domain.HTTPResponse, error) {
+			started <- executionID
+			select {
+			case <-ctx.Done():
+				return domain.HTTPResponse{}, ctx.Err()
+			case <-release:
+				return domain.HTTPResponse{StatusCode: 200}, nil
+			}
+		},
+	}
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
+	saved := domain.HTTPRequest{ID: "saved-1", Method: "GET", URL: "http://example.com"}
+
+	results := make(map[string]chan error, 2)
+	for _, execID := range []string{"exec-1", "exec-2"} {
+		done := make(chan error, 1)
+		results[execID] = done
+		go func() {
+			_, err := svc.SendRequest(execID, saved)
+			done <- err
+		}()
+	}
+	for range 2 {
+		<-started
+	}
+
+	svc.CancelRequest("exec-1")
+	select {
+	case err := <-results["exec-1"]:
+		if err == nil {
+			t.Fatal("exec-1 must fail after being canceled")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceling exec-1 did not reach its execution")
+	}
+
+	close(release)
+	select {
+	case err := <-results["exec-2"]:
+		if err != nil {
+			t.Fatalf("exec-2 must finish even though exec-1 was canceled: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("exec-2 did not finish")
+	}
+}
+
 func TestHTTPRequestService_Shutdown_CancelsInFlightAndRejectsNewSends(t *testing.T) {
 	started := make(chan struct{})
 	transport := &mockTransportCtx{
