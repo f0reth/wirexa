@@ -3,6 +3,7 @@ package httpapp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -313,6 +314,109 @@ func TestHTTPRequestService_SendRequest_SameRequestIDInParallel(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("exec-2 did not finish")
+	}
+}
+
+// 送信の登録より前に届いたキャンセルは取りこぼさず、transport を呼ばずに中断する。
+// SendRequest と CancelRequest は別 RPC なので、逐次呼び出しで順序を決定的に再現する。
+func TestHTTPRequestService_CancelBeforeSend_DoesNotReachTransport(t *testing.T) {
+	transport := &mockTransport{}
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
+
+	svc.CancelRequest("exec-1")
+	_, err := svc.SendRequest("exec-1", domain.HTTPRequest{Method: "GET", URL: "http://example.com"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("send after an early cancel: want context.Canceled, got %v", err)
+	}
+	if got := transport.executions(); len(got) != 0 {
+		t.Fatalf("transport must not be called, got %v", got)
+	}
+
+	// 墓標は 1 回で消費されるので、同じ execution ID での再送は通常どおり送信される。
+	if _, err := svc.SendRequest("exec-1", domain.HTTPRequest{Method: "GET", URL: "http://example.com"}); err != nil {
+		t.Fatalf("re-send after the tombstone was consumed: %v", err)
+	}
+	if got := transport.executions(); !slices.Equal(got, []string{"exec-1"}) {
+		t.Fatalf("execution IDs = %v, want [exec-1]", got)
+	}
+}
+
+// TTL を過ぎた墓標は送信を止めない。
+func TestHTTPRequestService_CancelBeforeSend_ExpiresAfterTTL(t *testing.T) {
+	transport := &mockTransport{}
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
+
+	now := time.Now()
+	svc.now = func() time.Time { return now }
+	svc.CancelRequest("exec-1")
+
+	now = now.Add(pendingCancelTTL)
+	if _, err := svc.SendRequest("exec-1", domain.HTTPRequest{Method: "GET", URL: "http://example.com"}); err != nil {
+		t.Fatalf("send after the tombstone expired: %v", err)
+	}
+	if got := transport.executions(); !slices.Equal(got, []string{"exec-1"}) {
+		t.Fatalf("execution IDs = %v, want [exec-1]", got)
+	}
+}
+
+// 墓標の保持件数は上限で頭打ちになり、超えた分は最古から捨てられる。
+func TestHTTPRequestService_CancelBeforeSend_BoundedByMaxPending(t *testing.T) {
+	transport := &mockTransport{}
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
+
+	now := time.Now()
+	svc.now = func() time.Time { return now }
+	for i := range maxPendingCancels + 10 {
+		now = now.Add(time.Millisecond) // 記録順を決定的にする
+		svc.CancelRequest(fmt.Sprintf("exec-%d", i))
+	}
+
+	svc.mu.Lock()
+	got := len(svc.pending)
+	_, oldestKept := svc.pending["exec-0"]
+	_, newestKept := svc.pending[fmt.Sprintf("exec-%d", maxPendingCancels+9)]
+	svc.mu.Unlock()
+
+	if got > maxPendingCancels {
+		t.Fatalf("pending cancels = %d, want at most %d", got, maxPendingCancels)
+	}
+	if oldestKept {
+		t.Error("the oldest tombstone must be dropped first")
+	}
+	if !newestKept {
+		t.Error("the newest tombstone must be kept")
+	}
+}
+
+// 形式を満たさない execution ID へのキャンセルは墓標を作らない。
+func TestHTTPRequestService_CancelBeforeSend_IgnoresInvalidID(t *testing.T) {
+	transport := &mockTransport{}
+	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
+
+	for _, execID := range []string{"", "exec/1", strings.Repeat("a", maxExecutionIDLen+1)} {
+		svc.CancelRequest(execID)
+	}
+	svc.mu.Lock()
+	got := len(svc.pending)
+	svc.mu.Unlock()
+	if got != 0 {
+		t.Fatalf("invalid execution IDs must not be recorded, got %d entries", got)
+	}
+}
+
+// Shutdown 後のキャンセルは墓標を残さない。
+func TestHTTPRequestService_CancelAfterShutdown_RecordsNothing(t *testing.T) {
+	svc := NewHTTPRequestService(context.Background(), &mockTransport{}, testutil.NoopLogger{})
+	if !svc.Shutdown(time.Second) {
+		t.Fatal("Shutdown must finish with no in-flight request")
+	}
+
+	svc.CancelRequest("exec-1")
+	svc.mu.Lock()
+	got := len(svc.pending)
+	svc.mu.Unlock()
+	if got != 0 {
+		t.Fatalf("cancels after Shutdown must not be recorded, got %d entries", got)
 	}
 }
 

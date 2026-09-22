@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1388,5 +1389,36 @@ func TestHTTP_ReconcilesSidebarLayoutOnStartup(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "col-b") {
 		t.Errorf("sidebar_layout.json is missing the added collection:\n%s", raw)
+	}
+}
+
+// TestHTTP_CancelRequest_BeforeSend は送信の登録より前に届いたキャンセルを取りこぼさず、
+// リクエストがサーバーへ 1 件も届かないことを確認する。
+func TestHTTP_CancelRequest_BeforeSend(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	h := newHTTPHandler(t)
+	const executionID = "exec-early-cancel"
+	h.CancelRequest(executionID)
+
+	_, err := h.SendRequest(executionID, httpdomain.HTTPRequest{ID: "saved-1", Method: "GET", URL: srv.URL})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("SendRequest after an early cancel: want context.Canceled, got %v", err)
+	}
+	if got := hits.Load(); got != 0 {
+		t.Fatalf("canceled request reached the server %d times", got)
+	}
+
+	// 墓標は 1 回で消費されるので、同じ execution ID での再送は通常どおり成功する。
+	if _, err := h.SendRequest(executionID, httpdomain.HTTPRequest{ID: "saved-1", Method: "GET", URL: srv.URL}); err != nil {
+		t.Fatalf("re-send after the tombstone was consumed: %v", err)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("server hits = %d, want 1", got)
 	}
 }

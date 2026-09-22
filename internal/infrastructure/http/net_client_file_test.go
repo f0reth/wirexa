@@ -85,7 +85,7 @@ func TestNetClient_FileBodyRejectsUnresolvedReferences(t *testing.T) {
 		{Token: "00112233445566778899aabbccddeeff"},
 		{Name: "old.bin", NeedsReselect: true},
 	} {
-		_, err := c.Do(context.Background(), "exec-" + string(rune('a'+i)), domain.HTTPRequest{
+		_, err := c.Do(context.Background(), "exec-"+string(rune('a'+i)), domain.HTTPRequest{
 			ID:     "denied-" + string(rune('a'+i)),
 			Method: http.MethodPost,
 			URL:    url,
