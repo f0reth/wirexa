@@ -74,8 +74,8 @@ export function SaveResponseBody(arg1) {
   return window['go']['adapters']['HTTPHandler']['SaveResponseBody'](arg1);
 }
 
-export function SendRequest(arg1) {
-  return window['go']['adapters']['HTTPHandler']['SendRequest'](arg1);
+export function SendRequest(arg1, arg2) {
+  return window['go']['adapters']['HTTPHandler']['SendRequest'](arg1, arg2);
 }
 
 export function UpdateRequest(arg1, arg2) {
