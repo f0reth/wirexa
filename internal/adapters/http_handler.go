@@ -31,12 +31,46 @@ type FileSelector interface {
 	Register(path string) (httpdomain.SelectedFile, error)
 }
 
+// HTTPRequestUseCase は HTTP リクエスト送信のユースケース入力ポート。
+// executionID は送信ごとに呼び出し側が採番する実行 ID で、キャンセル・レスポンスの保存と破棄を
+// この ID で関連付ける。保存済みリクエストの永続 ID (req.ID) とは独立している。
+type HTTPRequestUseCase interface {
+	SendRequest(executionID string, req httpdomain.HTTPRequest) (httpdomain.HTTPResponse, error)
+	// CancelRequest は指定 execution ID の実行をキャンセルする。
+	CancelRequest(executionID string)
+}
+
+// HTTPCollectionUseCase はコレクション自体のCRUDユースケース入力ポート。
+type HTTPCollectionUseCase interface {
+	GetCollections() []httpdomain.Collection
+	GetRootItems() []*httpdomain.TreeItem
+	CreateCollection(name string) (httpdomain.Collection, error)
+	DeleteCollection(id string) error
+	RenameCollection(id, name string) error
+	GetSidebarLayout() ([]httpdomain.SidebarEntry, error)
+	MoveSidebarEntry(kind, id string, position int) error
+	MoveItemToSidebar(sourceCollectionID, itemID string, sidebarPosition int) error
+}
+
+// HTTPCollectionItemUseCase はコレクション内ツリーアイテム管理のユースケース入力ポート。
+type HTTPCollectionItemUseCase interface {
+	AddFolder(collectionID, parentID, name string) (*httpdomain.TreeItem, error)
+	AddRequest(collectionID, parentID string, req httpdomain.HTTPRequest) (*httpdomain.TreeItem, error)
+	UpdateRequest(collectionID string, req httpdomain.HTTPRequest) error
+	RenameItem(collectionID, itemID, name string) error
+	DeleteItem(collectionID, itemID string) error
+	// MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。
+	// targetParentID が空の場合はターゲットコレクションルートへ移動する。
+	// position は挿入先インデックス（削除後の配列に対する）。-1 の場合は末尾に追加。
+	MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error
+}
+
 // HTTPHandler は Wails RPC アダプターとして HTTP ユースケースを公開する。
 type HTTPHandler struct {
 	ctx       context.Context
-	reqSvc    httpdomain.RequestUseCase
-	collSvc   httpdomain.CollectionUseCase
-	itemSvc   httpdomain.CollectionItemUseCase
+	reqSvc    HTTPRequestUseCase
+	collSvc   HTTPCollectionUseCase
+	itemSvc   HTTPCollectionItemUseCase
 	responses httpdomain.ResponseBodyStore
 	files     FileSelector
 	dialog    FileDialog
@@ -45,9 +79,9 @@ type HTTPHandler struct {
 // HTTPHandlerDeps は HTTPHandler に注入する依存をまとめる。
 // Dialog が nil の場合は Wails runtime のダイアログを使う。
 type HTTPHandlerDeps struct {
-	ReqSvc    httpdomain.RequestUseCase
-	CollSvc   httpdomain.CollectionUseCase
-	ItemSvc   httpdomain.CollectionItemUseCase
+	ReqSvc    HTTPRequestUseCase
+	CollSvc   HTTPCollectionUseCase
+	ItemSvc   HTTPCollectionItemUseCase
 	Responses httpdomain.ResponseBodyStore
 	Files     FileSelector
 	Dialog    FileDialog

@@ -5,15 +5,34 @@ import (
 	mqttdomain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 )
 
+// MQTTConnectionUseCase は MQTT 接続管理のユースケース入力ポート。
+type MQTTConnectionUseCase interface {
+	Connect(config mqttdomain.ConnectionConfig) (string, error)
+	Disconnect(connectionID string) error
+	Publish(connectionID, topic, payload string, qos byte, retain bool) error
+	Subscribe(connectionID, topic string, qos byte) error
+	Unsubscribe(connectionID, topic string) error
+	GetConnections() []mqttdomain.ConnectionStatus
+}
+
+// MQTTProfileUseCase は MQTT プロファイル管理のユースケース入力ポート。
+type MQTTProfileUseCase interface {
+	GetProfiles() []mqttdomain.BrokerProfile
+	// SaveProfile は保存済みプロファイルを返す。新規作成 (空 ID) では
+	// サーバ側で採番した ID が入るため、呼び出し元は戻り値を使う。
+	SaveProfile(profile mqttdomain.BrokerProfile) (mqttdomain.BrokerProfile, error)
+	DeleteProfile(id string) error
+}
+
 // MQTTHandler は Wails RPC アダプターとして MQTT ユースケースを公開する。
 type MQTTHandler struct {
-	svc        mqttdomain.MQTTUseCase
-	profileSvc mqttdomain.ProfileUseCase
+	svc        MQTTConnectionUseCase
+	profileSvc MQTTProfileUseCase
 }
 
 // SetupMQTTHandler は既存の MQTTHandler インスタンスにサービスを注入する。
 // Wails の Bind に渡す前に事前確保した空ハンドラーを startup() で初期化する際に使用する。
-func SetupMQTTHandler(h *MQTTHandler, svc mqttdomain.MQTTUseCase, profileSvc mqttdomain.ProfileUseCase) {
+func SetupMQTTHandler(h *MQTTHandler, svc MQTTConnectionUseCase, profileSvc MQTTProfileUseCase) {
 	h.svc = svc
 	h.profileSvc = profileSvc
 }

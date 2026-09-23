@@ -8,7 +8,9 @@ import (
 	openapidomain "github.com/f0reth/Wirexa/internal/domain/openapi"
 )
 
-// fakeFileUseCase は openapidomain.FileUseCase のテスト用実装。受け取った引数を記録する。
+var _ OpenAPIFileUseCase = (*fakeFileUseCase)(nil)
+
+// fakeFileUseCase は OpenAPIFileUseCase のテスト用実装。受け取った引数を記録する。
 type fakeFileUseCase struct {
 	calls   []string
 	args    [][]any

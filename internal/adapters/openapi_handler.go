@@ -13,6 +13,29 @@ var openapiFileFilters = []runtime.FileFilter{
 	{DisplayName: "OpenAPI (*.yaml, *.yml, *.json)", Pattern: "*.yaml;*.yml;*.json"},
 }
 
+// OpenAPIFileUseCase は OpenAPI ファイル操作のユースケース入力ポート。
+//
+// ReadFile / WriteFile が受理するのは許可リストに登録済みのパスだけで、
+// 許可リストへの登録経路は OpenSelected / SaveSelected と起動時の recents seed に限る。
+type OpenAPIFileUseCase interface {
+	// OpenSelected はダイアログで選ばれたパスを許可リストと recents へ登録し、正規化したパスを返す。
+	// 呼んでよいのは adapter のダイアログ処理だけで、RPC 引数を渡してはならない。
+	OpenSelected(path string) string
+	// SaveSelected はダイアログで選ばれたパスを許可リストへ登録し、content を書き込んでから recents へ登録する。
+	// 呼んでよいのは adapter のダイアログ処理だけで、RPC 引数を渡してはならない。
+	SaveSelected(path, content string) (string, error)
+	// ReadFile は許可済みパスの内容を返す。未許可なら ErrFileAccessDenied。
+	ReadFile(path string) (string, error)
+	// WriteFile は許可済みパスへ content を書き込む。未許可なら ErrFileAccessDenied。
+	WriteFile(path, content string) error
+	// GetRecents は recents を Order 昇順で返す。
+	GetRecents() []openapidomain.OpenAPIRecent
+	// RemoveRecent は recents と許可リストからパスを削除する。
+	RemoveRecent(path string) error
+	// MoveRecent は recents 内でパスを index の位置へ並び替える。
+	MoveRecent(path string, index int) error
+}
+
 // OpenAPIHandler は OpenAPI ファイル I/O を Wails RPC として公開する。
 //
 // セキュリティ: Wails RPC は webview 上の JS から誰でも呼べるため、ReadFile /
@@ -21,14 +44,14 @@ var openapiFileFilters = []runtime.FileFilter{
 // 戻り値だけとし、RPC 引数のパスを許可する経路は作らないこと。
 type OpenAPIHandler struct {
 	ctx    context.Context
-	files  openapidomain.FileUseCase
+	files  OpenAPIFileUseCase
 	dialog FileDialog
 }
 
 // OpenAPIHandlerDeps は OpenAPIHandler に注入する依存をまとめる。
 // Dialog が nil の場合は Wails runtime のダイアログを使う。
 type OpenAPIHandlerDeps struct {
-	Files  openapidomain.FileUseCase
+	Files  OpenAPIFileUseCase
 	Dialog FileDialog
 }
 

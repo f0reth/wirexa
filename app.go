@@ -35,6 +35,19 @@ var (
 	_ udpdomain.TargetRepository      = (*infra.JSONStore[udpdomain.UDPTarget])(nil)
 )
 
+// コンパイル時に各 application サービスが adapters の入力ポートを満たすことを検証
+var (
+	_ adapters.HTTPRequestUseCase        = (*httpapp.HTTPRequestService)(nil)
+	_ adapters.HTTPCollectionUseCase     = (*httpapp.CollectionService)(nil)
+	_ adapters.HTTPCollectionItemUseCase = (*httpapp.CollectionService)(nil)
+	_ adapters.MQTTConnectionUseCase     = (*mqttapp.MQTTService)(nil)
+	_ adapters.MQTTProfileUseCase        = (*mqttapp.ProfileService)(nil)
+	_ adapters.UDPSendUseCase            = (*udpapp.UDPSendService)(nil)
+	_ adapters.UDPTargetUseCase          = (*udpapp.TargetService)(nil)
+	_ adapters.UDPListenUseCase          = (*udpapp.UDPListenerService)(nil)
+	_ adapters.OpenAPIFileUseCase        = (*openapiapp.FileService)(nil)
+)
+
 const wirexaConfigDir = "Wirexa"
 
 // httpShutdownTimeout は終了時に実行中の HTTP リクエストの終了を待つ上限。

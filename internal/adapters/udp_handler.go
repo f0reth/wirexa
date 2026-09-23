@@ -4,15 +4,35 @@ import (
 	udpdomain "github.com/f0reth/Wirexa/internal/domain/udp"
 )
 
+// UDPSendUseCase は UDP パケット送信のユースケース入力ポート。
+type UDPSendUseCase interface {
+	Send(req udpdomain.UDPSendRequest) (udpdomain.UDPSendResult, error)
+}
+
+// UDPTargetUseCase はターゲット管理のユースケース入力ポート。
+type UDPTargetUseCase interface {
+	GetTargets() []udpdomain.UDPTarget
+	SaveTarget(target udpdomain.UDPTarget) (udpdomain.UDPTarget, error)
+	DeleteTarget(id string) error
+}
+
+// UDPListenUseCase は UDP 受信管理のユースケース入力ポート。
+type UDPListenUseCase interface {
+	StartListen(port int, encoding udpdomain.PayloadEncoding) (udpdomain.UDPListenSession, error)
+	StopListen(sessionID string) error
+	GetListeners() []udpdomain.UDPListenSession
+	StopAll()
+}
+
 // UDPHandler は Wails RPC アダプターとして UDP ユースケースを公開する。
 type UDPHandler struct {
-	sendSvc   udpdomain.SendUseCase
-	targetSvc udpdomain.TargetUseCase
-	listenSvc udpdomain.ListenUseCase
+	sendSvc   UDPSendUseCase
+	targetSvc UDPTargetUseCase
+	listenSvc UDPListenUseCase
 }
 
 // SetupUDPHandler は既存の UDPHandler インスタンスにサービスを注入する。
-func SetupUDPHandler(h *UDPHandler, sendSvc udpdomain.SendUseCase, targetSvc udpdomain.TargetUseCase, listenSvc udpdomain.ListenUseCase) {
+func SetupUDPHandler(h *UDPHandler, sendSvc UDPSendUseCase, targetSvc UDPTargetUseCase, listenSvc UDPListenUseCase) {
 	h.sendSvc = sendSvc
 	h.targetSvc = targetSvc
 	h.listenSvc = listenSvc
