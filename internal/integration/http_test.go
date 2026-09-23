@@ -107,7 +107,7 @@ func TestHTTP_CollectionCRUD(t *testing.T) {
 	}
 
 	// 名前変更
-	if err := h.RenameCollection(col.ID, "Renamed"); err != nil {
+	if err = h.RenameCollection(col.ID, "Renamed"); err != nil {
 		t.Fatalf("RenameCollection: %v", err)
 	}
 	cols = h.GetCollections()
@@ -116,7 +116,7 @@ func TestHTTP_CollectionCRUD(t *testing.T) {
 	}
 
 	// 削除
-	if err := h.DeleteCollection(col.ID); err != nil {
+	if err = h.DeleteCollection(col.ID); err != nil {
 		t.Fatalf("DeleteCollection: %v", err)
 	}
 	if cols := h.GetCollections(); len(cols) != 0 {
@@ -421,7 +421,7 @@ func TestHTTP_UpdateRequest(t *testing.T) {
 	if req.URL != "http://new.example.com" {
 		t.Errorf("URL = %q, want http://new.example.com", req.URL)
 	}
-	if req.Method != "POST" {
+	if req.Method != http.MethodPost {
 		t.Errorf("Method = %q, want POST", req.Method)
 	}
 }
@@ -550,7 +550,7 @@ func TestHTTP_SidebarLayout(t *testing.T) {
 	}
 
 	// MoveSidebarEntry: col1 (Alpha) を末尾（position 1）へ移動 → [Beta, Alpha]
-	if err := h.MoveSidebarEntry("collection", col1.ID, 1); err != nil {
+	if err = h.MoveSidebarEntry("collection", col1.ID, 1); err != nil {
 		t.Fatalf("MoveSidebarEntry: %v", err)
 	}
 	layout, err = h.GetSidebarLayout()
@@ -572,7 +572,7 @@ func TestHTTP_SidebarLayout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
-	if err := h.MoveItemToSidebar(col2.ID, item.ID, 0); err != nil {
+	if err = h.MoveItemToSidebar(col2.ID, item.ID, 0); err != nil {
 		t.Fatalf("MoveItemToSidebar: %v", err)
 	}
 
@@ -1116,16 +1116,14 @@ func TestHTTP_SendRequest_Concurrent(t *testing.T) {
 	errs := make(chan error, n)
 
 	for i := range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			// 同じリクエストの並行送信でも execution ID は送信ごとに別になる。
 			_, err := h.SendRequest(fmt.Sprintf("exec-%d", i), httpdomain.HTTPRequest{
 				Method: "GET",
 				URL:    srv.URL,
 			})
 			errs <- err
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -1153,7 +1151,7 @@ func TestHTTP_AddRequest_AfterDeleteCollection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCollection: %v", err)
 	}
-	if err := h.DeleteCollection(col.ID); err != nil {
+	if err = h.DeleteCollection(col.ID); err != nil {
 		t.Fatalf("DeleteCollection: %v", err)
 	}
 

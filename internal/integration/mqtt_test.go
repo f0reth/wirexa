@@ -202,7 +202,9 @@ func waitConnected(t *testing.T, h *adapters.MQTTHandler, connID string, timeout
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		for _, cs := range h.GetConnections() {
+		conns := h.GetConnections()
+		for i := range conns {
+			cs := &conns[i]
 			if cs.ID == connID && cs.Connected {
 				return
 			}
@@ -798,9 +800,7 @@ func TestMQTT_Connect_Concurrent(t *testing.T) {
 	ids := make(chan string, n)
 
 	for range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			id, err := h.Connect(mqttdomain.ConnectionConfig{
 				Name:   "concurrent",
 				Broker: brokerAddr,
@@ -808,7 +808,7 @@ func TestMQTT_Connect_Concurrent(t *testing.T) {
 			if err == nil {
 				ids <- id
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(ids)

@@ -164,12 +164,12 @@ func TestUDP_ListenerStartStop(t *testing.T) {
 		t.Error("expected non-empty session ID")
 	}
 
-	if err := h.StopListen(sess.ID); err != nil {
+	if err = h.StopListen(sess.ID); err != nil {
 		t.Fatalf("StopListen: %v", err)
 	}
 
 	// 二重停止はエラーになる
-	if err := h.StopListen(sess.ID); err == nil {
+	if err = h.StopListen(sess.ID); err == nil {
 		t.Error("expected error on double StopListen, got nil")
 	}
 }
@@ -438,7 +438,7 @@ func TestUDP_StartListen_AfterStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first StartListen: %v", err)
 	}
-	if err := h.StopListen(sess.ID); err != nil {
+	if err = h.StopListen(sess.ID); err != nil {
 		t.Fatalf("StopListen: %v", err)
 	}
 
@@ -589,15 +589,12 @@ func TestUDP_Concurrent_StartStopListen(t *testing.T) {
 	sessIDs := make(chan string, n)
 
 	for _, port := range ports {
-		p := port
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			sess, err := h.StartListen(p, string(udpdomain.EncodingText))
+		wg.Go(func() {
+			sess, err := h.StartListen(port, string(udpdomain.EncodingText))
 			if err == nil {
 				sessIDs <- sess.ID
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(sessIDs)
