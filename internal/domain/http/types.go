@@ -286,6 +286,8 @@ const (
 )
 
 // RootCollectionID はルートリクエスト置き場として使用する予約済みコレクション ID。
+// コレクションとしての削除・リネームは application 層で拒否する。中のアイテムは通常どおり操作できる。
+// Name は作成時に ID と同じ値を入れるが、どこからも参照されない。
 const RootCollectionID = "__root__"
 
 // SidebarEntry はサイドバーレイアウトの1エントリを表す。

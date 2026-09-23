@@ -1143,6 +1143,35 @@ func TestHTTP_DeleteCollection_NotFound(t *testing.T) {
 	}
 }
 
+// TestHTTP_RootCollection_DeleteAndRenameRejected は予約済みの __root__ をハンドラ経由で
+// 削除・リネームできず、__root__.json とサイドバー直下のアイテムが残ることを確認する。
+func TestHTTP_RootCollection_DeleteAndRenameRejected(t *testing.T) {
+	dir := t.TempDir()
+	rootPath := filepath.Join(dir, "collections", httpdomain.RootCollectionID+".json")
+
+	h1 := newHTTPHandlerWithDir(t, dir)
+	item, err := h1.AddRequest(httpdomain.RootCollectionID, "", httpdomain.HTTPRequest{Name: "RootReq", Method: "GET", URL: "http://example.com"})
+	if err != nil {
+		t.Fatalf("AddRequest to __root__: %v", err)
+	}
+	if err := h1.DeleteCollection(httpdomain.RootCollectionID); err == nil {
+		t.Error("DeleteCollection(__root__): expected error, got nil")
+	}
+	if err := h1.RenameCollection(httpdomain.RootCollectionID, "x"); err == nil {
+		t.Error("RenameCollection(__root__): expected error, got nil")
+	}
+	if _, err := os.Stat(rootPath); err != nil {
+		t.Fatalf("__root__.json should remain on disk: %v", err)
+	}
+
+	// 同一ディレクトリから読み直してもサイドバー直下のアイテムが残っている。
+	h2 := newHTTPHandlerWithDir(t, dir)
+	items := h2.GetRootItems()
+	if len(items) != 1 || items[0].ID != item.ID {
+		t.Errorf("root items after reload = %v, want [%s]", items, item.ID)
+	}
+}
+
 // TestHTTP_AddRequest_AfterDeleteCollection は DeleteCollection 後に同じ collectionID で AddRequest を呼ぶと error が返ることを確認する。
 func TestHTTP_AddRequest_AfterDeleteCollection(t *testing.T) {
 	h := newHTTPHandler(t)

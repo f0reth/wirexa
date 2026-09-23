@@ -28,6 +28,7 @@ var errFakeSave = errors.New("save error")
 // inMemoryRepo はコレクションリポジトリのフェイク。
 // failSaveFrom / failDelete に ID を登録すると、その ID の書き込みだけを失敗させられる。
 // saves は Save が成功した順にコレクション ID を記録し、書き込み順序の検証に使う。
+// deletes は Delete が成功した順にコレクション ID を記録する。
 // 保存・読み出しでディープコピーを取るのは、実ファイルと同じく呼び出し側の
 // オブジェクトと保存済みの内容が共有されないようにするため。
 type inMemoryRepo struct {
@@ -39,6 +40,7 @@ type inMemoryRepo struct {
 	saveCounts   map[string]int
 	failDelete   map[string]error
 	saves        []string
+	deletes      []string
 	// failAllSavesFrom は ID を問わず n 回目以降の Save を失敗させる。0 なら無効。
 	// 採番される ID を事前に知れない新規作成の失敗注入に使う。
 	failAllSavesFrom int
@@ -98,6 +100,13 @@ func (r *inMemoryRepo) saveOrder() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]string{}, r.saves...)
+}
+
+// deleteOrder は Delete が成功した順に並んだコレクション ID を返す。
+func (r *inMemoryRepo) deleteOrder() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string{}, r.deletes...)
 }
 
 // inMemoryLayoutRepo はサイドバーレイアウトリポジトリのフェイク。
@@ -191,6 +200,7 @@ func (r *inMemoryRepo) Delete(id string) error {
 	if err := r.failDelete[id]; err != nil {
 		return err
 	}
+	r.deletes = append(r.deletes, id)
 	delete(r.collections, id)
 	return nil
 }
@@ -699,6 +709,91 @@ func TestNewCollectionService_UnloadableRoot_RejectsRootWrites(t *testing.T) {
 	}
 	if _, _, ok := cachedCollection(t, svc, "c1").FindNode("r1"); !ok {
 		t.Error("the item should stay in the source collection after rejected moves")
+	}
+}
+
+func TestNewCollectionService_UnloadableRoot_RejectsRootDeleteAndRename(t *testing.T) {
+	cases := map[string]func(*inMemoryRepo){
+		"ファイルが残っている": func(r *inMemoryRepo) { r.existing = map[string]bool{domain.RootCollectionID: true} },
+		"有無を確認できない":  func(r *inMemoryRepo) { r.existsErr = errors.New("stat error") },
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			svc, repo, _ := newSvcWithUnloadableRoot(t, setup)
+
+			// キャッシュに root が無くても NotFound ではなく ValidationError を返す。
+			if _, ok := errors.AsType[*cmn.ValidationError](svc.DeleteCollection(domain.RootCollectionID)); !ok {
+				t.Error("DeleteCollection: expected ValidationError for the root")
+			}
+			if _, ok := errors.AsType[*cmn.ValidationError](svc.RenameCollection(domain.RootCollectionID, "x")); !ok {
+				t.Error("RenameCollection: expected ValidationError for the root")
+			}
+			// 読めなかった __root__ のファイルには触れない。
+			if slices.Contains(repo.saveOrder(), domain.RootCollectionID) {
+				t.Error("root collection must not be saved by rejected operations")
+			}
+			if slices.Contains(repo.deleteOrder(), domain.RootCollectionID) {
+				t.Error("root collection must not be deleted by rejected operations")
+			}
+		})
+	}
+}
+
+// --- 予約済み root collection の保護 ---
+
+func TestCollectionService_DeleteCollection_RootRejected(t *testing.T) {
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
+	if _, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+
+	err := svc.DeleteCollection(domain.RootCollectionID)
+	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
+		t.Fatalf("expected ValidationError, got %v", err)
+	}
+	if slices.Contains(repo.deleteOrder(), domain.RootCollectionID) {
+		t.Error("root collection must not be deleted from the repository")
+	}
+	if _, _, ok := cachedCollection(t, svc, domain.RootCollectionID).FindNode("r1"); !ok {
+		t.Error("root item disappeared from the cache")
+	}
+	persisted := repo.snapshot(domain.RootCollectionID)
+	if persisted == nil || len(persisted.Items) != 1 || persisted.Items[0].ID != "r1" {
+		t.Errorf("persisted root = %v, want it to keep r1", persisted)
+	}
+	if items := svc.GetRootItems(); len(items) != 1 || items[0].ID != "r1" {
+		t.Errorf("GetRootItems = %v, want [r1]", items)
+	}
+	layout, err := svc.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	assertLayout(t, layout, "i:r1")
+
+	// 拒否が root を壊していないこと。
+	if _, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{ID: "r2", Name: "R2"}); err != nil {
+		t.Errorf("AddRequest to the root after rejected delete: %v", err)
+	}
+}
+
+func TestCollectionService_RenameCollection_RootRejected(t *testing.T) {
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
+	savesBefore := len(repo.saveOrder())
+
+	err := svc.RenameCollection(domain.RootCollectionID, "x")
+	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
+		t.Fatalf("expected ValidationError, got %v", err)
+	}
+	if got := repo.saveOrder()[savesBefore:]; slices.Contains(got, domain.RootCollectionID) {
+		t.Errorf("root collection must not be saved by a rejected rename, saves = %v", got)
+	}
+	if got := cachedCollection(t, svc, domain.RootCollectionID).Name; got != domain.RootCollectionID {
+		t.Errorf("cached root name = %q, want %q", got, domain.RootCollectionID)
+	}
+	if got := repo.snapshot(domain.RootCollectionID).Name; got != domain.RootCollectionID {
+		t.Errorf("persisted root name = %q, want %q", got, domain.RootCollectionID)
 	}
 }
 

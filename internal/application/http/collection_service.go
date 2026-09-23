@@ -37,6 +37,10 @@ const (
 // 逆向き（レイアウトロックを保持したままコレクションロックを取る）経路を
 // 作ってはならない。レイアウト突合に必要なコレクション情報は、レイアウト操作を
 // 始める前に読み出しておく。
+//
+// 予約済みの __root__ はサイドバー直下のアイテムの置き場であり、ユーザーが編集する
+// コレクションではない。そのためコレクションとしての削除・リネームは ValidationError で
+// 拒否する（rejectReservedCollection）。中のアイテムは通常どおり操作できる。
 type CollectionService struct {
 	repo   domain.CollectionRepository
 	layout *SidebarLayoutService
@@ -225,8 +229,11 @@ func (s *CollectionService) CreateCollection(name string) (domain.Collection, er
 	return *c.Clone(), nil
 }
 
-// DeleteCollection は ID でコレクションを削除する。
+// DeleteCollection は ID でコレクションを削除する。予約済みの __root__ は ValidationError で拒否する。
 func (s *CollectionService) DeleteCollection(id string) error {
+	if err := rejectReservedCollection(id); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -246,8 +253,11 @@ func (s *CollectionService) DeleteCollection(id string) error {
 	return nil
 }
 
-// RenameCollection はコレクション名を変更する。
+// RenameCollection はコレクション名を変更する。予約済みの __root__ は ValidationError で拒否する。
 func (s *CollectionService) RenameCollection(id, name string) error {
+	if err := rejectReservedCollection(id); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -265,6 +275,17 @@ func (s *CollectionService) RenameCollection(id, name string) error {
 		return err
 	}
 	s.cache[id] = next
+	return nil
+}
+
+// rejectReservedCollection は予約済みコレクション（__root__）に対する
+// コレクション単位の変更（削除・リネーム）を拒否する。中のアイテムの操作は対象外。
+// ロックもキャッシュも参照しない入力検証なので、root を読み込めずキャッシュに無い
+// セッションでも NotFound ではなく一貫して ValidationError を返し、リポジトリにも触れない。
+func rejectReservedCollection(id string) error {
+	if id == domain.RootCollectionID {
+		return &cmn.ValidationError{Field: "id", Message: "reserved collection cannot be modified"}
+	}
 	return nil
 }
 
