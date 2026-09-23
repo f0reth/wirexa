@@ -26,6 +26,7 @@ task format  # フロントエンドのコードを整形する
 
 ```
 task go:test              # unit tests (go test ./...)
+task go:test:race         # unit tests with -race (what CI runs; needs cgo/gcc on Windows)
 task go:test:integration  # integration tests (build tag required)
 task go:vet               # go vet ./...
 task go:lint              # golangci-lint run

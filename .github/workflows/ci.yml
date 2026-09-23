@@ -76,7 +76,7 @@ jobs:
       - run: mkdir -p frontend/dist
       - run: touch frontend/dist/index.html
 
-      - run: go test ./...
+      - run: go test -race ./...
 
   test-frontend-unit:
     name: Frontend Unit Tests

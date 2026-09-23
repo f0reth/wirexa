@@ -29,6 +29,10 @@ const (
 // キャッシュのエントリを丸ごと差し替える。これによりエラーを返した操作は
 // メモリ上にも何も残さない。
 //
+// 境界では所有権を切る。公開メソッドの戻り値はキャッシュを Clone したもので、
+// 引数で受け取った可変データも Clone してから取り込む。呼び出し側（adapter や
+// Wails の JSON 化）がロック外で戻り値を読み書きしても、キャッシュには触れない。
+//
 // ロック順序は CollectionService.mu → SidebarLayoutService.mu の一方向とする。
 // 逆向き（レイアウトロックを保持したままコレクションロックを取る）経路を
 // 作ってはならない。レイアウト突合に必要なコレクション情報は、レイアウト操作を
@@ -37,8 +41,14 @@ type CollectionService struct {
 	repo   domain.CollectionRepository
 	layout *SidebarLayoutService
 	logger cmn.Logger
-	cache  map[string]*domain.Collection
-	mu     sync.RWMutex
+	// cache はコレクション ID → コレクション。
+	// 不変条件: キャッシュに載せた（公開した）コレクションとその配下は以後変更しない。
+	// 変更は Clone したコピーに対して行い、エントリごと差し替える。snapshotForLayout は
+	// この不変条件を前提にロック外で読むため、直接書き換える変更を入れてはならない。
+	// 例外は NewCollectionService 内の正規化・重複回収で、サービスを返す前
+	// （どのゴルーチンにも公開される前）なので不変条件に反しない。
+	cache map[string]*domain.Collection
+	mu    sync.RWMutex
 }
 
 // NewCollectionService は CollectionService を生成する。
@@ -59,6 +69,8 @@ func NewCollectionService(
 	if err != nil {
 		return nil, fmt.Errorf("failed to load collections: %w", err)
 	}
+	// ここと recoverDuplicateItems はキャッシュを直接変更するが、
+	// サービスを返す前なので cache の不変条件に反しない。
 	for i := range cols {
 		c := cols[i]
 		normalizeItemForms(c.Items)
@@ -131,6 +143,7 @@ func normalizeItemForms(items []*domain.TreeItem) {
 }
 
 // GetCollections は全コレクションを名前順で返す（__root__ を除く）。
+// 戻り値はキャッシュと可変状態を共有しないディープコピー。
 func (s *CollectionService) GetCollections() []domain.Collection {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -139,7 +152,7 @@ func (s *CollectionService) GetCollections() []domain.Collection {
 		if c.ID == domain.RootCollectionID {
 			continue
 		}
-		result = append(result, *c)
+		result = append(result, *c.Clone())
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Name < result[j].Name
@@ -148,6 +161,7 @@ func (s *CollectionService) GetCollections() []domain.Collection {
 }
 
 // GetRootItems はルートコレクション（__root__）のアイテム一覧を返す。
+// 戻り値はキャッシュと可変状態を共有しないディープコピー。
 func (s *CollectionService) GetRootItems() []*domain.TreeItem {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -155,7 +169,7 @@ func (s *CollectionService) GetRootItems() []*domain.TreeItem {
 	if !ok {
 		return []*domain.TreeItem{}
 	}
-	return root.Items
+	return root.Clone().Items
 }
 
 // CreateCollection は新規コレクションを作成する。名前が空の場合は ValidationError を返す。
@@ -181,7 +195,7 @@ func (s *CollectionService) CreateCollection(name string) (domain.Collection, er
 
 	// レイアウトファイルに末尾エントリを追加する。
 	s.applyLayoutBestEffort(layoutAppend(domain.SidebarEntry{Kind: sidebarKindCollection, ID: c.ID}))
-	return *c, nil
+	return *c.Clone(), nil
 }
 
 // DeleteCollection は ID でコレクションを削除する。
@@ -235,50 +249,47 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 		Name:     name,
 		Children: []*domain.TreeItem{},
 	}
-	if err := s.addItem(collectionID, parentID, item); err != nil {
-		return nil, err
-	}
-	return item, nil
+	return s.addItem(collectionID, parentID, item)
 }
 
 // AddRequest はコレクションにリクエストを追加する。
+// req は複製してから取り込むため、呼び出し側の req（Contents map など）は書き換えない。
 func (s *CollectionService) AddRequest(collectionID, parentID string, req domain.HTTPRequest) (*domain.TreeItem, error) {
-	if req.ID == "" {
-		req.ID = uuid.NewString()
+	r := req.Clone()
+	if r.ID == "" {
+		r.ID = uuid.NewString()
 	}
-	req.Body.DropFileContents()
+	r.Body.DropFileContents()
 	item := &domain.TreeItem{
 		Type:     domain.ItemTypeRequest,
-		ID:       req.ID,
-		Name:     req.Name,
-		Request:  &req,
+		ID:       r.ID,
+		Name:     r.Name,
+		Request:  r,
 		Children: []*domain.TreeItem{},
 	}
-	if err := s.addItem(collectionID, parentID, item); err != nil {
-		return nil, err
-	}
-	return item, nil
+	return s.addItem(collectionID, parentID, item)
 }
 
 // addItem は組み立て済みの TreeItem をコレクションへ追加し、必要ならサイドバーにも反映する。
-func (s *CollectionService) addItem(collectionID, parentID string, item *domain.TreeItem) error {
+// item の所有権はキャッシュへ移るため、呼び出し側へは挿入したノードの複製を返す。
+func (s *CollectionService) addItem(collectionID, parentID string, item *domain.TreeItem) (*domain.TreeItem, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	c, ok := s.cache[collectionID]
 	if !ok {
-		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: collectionID}
+		return nil, &cmn.NotFoundError{Resource: sidebarKindCollection, ID: collectionID}
 	}
 	next := c.Clone()
 	if !next.AppendItem(parentID, item) {
-		return &cmn.NotFoundError{Resource: cmn.ResourceParent, ID: parentID}
+		return nil, &cmn.NotFoundError{Resource: cmn.ResourceParent, ID: parentID}
 	}
 
 	uow := s.begin()
 	uow.SaveCollection(c, next)
 	if err := uow.Err(); err != nil {
 		uow.Rollback()
-		return err
+		return nil, err
 	}
 	s.cache[collectionID] = next
 
@@ -286,10 +297,11 @@ func (s *CollectionService) addItem(collectionID, parentID string, item *domain.
 	if collectionID == domain.RootCollectionID && parentID == "" {
 		s.applyLayoutBestEffort(layoutAppend(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID}))
 	}
-	return nil
+	return item.Clone(), nil
 }
 
 // UpdateRequest はコレクション内のリクエストを更新する。
+// req は複製してから取り込むため、呼び出し側の req（Contents map など）は書き換えない。
 func (s *CollectionService) UpdateRequest(collectionID string, req domain.HTTPRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -305,9 +317,10 @@ func (s *CollectionService) UpdateRequest(collectionID string, req domain.HTTPRe
 		return &cmn.NotFoundError{Resource: cmn.ResourceRequest, ID: req.ID}
 	}
 
-	req.Name = node.Name
-	req.Body.DropFileContents()
-	node.Request = &req
+	r := req.Clone()
+	r.Name = node.Name
+	r.Body.DropFileContents()
+	node.Request = r
 
 	uow := s.begin()
 	uow.SaveCollection(c, next)
@@ -452,6 +465,10 @@ func (s *CollectionService) GetSidebarLayout() ([]domain.SidebarEntry, error) {
 // snapshotForLayout は突合に必要なコレクション一覧（__root__ を除く）と
 // __root__ 直下アイテムを読み出す。レイアウトロックを取る前に呼び、
 // 突合の入力をあらかじめ確定させることでロックのネストを避ける。
+//
+// 戻り値はキャッシュ上のポインターをそのまま共有し、呼び出し側はロック外で読む。
+// 公開済みエントリは不変（cache の不変条件）なので安全だが、キャッシュを直接
+// 書き換える変更を入れるとこの前提が崩れる。application 層の外へは渡さないこと。
 func (s *CollectionService) snapshotForLayout() ([]*domain.Collection, []*domain.TreeItem) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
