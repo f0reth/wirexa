@@ -1,0 +1,9 @@
+{
+  "id": "profile-1",
+  "name": "Local",
+  "broker": "tcp://localhost:1883",
+  "clientId": "wirexa-1",
+  "username": "user",
+  "password": "pass",
+  "useTls": true
+}

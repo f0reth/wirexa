@@ -23,7 +23,6 @@ import (
 	mqttapp "github.com/f0reth/Wirexa/internal/application/mqtt"
 	cmndomain "github.com/f0reth/Wirexa/internal/domain"
 	mqttdomain "github.com/f0reth/Wirexa/internal/domain/mqtt"
-	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 	mqttinfra "github.com/f0reth/Wirexa/internal/infrastructure/mqtt"
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
@@ -145,9 +144,9 @@ func (e *mqttMockEmitter) waitConnectionFailed(t *testing.T, timeout time.Durati
 // 終了処理は RPC 面に無いため、サービスも返す。
 func newMQTTHandlerWithDir(t *testing.T, emitter cmndomain.Emitter, dir string) (*adapters.MQTTHandler, *mqttapp.MQTTService) {
 	t.Helper()
-	repo, err := infra.NewJSONStore(dir, func(p *mqttdomain.BrokerProfile) string { return p.ID })
+	repo, err := mqttinfra.NewProfileRepository(dir, nil)
 	if err != nil {
-		t.Fatalf("NewJSONStore: %v", err)
+		t.Fatalf("NewProfileRepository: %v", err)
 	}
 	profileSvc, err := mqttapp.NewProfileService(repo)
 	if err != nil {
@@ -162,9 +161,9 @@ func newMQTTHandlerWithDir(t *testing.T, emitter cmndomain.Emitter, dir string) 
 // newMQTTHandlerWithConfig は指定クライアント設定で MQTTHandler を組み立てる（タイムアウトテスト用）。
 func newMQTTHandlerWithConfig(t *testing.T, emitter cmndomain.Emitter, cfg mqttinfra.MQTTClientConfig) (*adapters.MQTTHandler, *mqttapp.MQTTService) {
 	t.Helper()
-	repo, err := infra.NewJSONStore(t.TempDir(), func(p *mqttdomain.BrokerProfile) string { return p.ID })
+	repo, err := mqttinfra.NewProfileRepository(t.TempDir(), nil)
 	if err != nil {
-		t.Fatalf("NewJSONStore: %v", err)
+		t.Fatalf("NewProfileRepository: %v", err)
 	}
 	profileSvc, err := mqttapp.NewProfileService(repo)
 	if err != nil {

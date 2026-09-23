@@ -19,7 +19,6 @@ import (
 	udpapp "github.com/f0reth/Wirexa/internal/application/udp"
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 	httpdomain "github.com/f0reth/Wirexa/internal/domain/http"
-	mqttdomain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 	udpdomain "github.com/f0reth/Wirexa/internal/domain/udp"
 	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 	httpinfra "github.com/f0reth/Wirexa/internal/infrastructure/http"
@@ -31,7 +30,6 @@ import (
 // コンパイル時に各ドメインインターフェースを JSONStore[T] が満たすことを検証
 var (
 	_ httpdomain.CollectionRepository = (*httpinfra.CollectionRepository)(nil)
-	_ mqttdomain.ProfileRepository    = (*infra.JSONStore[mqttdomain.BrokerProfile])(nil)
 	_ udpdomain.TargetRepository      = (*infra.JSONStore[udpdomain.UDPTarget])(nil)
 )
 
@@ -149,14 +147,10 @@ func (a *App) initialize(ctx context.Context) error {
 	clientFactory := mqttinfra.NewPahoClientFactory(mqttinfra.MQTTClientConfig{})
 	a.mqttSvc = mqttapp.NewMQTTService(ctx, emitter, clientFactory, logger)
 
-	profileRepo, err := infra.NewJSONStore(
-		filepath.Join(configDir, wirexaConfigDir, "mqtt-profiles"),
-		func(p *mqttdomain.BrokerProfile) string { return p.ID },
-	)
+	profileRepo, err := mqttinfra.NewProfileRepository(filepath.Join(configDir, wirexaConfigDir, "mqtt-profiles"), logger)
 	if err != nil {
 		return fmt.Errorf("failed to create MQTT profile store: %w", err)
 	}
-	profileRepo.SetLogger(logger)
 	profileSvc, err := mqttapp.NewProfileService(profileRepo)
 	if err != nil {
 		return fmt.Errorf("failed to load MQTT profiles: %w", err)
