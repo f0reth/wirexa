@@ -4,12 +4,15 @@ import (
 	"context"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"github.com/f0reth/Wirexa/internal/domain"
 )
 
 // WindowManager はウィンドウのサイズ・位置・最大化状態の復元と保存を担う。
 // Wails ランタイム呼び出しと window-state.json の永続化を仲介する。
 type WindowManager struct {
 	ctx       context.Context
+	logger    domain.Logger
 	path      string
 	minWidth  int
 	minHeight int
@@ -18,15 +21,15 @@ type WindowManager struct {
 }
 
 // NewWindowManager は WindowManager を生成する。path は window-state.json の保存先、
-// minWidth/minHeight はクランプ時の下限サイズ。
-func NewWindowManager(ctx context.Context, path string, minWidth, minHeight int) *WindowManager {
-	return &WindowManager{ctx: ctx, path: path, minWidth: minWidth, minHeight: minHeight}
+// minWidth/minHeight はクランプ時の下限サイズ。logger は保存ファイルの破損・読み込み失敗の記録に使う (nil 可)。
+func NewWindowManager(ctx context.Context, path string, minWidth, minHeight int, logger domain.Logger) *WindowManager {
+	return &WindowManager{ctx: ctx, logger: logger, path: path, minWidth: minWidth, minHeight: minHeight}
 }
 
 // Restore は保存済みのウィンドウサイズ・位置・最大化状態を復元する。
 // 保存値が無い / 不正な場合は options.App の既定サイズのままにする。
 func (m *WindowManager) Restore() {
-	ws, ok := LoadWindowState(m.path)
+	ws, ok := LoadWindowState(m.path, m.logger)
 	if !ok || ws.Width <= 0 || ws.Height <= 0 {
 		return
 	}

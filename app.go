@@ -109,10 +109,18 @@ func (a *App) initialize(ctx context.Context) error {
 	}
 	sessionDir := filepath.Join(cacheDir, wirexaConfigDir, "http-sessions")
 
+	// ウィンドウ状態ファイルの破損も記録できるよう、ロガーを先に作る。
+	logger, err := infra.NewFileLogger(filepath.Join(configDir, wirexaConfigDir, "logs"))
+	if err != nil {
+		return fmt.Errorf("failed to initialize logger: %w", err)
+	}
+	adapters.SetupLogHandler(a.logHandler, logger)
+
 	a.windowMgr = infra.NewWindowManager(
 		ctx,
 		filepath.Join(configDir, wirexaConfigDir, "window-state.json"),
 		minWindowWidth, minWindowHeight,
+		logger,
 	)
 
 	// 前回セッションで残った打ち切りレスポンスの一時ファイルを掃除する。
@@ -121,12 +129,6 @@ func (a *App) initialize(ctx context.Context) error {
 	// 他プロセスが接頭辞を真似ただけのディレクトリを誤って削除しない
 	// (単一インスタンスロックは「Wirexa の別プロセスがいない」ことしか保証しない)。
 	httpinfra.SweepStaleTempFiles(sessionDir)
-
-	logger, err := infra.NewFileLogger(filepath.Join(configDir, wirexaConfigDir, "logs"))
-	if err != nil {
-		return fmt.Errorf("failed to initialize logger: %w", err)
-	}
-	adapters.SetupLogHandler(a.logHandler, logger)
 
 	// MQTT / UDP の両サービスで共有する (ctx を保持するだけのステートレスな型)。
 	emitter := infra.NewWailsEmitter(ctx)
