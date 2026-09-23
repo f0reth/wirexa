@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -66,6 +67,7 @@ func TestMain(m *testing.M) {
 type mqttMockEmitter struct {
 	ch     chan mqttdomain.MQTTMessage
 	failCh chan string // mqtt:connection-failed イベントの connectionId を受信する
+	total  atomic.Int64
 }
 
 func newMQTTMockEmitter() *mqttMockEmitter {
@@ -76,6 +78,7 @@ func newMQTTMockEmitter() *mqttMockEmitter {
 }
 
 func (e *mqttMockEmitter) Emit(event string, data any) {
+	e.total.Add(1)
 	if msg, ok := data.(mqttdomain.MQTTMessage); ok {
 		select {
 		case e.ch <- msg:
@@ -113,6 +116,16 @@ func (e *mqttMockEmitter) noMessage(t *testing.T, wait time.Duration) {
 	case msg := <-e.ch:
 		t.Fatalf("unexpected MQTT message received: topic=%s payload=%s", msg.Topic, msg.Payload)
 	case <-time.After(wait):
+	}
+}
+
+// assertSilent は wait の間に emitter へイベントが 1 件も届かないことを確認する。
+func (e *mqttMockEmitter) assertSilent(t *testing.T, wait time.Duration) {
+	t.Helper()
+	before := e.total.Load()
+	time.Sleep(wait)
+	if after := e.total.Load(); after != before {
+		t.Errorf("events emitted after Shutdown: %d -> %d", before, after)
 	}
 }
 
@@ -462,6 +475,108 @@ func TestMQTT_Shutdown(t *testing.T) {
 	if conns := h.GetConnections(); len(conns) != 0 {
 		t.Errorf("expected 0 connections after shutdown, got %d", len(conns))
 	}
+	emitter.assertSilent(t, 300*time.Millisecond)
+}
+
+// blackholeBroker は accept だけして応答しない TCP リスナーを起動し、その URL を返す。
+// 閉じたポートでは dial が即座に失敗して「接続中」の窓が短いため、試行中の状態を作るのに使う。
+// accepted は最初の接続を受け付けたときに閉じられる。
+func blackholeBroker(t *testing.T) (broker string, accepted <-chan struct{}) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	ch := make(chan struct{})
+	var mu sync.Mutex
+	var conns []net.Conn
+	go func() {
+		var once sync.Once
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			conns = append(conns, conn)
+			mu.Unlock()
+			once.Do(func() { close(ch) })
+		}
+	}()
+	t.Cleanup(func() {
+		_ = ln.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range conns {
+			_ = c.Close()
+		}
+	})
+	return "tcp://" + ln.Addr().String(), ch
+}
+
+// TestMQTT_Shutdown_WhileConnecting は接続試行中の Shutdown が上限内に復帰し、以後イベントが届かないことを確認する。
+// 進行中の dial は ConnectTimeout まで残り得るため、戻り値は true を要求しない。
+func TestMQTT_Shutdown_WhileConnecting(t *testing.T) {
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	broker, accepted := blackholeBroker(t)
+
+	if _, err := h.Connect(mqttdomain.ConnectionConfig{Name: "blackhole", Broker: broker}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	select {
+	case <-accepted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("broker did not accept the connection")
+	}
+
+	start := time.Now()
+	svc.Shutdown(mqttShutdownTimeout)
+	if elapsed := time.Since(start); elapsed > mqttShutdownTimeout+time.Second {
+		t.Errorf("Shutdown took %v, want <= %v", elapsed, mqttShutdownTimeout+time.Second)
+	}
+	emitter.assertSilent(t, 500*time.Millisecond)
+}
+
+// TestMQTT_Shutdown_WhileReceiving は受信中の Shutdown の復帰後に mqtt:message が届かないことを確認する。
+func TestMQTT_Shutdown_WhileReceiving(t *testing.T) {
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	subID := connectBroker(t, h, "receiver")
+	waitConnected(t, h, subID, 5*time.Second)
+	if err := h.Subscribe(subID, "test/shutdown-receiving", 0); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	// 別サービスの接続から連続 publish する (受信側の Shutdown の影響を受けない)。
+	pubH, pubSvc := newMQTTHandler(t, newMQTTMockEmitter())
+	t.Cleanup(func() { pubSvc.Shutdown(mqttShutdownTimeout) })
+	pubID := connectBroker(t, pubH, "publisher")
+	waitConnected(t, pubH, pubID, 5*time.Second)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			_ = pubH.Publish(pubID, "test/shutdown-receiving", "tick", 0, false)
+			time.Sleep(time.Millisecond)
+		}
+	})
+	t.Cleanup(func() {
+		close(stop)
+		wg.Wait()
+	})
+
+	_ = emitter.receiveMessage(t, 5*time.Second)
+	if !svc.Shutdown(mqttShutdownTimeout) {
+		t.Error("expected Shutdown to drain within timeout")
+	}
+	emitter.assertSilent(t, 300*time.Millisecond)
 }
 
 // TestMQTT_ProfilePersistenceRoundTrip は SaveProfile 後に同一 dir で再作成した Handler でデータが復元されることを確認する。
