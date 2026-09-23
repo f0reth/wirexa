@@ -323,6 +323,16 @@ adapter が `internal/infrastructure` を直接 import しており、HTTP、MQT
 
 送信ボディを streaming reader として組み立てることが望ましい。
 
+#### 対応状況
+
+対応済み（2026-09-24）。
+
+- 選択ファイルのポートを `SelectedFileOpener.OpenSelectedFile`（開いたハンドルとサイズを返す）に変え、送信ボディをメモリ上のバイト列とファイルの区間の並び（`request_body.go` の `bodySegments`）で組み立てる。ファイルの内容はメモリに載せず、送信しながらハンドルから読む。multipart の出力は従来とバイト単位で同じ。
+- `Content-Length` を付けた固定長で送る。`GetBody` を設定し、307/308 やトランスポートの再試行では同じハンドルを先頭から読み直す（トークンから開き直さない）。ハンドルは参照カウントで共有し、最後の参照が外れたときに閉じる。
+- Windows ではファイルを共有モード `FILE_SHARE_READ` だけで開き、送信中は他のプロセスが書き込み・削除・リネームできないようにする。他のプロセスが書き込み用に開いているファイルは `ErrSelectedFileInUse` にする。
+- Windows 以外では、ファイル区間を読み切る直前と送り直す直前にサイズと更新時刻を確かめ、変わっていれば `ErrSelectedFileChanged` にする。最後のバイトを送る前に止めるので、長さの合った誤った内容を送り切ることはないが、それまでに送った部分はサーバーに届く。
+- 送信中の読み込みエラーは、ハンドルと `NetClient` の 2 か所でパスを含まない domain エラーに置き換える。
+
 ### 予約済み root collection の不変条件が保護されていない
 
 `RootCollectionID` は特別な用途を持つが、`DeleteCollection` や `RenameCollection` で拒否されない。
