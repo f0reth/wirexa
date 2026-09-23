@@ -3,10 +3,8 @@ package infrastructure
 
 import (
 	"encoding/json/v2"
-	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/f0reth/Wirexa/internal/domain"
 )
@@ -55,7 +53,7 @@ func (s *JSONStore[T]) Load() ([]T, error) {
 		var item T
 		if err := json.Unmarshal(data, &item); err != nil {
 			// 破損ファイルは .corrupt へ退避してスキップし、読めた分だけで継続する。
-			dest, rerr := s.quarantine(path)
+			dest, rerr := QuarantineFile(path)
 			if rerr != nil {
 				s.logf("json_store: failed to quarantine corrupt file", "file", e.Name(), "error", rerr)
 			} else {
@@ -73,20 +71,6 @@ func (s *JSONStore[T]) Load() ([]T, error) {
 		items = append(items, item)
 	}
 	return items, nil
-}
-
-// quarantine は破損ファイルを "<path>.corrupt" へリネーム退避する。
-// 退避先が既存の場合は "<path>.corrupt.<unixnano>" へフォールバックする。
-// 退避後のパスを返す。
-func (s *JSONStore[T]) quarantine(path string) (string, error) {
-	dest := path + ".corrupt"
-	if _, err := os.Stat(dest); err == nil {
-		dest = fmt.Sprintf("%s.corrupt.%d", path, time.Now().UnixNano())
-	}
-	if err := os.Rename(path, dest); err != nil {
-		return "", err
-	}
-	return dest, nil
 }
 
 // logf は logger が設定されていればエラーとして記録する。
