@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
 	"sync"
 	"testing"
 
@@ -42,7 +43,12 @@ type inMemoryRepo struct {
 	// 採番される ID を事前に知れない新規作成の失敗注入に使う。
 	failAllSavesFrom int
 	saveCount        int
-	mu               sync.Mutex
+	// existing は Load では返さないがファイルとしては残っている ID。
+	// 読み込みで読み飛ばされたファイルを模す。
+	existing map[string]bool
+	// existsErr は Exists が返すエラー。有無を確認できない状況を模す。
+	existsErr error
+	mu        sync.Mutex
 }
 
 // newFakeRepo は cols を保存済みとして持つ inMemoryRepo を生成する。
@@ -161,6 +167,16 @@ func (r *inMemoryRepo) Delete(id string) error {
 	}
 	delete(r.collections, id)
 	return nil
+}
+
+func (r *inMemoryRepo) Exists(id string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.existsErr != nil {
+		return false, r.existsErr
+	}
+	_, ok := r.collections[id]
+	return ok || r.existing[id], nil
 }
 
 func TestCollectionService_Create(t *testing.T) {
@@ -576,6 +592,87 @@ func TestNewCollectionService_RepoLoadError(t *testing.T) {
 	_, err := NewCollectionService(&errorLoadRepo{}, &inMemoryLayoutRepo{}, nil)
 	if err == nil {
 		t.Error("expected error from repo.Load, got nil")
+	}
+}
+
+// --- NewCollectionService: __root__ の自動作成 ---
+
+func TestNewCollectionService_CreatesRootWhenFileMissing(t *testing.T) {
+	repo := newFakeRepo()
+	if _, err := NewCollectionService(repo, &inMemoryLayoutRepo{}, nil); err != nil {
+		t.Fatalf("NewCollectionService: %v", err)
+	}
+	if repo.snapshot(domain.RootCollectionID) == nil {
+		t.Fatal("root collection should be created and saved when its file does not exist")
+	}
+}
+
+// newSvcWithUnloadableRoot は __root__ のファイルが残っているのに読み込めなかった状態で起動する。
+// setup でフェイクに「ファイルは存在する」または「有無を確認できない」状態を仕込む。
+func newSvcWithUnloadableRoot(t *testing.T, setup func(*inMemoryRepo)) (*CollectionService, *inMemoryRepo, *recordingLogger) {
+	t.Helper()
+	repo := newFakeRepo(&domain.Collection{ID: "c1", Name: "C1", Items: []*domain.TreeItem{}})
+	setup(repo)
+	logger := &recordingLogger{}
+	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{}, logger)
+	if err != nil {
+		t.Fatalf("NewCollectionService should start without the root: %v", err)
+	}
+	return svc, repo, logger
+}
+
+func TestNewCollectionService_UnloadableRoot_IsNotOverwritten(t *testing.T) {
+	cases := map[string]func(*inMemoryRepo){
+		"ファイルが残っている": func(r *inMemoryRepo) { r.existing = map[string]bool{domain.RootCollectionID: true} },
+		"有無を確認できない":  func(r *inMemoryRepo) { r.existsErr = errors.New("stat error") },
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			svc, repo, logger := newSvcWithUnloadableRoot(t, setup)
+
+			if slices.Contains(repo.saveOrder(), domain.RootCollectionID) {
+				t.Fatal("root collection must not be saved when its file could not be loaded")
+			}
+			if logger.errors == 0 {
+				t.Error("expected an error log explaining why the root is unavailable")
+			}
+			if items := svc.GetRootItems(); len(items) != 0 {
+				t.Errorf("GetRootItems = %v, want empty", items)
+			}
+			layout, err := svc.GetSidebarLayout()
+			if err != nil {
+				t.Fatalf("GetSidebarLayout: %v", err)
+			}
+			assertLayout(t, layout, "c:c1")
+		})
+	}
+}
+
+func TestNewCollectionService_UnloadableRoot_RejectsRootWrites(t *testing.T) {
+	svc, repo, _ := newSvcWithUnloadableRoot(t, func(r *inMemoryRepo) {
+		r.existing = map[string]bool{domain.RootCollectionID: true}
+	})
+	if _, err := svc.AddRequest("c1", "", domain.HTTPRequest{ID: "r1", Name: testReqName}); err != nil {
+		t.Fatalf("AddRequest to another collection should succeed: %v", err)
+	}
+
+	assertRootNotFound := func(op string, err error) {
+		t.Helper()
+		nf, ok := errors.AsType[*cmn.NotFoundError](err)
+		if !ok || nf.ID != domain.RootCollectionID {
+			t.Errorf("%s: expected NotFound for the root, got %v", op, err)
+		}
+	}
+	_, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{ID: "r2", Name: testReqName})
+	assertRootNotFound("AddRequest", err)
+	assertRootNotFound("MoveItemToSidebar", svc.MoveItemToSidebar("c1", "r1", 0))
+	assertRootNotFound("MoveItem", svc.MoveItem("c1", "r1", domain.RootCollectionID, "", 0))
+
+	if slices.Contains(repo.saveOrder(), domain.RootCollectionID) {
+		t.Error("root collection must not be saved by rejected operations")
+	}
+	if _, _, ok := cachedCollection(t, svc, "c1").FindNode("r1"); !ok {
+		t.Error("the item should stay in the source collection after rejected moves")
 	}
 }
 

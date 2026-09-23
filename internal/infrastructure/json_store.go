@@ -3,6 +3,7 @@ package infrastructure
 
 import (
 	"encoding/json/v2"
+	"errors"
 	"os"
 	"path/filepath"
 
@@ -104,6 +105,22 @@ func (s *JSONStore[T]) Save(item *T) error {
 		return err
 	}
 	return WriteJSONFile(dest, item, 0o600)
+}
+
+// Exists は id のファイルが存在するかを返す。Load で読み飛ばしたファイルも存在として扱う。
+// 存在しない場合は false と nil、有無を確認できない場合はエラーを返す。
+func (s *JSONStore[T]) Exists(id string) (bool, error) {
+	dest, err := s.resolve(id)
+	if err != nil {
+		return false, err
+	}
+	if _, err := os.Lstat(dest); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // Delete はアイテムの JSON ファイルを削除する。

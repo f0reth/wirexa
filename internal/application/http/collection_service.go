@@ -76,16 +76,8 @@ func NewCollectionService(
 		normalizeItemForms(c.Items)
 		svc.cache[c.ID] = &c
 	}
-	if _, ok := svc.cache[domain.RootCollectionID]; !ok {
-		root := &domain.Collection{
-			ID:    domain.RootCollectionID,
-			Name:  domain.RootCollectionID,
-			Items: []*domain.TreeItem{},
-		}
-		if err := repo.Save(root); err != nil {
-			return nil, fmt.Errorf("failed to create root collection: %w", err)
-		}
-		svc.cache[root.ID] = root
+	if err := svc.ensureRootCollection(); err != nil {
+		return nil, err
 	}
 
 	svc.recoverDuplicateItems()
@@ -94,6 +86,38 @@ func NewCollectionService(
 	}
 
 	return svc, nil
+}
+
+// ensureRootCollection は __root__ がキャッシュに無いとき、ファイルが本当に無い場合に限って作成する。
+// ファイルが残っている（読み込みで読み飛ばされた）か、有無を確認できない場合は作らない。
+// 空の root で上書きすると、読めなかった中身（サイドバー直下のリクエスト）が失われるため。
+// その場合 root はキャッシュに載らず、root への書き込み操作はすべて NotFound で拒否される。
+// 次回起動でファイルを読めれば root は通常どおり読み込まれる。
+func (s *CollectionService) ensureRootCollection() error {
+	if _, ok := s.cache[domain.RootCollectionID]; ok {
+		return nil
+	}
+	exists, err := s.repo.Exists(domain.RootCollectionID)
+	if err != nil {
+		s.logError("failed to check root collection file; running without it this session", err)
+		return nil
+	}
+	if exists {
+		s.logError("root collection file exists but could not be loaded; running without it this session",
+			&cmn.NotFoundError{Resource: sidebarKindCollection, ID: domain.RootCollectionID})
+		return nil
+	}
+	// ファイルが本当に無い: 初回起動、または破損ファイルの退避に成功した後。
+	root := &domain.Collection{
+		ID:    domain.RootCollectionID,
+		Name:  domain.RootCollectionID,
+		Items: []*domain.TreeItem{},
+	}
+	if err := s.repo.Save(root); err != nil {
+		return fmt.Errorf("failed to create root collection: %w", err)
+	}
+	s.cache[root.ID] = root
+	return nil
 }
 
 // recoverDuplicateItems は「追加してから削除」の途中でプロセスが消えた場合に残る

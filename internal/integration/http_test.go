@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -1190,6 +1191,51 @@ func TestHTTP_CorruptStorage(t *testing.T) {
 	if _, statErr := os.Stat(corruptFile + ".corrupt"); statErr != nil {
 		t.Errorf("corrupt.json.corrupt should exist: %v", statErr)
 	}
+}
+
+// TestHTTP_UnloadableRootIsNotOverwritten は __root__.json が存在するのに読み込めなかった場合、
+// 空の root で作り直して上書きせずに起動することを確認する。
+// 権限やロックで読めない状態は Windows で安定して作れないため、JSONStore.Load が
+// 退避せずに読み飛ばす「JSON としては正しいが中身の ID が不正」なファイルで代用する。
+func TestHTTP_UnloadableRootIsNotOverwritten(t *testing.T) {
+	dir := t.TempDir()
+	rootPath := filepath.Join(dir, "collections", httpdomain.RootCollectionID+".json")
+	writeCollectionJSON(t, dir, httpdomain.RootCollectionID, `{"id":"../escape","name":"x","items":[]}`)
+	original, err := os.ReadFile(rootPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	assertRootUntouched := func(when string) {
+		t.Helper()
+		got, rerr := os.ReadFile(rootPath)
+		if rerr != nil {
+			t.Fatalf("%s: ReadFile: %v", when, rerr)
+		}
+		if !bytes.Equal(got, original) {
+			t.Errorf("%s: __root__.json was overwritten: %s", when, got)
+		}
+	}
+
+	h := newHTTPHandlerWithDir(t, dir)
+	assertRootUntouched("after startup")
+	if items := h.GetRootItems(); len(items) != 0 {
+		t.Errorf("GetRootItems = %v, want empty", items)
+	}
+	if _, err = h.AddRequest(httpdomain.RootCollectionID, "", httpdomain.HTTPRequest{Name: "R", Method: "GET"}); err == nil {
+		t.Error("AddRequest to the unavailable root should fail")
+	}
+	assertRootUntouched("after AddRequest")
+
+	// 他のコレクションは通常どおり作成でき、再起動後も読み込める。
+	col, err := h.CreateCollection("Other")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
+	}
+	h2 := newHTTPHandlerWithDir(t, dir)
+	if cols := h2.GetCollections(); len(cols) != 1 || cols[0].ID != col.ID {
+		t.Errorf("collections after restart = %v, want [%s]", cols, col.ID)
+	}
+	assertRootUntouched("after restart")
 }
 
 // TestHTTP_SendRequest_FileBodyViaDialogToken はダイアログで選んだファイルが token 経由で送れ、

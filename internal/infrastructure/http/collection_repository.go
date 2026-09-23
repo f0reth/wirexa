@@ -61,6 +61,11 @@ func (r *CollectionRepository) Delete(id string) error {
 	return r.store.Delete(id)
 }
 
+// Exists はコレクションのファイルが存在するかを返す。読み込みで読み飛ばしたファイルも含む。
+func (r *CollectionRepository) Exists(id string) (bool, error) {
+	return r.store.Exists(id)
+}
+
 // ── 永続化 DTO ────────────────────────────────────────────────────────────────
 // フィールドと JSON 名は domain 型と揃え、既存ファイルとの互換を保つ。
 // file 参照は storedFileReference でしか表現できず、token と実パスを書き出せない。

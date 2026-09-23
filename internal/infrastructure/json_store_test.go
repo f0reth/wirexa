@@ -364,6 +364,39 @@ func TestJSONStore_Load_SkipsUnsafeID(t *testing.T) {
 	}
 }
 
+func TestJSONStore_Exists(t *testing.T) {
+	store := newTestStore(t)
+	if err := store.Save(&testItem{ID: "saved", Name: "Saved"}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	// Load では読み飛ばされる (中身の ID が不正な) ファイルも存在として扱う。
+	if err := os.WriteFile(filepath.Join(store.dir, "skipped.json"), []byte(`{"id":"../escaped"}`), 0o600); err != nil {
+		t.Fatalf("write skipped.json: %v", err)
+	}
+
+	for id, want := range map[string]bool{"saved": true, "skipped": true, "missing": false} {
+		got, err := store.Exists(id)
+		if err != nil {
+			t.Fatalf("Exists(%q): %v", id, err)
+		}
+		if got != want {
+			t.Errorf("Exists(%q) = %v, want %v", id, got, want)
+		}
+	}
+}
+
+func TestJSONStore_Exists_RejectsUnsafeID(t *testing.T) {
+	store := newTestStore(t)
+	for _, tc := range attackIDs {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := store.Exists(tc.id)
+			if _, ok := errors.AsType[*domain.ValidationError](err); !ok {
+				t.Fatalf("Exists(%q) = %v (%T), want *domain.ValidationError", tc.id, err, err)
+			}
+		})
+	}
+}
+
 func TestJSONStore_NewJSONStore_CreatesDirectory(t *testing.T) {
 	base := t.TempDir()
 	dir := filepath.Join(base, "nested", "path", "store")

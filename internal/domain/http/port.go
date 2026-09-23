@@ -46,9 +46,13 @@ type ResponseBodyLease interface {
 
 // CollectionRepository はコレクションの永続化抽象。
 type CollectionRepository interface {
+	// Load は読めたコレクションだけを返す。読めないファイルや壊れたファイルは読み飛ばす。
 	Load() ([]Collection, error)
 	Save(c *Collection) error
 	Delete(id string) error
+	// Exists は id のファイルが存在するかを返す。Load で読み飛ばされたファイルも存在として扱う。
+	// 有無を確認できなかった場合はエラーを返す。
+	Exists(id string) (bool, error)
 }
 
 // SidebarLayoutRepository はサイドバーレイアウトの永続化抽象。
