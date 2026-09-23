@@ -1,0 +1,10 @@
+[
+  {
+    "kind": "collection",
+    "id": "col-1"
+  },
+  {
+    "kind": "item",
+    "id": "req-1"
+  }
+]

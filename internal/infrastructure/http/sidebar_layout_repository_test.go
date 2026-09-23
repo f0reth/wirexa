@@ -5,11 +5,65 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
+	"github.com/f0reth/Wirexa/internal/testutil"
 )
+
+// 全フィールドを埋めたレイアウトを保存・復元しても値を失わない。検査対象は型から決まるので、
+// domain 型にフィールドを足して永続化 DTO や変換関数への追加を忘れるとここで検出される。
+func TestSidebarLayoutRepository_RoundTripKeepsEveryField(t *testing.T) {
+	var want []domain.SidebarEntry
+	testutil.Populate(t, &want)
+
+	repo := NewSidebarLayoutRepository(filepath.Join(t.TempDir(), "sidebar_layout.json"))
+	if err := repo.Save(want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := repo.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("round trip mismatch:\n got %+v\nwant %+v", got, want)
+	}
+}
+
+// 既存の保存形式 (golden) を読めて、書き戻すと同じ JSON になる。
+func TestSidebarLayoutRepository_GoldenFormat(t *testing.T) {
+	golden := testutil.ReadGolden(t, filepath.Join("testdata", "sidebar_layout.golden.json"))
+	path := filepath.Join(t.TempDir(), "sidebar_layout.json")
+	if err := os.WriteFile(path, golden, 0o600); err != nil {
+		t.Fatalf("write golden: %v", err)
+	}
+	repo := NewSidebarLayoutRepository(path)
+
+	loaded, err := repo.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := []domain.SidebarEntry{{Kind: "collection", ID: "col-1"}, {Kind: "item", ID: "req-1"}}
+	if !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("golden load mismatch:\n got %+v\nwant %+v", loaded, want)
+	}
+
+	if err = repo.Save(loaded); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved: %v", err)
+	}
+	testutil.AssertJSONEqual(t, saved, golden)
+}
+
+// 永続化 DTO はどの階層でも domain 型を埋め込まない。
+func TestSidebarLayoutRepository_StoredDTOHasNoDomainTypes(t *testing.T) {
+	testutil.AssertNoTypesFrom(t, []storedSidebarEntry{}, testutil.DomainPkg)
+}
 
 func TestSidebarLayoutRepository_RoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sidebar_layout.json")
