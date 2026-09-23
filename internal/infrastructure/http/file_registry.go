@@ -83,7 +83,8 @@ func (r *FileRegistry) Register(path string) (domain.SelectedFile, error) {
 
 // OpenSelectedFile は token を解決してファイルを開く。アクセス判定は開く直前に行う。
 // 空・未登録の token は ErrFileAccessDenied、登録後に開けなくなったファイルや通常ファイルでない
-// ものは ErrSelectedFileUnavailable を返す。どちらもパスを含む OS エラーを連結しない。
+// ものは ErrSelectedFileUnavailable、Windows で他のプロセスが書き込み用に開いているファイルは
+// ErrSelectedFileInUse を返す。いずれもパスを含む OS エラーを連結しない。
 // 返すハンドルは開いた時点のサイズと更新時刻を基準として持ち、呼び出し側が Close する。
 func (r *FileRegistry) OpenSelectedFile(token string) (domain.OpenedSelectedFile, error) {
 	if token == "" {
@@ -96,9 +97,10 @@ func (r *FileRegistry) OpenSelectedFile(token string) (domain.OpenedSelectedFile
 		return domain.OpenedSelectedFile{}, domain.ErrFileAccessDenied
 	}
 	// e.path はファイルダイアログの戻り値で、登録済み token からしか引けない。
-	f, err := os.Open(e.path)
+	// 開き方 (共有モード) は OS ごとに openSelectedFile が決める。
+	f, err := openSelectedFile(e.path)
 	if err != nil {
-		return domain.OpenedSelectedFile{}, domain.ErrSelectedFileUnavailable
+		return domain.OpenedSelectedFile{}, err
 	}
 	info, err := f.Stat()
 	if err != nil || !info.Mode().IsRegular() {

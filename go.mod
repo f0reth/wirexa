@@ -7,6 +7,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/mochi-mqtt/server/v2 v2.7.9
 	github.com/wailsapp/wails/v2 v2.16.0
+	golang.org/x/sys v0.48.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
@@ -56,7 +57,6 @@ require (
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
 	gopkg.in/src-d/go-billy.v4 v4.3.2 // indirect

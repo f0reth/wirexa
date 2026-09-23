@@ -25,6 +25,8 @@ var (
 	ErrSelectedFileUnavailable = errors.New("selected file unavailable")
 	// ErrSelectedFileChanged は選択したファイルが送信中に書き換えられたことを示す。
 	ErrSelectedFileChanged = errors.New("selected file changed while sending")
+	// ErrSelectedFileInUse は他のプロセスが書き込み用に開いていて、選択したファイルを開けないことを示す。
+	ErrSelectedFileInUse = errors.New("selected file is in use by another process")
 	// ErrFileSelectionLimit は選択済みファイルの登録数が上限に達したことを示す。
 	ErrFileSelectionLimit = errors.New("file selection limit reached")
 )
