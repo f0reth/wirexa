@@ -38,6 +38,9 @@ const wirexaConfigDir = "Wirexa"
 // httpShutdownTimeout は終了時に実行中の HTTP リクエストの終了を待つ上限。
 const httpShutdownTimeout = 3 * time.Second
 
+// mqttShutdownTimeout は終了時に MQTT の切断と接続試行の終了を待つ上限。
+const mqttShutdownTimeout = 3 * time.Second
+
 // ウィンドウの既定・最小サイズ。main.go の options.App と共有する。
 const (
 	defaultWindowWidth  = 1280
@@ -55,6 +58,7 @@ type App struct {
 	openAPIHandler *adapters.OpenAPIHandler
 	netClient      *httpinfra.NetClient
 	reqSvc         *httpapp.HTTPRequestService
+	mqttSvc        *mqttapp.MQTTService
 	windowMgr      *infra.WindowManager
 	ready          bool
 	quitConfirmed  bool
@@ -126,7 +130,7 @@ func (a *App) initialize(ctx context.Context) error {
 	emitter := infra.NewWailsEmitter(ctx)
 
 	clientFactory := mqttinfra.NewPahoClientFactory(mqttinfra.MQTTClientConfig{})
-	mqttSvc := mqttapp.NewMQTTService(emitter, clientFactory, logger)
+	a.mqttSvc = mqttapp.NewMQTTService(ctx, emitter, clientFactory, logger)
 
 	profileRepo, err := infra.NewJSONStore(
 		filepath.Join(configDir, wirexaConfigDir, "mqtt-profiles"),
@@ -140,7 +144,7 @@ func (a *App) initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to load MQTT profiles: %w", err)
 	}
-	adapters.SetupMQTTHandler(a.mqttHandler, mqttSvc, profileSvc)
+	adapters.SetupMQTTHandler(a.mqttHandler, a.mqttSvc, profileSvc)
 
 	// token と実パスを永続化しないよう、runtime model と永続化 DTO を変換する専用リポジトリを使う。
 	collRepo, err := httpinfra.NewCollectionRepository(filepath.Join(configDir, wirexaConfigDir, "collections"), logger)
@@ -227,7 +231,8 @@ func (a *App) shutdown(_ context.Context) {
 	if !a.ready {
 		return
 	}
-	a.mqttHandler.Shutdown()
+	// 戻り値は HTTP と同じく使わない。上限を過ぎてもイベント発行は止まっている。
+	a.mqttSvc.Shutdown(mqttShutdownTimeout)
 	a.udpHandler.Shutdown()
 	// 実行中の HTTP リクエストを先に止めてから一時ファイルを回収する。
 	// 待機上限を過ぎたリクエストの一時ファイルは次回起動時の sweep に任せる。

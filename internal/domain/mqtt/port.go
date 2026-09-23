@@ -10,7 +10,6 @@ type MQTTUseCase interface {
 	Subscribe(connectionID, topic string, qos byte) error
 	Unsubscribe(connectionID, topic string) error
 	GetConnections() []ConnectionStatus
-	Shutdown()
 }
 
 // ProfileRepository は MQTT ブローカープロファイルの永続化ポート。

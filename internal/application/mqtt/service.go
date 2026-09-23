@@ -14,8 +14,6 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 )
 
-const shutdownTimeout = 5 * time.Second
-
 const (
 	keyConnectionID = "connectionId"
 	fieldTopic      = "topic"
@@ -82,8 +80,9 @@ type MQTTService struct {
 }
 
 // NewMQTTService は MQTTService を生成する。
-func NewMQTTService(emitter cmn.Emitter, clientFactory domain.BrokerClientFactory, logger cmn.Logger) *MQTTService {
-	root, stop := context.WithCancel(context.Background())
+// parent から cancel 可能なルート context を派生させ、接続ごとの Connect 用 context をその子にする。
+func NewMQTTService(parent context.Context, emitter cmn.Emitter, clientFactory domain.BrokerClientFactory, logger cmn.Logger) *MQTTService {
+	root, stop := context.WithCancel(parent)
 	return &MQTTService{
 		emitter:       emitter,
 		clientFactory: clientFactory,
@@ -379,16 +378,13 @@ func (s *MQTTService) GetConnections() []domain.ConnectionStatus {
 	return statuses
 }
 
-// Shutdown は全接続を切断してサービスを終了する。
-func (s *MQTTService) Shutdown() {
-	s.shutdown(shutdownTimeout)
-}
-
-// shutdown は全接続を先に終端状態にしてイベントを止め、進行中の Connect を打ち切ってから
-// 切断し、接続 goroutine の完了を合計 timeout まで待つ。
-// true は全接続を切断し全接続 goroutine が復帰したこと、false は上限内に排水できなかったことを表す。
-// false でもイベント発行と状態変更は止まっている。
-func (s *MQTTService) shutdown(timeout time.Duration) bool {
+// Shutdown は全接続を先に終端状態にしてイベントを止め、進行中の Connect を打ち切ってから
+// 切断し、接続 goroutine の完了を合計 timeout まで待つ。以後の Connect は拒否する。
+// true は全接続を切断し全接続 goroutine が復帰したこと (paho 側の接続試行も終了済み)、
+// false は上限内に排水できなかったことを表す。false でもイベント発行と状態変更は止まっており、
+// 残った接続試行は BrokerClient.Connect の契約により接続を確立せずに終わる。
+// アプリケーションのライフサイクルは合成ルートの責務なので、RPC 面には公開しない。
+func (s *MQTTService) Shutdown(timeout time.Duration) bool {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()

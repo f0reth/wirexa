@@ -48,11 +48,6 @@ func (h *MQTTHandler) GetConnections() []mqttdomain.ConnectionStatus {
 	return h.svc.GetConnections()
 }
 
-// Shutdown は全接続を切断してサービスを終了する。
-func (h *MQTTHandler) Shutdown() {
-	h.svc.Shutdown()
-}
-
 // GetProfiles は全 MQTT ブローカープロファイルを返す。
 func (h *MQTTHandler) GetProfiles() []mqttdomain.BrokerProfile {
 	return h.profileSvc.GetProfiles()
