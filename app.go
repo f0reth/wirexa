@@ -18,19 +18,11 @@ import (
 	openapiapp "github.com/f0reth/Wirexa/internal/application/openapi"
 	udpapp "github.com/f0reth/Wirexa/internal/application/udp"
 	cmn "github.com/f0reth/Wirexa/internal/domain"
-	httpdomain "github.com/f0reth/Wirexa/internal/domain/http"
-	udpdomain "github.com/f0reth/Wirexa/internal/domain/udp"
 	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 	httpinfra "github.com/f0reth/Wirexa/internal/infrastructure/http"
 	mqttinfra "github.com/f0reth/Wirexa/internal/infrastructure/mqtt"
 	openapiinfra "github.com/f0reth/Wirexa/internal/infrastructure/openapi"
 	udpinfra "github.com/f0reth/Wirexa/internal/infrastructure/udp"
-)
-
-// コンパイル時に各ドメインインターフェースを JSONStore[T] が満たすことを検証
-var (
-	_ httpdomain.CollectionRepository = (*httpinfra.CollectionRepository)(nil)
-	_ udpdomain.TargetRepository      = (*infra.JSONStore[udpdomain.UDPTarget])(nil)
 )
 
 // コンパイル時に各 application サービスが adapters の入力ポートを満たすことを検証
@@ -179,14 +171,10 @@ func (a *App) initialize(ctx context.Context) error {
 		Files:     fileRegistry,
 	})
 
-	targetRepo, err := infra.NewJSONStore(
-		filepath.Join(configDir, wirexaConfigDir, "udp-targets"),
-		func(t *udpdomain.UDPTarget) string { return t.ID },
-	)
+	targetRepo, err := udpinfra.NewTargetRepository(filepath.Join(configDir, wirexaConfigDir, "udp-targets"), logger)
 	if err != nil {
 		return fmt.Errorf("failed to create UDP target store: %w", err)
 	}
-	targetRepo.SetLogger(logger)
 	targetSvc, err := udpapp.NewTargetService(targetRepo)
 	if err != nil {
 		return fmt.Errorf("failed to load UDP targets: %w", err)

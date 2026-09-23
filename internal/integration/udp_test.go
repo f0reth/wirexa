@@ -14,7 +14,6 @@ import (
 	udpapp "github.com/f0reth/Wirexa/internal/application/udp"
 	cmndomain "github.com/f0reth/Wirexa/internal/domain"
 	udpdomain "github.com/f0reth/Wirexa/internal/domain/udp"
-	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 	udpinfra "github.com/f0reth/Wirexa/internal/infrastructure/udp"
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
@@ -52,9 +51,9 @@ func (e *mockEmitter) receiveMessage(t *testing.T, timeout time.Duration) udpdom
 // newUDPHandlerWithDir は指定ディレクトリから UDPHandler を組み立てる（永続化テスト用）。
 func newUDPHandlerWithDir(t *testing.T, emitter cmndomain.Emitter, dir string) *adapters.UDPHandler {
 	t.Helper()
-	repo, err := infra.NewJSONStore(dir, func(tgt *udpdomain.UDPTarget) string { return tgt.ID })
+	repo, err := udpinfra.NewTargetRepository(dir, nil)
 	if err != nil {
-		t.Fatalf("NewJSONStore: %v", err)
+		t.Fatalf("NewTargetRepository: %v", err)
 	}
 	targetSvc, err := udpapp.NewTargetService(repo)
 	if err != nil {
@@ -620,9 +619,9 @@ func TestUDP_CorruptStorage(t *testing.T) {
 	}
 
 	// 破損ファイルは退避・スキップされ、NewTargetService は成功する
-	repo, err := infra.NewJSONStore(dir, func(tgt *udpdomain.UDPTarget) string { return tgt.ID })
+	repo, err := udpinfra.NewTargetRepository(dir, nil)
 	if err != nil {
-		t.Fatalf("NewJSONStore: %v", err)
+		t.Fatalf("NewTargetRepository: %v", err)
 	}
 	if _, err = udpapp.NewTargetService(repo); err != nil {
 		t.Fatalf("NewTargetService should tolerate corrupt storage: %v", err)
