@@ -337,10 +337,19 @@ adapter が `internal/infrastructure` を直接 import しており、HTTP、MQT
 
 `RootCollectionID` は特別な用途を持つが、`DeleteCollection` や `RenameCollection` で拒否されない。
 
-- [`internal/domain/http/types.go`](../internal/domain/http/types.go#L249)
-- [`internal/application/http/collection_service.go`](../internal/application/http/collection_service.go#L134)
+- [`internal/domain/http/types.go`](../internal/domain/http/types.go#L288)
+- [`internal/application/http/collection_service.go`](../internal/application/http/collection_service.go#L233)
 
 RPC を直接呼ぶと root collection を削除できるため、application 層で予約 ID の更新・削除を拒否すべきである。
+
+#### 対応状況
+
+対応済み（2026-09-24）。
+
+- `CollectionService.DeleteCollection` / `RenameCollection` は、ロック取得とキャッシュ参照より前に `__root__` を `ValidationError` で拒否する（`rejectReservedCollection`）。root を読み込めなかったセッションでも NotFound ではなく同じエラーを返し、リポジトリには触れない。
+- root 内のアイテムの操作（`AddRequest`・`MoveItemToSidebar` など）は従来どおり許可する。
+- root の `Name` は参照されないため不変条件にはせず、既にリネームされた root があっても修復しない。
+- UI e2e の偽バックエンドも同じく root の削除・リネームを拒否する。
 
 ## 良好な点
 
