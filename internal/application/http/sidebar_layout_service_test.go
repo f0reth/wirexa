@@ -121,7 +121,7 @@ func TestLayoutInsertItem(t *testing.T) {
 
 func TestSidebarLayoutService_Update_MutatorErrorLeavesFileUnchanged(t *testing.T) {
 	repo := &inMemoryLayoutRepo{layout: entries("c:c1")}
-	svc := NewSidebarLayoutService(repo)
+	svc := NewSidebarLayoutService(repo, nil)
 
 	err := svc.Update(layoutMove(sidebarKindCollection, "nonexistent", 0))
 	if err == nil {
@@ -132,12 +132,57 @@ func TestSidebarLayoutService_Update_MutatorErrorLeavesFileUnchanged(t *testing.
 
 func TestSidebarLayoutService_Update_SaveErrorLeavesFileUnchanged(t *testing.T) {
 	repo := &inMemoryLayoutRepo{layout: entries("c:c1")}
-	svc := NewSidebarLayoutService(repo)
+	svc := NewSidebarLayoutService(repo, nil)
 	repo.saveErr = errors.New("save error")
 
 	if err := svc.Update(layoutAppend(domain.SidebarEntry{Kind: sidebarKindCollection, ID: "c2"})); err == nil {
 		t.Fatal("expected error from repo.Save, got nil")
 	}
 	repo.saveErr = nil
+	assertLayout(t, repo.snapshot(), "c:c1")
+}
+
+func TestSidebarLayoutService_Update_CorruptQuarantinesAndSavesFromEmpty(t *testing.T) {
+	repo := &inMemoryLayoutRepo{loadErr: errCorruptLayout, layout: entries("c:stale")}
+	svc := NewSidebarLayoutService(repo, nil)
+
+	if err := svc.Update(layoutAppend(domain.SidebarEntry{Kind: sidebarKindCollection, ID: "c1"})); err != nil {
+		t.Fatalf("Update on corrupt layout: %v", err)
+	}
+	if n := repo.quarantineCount(); n != 1 {
+		t.Errorf("Quarantine calls = %d, want 1", n)
+	}
+	assertLayout(t, repo.snapshot(), "c:c1")
+}
+
+func TestSidebarLayoutService_Update_CorruptQuarantineFailsStillSaves(t *testing.T) {
+	repo := &inMemoryLayoutRepo{
+		loadErr:       errCorruptLayout,
+		quarantineErr: errors.New("rename failed"),
+		layout:        entries("c:stale"),
+	}
+	logger := &recordingLogger{}
+	svc := NewSidebarLayoutService(repo, logger)
+
+	if err := svc.Update(layoutAppend(domain.SidebarEntry{Kind: sidebarKindCollection, ID: "c1"})); err != nil {
+		t.Fatalf("Update on corrupt layout: %v", err)
+	}
+	if logger.errors == 0 {
+		t.Error("quarantine failure should be logged")
+	}
+	// 再生成可能データなので、退避できなくても上書きする。
+	assertLayout(t, repo.snapshot(), "c:c1")
+}
+
+func TestSidebarLayoutService_Update_ReadErrorDoesNotSave(t *testing.T) {
+	repo := &inMemoryLayoutRepo{loadErr: errors.New("permission denied"), layout: entries("c:c1")}
+	svc := NewSidebarLayoutService(repo, nil)
+
+	if err := svc.Update(layoutAppend(domain.SidebarEntry{Kind: sidebarKindCollection, ID: "c2"})); err == nil {
+		t.Fatal("Update should fail when the layout cannot be read")
+	}
+	if n := repo.quarantineCount(); n != 0 {
+		t.Errorf("Quarantine must not be called on read errors (calls = %d)", n)
+	}
 	assertLayout(t, repo.snapshot(), "c:c1")
 }

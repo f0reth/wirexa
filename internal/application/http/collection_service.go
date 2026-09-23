@@ -53,6 +53,8 @@ type CollectionService struct {
 
 // NewCollectionService は CollectionService を生成する。
 // コンストラクタ内でリポジトリからコレクションを読み込む。
+// 失敗として返すのはコレクションの読み込み自体の失敗と、__root__ の新規作成の失敗だけで、
+// サイドバーレイアウトの破損・読み込み失敗では起動を止めない（reconcileLayoutAtStartup を参照）。
 // logger は nil を許容し、その場合 best-effort な処理の失敗記録をスキップする。
 func NewCollectionService(
 	repo domain.CollectionRepository,
@@ -61,7 +63,7 @@ func NewCollectionService(
 ) (*CollectionService, error) {
 	svc := &CollectionService{
 		repo:   repo,
-		layout: NewSidebarLayoutService(layoutRepo),
+		layout: NewSidebarLayoutService(layoutRepo, logger),
 		logger: logger,
 		cache:  make(map[string]*domain.Collection),
 	}
@@ -81,9 +83,7 @@ func NewCollectionService(
 	}
 
 	svc.recoverDuplicateItems()
-	if err := svc.reconcileLayoutAtStartup(); err != nil {
-		return nil, fmt.Errorf("failed to initialize sidebar layout: %w", err)
-	}
+	svc.reconcileLayoutAtStartup()
 
 	return svc, nil
 }
@@ -133,24 +133,27 @@ func (s *CollectionService) recoverDuplicateItems() {
 }
 
 // reconcileLayoutAtStartup は保存済みレイアウトを実データと突合し、変化していれば保存する。
-// 読み込み失敗（JSON として壊れている）は初期化失敗として返すが、保存失敗は
-// best-effort とする。レイアウトは読み出し時にも突合されるため、書けない状況でも
-// 整合した並びを返せるからで、これにより読み取り専用ディレクトリやディスクフルでも
-// コレクションが読めている限りアプリは起動する。
-func (s *CollectionService) reconcileLayoutAtStartup() error {
+// レイアウトはコレクションから再生成できる導出データなので、ここでは起動を止めない。
+//   - 壊れていた場合: s.layout.Load が退避してから空レイアウトを返すので、通常の突合から
+//     保存までの流れで再生成したファイルが書かれる。
+//   - 破損以外の読み込み失敗: ログに残して何もしない。読めないファイルを上書きしないよう保存はせず、
+//     並びは GetSidebarLayout の読み出し時の突合に任せる。
+//   - 保存失敗: best-effort。読み出し時にも突合されるため、読み取り専用ディレクトリや
+//     ディスクフルでも整合した並びを返せる。
+func (s *CollectionService) reconcileLayoutAtStartup() {
 	layout, err := s.layout.Load()
 	if err != nil {
-		return err
+		s.logError("failed to load sidebar layout at startup; it will not be saved", err)
+		return
 	}
 	cols, rootItems := s.snapshotForLayout()
 	next, changed := reconcileSidebarLayout(layout, cols, rootItems)
 	if !changed {
-		return nil
+		return
 	}
 	if err := s.layout.Save(next); err != nil {
 		s.logError("failed to persist sidebar layout reconciliation", err)
 	}
-	return nil
 }
 
 // normalizeItemForms はツリーを再帰的に走査し、各リクエストの form 系ボディを移行する。
@@ -476,11 +479,13 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 // 保存済みレイアウトをその時点のコレクションと突合して正規化してから返す（保存はしない）。
 // レイアウトは並び順のヒントであって存在の正ではないため、レイアウト書き込みが
 // 失敗していても、frontend は常に実データと整合した並びを受け取る。
+// 同じ理由で読み込みに失敗した場合もエラーにせず、ログに残して空レイアウトとして突合する。
 func (s *CollectionService) GetSidebarLayout() ([]domain.SidebarEntry, error) {
 	cols, rootItems := s.snapshotForLayout()
 	layout, err := s.layout.Load()
 	if err != nil {
-		return nil, err
+		s.logError("failed to load sidebar layout; returning reconciled layout", err)
+		layout = []domain.SidebarEntry{}
 	}
 	next, _ := reconcileSidebarLayout(layout, cols, rootItems)
 	return next, nil

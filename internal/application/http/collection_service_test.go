@@ -102,6 +102,7 @@ func (r *inMemoryRepo) saveOrder() []string {
 
 // inMemoryLayoutRepo はサイドバーレイアウトリポジトリのフェイク。
 // Quarantine は成功すると保存済みレイアウトと loadErr を消し、ファイルが退避された後の状態を模す。
+// Save が成功した場合も loadErr を消す。
 type inMemoryLayoutRepo struct {
 	loadErr       error
 	saveErr       error
@@ -123,6 +124,13 @@ func (r *inMemoryLayoutRepo) Quarantine() (string, error) {
 	return "sidebar_layout.json.corrupt", nil
 }
 
+// quarantineCount は Quarantine が呼ばれた回数を返す。
+func (r *inMemoryLayoutRepo) quarantineCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.quarantines
+}
+
 func (r *inMemoryLayoutRepo) Load() ([]domain.SidebarEntry, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -139,6 +147,8 @@ func (r *inMemoryLayoutRepo) Save(layout []domain.SidebarEntry) error {
 		return r.saveErr
 	}
 	r.layout = append([]domain.SidebarEntry{}, layout...)
+	// 書き込めたファイルは次から正常に読める (壊れたファイルを上書きした後の状態)。
+	r.loadErr = nil
 	return nil
 }
 
@@ -1239,12 +1249,82 @@ func TestCollectionService_MoveItemToSidebar_LayoutRepoError_StillSucceeds(t *te
 
 // --- NewCollectionService: layoutRepo エラー ---
 
-func TestNewCollectionService_LayoutRepoLoadError(t *testing.T) {
-	layoutRepo := &inMemoryLayoutRepo{loadErr: errors.New("layout load error")}
-	_, err := NewCollectionService(newFakeRepo(), layoutRepo, nil)
-	if err == nil {
-		t.Error("expected error from layoutRepo.Load, got nil")
+// newFakeRepoForLayout はレイアウト再生成の検証用に、名前順と ID 順が異なる 2 コレクションと
+// __root__ 直下の 2 アイテムを持つリポジトリを返す。再生成後の並びは c:a, c:z, i:r1, i:r2。
+func newFakeRepoForLayout() *inMemoryRepo {
+	return newFakeRepo(
+		&domain.Collection{ID: "z", Name: testColNameZebra, Items: []*domain.TreeItem{}},
+		&domain.Collection{ID: "a", Name: testColNameApple, Items: []*domain.TreeItem{}},
+		colWith(domain.RootCollectionID, req("r1"), req("r2")),
+	)
+}
+
+var errCorruptLayout = fmt.Errorf("%w: bad json", cmn.ErrCorruptData)
+
+func TestNewCollectionService_CorruptLayout_QuarantinesAndRegenerates(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{loadErr: errCorruptLayout}
+	svc, err := NewCollectionService(newFakeRepoForLayout(), layoutRepo, &recordingLogger{})
+	if err != nil {
+		t.Fatalf("NewCollectionService should start with a corrupt layout: %v", err)
 	}
+	if n := layoutRepo.quarantineCount(); n != 1 {
+		t.Errorf("Quarantine calls = %d, want 1", n)
+	}
+	assertLayout(t, layoutRepo.snapshot(), "c:a", "c:z", "i:r1", "i:r2")
+
+	layout, err := svc.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	assertLayout(t, layout, "c:a", "c:z", "i:r1", "i:r2")
+}
+
+func TestNewCollectionService_CorruptLayout_QuarantineFails_StillRegenerates(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{loadErr: errCorruptLayout, quarantineErr: errors.New("rename failed")}
+	logger := &recordingLogger{}
+	svc, err := NewCollectionService(newFakeRepoForLayout(), layoutRepo, logger)
+	if err != nil {
+		t.Fatalf("NewCollectionService should start when quarantine fails: %v", err)
+	}
+	if logger.errors == 0 {
+		t.Error("quarantine failure should be logged")
+	}
+	// 再生成可能データなので、退避できなくても再生成した内容で上書きする。
+	assertLayout(t, layoutRepo.snapshot(), "c:a", "c:z", "i:r1", "i:r2")
+
+	layout, err := svc.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	assertLayout(t, layout, "c:a", "c:z", "i:r1", "i:r2")
+}
+
+func TestNewCollectionService_LayoutReadError_StartsWithoutTouchingFile(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{loadErr: errors.New("permission denied"), layout: entries("c:stale")}
+	logger := &recordingLogger{}
+	svc, err := NewCollectionService(newFakeRepoForLayout(), layoutRepo, logger)
+	if err != nil {
+		t.Fatalf("NewCollectionService should start when the layout cannot be read: %v", err)
+	}
+	if logger.errors == 0 {
+		t.Error("read failure should be logged")
+	}
+	if n := layoutRepo.quarantineCount(); n != 0 {
+		t.Errorf("Quarantine must not be called on read errors (calls = %d)", n)
+	}
+	// Save されていればフェイクの layout が書き換わる。
+	assertLayout(t, layoutRepo.snapshot(), "c:stale")
+
+	layout, err := svc.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout should not fail on read errors: %v", err)
+	}
+	assertLayout(t, layout, "c:a", "c:z", "i:r1", "i:r2")
+
+	if err := svc.MoveSidebarEntry(sidebarKindCollection, "z", 0); err == nil {
+		t.Error("MoveSidebarEntry should fail while the layout cannot be read")
+	}
+	assertLayout(t, layoutRepo.snapshot(), "c:stale")
 }
 
 func TestNewCollectionService_LayoutRepoSaveError_StillStarts(t *testing.T) {
