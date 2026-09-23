@@ -74,6 +74,21 @@ Wiring lives in `app.go`: handlers are created **empty** in `NewApp()` (so Wails
 
 App shutdown is two-step: `beforeClose` emits `app:before-close` and blocks the close; the frontend decides (unsaved-work check) and calls the `ConfirmQuit` RPC to actually quit.
 
+### 設定データの分類と復旧方針
+
+保存データが壊れていたり読めなかったりしたときの扱いは、次の表で決める。同じ表を `internal/application/store/recovery.go` の doc コメントにも載せている（内容を変えるときは両方を直す）。
+
+| 分類 | 対象ファイル | 破損時 | 退避失敗時 | 破損以外の読み込み失敗 |
+| --- | --- | --- | --- | --- |
+| **必須**（ユーザーが作成し、再生成できない） | `collections/*.json`、`mqtt-profiles/*.json`、`udp-targets/*.json`（`JSONStore`、エンティティ単位のファイル） | そのファイルだけ退避してスキップし、残りで起動する | スキップし、元ファイルは残す。起動時に自動作成する `__root__` は、ファイルが存在する限り作り直さない | ファイル単位ならスキップ（`__root__` の扱いは退避失敗時と同じ）。ディレクトリ自体を読めなければ起動失敗 |
+| **best effort**（再生成できないが、失っても作業は続けられる） | `openapi-recents.json` | 退避して空の状態から始める | 空で始め、このセッションでは保存しない | 空で始め、このセッションでは保存しない |
+| **再生成可能**（他のデータや既定値から作り直せる） | `sidebar_layout.json`（← collections）、`window-state.json`（← 既定サイズ） | 退避して再生成する | 再生成した内容で上書きしてよい | 再生成した値で動作を続け、ファイルは退避しない |
+
+- 破損（`domain.ErrCorruptData`、JSON として解釈できない）と読み込み失敗（I/O エラー）を区別し、退避するのは破損したファイルだけ。分類は `infrastructure.ReadJSONFile` の 1 か所で決める。
+- 退避先は `infrastructure.QuarantineFile`（`<path>.corrupt`、既存なら `<path>.corrupt.<unixnano>`）に統一する。
+- 「読み込めなかった」を「存在しない」と同一視しない。必須データを自動作成するときは、ファイルが本当に無いことを確かめてから書く（`CollectionRepository.Exists`）。
+- 単一ファイル型の best effort / 再生成可能データは `store.LoadSingleFile` にポリシー（`PolicyBestEffort` / `PolicyRegenerable`）を渡して読む。`window-state.json` は application 層を経由しないので、同じ方針を `LoadWindowState` に直接実装している。
+
 ### Frontend (`frontend/src/`)
 
 - `domain/` — TS types per protocol (mirror of Go domain types).

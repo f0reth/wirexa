@@ -264,6 +264,15 @@ adapter が `internal/infrastructure` を直接 import しており、HTTP、MQT
 - 起動時に stale entry、duplicate entry、存在しない ID を除去する。
 - 設定データを「必須」「再生成可能」「best effort」に分類し、復旧方針を統一する。
 
+### 対応状況
+
+対応済み（2026-09-23）。
+
+- 破損した `sidebar_layout.json` は `.corrupt` へ退避し、コレクションと `__root__` 直下アイテムから再生成して起動を継続する。破損以外の読み込み失敗でも起動は止めない。
+- stale / duplicate / 存在しない ID の除去は項目 3 の対応（`reconcileSidebarLayout`）で実装済み。
+- 設定データの分類と復旧方針は `CLAUDE.md` と `internal/application/store/recovery.go` にまとめ、共通のセンチネル（`ErrCorruptData`）・ポート（`Quarantiner`）・ヘルパー（`ReadJSONFile`、`store.LoadSingleFile`）で各リポジトリを揃えた。
+- 併せて、読み込めなかった `__root__.json` を空の root で上書きしないようにした。
+
 ## 9. ドメインモデルと RPC／インフラ DTO の境界が曖昧
 
 重要度: **中〜低**
