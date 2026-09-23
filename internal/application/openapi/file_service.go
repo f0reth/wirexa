@@ -2,13 +2,13 @@
 package openapiapp
 
 import (
-	"errors"
 	"path/filepath"
 	"slices"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/f0reth/Wirexa/internal/application/store"
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/openapi"
 )
@@ -52,28 +52,13 @@ func NewFileService(repo domain.RecentRepository, files domain.FileAccess, logge
 		logger:  logger,
 		now:     time.Now,
 		granted: make(map[string]struct{}),
-		persist: true,
 	}
 
-	items, err := repo.Load()
-	switch {
-	case err == nil:
-	case errors.Is(err, cmn.ErrCorruptData):
-		items = nil
-		dest, qerr := repo.Quarantine()
-		if qerr != nil {
-			s.persist = false
-			s.logger.Error("openapi_recents: failed to quarantine corrupt file, recents will not be saved this session",
-				"error", err, "quarantineError", qerr)
-		} else {
-			s.logger.Error("openapi_recents: quarantined corrupt file, starting empty",
-				"quarantined", filepath.Base(dest), "error", err)
-		}
-	default:
-		items = nil
-		s.persist = false
-		s.logger.Error("openapi_recents: failed to read file, recents will not be saved this session", "error", err)
+	items, persist, err := store.LoadSingleFile(repo, store.PolicyBestEffort, logger, "openapi-recents")
+	if err != nil {
+		logger.Error("openapi_recents: failed to read file, recents will not be saved this session", "error", err)
 	}
+	s.persist = persist
 
 	s.recents = slices.Clone(items)
 	sortByOrder(s.recents)

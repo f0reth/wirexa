@@ -1,4 +1,5 @@
-// Package store は永続化リポジトリをインメモリキャッシュで包む汎用ストアを提供する。
+// Package store は永続化まわりの汎用部品を提供する。リポジトリをインメモリキャッシュで包む
+// CachedStore と、単一ファイル型設定の読み込み・復旧ポリシー (LoadSingleFile) を含む。
 package store
 
 import (
