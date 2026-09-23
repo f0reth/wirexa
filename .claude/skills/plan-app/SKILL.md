@@ -10,116 +10,72 @@ disable-model-invocation: true
 
 $ARGUMENTS
 
+## 前提
+
+アーキテクチャ、依存方向、`app.go` の二段階配線、ドメイン型・RPC・永続化の境界、設定データの復旧方針、コード生成、テスト構成は **CLAUDE.md を正とする**。ここには計画書作成に固有の手順と確認観点だけを書く。
+
 ## 実装開始前の確認
 
-変更内容に曖昧な点・不明な点がある場合は、**計画書を作成する前に必ず質問すること。**
-以下のような場合は質問が必要：
+要件の解釈が複数通りある、変更範囲が不明確、既存アーキテクチャと矛盾する指示がある、前提情報が欠けている、といった曖昧な点があれば、**計画書を作成する前に 1 つの質問にまとめて聞くこと。**
 
-- 要件の解釈が複数通りある
-- 変更範囲が不明確（どこまで変更すべきか判断できない）
-- 既存のクリーンアーキテクチャ設計と矛盾する指示がある
-- 前提となる情報が欠けている
+## 影響範囲の特定
 
-複数の疑問点は1つの質問にまとめること。
+計画書を書く前に関係するコードを実際に読み、変更が次のどこに及ぶかを特定すること。推測で埋めない。
 
-## アーキテクチャの確認
+- **対象プロトコル**: `http` / `mqtt` / `udp` / `openapi`、またはプロトコル横断（ログ、ウィンドウ状態、ライフサイクルなど）
+- **バックエンドの層**: `domain` / `application` / `infrastructure` / `adapters` / `app.go`
+- **フロントエンドの層**: `domain` / `application` / `infrastructure` / `presentation`（`components` / `providers` / `utils` / `constants`）/ `shared`、共通 UI 部品の `src/components/ui/`、設定値の `src/config/`
 
-計画書作成前に、変更が以下の層のどこに影響するかを特定すること：
+### 依存方向で取り違えやすい点
 
-### バックエンド（`internal/`）
+- 出力ポートを実装するのは `infrastructure` だけ（`var _ domain.XxxRepository = (*XxxRepository)(nil)` で検査）。`application` は使う側であり実装しない。
+- 入力ポートの充足検証と具体型の組み立ては `app.go` だけで行う。
+- adapters は `application` を import しない。間にユースケースが無い場合は、domain の出力ポートを `SetupXxxHandler` の引数で直接受け取る例もある（`HTTPHandlerDeps.Responses` の `ResponseBodyStore`、`SetupLogHandler` の `domain.Logger`）。業務ロジックが要るならユースケースを経由させる。
+- adapters に許される独自の型は、ドメインに対応物の無いアダプタ固有の入力型だけ（例: `log_handler.go` の `LogEntry`）。名前付き文字列型の引数は Wails が型を生成しないため `string` で受けて内部で変換する（例: `UDPHandler.StartListen` の `encoding`）。
+- フロントエンドの依存の注入は合成ルートの **`presentation/providers/*.tsx` と `App.tsx`** で行う。`presentation/components/` から `infrastructure/` を import しない（biome の `noRestrictedImports` がエラーにする）。`application/` から `infrastructure/` への import は CLAUDE.md に書かれた既存の例外（`id/generator`、`storage/local-storage`、`openapi/file-io`）だけで、増やさない。`infrastructure/` から `application/` への import も既存の 2 か所（`logger/client.ts`、`openapi/parser.ts`）だけで、増やさない。
+- 新しい外部作用のポートは用途で置き場所を分け、計画書にどちらかを書く。
+  - localStorage などの保存: `domain/<proto>/ports.ts`（例: `PresetStorage`、`ThemeStorage`）。実装は `infrastructure/storage/local-storage.ts`。
+  - RPC: 使う側の application ファイルが定義する `XxxApi` インターフェース（例: `CollectionsApi`、`UdpSendApi`）。infrastructure の `client.ts` は `XxxApi` を import せずに構造的に満たし、Provider がモジュールをそのまま注入する（例: `udp-provider.tsx` の `udpClient`）。
 
-| 層             | パス例                     | 役割                                                                                                    |
-| -------------- | -------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Domain         | `internal/domain/`         | ビジネスルール・型定義・出力ポートインターフェース（外部依存なし）。プロトコル別に `http/`・`mqtt/`・`udp/` |
-| Application    | `internal/application/`    | ユースケース・Service層（`*_service.go`）。domain のポートのみに依存                                    |
-| Infrastructure | `internal/infrastructure/` | MQTT・HTTP・UDP・JSON ファイルストレージの実装（domain ポートの実装）。保存形式は永続化 DTO（`storedXxx`）が持つ |
-| Adapters       | `internal/adapters/`       | Wails RPC ハンドラ（`*_handler.go`）とユースケースの入力ポート。**ドメイン型を直接送受信する薄いパススルー** |
+### RPC 型を設計するときの確認
 
-**Adapters に RPC 用の重複 DTO 層を新設してはならない。**
-この禁止は adapters の RPC DTO に限る。infrastructure のリポジトリは永続化 DTO（`storedXxx`）で保存形式を持ち、どの階層でも domain 型を埋め込まない。
-`*_dto.go` はドメインに対応物の無いアダプタ固有の入力型のみ許可される（例: `log_handler.go` の `LogEntry`）。
-例外として、名前付き文字列型を引数に直接使うと Wails が型を生成しないため、引数は `string` で受けて内部変換する。
+- **`map[string][]Struct` を RPC に出す Go 型に使わない。** Wails 生成の `convertValues` が値を二重配列に壊し、型検査も CI も通るため実行時まで気づけない。キーごとに独立したスライスのフィールドに分ける（例: `httpdomain.RequestBody` の `FormData` / `FormURLEncoded`）。値がプリミティブやそのスライスなら問題ない（例: `HTTPResponse.Headers map[string][]string`）。
+- **フロントエンドの domain 型は手書きで、再生成では変わらない。** Go の domain 型を変えるときは `frontend/src/domain/<proto>/types.ts` も変更対象に含め、`frontend/src/infrastructure/<proto>/client.ts`（OpenAPI は `file-io.ts`）の変換関数も確認する。スプレッドで素通しする型（例: `fromWailsRequestBody`）は通常そのままでよいが、フィールドを列挙して組み立てる型（例: `fromWailsKeyValuePair`、`fromWailsFileReference`）とユニオン型の型ガードは直す必要がある。
 
-### フロントエンド（`frontend/src/`）
+### RPC 引数を信頼しない
 
-| 層             | パス                           | 役割                                                                                        |
-| -------------- | ------------------------------ | ------------------------------------------------------------------------------------------- |
-| Domain         | `frontend/src/domain/`         | ユニオン型・型ガードで UI に意味付けする層（配線型の正は生成物）                            |
-| Application    | `frontend/src/application/`    | ユースケース・状態管理（フレームワーク非依存）                                              |
-| Infrastructure | `frontend/src/infrastructure/` | **`wailsjs/` を import してよい唯一の層。** 変換は素通し（`...wire`）＋ユニオン項目のみ検証 |
-| Presentation   | `frontend/src/presentation/`   | SolidJS コンポーネント・プロバイダー                                                        |
-| Shared         | `frontend/src/shared/`         | 横断ヘルパー（生成物 `wails-events.ts` を含む）                                             |
+Wails の RPC は WebView 上の JS から誰でも呼べる。RPC 引数でローカルのファイルやリソースに触れる変更では、次を「実装方針」に書くこと（経緯は `docs/http-local-file-access-hardening.md`）。
 
-コンポーネントから `infrastructure/` を直接 import しない。通知などの外部作用はポート経由で注入する。
+- RPC で受け取ったパスを検証なしに読み書きしない。対象はユーザーがネイティブダイアログで選んだファイルだけとし、次のどちらの方式に合わせるかを書く。
+  - **token 方式**（HTTP）: ダイアログの選択結果に backend が token を発行し、RPC では token で参照させる。フロントエンドは実パスを持たない（例: `HTTPHandler.OpenFilePicker` と `httpdomain.FileReference.Token`）。パス入力欄はダイアログの hint にとどめる。
+  - **許可リスト方式**（OpenAPI）: 選ばれたパスを backend の許可リストに登録し、RPC で受け取ったパスは照合してから読み書きする（例: `OpenAPIHandler.ReadFile(path)` と `openapiapp.FileService.checkGranted`）。選んだパスはフロントエンドに返してよい。
+- backend が内部で作ったパスや一時ファイルはフロントエンドに返さず、ID で参照させる（例: `HTTPHandler.SaveResponseBody(executionID)`）。
+- 保持する件数・容量・有効期間の上限と、エラーメッセージやログにパスを出さないかを決める。
 
-**依存の方向（コンパイル時の import 方向）を壊さないこと。**
+### 永続化に触れるときの確認
 
-```
-adapters ──────┐
-application ───┼──→ domain（出力ポートを定義）
-infrastructure ┘
-```
+保存データの形式や保存ファイルに触れる変更では、次を「永続化への影響」に書くこと。
 
-- `domain` は他のどのレイヤーにも依存しない。
-- `application` / `infrastructure` は `domain` の出力ポートを実装する（依存性逆転）。
-- `adapters` は自分で定義したインターフェース（ユースケースの入力ポート）経由でユースケースを呼び出し、`application` を直接 import しない。`application` のサービスはこれを構造的に満たし、その検証は `app.go` で行う。
-- 具体型の組み立て・注入は合成ルート `app.go` でのみ行う。
-
-### サービス追加時の二段階配線
-
-`app.go` が合成ルート。ハンドラは `NewApp()` で**空のまま生成**し（Wails が `main.go` でバインドするため）、
-`initialize()` でサービスを構築して `adapters.SetupXxxHandler(...)` により注入する。
-サービスを追加する場合はこのパターンに従い、計画書の実装方針に配線手順を明記すること。
-永続状態はすべて `os.UserConfigDir()/Wirexa/` 配下の JSON。
-
-## コード生成の確認
-
-Go↔TS の境界を跨ぐ変更では、以下の生成物の再生成が必要か判定し、必要なら計画書の手順に含めること。
-どちらも**手で編集してはならない**生成物であり、CI が鮮度をチェックする。
-
-| 生成物                                | 再生成コマンド            | 必要になる条件                                                                                                                             |
-| ------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `frontend/wailsjs/`                   | `task wails:generate`     | バインド対象の Go 構造体・ハンドラメソッドを変更したとき（CI が `git diff --exit-code frontend/wailsjs` で落ちる）                         |
-| `frontend/src/shared/wails-events.ts` | `task go:generate:events` | イベント名を追加・変更したとき。定数の正は `internal/domain/events.go`。**新規イベントは `tools/gen-events/main.go` の一覧への追記も必要** |
-
-ドメイン型にフィールドを追加する場合の手順は、RPC については「ドメイン 1 箇所 ＋ 生成 1 コマンド」で済む（adapters に重複 DTO を置かないため）。
-保存対象のフィールドなら、infrastructure の stored DTO と変換関数にも足す（足し忘れは全フィールドを埋めた往復テストで落ちる）。意図して保存しないフィールドは往復テストの期待値を補正する関数に理由と一緒に書く。
-フロントの変換は素通しのため `infrastructure/<proto>/client.ts` の編集は通常不要。ユニオン型の場合のみ型ガードを更新する。
-
-## テスト方針の確認
-
-このプロジェクトのテストは5系統ある。変更がどれに影響するかを特定し、計画書に明記すること。
-
-| 系統              | 場所                        | 実行                                                                                            |
-| ----------------- | --------------------------- | ----------------------------------------------------------------------------------------------- |
-| Go ユニット       | コードと同居（`*_test.go`） | `task go:test`                                                                                  |
-| Go 統合           | `internal/integration/`     | `task go:test:integration`（`integration` ビルドタグ）                                          |
-| フロント ユニット | コードと同居（`*.test.ts`） | `task frontend:test`（既定は node 環境。DOM が要る場合は先頭に `// @vitest-environment jsdom`） |
-| UI e2e            | `frontend/e2e/ui/`          | `task frontend:test:e2e`（Go 不要）                                                             |
-| フルスタック e2e  | `frontend/e2e/integration/` | `task frontend:test:e2e:fullstack`（Windows/ローカルのみ、CI 非対象）                           |
-
-**バインド API の振る舞いを変えた場合、`frontend/e2e/fake-backend/` に同じ変更が必要になる。**
-UI e2e はこの偽バックエンドが Go サービスの意味論（例: `__root__` 予約コレクション）を模倣することで成立しているため、
-計画書の「変更対象ファイル」表に偽バックエンド側の変更も含めること。
-
-また `go test` / `go vet` は `main.go` の `//go:embed` のため `frontend/dist/index.html` の存在を要求する。
+- 変更する stored DTO（`storedXxx`）と変換関数（`toStoredXxx` / `fromStoredXxx` など）
+- `testdata/*.golden.json` を更新するか（旧形式のファイルを読めるかを含む）
+- 保存しないフィールドを足すなら、往復テストの期待値補正関数（例: `persistedCollection`）に書く理由
+- **新しい保存ファイルを足すなら、復旧方針の分類**（必須 / best effort / 再生成可能）と破損時・退避失敗時・読み込み失敗時の扱い。単一ファイル型なら `store.LoadSingleFile` のポリシーも決める。分類表を変えるなら CLAUDE.md と `internal/application/store/recovery.go` の両方を直す手順を含める
+- **フロントエンドの localStorage も保存データである。** `frontend/src/infrastructure/storage/local-storage.ts` のキー（`mqtt:presets`、`app:theme` など）や値の形を変えるなら、旧形式を読めるか（例: `StoredPreset` で `retain` の無い旧プリセットを補う）と、古いキーの扱いを書く
 
 ## 変更計画書の作成
 
-**必ず変更計画書を `docs/<YYYY-MM-DD>-<変更内容の要約>.md` に出力すること。**
-
-計画書には以下を含めること：
+**変更計画書を `docs/<YYYY-MM-DD>-<要約>.md` に出力すること。**（要約は英小文字のケバブケース。例: `docs/2026-09-22-http-execution-id-separation.md`）
 
 ```markdown
 # 変更計画書: <タイトル>
 
 ## 概要
 
-変更の目的と背景を簡潔に説明する。
+変更の目的と背景。
 
 ## 変更対象ファイル
 
-変更・追加・削除するファイルの一覧と、各ファイルへの変更内容を記述する。
+バインド API の振る舞いを変える場合は `frontend/e2e/fake-backend/` も含める。
 
 | ファイル        | 層     | 変更種別 | 変更内容 |
 | --------------- | ------ | -------- | -------- |
@@ -127,33 +83,36 @@ UI e2e はこの偽バックエンドが Go サービスの意味論（例: `__r
 
 ## 実装方針
 
-アーキテクチャ上の判断・設計方針を記述する。
-クリーンアーキテクチャの依存方向を維持する根拠も含めること。
-サービスを追加する場合は `app.go` の二段階配線（`NewApp()` で空生成 → `initialize()` で `SetupXxxHandler` 注入）の手順も記述する。
+アーキテクチャ上の判断と、依存方向（バックエンド・フロントエンド両方）を維持できる根拠。
+サービスを追加する場合は `app.go` の二段階配線の手順を、フロントエンドで依存を注入する場合はどの Provider（または `App.tsx`）で注入するかを書く。
+
+## 永続化への影響
+
+触れない場合は「なし」。触れる場合は「永続化に触れるときの確認」の各項目。
 
 ## コード生成
 
-再生成が必要な生成物と実行コマンドを記述する。不要な場合は「不要」と明記する。
+不要な場合は「不要」。
 
-- [ ] `task wails:generate`（バインド対象の Go 構造体・メソッドを変更した場合）
+- [ ] `task wails:generate`（バインド対象の Go 構造体・メソッドを変更した場合。新しい形の型は `frontend/wailsjs/go/models.ts` を目視）
 - [ ] `task go:generate:events`（イベント追加時。`tools/gen-events/main.go` への追記も必要）
 
 ## テスト方針
 
-追加・変更するテストと、その系統を記述する。
-バインド API の振る舞いを変える場合は `frontend/e2e/fake-backend/` の追従も記載する。
+追加・変更するテストを系統ごと（Go ユニット / Go 統合 / フロント ユニット / UI e2e / フルスタック e2e）に書く。
 
 ## 副作用・注意事項
 
-既存の振る舞いが変わる箇所や、影響範囲を記述する。
+既存の振る舞いが変わる箇所と影響範囲。
 
 ## Git運用
 
-- **ブランチ名**: `<type>/<変更内容の要約>` (例: `feat/mqtt-reconnect`, `fix/http-timeout`)
-- **コミット分割方針**: 層ごと・機能ごとに分割する方針を記述する（コミットメッセージは日本語）
-- **完了後**: `task format` → `task lint` → `task test` がすべて通ることを確認 → main へマージ
+- **ブランチ名**: `<type>/<要約>`（type は `feat` / `fix` / `refactor` / `perf` / `test` / `docs` / `chore` など。例: `feat/mqtt-reconnect`）
+- **コミット分割方針**: 層ごと・機能ごとの分割方針。メッセージは `<type>(<scope>): <日本語の要約>`（scope はプロトコル名か `domain` / `adapters` / `frontend` / `e2e` / `integration` などの層・対象。例: `fix(http): 予約済み root collection の削除とリネームを拒否する`）
+- **完了条件**: 実行するものを列挙し、すべて通ってから main へマージする
+  - 常に: `task format` → `task lint` → `task test`
+  - 変更内容に応じて（CI でも実行）: `task go:test:integration`（`internal/integration/` が検証する振る舞いに関わる場合）、`task frontend:test:e2e`（UI の振る舞いや fake-backend を変えた場合）、`task go:test:race`（並行処理に触れる場合。CI の Go ユニットテストは常に -race。cgo/gcc が必要で、実行できなければその旨を報告する）
+  - 任意: `task frontend:test:e2e:fullstack`（CI 非対象。実バックエンドとの結合を確かめる場合）
 ```
 
-コード中のコメントとコミットメッセージは日本語で記述する。
-
-計画書を作成した後、ユーザーに内容を確認し、**承認が得られるまで実装は行わないこと。**
+計画書を作成したらユーザーに確認し、**承認が得られるまで実装は行わないこと。**
