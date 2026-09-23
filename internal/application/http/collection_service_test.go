@@ -1,6 +1,7 @@
 package httpapp
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -1227,26 +1228,22 @@ func TestCollectionService_CreateCollection_UpdatesLayout(t *testing.T) {
 // --- Concurrent read/write ---
 
 func TestCollectionService_ConcurrentReadWrite(t *testing.T) {
-	// go test -race でデータ競合が検出されないことを確認する。
+	// go test -race でデータ競合が検出されないことを確認する (CI は -race 付きで実行する)。
+	// 読み手は戻り値を JSON 化し、Wails の応答と同じく戻り値の中身までロック外で走査する。
 	svc := newSvc(t)
 	mustCreate(t, svc, "Init")
 
 	const goroutines = 10
-	done := make(chan struct{}, goroutines*2)
-
+	var wg sync.WaitGroup
 	for range goroutines {
-		go func() {
-			svc.GetCollections()
-			done <- struct{}{}
-		}()
-		go func() {
-			svc.CreateCollection("concurrent")
-			done <- struct{}{}
-		}()
+		wg.Go(func() {
+			if _, err := json.Marshal(svc.GetCollections()); err != nil {
+				t.Errorf("marshal collections: %v", err)
+			}
+		})
+		wg.Go(func() { svc.CreateCollection("concurrent") })
 	}
-	for range goroutines * 2 {
-		<-done
-	}
+	wg.Wait()
 }
 
 // --- copy-on-write: 保存失敗時にキャッシュもディスクも変わらない ---
@@ -1733,4 +1730,74 @@ func TestCollectionService_AddRequest_DoesNotMutateArgument(t *testing.T) {
 	if _, ok := req.Body.Contents[domain.BodyTypeFile]; !ok {
 		t.Errorf("UpdateRequest removed the file key from the caller's contents: %v", req.Body.Contents)
 	}
+}
+
+// JSON 化 (Wails の応答を模す) と更新と、戻り値を書き換える呼び出し側を並行に走らせ、
+// go test -race でデータ競合が検出されないことを確認する。
+// 戻り値がキャッシュを共有していれば、書き換えと別ゴルーチンの JSON 化が同じオブジェクトに
+// 触れて検出される。copy-on-write が崩れてキャッシュを直接書き換えた場合も、
+// 書き手と JSON 化の組み合わせで検出される。
+func TestCollectionService_ConcurrentMarshalAndUpdate(t *testing.T) {
+	svc, colID := newSvcWithNestedRequest(t, "")
+	if _, err := svc.AddRequest(domain.RootCollectionID, "", richRequest("r2")); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	rootFolder, err := svc.AddFolder(domain.RootCollectionID, "", "RF")
+	if err != nil {
+		t.Fatalf("AddFolder: %v", err)
+	}
+
+	const iterations = 50
+	var wg sync.WaitGroup
+	// 読み手: 戻り値を JSON 化する。
+	wg.Go(func() {
+		for range iterations {
+			if _, err := json.Marshal(svc.GetCollections()); err != nil {
+				t.Errorf("marshal collections: %v", err)
+			}
+		}
+	})
+	wg.Go(func() {
+		for range iterations {
+			if _, err := json.Marshal(svc.GetRootItems()); err != nil {
+				t.Errorf("marshal root items: %v", err)
+			}
+		}
+	})
+	// 書き手: 各種の変更系メソッドを呼ぶ。
+	wg.Go(func() {
+		for i := range iterations {
+			if err := svc.UpdateRequest(colID, richRequest("r1")); err != nil {
+				t.Errorf("UpdateRequest: %v", err)
+			}
+			if err := svc.RenameItem(colID, "r1", fmt.Sprintf("r1-%d", i)); err != nil {
+				t.Errorf("RenameItem: %v", err)
+			}
+		}
+	})
+	wg.Go(func() {
+		for i := range iterations {
+			if _, err := svc.AddRequest(domain.RootCollectionID, "", richRequest("")); err != nil {
+				t.Errorf("AddRequest: %v", err)
+			}
+			// r2 を __root__ 直下とフォルダ RF の間で往復させる。
+			parentID := ""
+			if i%2 == 0 {
+				parentID = rootFolder.ID
+			}
+			if err := svc.MoveItem(domain.RootCollectionID, "r2", domain.RootCollectionID, parentID, -1); err != nil {
+				t.Errorf("MoveItem: %v", err)
+			}
+		}
+	})
+	// 行儀の悪い呼び出し側: 戻り値を書き換える。
+	wg.Go(func() {
+		for range iterations {
+			for _, c := range svc.GetCollections() {
+				scribbleItems(c.Items)
+			}
+			scribbleItems(svc.GetRootItems())
+		}
+	})
+	wg.Wait()
 }
