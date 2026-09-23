@@ -63,7 +63,12 @@ task frontend:test:e2e:fullstack  # Playwright against real wails dev (Windows/l
 Both sides follow the same layered (ports & adapters) structure.
 
 - Backend dependency direction (compile-time imports): adapters → domain ← application, infrastructure. Adapters never import application: each handler file defines the use-case input ports it calls (`HTTPRequestUseCase`, `MQTTProfileUseCase`, …), application services satisfy them structurally, and `app.go` checks that at compile time. Infrastructure implements the domain's output ports.
-- Frontend dependency direction: presentation → application → domain; infrastructure implements domain ports.
+- Backend adapters may also take a domain output port directly through their `SetupXxxHandler` deps when no use case sits in between (`HTTPHandlerDeps.Responses` is a `ResponseBodyStore`, `SetupLogHandler` takes a `domain.Logger`). They still never import application.
+- Frontend dependency direction: presentation → application → domain; infrastructure implements the ports.
+  - `wailsjs/` を import してよいのは `infrastructure/` だけ。依存の注入は合成ルートの `presentation/providers/*.tsx` と `App.tsx` で行う。`presentation/components/` から `infrastructure/` を import しない（biome の `noRestrictedImports` がエラーにする）。
+  - ポートの置き場所は用途で分かれる。localStorage などの保存は `domain/<proto>/ports.ts`（例: `PresetStorage`、`ConnectionPersistence`、`ThemeStorage`）、RPC は使う側の application ファイルが定義する `XxxApi` インターフェース（例: `CollectionsApi`、`MqttConnectionApi`、`UdpSendApi`）。infrastructure のモジュールは `XxxApi` を import せず構造的に満たし、Provider がそのまま注入する（例: `udp-provider.tsx` の `udpClient`）。
+  - `application/` から `infrastructure/` への直接 import は既存の例外として `id/generator`（`generateId`）、`storage/local-storage`（`loadFromStorage` / `saveToStorage`）、`openapi/file-io`（OpenAPI の RPC 呼び出し）が残っている。これ以外を増やさず、新しい外部作用は上記の置き場所にポートを定義して Provider から注入する。
+  - `infrastructure/` から `application/` への import（`logger/client.ts` → `application/logger`、`openapi/parser.ts` → `application/openapi/ports`）も既存のものだけで、増やさない。
 
 ### Backend (`internal/`)
 
