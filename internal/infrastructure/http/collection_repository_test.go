@@ -93,29 +93,141 @@ func collectionWith(req *domain.HTTPRequest) *domain.Collection {
 	}
 }
 
-// 全フィールドを保存・復元で失わないことを確認する。domain 型にフィールドを足して
-// 永続化 DTO への追加を忘れると、ここで差分として検出される。
-func TestCollectionRepository_RoundTripKeepsEveryField(t *testing.T) {
-	req := fullRequest()
-	v := reflect.ValueOf(*req)
-	for i := range v.NumField() {
-		if v.Field(i).IsZero() {
-			t.Fatalf("fixture leaves HTTPRequest.%s unset; fill it so the round trip covers it", v.Type().Field(i).Name)
+// persistedCollection は、保存して読み戻すと意図して変わる値を c のコピー上で補正して返す。
+// 往復テストの期待値に使う。保存しないフィールドを domain 型に足すときは、ここに理由と一緒に書く。
+func persistedCollection(c *domain.Collection) domain.Collection {
+	cp := c.Clone()
+	persistedItems(cp.Items)
+	return *cp
+}
+
+func persistedItems(items []*domain.TreeItem) {
+	for _, it := range items {
+		// JSON は nil スライスを [] として書くため、読み戻すと空スライスになる。
+		if it.Children == nil {
+			it.Children = []*domain.TreeItem{}
+		}
+		persistedItems(it.Children)
+		if it.Request == nil {
+			continue
+		}
+		body := &it.Request.Body
+		body.File = persistedFileRef(body.File)
+		for _, rows := range [][]domain.FormRow{body.FormData, body.FormURLEncoded} {
+			for i := range rows {
+				rows[i].File = persistedFileRef(rows[i].File)
+			}
 		}
 	}
+}
+
+func persistedFileRef(ref domain.FileReference) domain.FileReference {
+	// Token は現在のセッションでだけ有効なので保存しない。
+	ref.Token = ""
+	// ContentType は選択時に推定した表示用の値で、再選択時に決め直すので保存しない。
+	ref.ContentType = ""
+	// 再起動後は token が無いため、保存した参照は必ず再選択待ちになる。
+	ref.NeedsReselect = true
+	return ref
+}
+
+// 全階層の全フィールドを埋めたコレクションを保存・復元しても、意図した補正以外は失われない。
+// 検査対象は型から決まるので、domain 型にフィールドを足して永続化 DTO や変換関数への追加を
+// 忘れると、テストを書き換えなくてもここで差分として検出される。
+func TestCollectionRepository_RoundTripKeepsEveryField(t *testing.T) {
+	var c domain.Collection
+	testutil.Populate(t, &c)
 
 	repo, _ := newTestRepo(t)
-	want := collectionWith(req)
-	if err := repo.Save(want); err != nil {
+	if err := repo.Save(&c); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	got, err := repo.Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(got) != 1 || !reflect.DeepEqual(got[0], *want) {
-		t.Fatalf("round trip mismatch:\n got %+v\nwant %+v", got, *want)
+	if want := persistedCollection(&c); len(got) != 1 || !reflect.DeepEqual(got[0], want) {
+		t.Fatalf("round trip mismatch:\n got %+v\nwant %+v", got, want)
 	}
+}
+
+// goldenCollection は testdata/collection.golden.json を読み込んだときに期待する値。
+func goldenCollection() domain.Collection {
+	full := &domain.HTTPRequest{
+		Body: domain.RequestBody{
+			Contents: map[string]string{"json": `{"a":1}`},
+			File:     domain.FileReference{Name: "body.bin", NeedsReselect: true},
+			Type:     domain.BodyTypeFormData,
+			FormData: []domain.FormRow{
+				{Key: "t", Value: "v", Kind: domain.FormRowKindText, ContentType: "text/csv", Enabled: true},
+				{Key: "f", Kind: domain.FormRowKindFile, File: domain.FileReference{Name: "a.txt", NeedsReselect: true}, Enabled: true},
+				{Key: "legacy", Value: "old"},
+			},
+			FormURLEncoded: []domain.FormRow{{Key: "u", Value: "1", Enabled: true}},
+		},
+		Auth:     domain.RequestAuth{Type: "basic", Username: "user", Password: "pass", Token: "bearer"},
+		ID:       "req-full",
+		Name:     "Full",
+		Method:   "POST",
+		URL:      "https://example.com/api",
+		Doc:      "# doc",
+		Headers:  []domain.KeyValuePair{{Key: "X-A", Value: "1", Enabled: true}, {Key: "X-B", Value: "2"}},
+		Params:   []domain.KeyValuePair{{Key: "q", Value: "search", Enabled: true}},
+		Settings: domain.RequestSettings{ProxyMode: "custom", ProxyURL: "http://proxy:8080", TimeoutSec: 30, MaxResponseBodyMB: 10, InsecureSkipVerify: true, DisableRedirects: true},
+	}
+	minimal := &domain.HTTPRequest{
+		Body:    domain.RequestBody{Contents: map[string]string{}, Type: "none"},
+		Auth:    domain.RequestAuth{Type: "none"},
+		ID:      "req-min",
+		Name:    "Minimal",
+		Method:  "GET",
+		Headers: []domain.KeyValuePair{},
+		Params:  []domain.KeyValuePair{},
+	}
+	return domain.Collection{
+		ID:   "col-1",
+		Name: "Golden",
+		Items: []*domain.TreeItem{
+			{Type: domain.ItemTypeFolder, ID: "folder-1", Name: "Folder", Children: []*domain.TreeItem{
+				{Type: domain.ItemTypeRequest, ID: "req-full", Name: "Full", Request: full, Children: []*domain.TreeItem{}},
+			}},
+			{Type: domain.ItemTypeRequest, ID: "req-min", Name: "Minimal", Request: minimal, Children: []*domain.TreeItem{}},
+			{Type: domain.ItemTypeFolder, ID: "folder-empty", Name: "Empty", Children: []*domain.TreeItem{}},
+		},
+	}
+}
+
+// 既存の保存形式 (golden) を読めて、書き戻すと同じ JSON になる。
+// 往復テストは DTO の json タグを変えても通るので、既存ファイルとの互換はここで確かめる。
+func TestCollectionRepository_GoldenFormat(t *testing.T) {
+	golden := testutil.ReadGolden(t, filepath.Join("testdata", "collection.golden.json"))
+	repo, dir := newTestRepo(t)
+	path := filepath.Join(dir, "col-1.json")
+	if err := os.WriteFile(path, golden, 0o600); err != nil {
+		t.Fatalf("write golden: %v", err)
+	}
+
+	loaded, err := repo.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if want := goldenCollection(); len(loaded) != 1 || !reflect.DeepEqual(loaded[0], want) {
+		t.Fatalf("golden load mismatch:\n got %+v\nwant %+v", loaded, want)
+	}
+
+	if err = repo.Save(&loaded[0]); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved: %v", err)
+	}
+	testutil.AssertJSONEqual(t, saved, golden)
+}
+
+// 永続化 DTO はどの階層でも domain 型を埋め込まない。
+func TestCollectionRepository_StoredDTOHasNoDomainTypes(t *testing.T) {
+	testutil.AssertNoTypesFrom(t, storedCollection{}, testutil.DomainPkg)
 }
 
 // 保存時に token と実パスを捨て、basename だけを再選択待ちとして残す。

@@ -1,0 +1,139 @@
+{
+  "id": "col-1",
+  "name": "Golden",
+  "items": [
+    {
+      "type": "folder",
+      "id": "folder-1",
+      "name": "Folder",
+      "children": [
+        {
+          "request": {
+            "body": {
+              "contents": {
+                "json": "{\"a\":1}"
+              },
+              "file": {
+                "name": "body.bin",
+                "needsReselect": true
+              },
+              "type": "form-data",
+              "formData": [
+                {
+                  "key": "t",
+                  "value": "v",
+                  "kind": "text",
+                  "contentType": "text/csv",
+                  "enabled": true
+                },
+                {
+                  "file": {
+                    "name": "a.txt",
+                    "needsReselect": true
+                  },
+                  "key": "f",
+                  "value": "",
+                  "kind": "file",
+                  "enabled": true
+                },
+                {
+                  "key": "legacy",
+                  "value": "old",
+                  "enabled": false
+                }
+              ],
+              "formUrlEncoded": [
+                {
+                  "key": "u",
+                  "value": "1",
+                  "enabled": true
+                }
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "username": "user",
+              "password": "pass",
+              "token": "bearer"
+            },
+            "id": "req-full",
+            "name": "Full",
+            "method": "POST",
+            "url": "https://example.com/api",
+            "doc": "# doc",
+            "headers": [
+              {
+                "key": "X-A",
+                "value": "1",
+                "enabled": true
+              },
+              {
+                "key": "X-B",
+                "value": "2",
+                "enabled": false
+              }
+            ],
+            "params": [
+              {
+                "key": "q",
+                "value": "search",
+                "enabled": true
+              }
+            ],
+            "settings": {
+              "proxyMode": "custom",
+              "proxyURL": "http://proxy:8080",
+              "timeoutSec": 30,
+              "maxResponseBodyMB": 10,
+              "insecureSkipVerify": true,
+              "disableRedirects": true
+            }
+          },
+          "type": "request",
+          "id": "req-full",
+          "name": "Full",
+          "children": []
+        }
+      ]
+    },
+    {
+      "request": {
+        "body": {
+          "contents": {},
+          "type": "none"
+        },
+        "auth": {
+          "type": "none",
+          "username": "",
+          "password": "",
+          "token": ""
+        },
+        "id": "req-min",
+        "name": "Minimal",
+        "method": "GET",
+        "url": "",
+        "doc": "",
+        "headers": [],
+        "params": [],
+        "settings": {
+          "proxyMode": "",
+          "proxyURL": "",
+          "timeoutSec": 0,
+          "maxResponseBodyMB": 0,
+          "insecureSkipVerify": false,
+          "disableRedirects": false
+        }
+      },
+      "type": "request",
+      "id": "req-min",
+      "name": "Minimal",
+      "children": []
+    },
+    {
+      "type": "folder",
+      "id": "folder-empty",
+      "name": "Empty",
+      "children": []
+    }
+  ]
+}

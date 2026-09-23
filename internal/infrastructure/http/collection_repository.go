@@ -3,7 +3,6 @@ package httpinfra
 import (
 	"encoding/json"
 	"maps"
-	"slices"
 	"strings"
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
@@ -67,7 +66,9 @@ func (r *CollectionRepository) Exists(id string) (bool, error) {
 }
 
 // ── 永続化 DTO ────────────────────────────────────────────────────────────────
-// フィールドと JSON 名は domain 型と揃え、既存ファイルとの互換を保つ。
+// フィールドと JSON 名は既存ファイルの形式 (testdata/collection.golden.json) に揃える。
+// どの階層でも domain 型を埋め込まない。埋め込むとその部分の保存形式が domain の
+// json タグ (RPC の配線形式) で決まり、RPC の変更が保存形式に波及する。
 // file 参照は storedFileReference でしか表現できず、token と実パスを書き出せない。
 
 type storedCollection struct {
@@ -85,16 +86,38 @@ type storedTreeItem struct {
 }
 
 type storedRequest struct {
-	Body     storedRequestBody      `json:"body"`
-	Auth     domain.RequestAuth     `json:"auth"`
-	ID       string                 `json:"id"`
-	Name     string                 `json:"name"`
-	Method   string                 `json:"method"`
-	URL      string                 `json:"url"`
-	Doc      string                 `json:"doc"`
-	Headers  []domain.KeyValuePair  `json:"headers"`
-	Params   []domain.KeyValuePair  `json:"params"`
-	Settings domain.RequestSettings `json:"settings"`
+	Body     storedRequestBody     `json:"body"`
+	Auth     storedRequestAuth     `json:"auth"`
+	ID       string                `json:"id"`
+	Name     string                `json:"name"`
+	Method   string                `json:"method"`
+	URL      string                `json:"url"`
+	Doc      string                `json:"doc"`
+	Headers  []storedKeyValuePair  `json:"headers"`
+	Params   []storedKeyValuePair  `json:"params"`
+	Settings storedRequestSettings `json:"settings"`
+}
+
+type storedRequestAuth struct {
+	Type     string `json:"type"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Token    string `json:"token"`
+}
+
+type storedKeyValuePair struct {
+	Key     string `json:"key"`
+	Value   string `json:"value"`
+	Enabled bool   `json:"enabled"`
+}
+
+type storedRequestSettings struct {
+	ProxyMode          string `json:"proxyMode"`
+	ProxyURL           string `json:"proxyURL"`
+	TimeoutSec         int    `json:"timeoutSec"`
+	MaxResponseBodyMB  int    `json:"maxResponseBodyMB"`
+	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
+	DisableRedirects   bool   `json:"disableRedirects"`
 }
 
 type storedRequestBody struct {
@@ -168,15 +191,41 @@ func toStoredRequest(r *domain.HTTPRequest) *storedRequest {
 	}
 	return &storedRequest{
 		Body:     toStoredBody(&r.Body),
-		Auth:     r.Auth,
+		Auth:     toStoredAuth(r.Auth),
 		ID:       r.ID,
 		Name:     r.Name,
 		Method:   r.Method,
 		URL:      r.URL,
 		Doc:      r.Doc,
-		Headers:  slices.Clone(r.Headers),
-		Params:   slices.Clone(r.Params),
-		Settings: r.Settings,
+		Headers:  toStoredPairs(r.Headers),
+		Params:   toStoredPairs(r.Params),
+		Settings: toStoredSettings(r.Settings),
+	}
+}
+
+func toStoredAuth(a domain.RequestAuth) storedRequestAuth {
+	return storedRequestAuth{Type: a.Type, Username: a.Username, Password: a.Password, Token: a.Token}
+}
+
+func toStoredPairs(pairs []domain.KeyValuePair) []storedKeyValuePair {
+	if pairs == nil {
+		return nil
+	}
+	out := make([]storedKeyValuePair, len(pairs))
+	for i, p := range pairs {
+		out[i] = storedKeyValuePair{Key: p.Key, Value: p.Value, Enabled: p.Enabled}
+	}
+	return out
+}
+
+func toStoredSettings(s domain.RequestSettings) storedRequestSettings {
+	return storedRequestSettings{
+		ProxyMode:          s.ProxyMode,
+		ProxyURL:           s.ProxyURL,
+		TimeoutSec:         s.TimeoutSec,
+		MaxResponseBodyMB:  s.MaxResponseBodyMB,
+		InsecureSkipVerify: s.InsecureSkipVerify,
+		DisableRedirects:   s.DisableRedirects,
 	}
 }
 
@@ -250,15 +299,41 @@ func (r *storedRequest) toDomain() *domain.HTTPRequest {
 	}
 	return &domain.HTTPRequest{
 		Body:     r.Body.toDomain(),
-		Auth:     r.Auth,
+		Auth:     fromStoredAuth(r.Auth),
 		ID:       r.ID,
 		Name:     r.Name,
 		Method:   r.Method,
 		URL:      r.URL,
 		Doc:      r.Doc,
-		Headers:  slices.Clone(r.Headers),
-		Params:   slices.Clone(r.Params),
-		Settings: r.Settings,
+		Headers:  fromStoredPairs(r.Headers),
+		Params:   fromStoredPairs(r.Params),
+		Settings: fromStoredSettings(r.Settings),
+	}
+}
+
+func fromStoredAuth(a storedRequestAuth) domain.RequestAuth {
+	return domain.RequestAuth{Type: a.Type, Username: a.Username, Password: a.Password, Token: a.Token}
+}
+
+func fromStoredPairs(pairs []storedKeyValuePair) []domain.KeyValuePair {
+	if pairs == nil {
+		return nil
+	}
+	out := make([]domain.KeyValuePair, len(pairs))
+	for i, p := range pairs {
+		out[i] = domain.KeyValuePair{Key: p.Key, Value: p.Value, Enabled: p.Enabled}
+	}
+	return out
+}
+
+func fromStoredSettings(s storedRequestSettings) domain.RequestSettings {
+	return domain.RequestSettings{
+		ProxyMode:          s.ProxyMode,
+		ProxyURL:           s.ProxyURL,
+		TimeoutSec:         s.TimeoutSec,
+		MaxResponseBodyMB:  s.MaxResponseBodyMB,
+		InsecureSkipVerify: s.InsecureSkipVerify,
+		DisableRedirects:   s.DisableRedirects,
 	}
 }
 
