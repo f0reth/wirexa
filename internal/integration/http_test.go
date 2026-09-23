@@ -1193,6 +1193,77 @@ func TestHTTP_CorruptStorage(t *testing.T) {
 	}
 }
 
+// TestHTTP_CorruptSidebarLayout は sidebar_layout.json が壊れていても起動し、
+// 壊れたファイルを .corrupt へ退避してコレクションからレイアウトを再生成することを確認する。
+func TestHTTP_CorruptSidebarLayout(t *testing.T) {
+	dir := t.TempDir()
+	layoutPath := filepath.Join(dir, "sidebar_layout.json")
+
+	h1 := newHTTPHandlerWithDir(t, dir)
+	alpha, err := h1.CreateCollection("Alpha")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
+	}
+	beta, err := h1.CreateCollection("Beta")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
+	}
+	// 名前順と逆に並べ替えておき、再生成でリセットされることを確かめる。
+	if err = h1.MoveSidebarEntry("collection", alpha.ID, 1); err != nil {
+		t.Fatalf("MoveSidebarEntry: %v", err)
+	}
+
+	corrupt := []byte("{ not json")
+	if err = os.WriteFile(layoutPath, corrupt, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// 実リポジトリで組み立て直しても起動が止まらない (失敗すれば newHTTPHandlerWithDir が Fatal)。
+	h2 := newHTTPHandlerWithDir(t, dir)
+
+	quarantined, err := os.ReadFile(layoutPath + ".corrupt")
+	if err != nil {
+		t.Fatalf("sidebar_layout.json.corrupt should exist: %v", err)
+	}
+	if !bytes.Equal(quarantined, corrupt) {
+		t.Errorf("quarantined content = %q, want %q", quarantined, corrupt)
+	}
+	want := []string{alpha.ID, beta.ID}
+	assertLayoutIDs := func(what string, layout []httpdomain.SidebarEntry) {
+		t.Helper()
+		got := make([]string, 0, len(layout))
+		for _, e := range layout {
+			if e.Kind != "collection" {
+				t.Errorf("%s: unexpected entry %+v", what, e)
+			}
+			got = append(got, e.ID)
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("%s = %v, want %v", what, got, want)
+		}
+	}
+	saved, err := httpinfra.NewSidebarLayoutRepository(layoutPath).Load()
+	if err != nil {
+		t.Fatalf("regenerated sidebar_layout.json should be readable: %v", err)
+	}
+	assertLayoutIDs("regenerated file", saved)
+	layout, err := h2.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	assertLayoutIDs("GetSidebarLayout", layout)
+
+	// 再生成したファイルは正常に読めるので、もう一度起動しても退避は起きない。
+	newHTTPHandlerWithDir(t, dir)
+	extra, err := filepath.Glob(layoutPath + ".corrupt.*")
+	if err != nil {
+		t.Fatalf("Glob: %v", err)
+	}
+	if len(extra) != 0 {
+		t.Errorf("unexpected second quarantine: %v", extra)
+	}
+}
+
 // TestHTTP_UnloadableRootIsNotOverwritten は __root__.json が存在するのに読み込めなかった場合、
 // 空の root で作り直して上書きせずに起動することを確認する。
 // 権限やロックで読めない状態は Windows で安定して作れないため、JSONStore.Load が
