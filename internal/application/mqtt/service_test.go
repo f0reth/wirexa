@@ -2,6 +2,7 @@ package mqttapp
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"slices"
@@ -44,7 +45,7 @@ func (e *mockEmitter) hasEvent(event string) bool {
 
 // mockBrokerClient は domain.BrokerClient のモック。
 type mockBrokerClient struct {
-	connectFn     func() error
+	connectFn     func(ctx context.Context) error
 	disconnectFn  func(quiesce uint)
 	publishFn     func(topic string, qos byte, retained bool, payload string) error
 	subscribeFn   func(topic string, qos byte, handler domain.MessageHandler) error
@@ -52,9 +53,9 @@ type mockBrokerClient struct {
 	isConnectedFn func() bool
 }
 
-func (m *mockBrokerClient) Connect() error {
+func (m *mockBrokerClient) Connect(ctx context.Context) error {
 	if m.connectFn != nil {
-		return m.connectFn()
+		return m.connectFn(ctx)
 	}
 	return nil
 }
@@ -126,7 +127,7 @@ func TestMQTTService_Connect_EmptyBroker(t *testing.T) {
 func TestMQTTService_Connect_ReturnsNonEmptyID(t *testing.T) {
 	done := make(chan struct{})
 	client := &mockBrokerClient{
-		connectFn: func() error { close(done); return nil },
+		connectFn: func(context.Context) error { close(done); return nil },
 	}
 	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 
@@ -187,7 +188,7 @@ func TestMQTTService_Connect_FailureRemovesConnection(t *testing.T) {
 	emitter2 := &mockEmitterWithChan{mockEmitter: mockEmitter{}, ch: failedCh, targetEvent: cmn.EventMQTTConnectionFailed}
 
 	client := &mockBrokerClient{
-		connectFn: func() error { return errors.New("connection refused") },
+		connectFn: func(context.Context) error { return errors.New("connection refused") },
 	}
 	svc := NewMQTTService(emitter2, factoryWith(client), testutil.NoopLogger{})
 	id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
@@ -238,7 +239,7 @@ func TestMQTTService_Disconnect_NotFound(t *testing.T) {
 func TestMQTTService_Disconnect_Success(t *testing.T) {
 	done := make(chan struct{})
 	client := &mockBrokerClient{
-		connectFn: func() error { close(done); return nil },
+		connectFn: func(context.Context) error { close(done); return nil },
 	}
 	emitter := &mockEmitterWithChan{
 		ch:          make(chan struct{}),
@@ -299,7 +300,7 @@ func TestMQTTService_Publish_Success(t *testing.T) {
 	var publishedTopic, publishedPayload string
 	var publishedQoS byte
 	client := &mockBrokerClient{
-		connectFn: func() error { close(done); return nil },
+		connectFn: func(context.Context) error { close(done); return nil },
 		publishFn: func(topic string, qos byte, _ bool, payload string) error {
 			publishedTopic = topic
 			publishedQoS = qos
@@ -329,7 +330,7 @@ func TestMQTTService_Publish_ValidQoSValues(t *testing.T) {
 	done := make(chan struct{})
 	var once sync.Once
 	client := &mockBrokerClient{
-		connectFn: func() error { once.Do(func() { close(done) }); return nil },
+		connectFn: func(context.Context) error { once.Do(func() { close(done) }); return nil },
 	}
 	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
@@ -375,7 +376,7 @@ func TestMQTTService_Subscribe_MessageHandlerEmitsEvent(t *testing.T) {
 	done := make(chan struct{})
 	var capturedHandler domain.MessageHandler
 	client := &mockBrokerClient{
-		connectFn: func() error { close(done); return nil },
+		connectFn: func(context.Context) error { close(done); return nil },
 		subscribeFn: func(_ string, _ byte, handler domain.MessageHandler) error {
 			capturedHandler = handler
 			return nil
@@ -411,7 +412,7 @@ func TestMQTTService_Subscribe_BinaryPayloadBase64(t *testing.T) {
 	done := make(chan struct{})
 	var capturedHandler domain.MessageHandler
 	client := &mockBrokerClient{
-		connectFn: func() error { close(done); return nil },
+		connectFn: func(context.Context) error { close(done); return nil },
 		subscribeFn: func(_ string, _ byte, handler domain.MessageHandler) error {
 			capturedHandler = handler
 			return nil
@@ -491,7 +492,7 @@ func TestMQTTService_Unsubscribe_Success(t *testing.T) {
 	done := make(chan struct{})
 	var unsubscribedTopics []string
 	client := &mockBrokerClient{
-		connectFn: func() error { close(done); return nil },
+		connectFn: func(context.Context) error { close(done); return nil },
 		unsubscribeFn: func(topics ...string) error {
 			unsubscribedTopics = topics
 			return nil
@@ -523,7 +524,7 @@ func TestMQTTService_GetConnections_ReflectsIsConnected(t *testing.T) {
 	done := make(chan struct{})
 	connected := true
 	client := &mockBrokerClient{
-		connectFn:     func() error { close(done); return nil },
+		connectFn:     func(context.Context) error { close(done); return nil },
 		isConnectedFn: func() bool { return connected },
 	}
 	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
@@ -545,7 +546,7 @@ func TestMQTTService_GetConnections_ReflectsIsConnected(t *testing.T) {
 func TestMQTTService_GetConnections_TracksProfileIDAndSubscriptions(t *testing.T) {
 	done := make(chan struct{})
 	client := &mockBrokerClient{
-		connectFn: func() error { close(done); return nil },
+		connectFn: func(context.Context) error { close(done); return nil },
 	}
 	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 	id, _ := svc.Connect(domain.ConnectionConfig{
@@ -604,7 +605,7 @@ func TestMQTTService_Shutdown_DisconnectsAll(t *testing.T) {
 	disconnectCount := 0
 	var mu sync.Mutex
 	client := &mockBrokerClient{
-		connectFn: func() error { close(done); return nil },
+		connectFn: func(context.Context) error { close(done); return nil },
 		disconnectFn: func(_ uint) {
 			mu.Lock()
 			disconnectCount++
@@ -651,7 +652,7 @@ func TestMQTTService_Shutdown_DisconnectsMultipleConnections(t *testing.T) {
 		idx++
 		idxMu.Unlock()
 		return &mockBrokerClient{
-			connectFn: func() error { close(ch); return nil },
+			connectFn: func(context.Context) error { close(ch); return nil },
 			disconnectFn: func(_ uint) {
 				countMu.Lock()
 				disconnectCount++
@@ -686,7 +687,7 @@ func TestMQTTService_Publish_ClientError(t *testing.T) {
 	done := make(chan struct{})
 	wantErr := errors.New("publish failed")
 	client := &mockBrokerClient{
-		connectFn: func() error { close(done); return nil },
+		connectFn: func(context.Context) error { close(done); return nil },
 		publishFn: func(_ string, _ byte, _ bool, _ string) error { return wantErr },
 	}
 	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
@@ -703,7 +704,7 @@ func TestMQTTService_Subscribe_ClientError(t *testing.T) {
 	done := make(chan struct{})
 	wantErr := errors.New("subscribe failed")
 	client := &mockBrokerClient{
-		connectFn:   func() error { close(done); return nil },
+		connectFn:   func(context.Context) error { close(done); return nil },
 		subscribeFn: func(_ string, _ byte, _ domain.MessageHandler) error { return wantErr },
 	}
 	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
@@ -720,7 +721,7 @@ func TestMQTTService_Unsubscribe_ClientError(t *testing.T) {
 	done := make(chan struct{})
 	wantErr := errors.New("unsubscribe failed")
 	client := &mockBrokerClient{
-		connectFn:     func() error { close(done); return nil },
+		connectFn:     func(context.Context) error { close(done); return nil },
 		unsubscribeFn: func(_ ...string) error { return wantErr },
 	}
 	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})

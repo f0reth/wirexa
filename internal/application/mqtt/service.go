@@ -89,7 +89,7 @@ func (s *MQTTService) Connect(config domain.ConnectionConfig) (string, error) {
 	s.mu.Unlock()
 
 	s.connWg.Go(func() {
-		if err := client.Connect(); err != nil {
+		if err := client.Connect(context.Background()); err != nil {
 			s.mu.Lock()
 			delete(s.conns, connID)
 			s.mu.Unlock()

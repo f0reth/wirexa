@@ -1,6 +1,8 @@
 // Package mqttdomain は MQTT ドメイン層のポートインターフェースを定義する。
 package mqttdomain
 
+import "context"
+
 // MessageHandler はサブスクライブしたトピックのメッセージ受信時に呼ばれるコールバック。
 // payload は生バイト列で渡す（バイナリペイロードを application 層まで保持するため）。
 type MessageHandler func(topic string, payload []byte, qos byte, retained bool)
@@ -8,8 +10,14 @@ type MessageHandler func(topic string, payload []byte, qos byte, retained bool)
 // BrokerClient は MQTT ブローカー接続のトランスポート抽象。
 // 実装は infrastructure 層 (例: Paho) が提供する。
 type BrokerClient interface {
-	// Connect はブローカーへの接続を開始し、成功 or 失敗までブロックする。
-	Connect() error
+	// Connect はブローカーへの接続を試み、成功・失敗・打ち切りのいずれかまでブロックする。
+	//   - ctx が切れたとき、または実装固有の上限時間を超えたときはエラーを返すが、
+	//     接続試行が終わるまでは返らない。
+	//   - エラーを返した時点で、client は接続を維持していない
+	//     (未確立なら以後確立せず、試行と競合して確立していた場合は切断済み)。
+	//   - 打ち切り (ctx・上限時間) を始めた後は、試行が確立まで進んでも onConnected を呼ばない。
+	//   - 成功を返したときだけ、呼び出し元が client を切断する責任を持つ。
+	Connect(ctx context.Context) error
 	// Disconnect は接続を閉じる。quiesce はミリ秒単位の待機時間。
 	Disconnect(quiesce uint)
 	// Publish は指定トピックへメッセージを送信する。
