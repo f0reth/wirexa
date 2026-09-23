@@ -16,8 +16,6 @@ export function Publish(arg1:string,arg2:string,arg3:string,arg4:number,arg5:boo
 
 export function SaveProfile(arg1:mqttdomain.BrokerProfile):Promise<mqttdomain.BrokerProfile>;
 
-export function Shutdown():Promise<void>;
-
 export function Subscribe(arg1:string,arg2:string,arg3:number):Promise<void>;
 
 export function Unsubscribe(arg1:string,arg2:string):Promise<void>;

@@ -30,10 +30,6 @@ export function SaveProfile(arg1) {
   return window['go']['adapters']['MQTTHandler']['SaveProfile'](arg1);
 }
 
-export function Shutdown() {
-  return window['go']['adapters']['MQTTHandler']['Shutdown']();
-}
-
 export function Subscribe(arg1, arg2, arg3) {
   return window['go']['adapters']['MQTTHandler']['Subscribe'](arg1, arg2, arg3);
 }

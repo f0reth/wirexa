@@ -536,7 +536,6 @@ const MqttHandler = {
   Subscribe: counted("Subscribe", async () => {}),
   Unsubscribe: counted("Unsubscribe", async () => {}),
   Publish: counted("Publish", async () => {}),
-  Shutdown: counted("Shutdown", async () => {}),
 };
 
 // ── OpenAPIHandler / LogHandler / App ─────────────────────────────────────────
