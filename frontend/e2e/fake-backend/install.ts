@@ -171,6 +171,14 @@ function collection(id: string): Collection {
   return c;
 }
 
+// Go 側の rejectReservedCollection と同じく、予約済みの __root__ に対するコレクション単位の
+// 変更（削除・リネーム）を拒否する。中のアイテムの操作は対象外。
+function rejectReservedCollection(id: string): void {
+  if (id === ROOT_COLLECTION_ID) {
+    throw new Error(`reserved collection cannot be modified: ${id}`);
+  }
+}
+
 function walk(items: TreeItem[]): TreeItem[] {
   return items.flatMap((i) => [i, ...walk(i.children)]);
 }
@@ -291,6 +299,7 @@ const HttpHandler = {
   }),
 
   DeleteCollection: mutates("DeleteCollection", (id: string) => {
+    rejectReservedCollection(id);
     db.collections = db.collections.filter((c) => c.id !== id);
     db.sidebar = db.sidebar.filter(
       (e) => !(e.kind === "collection" && e.id === id),
@@ -298,6 +307,7 @@ const HttpHandler = {
   }),
 
   RenameCollection: mutates("RenameCollection", (id: string, name: string) => {
+    rejectReservedCollection(id);
     collection(id).name = name;
   }),
 
