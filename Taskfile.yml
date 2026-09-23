@@ -29,6 +29,11 @@ tasks:
     cmds:
       - go test ./...
 
+  go:test:race:
+    desc: Go のユニットテストを -race 付きで実行する (cgo が必要。Windows では gcc)
+    cmds:
+      - go test -race ./...
+
   go:test:integration:
     desc: Go の統合テストを実行する (integration ビルドタグ)
     cmds:
