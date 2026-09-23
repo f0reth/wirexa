@@ -11,6 +11,13 @@ import (
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 )
 
+// このパッケージの型は業務概念と不変条件を表し、Wails RPC とイベントの配線型を兼ねる
+// (adapters に RPC 用の DTO は作らない)。json タグは RPC とイベントの配線形式だけを表す。
+// 永続化形式は infrastructure のリポジトリにある storedXxx DTO が持つので、タグを変えても
+// 保存形式は変わらない。保存対象のフィールドを足すときは stored DTO と変換関数にも足す。
+// ドメイン型に載せてよいのは RPC で受け渡す業務上の値だけで、パスや一時的なハンドルのような
+// infrastructure 内部の状態は載せない。
+
 // BodyType 定数のうち、行編集 UI を持つ form 系ボディの種別。
 const (
 	BodyTypeFormData       = "form-data"

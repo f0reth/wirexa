@@ -78,13 +78,13 @@ disable-model-invocation: true
 
 ```
 adapters ──────┐
-application ───┼──→ domain（インターフェースを定義）
+application ───┼──→ domain（出力ポートを定義）
 infrastructure ┘
 ```
 
 - `domain` は他のどの層にも依存してはならない。
-- `application` / `infrastructure` は `domain` のインターフェースを実装する（依存性逆転）。
-- `adapters` は `domain` のインターフェース経由でユースケースを呼び出し、`application` を直接 import しない。
+- `application` / `infrastructure` は `domain` の出力ポートを実装する（依存性逆転）。
+- `adapters` は自分で定義したインターフェース（ユースケースの入力ポート）経由でユースケースを呼び出し、`application` を直接 import しない。`application` のサービスはこれを構造的に満たし、その検証は `app.go` で行う。
 - 具体型の組み立て・注入は合成ルート `app.go` でのみ行う。
 
 **フロントエンド:** `frontend/src/` も同様のクリーンアーキテクチャ（`domain` / `application` / `infrastructure` / `presentation` / `shared`）を採用。
@@ -92,7 +92,9 @@ infrastructure ┘
 
 確認項目:
 - 提案する変更がこの依存方向を破っていないか（内側の層が外側を import していないか）
-- ドメイン型と同型の DTO を `internal/adapters/` に新設していないか（ハンドラはドメイン型の薄いパススルー）
+- ドメイン型と同型の RPC 用 DTO を `internal/adapters/` に新設していないか（ハンドラはドメイン型の薄いパススルー）
+  - この禁止は adapters の RPC DTO に限る。infrastructure の永続化 DTO（`storedXxx`）は必要なもので、どの階層でも domain 型を埋め込んでいないかを確認する
+  - 保存対象のフィールドを domain 型に足す場合、stored DTO と変換関数にも足しているか
   - ドメインに対応物の無いアダプタ固有の入力型（例: `log_handler.go` の `LogEntry`）は違反ではない
   - 名前付き文字列型を `string` で受けて内部変換するのは Wails の制約による既定の回避策であり、違反ではない
 - 提案内容が既存の設計思想を壊すものになっていないか

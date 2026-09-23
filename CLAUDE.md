@@ -60,19 +60,30 @@ task frontend:test:e2e:fullstack  # Playwright against real wails dev (Windows/l
 
 ## Architecture
 
-Both sides follow the same layered (ports & adapters) structure. Dependency direction: adapters/presentation → application → domain; infrastructure implements domain ports.
+Both sides follow the same layered (ports & adapters) structure.
+
+- Backend dependency direction (compile-time imports): adapters → domain ← application, infrastructure. Adapters never import application: each handler file defines the use-case input ports it calls (`HTTPRequestUseCase`, `MQTTProfileUseCase`, …), application services satisfy them structurally, and `app.go` checks that at compile time. Infrastructure implements the domain's output ports.
+- Frontend dependency direction: presentation → application → domain; infrastructure implements domain ports.
 
 ### Backend (`internal/`)
 
-- `domain/` — types, port interfaces, event name constants, errors. No dependencies on other layers. Subpackages per protocol: `http/`, `mqtt/`, `udp/`, `openapi/`.
+- `domain/` — types, output port interfaces (repositories, transports, emitter, …), event name constants, errors. No dependencies on other layers. Subpackages per protocol: `http/`, `mqtt/`, `udp/`, `openapi/`.
 - `application/` — services implementing use cases (`http/`, `mqtt/`, `udp/`, `openapi/`, `store/`). Depend only on domain ports.
-- `infrastructure/` — port implementations: `JSONStore[T]` (generic per-entity JSON file persistence with atomic writes), paho MQTT client factory + embedded mochi broker, HTTP `NetClient`, UDP socket, `WailsEmitter` (domain events → Wails runtime events), file logger (lumberjack), window state manager.
-- `adapters/` — Wails-bound handler structs (`MQTTHandler`, `HTTPHandler`, `UDPHandler`, `LogHandler`, `OpenAPIHandler`). These are the RPC surface exposed to the frontend.
+- `infrastructure/` — port implementations: `JSONStore[T]` (generic per-entity JSON file persistence with atomic writes) wrapped by repositories that own the persistence DTOs, paho MQTT client factory + embedded mochi broker, HTTP `NetClient`, UDP socket, `WailsEmitter` (domain events → Wails runtime events), file logger (lumberjack), window state manager.
+- `adapters/` — Wails-bound handler structs (`MQTTHandler`, `HTTPHandler`, `UDPHandler`, `LogHandler`, `OpenAPIHandler`) and the use-case input port interfaces they depend on. These are the RPC surface exposed to the frontend.
 - `integration/` — cross-layer tests behind the `integration` build tag.
 
 Wiring lives in `app.go`: handlers are created **empty** in `NewApp()` (so Wails can bind them in `main.go`), then `initialize()` builds services and injects them via `adapters.SetupXxxHandler(...)` during startup. If you add a service, follow this two-phase pattern. All persistent state is JSON under `os.UserConfigDir()/Wirexa/`.
 
 App shutdown is two-step: `beforeClose` emits `app:before-close` and blocks the close; the frontend decides (unsaved-work check) and calls the `ConfirmQuit` RPC to actually quit.
+
+### ドメイン型・RPC・永続化の境界
+
+- **ドメイン型は RPC とイベントの配線型を兼ねる。** adapters に RPC 用の DTO は作らず、ハンドラはドメイン型をそのまま受け渡す。json タグは配線形式だけを表す。ドメイン型に載せてよいのは RPC で受け渡す業務上の値だけで、パスや一時的なハンドルのような infrastructure 内部の状態は載せない。
+- **永続化形式は infrastructure のリポジトリにある `storedXxx` DTO が持つ**（`http/collection_repository.go`、`http/sidebar_layout_repository.go`、`mqtt/profile_repository.go`、`udp/target_repository.go`、`openapi/recent_repository.go`）。ドメイン型の json タグを変えても保存形式は変わらず、保存形式を変えても RPC は変わらない。保存形式の基準は各パッケージの `testdata/*.golden.json`。
+- **stored DTO はどの階層でも domain 型を埋め込まない**（値型の小さな struct でも埋め込むと、その部分の保存形式が domain の json タグで決まる）。例外は `udpdomain.PayloadEncoding` のような名前付きの基本型だけ。`testutil.AssertNoTypesFrom` で検査している。
+- **domain 型にフィールドを足すとき**、RPC には `task wails:generate` で反映される。保存対象のフィールドなら stored DTO と変換関数（`toStoredXxx` / `fromStoredXxx` など）にも足す。足し忘れは、`testutil.Populate` で全フィールドを埋めた値の往復テスト（各リポジトリの `*_RoundTripKeepsEveryField`）が検出する（テストの書き換えは不要）。意図して保存しないフィールドは、往復テストの期待値を補正する関数（例: `persistedCollection`）に理由と一緒に書く。
+- **入力ポート（ユースケースの interface）は使う側の adapters が定義する。** domain には出力ポートだけを置く。
 
 ### 設定データの分類と復旧方針
 

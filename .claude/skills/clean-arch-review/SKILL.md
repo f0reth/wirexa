@@ -35,8 +35,8 @@ Wails + Go + SolidJS で構成されたこのプロジェクトのクリーン�
 ### 依存方向ルール（すべて内向き）
 
 ```
-# バックエンド
-adapters → application → domain ← infrastructure
+# バックエンド（コンパイル時の import 方向）
+adapters → domain ← application, infrastructure
 
 # フロントエンド
 presentation → application → domain ← infrastructure
@@ -45,10 +45,17 @@ presentation → application → domain ← infrastructure
 - `domain` は他レイヤーに依存してはいけない
 - `infrastructure` は `domain` のポート（インターフェース）を実装する
 - `adapters` はビジネスロジックを持たず `application` のユースケースに委譲する。
+  委譲先は adapters が自分で定義したインターフェース（ユースケースの入力ポート）で、
+  `application` を import しない。`application` のサービスはこれを構造的に満たし、
+  その検証は合成ルート `app.go` で行う。`domain` には出力ポートだけを置く。
   **型については重複 DTO 層を撤廃し、ドメイン型を単一の真実源として RPC 境界に直接公開する**
-  （ハンドラがドメイン型を引数・戻り値に取る）。adapters が `domain` の型・ユースケースを
-  参照するのは正しい依存方向（内向き）であり違反ではない。ドメインと同型の DTO を再定義して
-  手書き変換するのは**禁止**（同期漏れバグの温床）。
+  （ハンドラがドメイン型を引数・戻り値に取る）。adapters が `domain` の型を
+  参照するのは正しい依存方向（内向き）であり違反ではない。ドメインと同型の RPC 用 DTO を
+  adapters に再定義して手書き変換するのは**禁止**（同期漏れバグの温床）。
+- この禁止は adapters の RPC DTO に限る。永続化形式は infrastructure のリポジトリにある
+  `storedXxx` DTO が持ち、ドメイン型の json タグ（RPC の配線形式）から独立させる。stored DTO は
+  どの階層でも domain 型を埋め込まない。同期漏れは、`testutil.Populate` で全フィールドを埋めた
+  往復テストと `testutil.AssertNoTypesFrom` で防ぐ。
 
 ### 型契約の単一真実源（重要）
 

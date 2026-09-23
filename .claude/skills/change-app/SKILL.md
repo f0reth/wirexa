@@ -25,13 +25,13 @@ $ARGUMENTS
 
 ```
 adapters ──────┐
-application ───┼──→ domain（インターフェースを定義）
+application ───┼──→ domain（出力ポートを定義）
 infrastructure ┘
 ```
 
 - `domain` は他のどのレイヤーにも依存しない
-- `application` / `infrastructure` は `domain` のインターフェースを実装する（依存性逆転）
-- `adapters` は `domain` のインターフェース経由でユースケースを呼び出し、`application` を直接 import しない
+- `application` / `infrastructure` は `domain` の出力ポートを実装する（依存性逆転）
+- `adapters` は自分で定義したインターフェース（ユースケースの入力ポート）経由でユースケースを呼び出し、`application` を直接 import しない。`application` のサービスはこれを構造的に満たし、その検証は `app.go` で行う
 - 具体型の組み立て・注入は合成ルート `app.go` でのみ行う
 - 各レイヤーが持つ責務を逸脱する変更は禁止
 
@@ -44,9 +44,11 @@ infrastructure ┘
 - 不要な依存関係を追加しない
 - 既存の振る舞いが変わる変更はコミットメッセージで明示する
 - コード中のコメントとコミットメッセージは日本語で記述する
-- ドメイン型と同型の DTO を `internal/adapters/` に新設しない（ハンドラはドメイン型の薄いパススルー）
+- ドメイン型と同型の RPC 用 DTO を `internal/adapters/` に新設しない（ハンドラはドメイン型の薄いパススルー）
   - 例外: ドメインに対応物の無いアダプタ固有の入力型は許可される（例: `log_handler.go` の `LogEntry`）
   - 例外: 名前付き文字列型を引数に直接使うと Wails が型を生成しないため、引数は `string` で受けて内部で変換する
+  - この禁止は adapters の RPC DTO に限る。永続化形式は infrastructure のリポジトリにある `storedXxx` DTO が持ち、どの階層でも domain 型を埋め込まない
+- 保存対象のフィールドを domain 型に足すときは、stored DTO と変換関数にも足す（足し忘れは全フィールドを埋めた往復テストで落ちる）
 
 ## コード生成（生成物は手で編集しない）
 

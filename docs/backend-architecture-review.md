@@ -302,6 +302,16 @@ adapter が `internal/infrastructure` を直接 import しており、HTTP、MQT
 - domain には不変条件と業務概念を表す型を残す。
 - 永続化マイグレーションが必要な場合は persistence DTO と domain model の mapper を用意する。
 
+### 対応状況
+
+対応済み（2026-09-23）。論点ごとの扱いは次のとおり。
+
+- `HTTPResponse.TempFilePath`: 項目 1・4 の対応で削除済み。一時ファイルは `ResponseBodyStore` が execution ID で追跡し、パスは RPC に出ない。
+- RPC DTO: adapters への分離は行わず、ドメイン型が RPC とイベントの配線型を兼ねる規約を維持した。ドメイン型に infrastructure 内部の状態を載せないことを、ドメイン型の doc コメントと `CLAUDE.md` に明記した。
+- 入力ポート: application ではなく、使う側の adapters（各ハンドラーのファイル）で定義するようにした（`HTTPRequestUseCase` など 9 個）。domain には出力ポートだけが残り、サービスが入力ポートを満たすことは `app.go` でコンパイル時に検証する。依存の向きは変わらない。
+- 永続化 DTO: MQTT プロファイル、UDP ターゲット、サイドバーレイアウト、OpenAPI recents に `storedXxx` DTO を追加し、コレクション DTO が埋め込んでいた `RequestAuth`・`KeyValuePair`・`RequestSettings` も DTO に置き換えた。JSON 形式は変えていない（各パッケージの `testdata/*.golden.json` で確認）。
+- 型が 2 つになることによる同期漏れは、`testutil.Populate` で全フィールドを埋めた値の往復テストと、stored DTO が domain 型を埋め込んでいないことを確かめる `testutil.AssertNoTypesFrom` で検出する。
+
 ## その他の観察事項
 
 ### アップロードファイルを全量メモリへ読み込む

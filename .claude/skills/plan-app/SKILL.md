@@ -30,12 +30,13 @@ $ARGUMENTS
 
 | 層             | パス例                     | 役割                                                                                                    |
 | -------------- | -------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Domain         | `internal/domain/`         | ビジネスルール・型定義・ポートインターフェース（外部依存なし）。プロトコル別に `http/`・`mqtt/`・`udp/` |
+| Domain         | `internal/domain/`         | ビジネスルール・型定義・出力ポートインターフェース（外部依存なし）。プロトコル別に `http/`・`mqtt/`・`udp/` |
 | Application    | `internal/application/`    | ユースケース・Service層（`*_service.go`）。domain のポートのみに依存                                    |
-| Infrastructure | `internal/infrastructure/` | MQTT・HTTP・UDP・JSON ファイルストレージの実装（domain ポートの実装）                                   |
-| Adapters       | `internal/adapters/`       | Wails RPC ハンドラ（`*_handler.go`）。**ドメイン型を直接送受信する薄いパススルー**                      |
+| Infrastructure | `internal/infrastructure/` | MQTT・HTTP・UDP・JSON ファイルストレージの実装（domain ポートの実装）。保存形式は永続化 DTO（`storedXxx`）が持つ |
+| Adapters       | `internal/adapters/`       | Wails RPC ハンドラ（`*_handler.go`）とユースケースの入力ポート。**ドメイン型を直接送受信する薄いパススルー** |
 
-**Adapters に重複 DTO 層を新設してはならない。**
+**Adapters に RPC 用の重複 DTO 層を新設してはならない。**
+この禁止は adapters の RPC DTO に限る。infrastructure のリポジトリは永続化 DTO（`storedXxx`）で保存形式を持ち、どの階層でも domain 型を埋め込まない。
 `*_dto.go` はドメインに対応物の無いアダプタ固有の入力型のみ許可される（例: `log_handler.go` の `LogEntry`）。
 例外として、名前付き文字列型を引数に直接使うと Wails が型を生成しないため、引数は `string` で受けて内部変換する。
 
@@ -55,13 +56,13 @@ $ARGUMENTS
 
 ```
 adapters ──────┐
-application ───┼──→ domain（インターフェースを定義）
+application ───┼──→ domain（出力ポートを定義）
 infrastructure ┘
 ```
 
 - `domain` は他のどのレイヤーにも依存しない。
-- `application` / `infrastructure` は `domain` のインターフェースを実装する（依存性逆転）。
-- `adapters` は `domain` のインターフェース経由でユースケースを呼び出し、`application` を直接 import しない。
+- `application` / `infrastructure` は `domain` の出力ポートを実装する（依存性逆転）。
+- `adapters` は自分で定義したインターフェース（ユースケースの入力ポート）経由でユースケースを呼び出し、`application` を直接 import しない。`application` のサービスはこれを構造的に満たし、その検証は `app.go` で行う。
 - 具体型の組み立て・注入は合成ルート `app.go` でのみ行う。
 
 ### サービス追加時の二段階配線
@@ -81,7 +82,8 @@ Go↔TS の境界を跨ぐ変更では、以下の生成物の再生成が必要
 | `frontend/wailsjs/`                   | `task wails:generate`     | バインド対象の Go 構造体・ハンドラメソッドを変更したとき（CI が `git diff --exit-code frontend/wailsjs` で落ちる）                         |
 | `frontend/src/shared/wails-events.ts` | `task go:generate:events` | イベント名を追加・変更したとき。定数の正は `internal/domain/events.go`。**新規イベントは `tools/gen-events/main.go` の一覧への追記も必要** |
 
-ドメイン型にフィールドを追加する場合の手順は「ドメイン 1 箇所 ＋ 生成 1 コマンド」で済む（adapters に重複 DTO を置かないため）。
+ドメイン型にフィールドを追加する場合の手順は、RPC については「ドメイン 1 箇所 ＋ 生成 1 コマンド」で済む（adapters に重複 DTO を置かないため）。
+保存対象のフィールドなら、infrastructure の stored DTO と変換関数にも足す（足し忘れは全フィールドを埋めた往復テストで落ちる）。意図して保存しないフィールドは往復テストの期待値を補正する関数に理由と一緒に書く。
 フロントの変換は素通しのため `infrastructure/<proto>/client.ts` の編集は通常不要。ユニオン型の場合のみ型ガードを更新する。
 
 ## テスト方針の確認
