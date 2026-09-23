@@ -15,6 +15,7 @@ import (
 	"github.com/f0reth/Wirexa/internal/adapters"
 	httpapp "github.com/f0reth/Wirexa/internal/application/http"
 	mqttapp "github.com/f0reth/Wirexa/internal/application/mqtt"
+	openapiapp "github.com/f0reth/Wirexa/internal/application/openapi"
 	udpapp "github.com/f0reth/Wirexa/internal/application/udp"
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 	httpdomain "github.com/f0reth/Wirexa/internal/domain/http"
@@ -23,6 +24,7 @@ import (
 	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 	httpinfra "github.com/f0reth/Wirexa/internal/infrastructure/http"
 	mqttinfra "github.com/f0reth/Wirexa/internal/infrastructure/mqtt"
+	openapiinfra "github.com/f0reth/Wirexa/internal/infrastructure/openapi"
 	udpinfra "github.com/f0reth/Wirexa/internal/infrastructure/udp"
 )
 
@@ -185,8 +187,9 @@ func (a *App) initialize(ctx context.Context) error {
 	listenSvc := udpapp.NewUDPListenerService(udpSocket, emitter, logger)
 	adapters.SetupUDPHandler(a.udpHandler, sendSvc, targetSvc, listenSvc)
 
-	adapters.SetupOpenAPIHandler(ctx, a.openAPIHandler,
-		filepath.Join(configDir, wirexaConfigDir, "openapi-recents.json"), logger)
+	recentRepo := openapiinfra.NewRecentRepository(filepath.Join(configDir, wirexaConfigDir, "openapi-recents.json"))
+	openapiSvc := openapiapp.NewFileService(recentRepo, openapiinfra.NewNativeFileAccess(), logger)
+	adapters.SetupOpenAPIHandler(ctx, a.openAPIHandler, adapters.OpenAPIHandlerDeps{Files: openapiSvc})
 
 	a.windowMgr.Restore()
 

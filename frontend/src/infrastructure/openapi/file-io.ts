@@ -7,7 +7,7 @@ import {
   SaveFileAs,
   WriteFile,
 } from "../../../wailsjs/go/adapters/OpenAPIHandler";
-import type { adapters } from "../../../wailsjs/go/models";
+import type { openapidomain } from "../../../wailsjs/go/models";
 
 export async function openFilePicker(): Promise<string> {
   return OpenFilePicker();
@@ -32,7 +32,7 @@ export async function saveFileAs(
   return SaveFileAs(defaultName, content);
 }
 
-export async function getRecents(): Promise<adapters.OpenAPIRecent[]> {
+export async function getRecents(): Promise<openapidomain.OpenAPIRecent[]> {
   return GetRecents();
 }
 

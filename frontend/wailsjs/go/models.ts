@@ -18,24 +18,6 @@ export namespace adapters {
 	        this.message = source["message"];
 	    }
 	}
-	export class OpenAPIRecent {
-	    path: string;
-	    name: string;
-	    lastOpenedAt: string;
-	    order: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new OpenAPIRecent(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.path = source["path"];
-	        this.name = source["name"];
-	        this.lastOpenedAt = source["lastOpenedAt"];
-	        this.order = source["order"];
-	    }
-	}
 
 }
 
@@ -488,6 +470,29 @@ export namespace mqttdomain {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace openapidomain {
+	
+	export class OpenAPIRecent {
+	    path: string;
+	    name: string;
+	    lastOpenedAt: string;
+	    order: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new OpenAPIRecent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.name = source["name"];
+	        this.lastOpenedAt = source["lastOpenedAt"];
+	        this.order = source["order"];
+	    }
 	}
 
 }
