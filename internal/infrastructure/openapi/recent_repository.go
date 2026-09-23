@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/openapi"
 	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 )
@@ -24,7 +25,7 @@ func NewRecentRepository(path string) *RecentRepository {
 }
 
 // Load は recents ファイルを読み込む。ファイルが存在しない場合は空スライスを返す。
-// JSON として解釈できない場合は domain.ErrRecentsCorrupt を wrap して返し、
+// JSON として解釈できない場合は cmn.ErrCorruptData を wrap して返し、
 // 読み込み自体の失敗と区別できるようにする。
 func (r *RecentRepository) Load() ([]domain.OpenAPIRecent, error) {
 	data, err := os.ReadFile(r.path)
@@ -36,7 +37,7 @@ func (r *RecentRepository) Load() ([]domain.OpenAPIRecent, error) {
 	}
 	var items []domain.OpenAPIRecent
 	if err := json.Unmarshal(data, &items); err != nil {
-		return nil, fmt.Errorf("%w: %w", domain.ErrRecentsCorrupt, err)
+		return nil, fmt.Errorf("%w: %w", cmn.ErrCorruptData, err)
 	}
 	if items == nil {
 		items = []domain.OpenAPIRecent{}

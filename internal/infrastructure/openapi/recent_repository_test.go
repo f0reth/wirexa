@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/openapi"
 )
 
@@ -28,14 +29,14 @@ func TestRecentRepository_Load_MissingFileReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestRecentRepository_Load_CorruptReturnsErrRecentsCorrupt(t *testing.T) {
+func TestRecentRepository_Load_CorruptReturnsErrCorruptData(t *testing.T) {
 	repo, path := newTestRepo(t)
 	if err := os.WriteFile(path, []byte("{invalid json}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := repo.Load(); !errors.Is(err, domain.ErrRecentsCorrupt) {
-		t.Fatalf("Load on corrupt file: want ErrRecentsCorrupt, got %v", err)
+	if _, err := repo.Load(); !errors.Is(err, cmn.ErrCorruptData) {
+		t.Fatalf("Load on corrupt file: want ErrCorruptData, got %v", err)
 	}
 }
 
@@ -50,7 +51,7 @@ func TestRecentRepository_Load_UnreadableIsNotCorrupt(t *testing.T) {
 	if err == nil {
 		t.Fatal("Load on unreadable path should fail")
 	}
-	if errors.Is(err, domain.ErrRecentsCorrupt) {
+	if errors.Is(err, cmn.ErrCorruptData) {
 		t.Fatalf("unreadable file must not be reported as corrupt: %v", err)
 	}
 }

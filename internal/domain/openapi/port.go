@@ -1,5 +1,7 @@
 package openapidomain
 
+import cmn "github.com/f0reth/Wirexa/internal/domain"
+
 // FileUseCase は OpenAPI ファイル操作のユースケース入力ポート。
 //
 // ReadFile / WriteFile が受理するのは許可リストに登録済みのパスだけで、
@@ -33,9 +35,8 @@ type FileAccess interface {
 // RecentRepository は recents 一覧の永続化抽象。一覧全体を 1 単位で読み書きする。
 type RecentRepository interface {
 	// Load は一覧を読む。未作成なら空スライスと nil を返す。
-	// JSON として壊れている場合は ErrRecentsCorrupt を wrap して返し、それ以外の失敗はそのまま返す。
+	// JSON として壊れている場合は cmn.ErrCorruptData を wrap して返し、それ以外の失敗はそのまま返す。
 	Load() ([]OpenAPIRecent, error)
 	Save(items []OpenAPIRecent) error
-	// Quarantine は壊れたファイルを上書きされない場所へ退避し、退避先のパスを返す。
-	Quarantine() (string, error)
+	cmn.Quarantiner
 }

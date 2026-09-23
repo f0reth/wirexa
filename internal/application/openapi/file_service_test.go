@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/openapi"
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
@@ -337,7 +338,7 @@ func TestOpenSelectedTrimsToMaxRecents(t *testing.T) {
 }
 
 func TestNewFileService_CorruptQuarantinedThenSaves(t *testing.T) {
-	repo := &memRepo{loadErr: fmt.Errorf("%w: bad json", domain.ErrRecentsCorrupt)}
+	repo := &memRepo{loadErr: fmt.Errorf("%w: bad json", cmn.ErrCorruptData)}
 	logger := &recordLogger{}
 	s := NewFileService(repo, newMemFiles(), logger)
 
@@ -363,7 +364,7 @@ func TestNewFileService_CorruptQuarantinedThenSaves(t *testing.T) {
 
 func TestNewFileService_CorruptQuarantineFailsDoesNotSave(t *testing.T) {
 	repo := &memRepo{
-		loadErr:       fmt.Errorf("%w: bad json", domain.ErrRecentsCorrupt),
+		loadErr:       fmt.Errorf("%w: bad json", cmn.ErrCorruptData),
 		quarantineErr: errors.New("rename failed"),
 	}
 	logger := &recordLogger{}

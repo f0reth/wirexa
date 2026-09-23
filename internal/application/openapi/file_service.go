@@ -58,7 +58,7 @@ func NewFileService(repo domain.RecentRepository, files domain.FileAccess, logge
 	items, err := repo.Load()
 	switch {
 	case err == nil:
-	case errors.Is(err, domain.ErrRecentsCorrupt):
+	case errors.Is(err, cmn.ErrCorruptData):
 		items = nil
 		dest, qerr := repo.Quarantine()
 		if qerr != nil {
