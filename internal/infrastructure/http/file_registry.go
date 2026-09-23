@@ -198,13 +198,3 @@ func openFile(files domain.SelectedFileOpener, ref domain.FileReference) (file d
 	}
 	return file, true, nil
 }
-
-// readSelectedFile は開いたファイルを開いた時点のサイズ分だけ読み、ハンドルを閉じる。
-func readSelectedFile(file domain.OpenedSelectedFile) ([]byte, error) {
-	defer func() { _ = file.File.Close() }() //nolint:errcheck // 読み取り専用ハンドルの後始末
-	data, err := io.ReadAll(io.NewSectionReader(file.File, 0, file.Size))
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
-}

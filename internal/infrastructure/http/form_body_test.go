@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"net/textproto"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -80,17 +81,18 @@ type part struct {
 func readParts(t *testing.T, rows []domain.FormRow) []part {
 	t.Helper()
 
-	buf, contentType, err := buildMultipartBody(rows, testFiles)
+	body, contentType, err := buildMultipartBody(rows, testFiles)
 	if err != nil {
 		t.Fatalf("buildMultipartBody() error = %v", err)
 	}
+	data := readBody(t, body)
 
 	_, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		t.Fatalf("ParseMediaType(%q) error = %v", contentType, err)
 	}
 
-	mr := multipart.NewReader(buf, params["boundary"])
+	mr := multipart.NewReader(bytes.NewReader(data), params["boundary"])
 	var parts []part
 	for {
 		p, err := mr.NextPart()
@@ -278,6 +280,133 @@ func assertParts(t *testing.T, got, want []part) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("part[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// readBody はボディを先頭から読み、読めたバイト数が合計長と一致することを確かめてから release する。
+func readBody(t *testing.T, body *bodySegments) []byte {
+	t.Helper()
+	defer body.release()
+	var errs bodyError
+	rc, err := body.newReader(&errs)
+	if err != nil {
+		t.Fatalf("newReader() error = %v", err)
+	}
+	defer func() { _ = rc.Close() }()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	if int64(len(data)) != body.length {
+		t.Fatalf("read %d bytes, but the body length is %d", len(data), body.length)
+	}
+	if err = errs.get(); err != nil {
+		t.Fatalf("bodyError = %v", err)
+	}
+	return data
+}
+
+// ストリーミングにしても、multipart の出力は従来の bytes.Buffer 実装と 1 バイトも違わない。
+// 従来の実装 (パートヘッダを CreatePart で書き、text 行は WriteField、json と file 行は
+// 内容を part.Write) を同じ boundary で組み立てて比べる。
+func TestBuildMultipartBody_MatchesBufferedOutput(t *testing.T) {
+	files := fakeFiles{
+		"tok-a":     {name: `ファイル "a".json`, contentType: "application/json", data: `{"from":"file"}`},
+		"tok-b":     {name: `b\c.bin`, contentType: "application/octet-stream", data: "\x00\x01\r\n--boundary-like\r\n"},
+		"tok-empty": {name: "empty.txt", contentType: "text/plain", data: ""},
+	}
+	rows := []domain.FormRow{
+		{Key: "z", Value: "first", Kind: domain.FormRowKindText, Enabled: true},
+		{Key: "a", File: domain.FileReference{Token: "tok-a"}, Kind: domain.FormRowKindFile, Enabled: true},
+		{Key: `we"ird`, Value: `{"k":"v"}`, Kind: domain.FormRowKindJSON, Enabled: true},
+		{Key: "skip", Value: "x", Enabled: false},
+		{Key: "b", File: domain.FileReference{Token: "tok-b"}, Kind: domain.FormRowKindFile, ContentType: "image/png", Enabled: true},
+		{Key: "b", File: domain.FileReference{Token: "tok-b"}, Kind: domain.FormRowKindFile, Enabled: true},
+		{Key: "e", File: domain.FileReference{Token: "tok-empty"}, Kind: domain.FormRowKindFile, Enabled: true},
+		{Key: "csv", Value: "1,2", Kind: domain.FormRowKindText, ContentType: "text/csv", Enabled: true},
+		{Key: "last", Value: "日本語", Enabled: true},
+	}
+
+	body, contentType, err := buildMultipartBody(rows, files)
+	if err != nil {
+		t.Fatalf("buildMultipartBody() error = %v", err)
+	}
+	got := readBody(t, body)
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		t.Fatalf("ParseMediaType(%q) error = %v", contentType, err)
+	}
+
+	var want bytes.Buffer
+	mw := multipart.NewWriter(&want)
+	if err = mw.SetBoundary(params["boundary"]); err != nil {
+		t.Fatalf("SetBoundary() error = %v", err)
+	}
+	writeBuffered := func(name, filename, contentType, data string) {
+		disposition := `form-data; name="` + quoteEscaper.Replace(name) + `"`
+		if filename != "" {
+			disposition += `; filename="` + quoteEscaper.Replace(filename) + `"`
+		}
+		h := textproto.MIMEHeader{}
+		h.Set("Content-Disposition", disposition)
+		h.Set("Content-Type", contentType)
+		p, perr := mw.CreatePart(h)
+		if perr != nil {
+			t.Fatalf("CreatePart() error = %v", perr)
+		}
+		_, _ = p.Write([]byte(data))
+	}
+	_ = mw.WriteField("z", "first")
+	writeBuffered("a", files["tok-a"].name, "application/json", files["tok-a"].data)
+	writeBuffered(`we"ird`, "", "application/json", `{"k":"v"}`)
+	writeBuffered("b", files["tok-b"].name, "image/png", files["tok-b"].data)
+	writeBuffered("b", files["tok-b"].name, "application/octet-stream", files["tok-b"].data)
+	writeBuffered("e", "empty.txt", "text/plain", "")
+	writeBuffered("csv", "", "text/csv", "1,2")
+	_ = mw.WriteField("last", "日本語")
+	if err = mw.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	if !bytes.Equal(got, want.Bytes()) {
+		t.Fatalf("streamed body differs from the buffered one\n got: %q\nwant: %q", got, want.Bytes())
+	}
+}
+
+// recordingFiles は開いたハンドルを覚えておき、閉じられたかを確かめられる SelectedFileOpener。
+type recordingFiles struct {
+	files  fakeFiles
+	opened []*memHandle
+}
+
+func (r *recordingFiles) OpenSelectedFile(token string) (domain.OpenedSelectedFile, error) {
+	file, err := r.files.OpenSelectedFile(token)
+	if err != nil {
+		return file, err
+	}
+	h, _ := file.File.(*memHandle)
+	r.opened = append(r.opened, h)
+	return file, nil
+}
+
+// 途中の行でエラーになったら、それまでに開いたファイルはすべて閉じる。
+func TestBuildMultipartBody_ClosesOpenedFilesOnError(t *testing.T) {
+	files := &recordingFiles{files: testFiles}
+	_, _, err := buildMultipartBody([]domain.FormRow{
+		{Key: "a", File: domain.FileReference{Token: "tok-json"}, Kind: domain.FormRowKindFile, Enabled: true},
+		{Key: "b", File: domain.FileReference{Token: "tok-bin"}, Kind: domain.FormRowKindFile, Enabled: true},
+		{Key: "c", File: domain.FileReference{Token: "forged"}, Kind: domain.FormRowKindFile, Enabled: true},
+	}, files)
+	if !errors.Is(err, domain.ErrFileAccessDenied) {
+		t.Fatalf("buildMultipartBody() error = %v, want ErrFileAccessDenied", err)
+	}
+	if len(files.opened) != 2 {
+		t.Fatalf("opened %d files, want 2", len(files.opened))
+	}
+	for i, h := range files.opened {
+		if n := h.closes.Load(); n != 1 {
+			t.Errorf("file #%d closed %d times, want 1", i, n)
 		}
 	}
 }

@@ -2,7 +2,6 @@
 package httpinfra
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -120,6 +119,7 @@ func (c *NetClient) Do(ctx context.Context, executionID string, req domain.HTTPR
 
 	bodyContent := req.Body.Contents[req.Body.Type]
 	var bodyReader io.Reader
+	var reqBody *bodySegments
 	contentType := ""
 	// multipart は boundary が Content-Type に載るため、ユーザー指定ヘッダに
 	// 上書きさせてはいけない（後段の Set/既存優先の分岐で使う）。
@@ -135,12 +135,10 @@ func (c *NetClient) Do(ctx context.Context, executionID string, req domain.HTTPR
 		bodyReader = strings.NewReader(domain.EncodeFormPairs(req.Body.FormPairs()))
 		contentType = "application/x-www-form-urlencoded"
 	case domain.BodyTypeFormData:
-		var buf *bytes.Buffer
-		buf, contentType, err = buildMultipartBody(req.Body.FormPairs(), c.files)
+		reqBody, contentType, err = buildMultipartBody(req.Body.FormPairs(), c.files)
 		if err != nil {
 			return domain.HTTPResponse{}, err
 		}
-		bodyReader = buf
 		forceContentType = true
 	case domain.BodyTypeFile:
 		// 送信元は token を registry で解決したファイルだけ。Contents の文字列 (旧データのパス) は読まない。
@@ -150,18 +148,42 @@ func (c *NetClient) Do(ctx context.Context, executionID string, req domain.HTTPR
 			return domain.HTTPResponse{}, ferr
 		}
 		if ok {
-			data, rerr := readSelectedFile(file)
-			if rerr != nil {
-				return domain.HTTPResponse{}, rerr
-			}
-			bodyReader = bytes.NewReader(data)
+			reqBody = newFileBody(file)
 			contentType = file.ContentType
+		}
+	}
+
+	// ファイルを含むボディは、開いたハンドルから読みながら送る。
+	// bodyErr には送信中のファイルの読み込みで最初に起きたエラーを記録する。
+	var bodyErr bodyError
+	var firstBody io.ReadCloser
+	if reqBody != nil {
+		// NetClient 自身の参照。ハンドルはリーダーがすべて閉じられるまで閉じない。
+		defer reqBody.release()
+		if reqBody.length == 0 {
+			// 空ファイルは従来どおり http.NoBody で送る (Content-Length: 0)。
+			bodyReader = http.NoBody
+		} else {
+			firstBody, err = reqBody.newReader(&bodyErr)
+			if err != nil {
+				return domain.HTTPResponse{}, err
+			}
+			bodyReader = firstBody
 		}
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, req.Method, parsedURL.String(), bodyReader)
 	if err != nil {
+		if firstBody != nil {
+			_ = firstBody.Close() //nolint:errcheck // 参照を外すだけ
+		}
 		return domain.HTTPResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+	if firstBody != nil {
+		// 長さの分からないボディは chunked で送られ、受け付けないサーバーがあるため固定長で送る。
+		// GetBody が無いと 307/308 を追わず、トランスポートの再試行もできない。
+		httpReq.ContentLength = reqBody.length
+		httpReq.GetBody = reqBody.getBody(&bodyErr)
 	}
 
 	// Add で積む。同名ヘッダを複数行入力できる UI なので、Set で潰すと入力が黙って消える。
@@ -197,6 +219,11 @@ func (c *NetClient) Do(ctx context.Context, executionID string, req domain.HTTPR
 		// ユーザーに意味の伝わる文言へ置き換える。
 		if terr := wrapTimeout(err, timeout); terr != nil {
 			return domain.HTTPResponse{}, terr
+		}
+		// ファイルの読み込みが原因なら、トランスポートのエラーは捨てて記録した domain エラーだけを返す。
+		// net/http の包み方は HTTP/1.1 と HTTP/2 で違い、元のエラーの文字列が残ることもあるため。
+		if berr := bodyErr.get(); berr != nil {
+			return domain.HTTPResponse{}, fmt.Errorf("request failed: %w", berr)
 		}
 		return domain.HTTPResponse{}, fmt.Errorf("request failed: %w", err)
 	}
