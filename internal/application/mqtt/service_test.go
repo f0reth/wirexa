@@ -111,6 +111,27 @@ func waitForEvent(t *testing.T, ch <-chan struct{}, timeout time.Duration, msg s
 	}
 }
 
+// waitEstablished は n 本の接続がすべて Connected になるまで待つ。
+// connectFn の復帰だけを待つと、接続 goroutine が結果を状態に反映する前に次の操作が走る。
+func waitEstablished(t *testing.T, svc *MQTTService, n int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		conns := svc.GetConnections()
+		established := 0
+		for i := range conns {
+			if conns[i].Connected {
+				established++
+			}
+		}
+		if established == n {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timeout waiting for %d established connections", n)
+}
+
 // ------- Connect -------
 
 func TestMQTTService_Connect_EmptyBroker(t *testing.T) {
@@ -521,15 +542,13 @@ func TestMQTTService_GetConnections_Empty(t *testing.T) {
 }
 
 func TestMQTTService_GetConnections_ReflectsIsConnected(t *testing.T) {
-	done := make(chan struct{})
 	connected := true
 	client := &mockBrokerClient{
-		connectFn:     func(context.Context) error { close(done); return nil },
 		isConnectedFn: func() bool { return connected },
 	}
 	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 	svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883", Name: "TestConn"})
-	waitForEvent(t, done, time.Second, "connect goroutine timeout")
+	waitEstablished(t, svc, 1)
 
 	conns := svc.GetConnections()
 	if len(conns) != 1 {
@@ -601,11 +620,9 @@ func TestMQTTService_GetConnections_TracksProfileIDAndSubscriptions(t *testing.T
 // ------- Shutdown -------
 
 func TestMQTTService_Shutdown_DisconnectsAll(t *testing.T) {
-	done := make(chan struct{})
 	disconnectCount := 0
 	var mu sync.Mutex
 	client := &mockBrokerClient{
-		connectFn: func(context.Context) error { close(done); return nil },
 		disconnectFn: func(_ uint) {
 			mu.Lock()
 			disconnectCount++
@@ -614,7 +631,7 @@ func TestMQTTService_Shutdown_DisconnectsAll(t *testing.T) {
 	}
 	svc := NewMQTTService(&mockEmitter{}, factoryWith(client), testutil.NoopLogger{})
 	svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
-	waitForEvent(t, done, time.Second, "connect goroutine timeout")
+	waitEstablished(t, svc, 1)
 
 	svc.Shutdown()
 
@@ -637,22 +654,11 @@ func TestMQTTService_Shutdown_NoConnections(_ *testing.T) {
 
 func TestMQTTService_Shutdown_DisconnectsMultipleConnections(t *testing.T) {
 	connCount := 2
-	dones := make([]chan struct{}, connCount)
-	for i := range dones {
-		dones[i] = make(chan struct{})
-	}
-	idx := 0
-	var idxMu sync.Mutex
 	disconnectCount := 0
 	var countMu sync.Mutex
 
 	factory := func(_ domain.ConnectionConfig, _ func(), _ func(error)) domain.BrokerClient {
-		idxMu.Lock()
-		ch := dones[idx]
-		idx++
-		idxMu.Unlock()
 		return &mockBrokerClient{
-			connectFn: func(context.Context) error { close(ch); return nil },
 			disconnectFn: func(_ uint) {
 				countMu.Lock()
 				disconnectCount++
@@ -664,9 +670,7 @@ func TestMQTTService_Shutdown_DisconnectsMultipleConnections(t *testing.T) {
 	for range connCount {
 		svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	}
-	for _, ch := range dones {
-		waitForEvent(t, ch, time.Second, "connect goroutine timeout")
-	}
+	waitEstablished(t, svc, connCount)
 
 	svc.Shutdown()
 
