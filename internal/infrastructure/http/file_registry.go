@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -18,7 +19,8 @@ import (
 const maxSelectedFiles = 256
 
 var (
-	_ domain.SelectedFileReader = (*FileRegistry)(nil)
+	_ domain.SelectedFileOpener = (*FileRegistry)(nil)
+	_ domain.SelectedFileHandle = (*selectedFileHandle)(nil)
 
 	// errFileToken は token の生成失敗。
 	errFileToken = errors.New("failed to issue file token")
@@ -79,25 +81,36 @@ func (r *FileRegistry) Register(path string) (domain.SelectedFile, error) {
 	return e.selected(token), nil
 }
 
-// ReadSelectedFile は token を解決してファイルを読む。アクセス判定は読み込みの直前に行う。
-// 空・未登録の token は ErrFileAccessDenied、登録後に読めなくなったファイルは
-// ErrSelectedFileUnavailable を返す。どちらもパスを含む OS エラーを連結しない。
-func (r *FileRegistry) ReadSelectedFile(token string) (domain.SelectedFileContent, error) {
+// OpenSelectedFile は token を解決してファイルを開く。アクセス判定は開く直前に行う。
+// 空・未登録の token は ErrFileAccessDenied、登録後に開けなくなったファイルや通常ファイルでない
+// ものは ErrSelectedFileUnavailable を返す。どちらもパスを含む OS エラーを連結しない。
+// 返すハンドルは開いた時点のサイズと更新時刻を基準として持ち、呼び出し側が Close する。
+func (r *FileRegistry) OpenSelectedFile(token string) (domain.OpenedSelectedFile, error) {
 	if token == "" {
-		return domain.SelectedFileContent{}, domain.ErrFileAccessDenied
+		return domain.OpenedSelectedFile{}, domain.ErrFileAccessDenied
 	}
 	r.mu.RLock()
 	e, ok := r.byToken[token]
 	r.mu.RUnlock()
 	if !ok {
-		return domain.SelectedFileContent{}, domain.ErrFileAccessDenied
+		return domain.OpenedSelectedFile{}, domain.ErrFileAccessDenied
 	}
 	// e.path はファイルダイアログの戻り値で、登録済み token からしか引けない。
-	data, err := os.ReadFile(e.path)
+	f, err := os.Open(e.path)
 	if err != nil {
-		return domain.SelectedFileContent{}, domain.ErrSelectedFileUnavailable
+		return domain.OpenedSelectedFile{}, domain.ErrSelectedFileUnavailable
 	}
-	return domain.SelectedFileContent{Name: e.name, ContentType: e.contentType, Data: data}, nil
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		_ = f.Close() //nolint:errcheck // 読み取り専用ハンドルの後始末
+		return domain.OpenedSelectedFile{}, domain.ErrSelectedFileUnavailable
+	}
+	return domain.OpenedSelectedFile{
+		File:        newSelectedFileHandle(f, info),
+		Name:        e.name,
+		ContentType: e.contentType,
+		Size:        info.Size(),
+	}, nil
 }
 
 func (e *selectedFileEntry) selected(token string) domain.SelectedFile {
@@ -113,22 +126,85 @@ func newFileToken() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-// resolveFile は file 参照を registry で解決して読み込む。token を持たない参照のうち、
+// selectedFileSource は selectedFileHandle が包むファイル。*os.File が満たし、テストで差し替える。
+type selectedFileSource interface {
+	io.ReaderAt
+	io.Closer
+	Stat() (os.FileInfo, error)
+}
+
+// selectedFileHandle は domain.SelectedFileHandle の実装。開いた時点のサイズと更新時刻を基準に持つ。
+// OS のエラーはパスを含むため、io.EOF 以外はすべて ErrSelectedFileUnavailable に置き換え、
+// *os.PathError を外へ出さない。
+type selectedFileHandle struct {
+	modTime time.Time
+	f       selectedFileSource
+	size    int64
+}
+
+func newSelectedFileHandle(f selectedFileSource, info os.FileInfo) *selectedFileHandle {
+	return &selectedFileHandle{f: f, size: info.Size(), modTime: info.ModTime()}
+}
+
+// ReadAt は off から読む。io.EOF はそのまま返し、それ以外の失敗は ErrSelectedFileUnavailable にする。
+func (h *selectedFileHandle) ReadAt(p []byte, off int64) (int, error) {
+	n, err := h.f.ReadAt(p, off)
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return n, io.EOF
+		}
+		return n, domain.ErrSelectedFileUnavailable
+	}
+	return n, nil
+}
+
+// CheckUnchanged は開き直さずに Stat し直し、サイズか更新時刻が基準と違えば ErrSelectedFileChanged を返す。
+func (h *selectedFileHandle) CheckUnchanged() error {
+	info, err := h.f.Stat()
+	if err != nil {
+		return domain.ErrSelectedFileUnavailable
+	}
+	if info.Size() != h.size || !info.ModTime().Equal(h.modTime) {
+		return domain.ErrSelectedFileChanged
+	}
+	return nil
+}
+
+// Close はハンドルを閉じる。失敗もパスを含めない。
+func (h *selectedFileHandle) Close() error {
+	if err := h.f.Close(); err != nil {
+		return domain.ErrSelectedFileUnavailable
+	}
+	return nil
+}
+
+// openFile は file 参照を registry で解決して開く。token を持たない参照のうち、
 // 保存済み・移行済み (再選択待ち) のものは拒否し、何も選ばれていなければ ok=false を返す。
-// パスを受け取る経路は無く、未登録の token ではファイルを開かない。
-func resolveFile(files domain.SelectedFileReader, ref domain.FileReference) (file domain.SelectedFileContent, ok bool, err error) {
+// パスを受け取る経路は無く、未登録の token ではファイルを開かない。ok=true のときは呼び出し側が
+// file.File を閉じる。
+func openFile(files domain.SelectedFileOpener, ref domain.FileReference) (file domain.OpenedSelectedFile, ok bool, err error) {
 	if ref.Token == "" {
 		if ref.Name != "" || ref.NeedsReselect {
-			return domain.SelectedFileContent{}, false, domain.ErrFileAccessDenied
+			return domain.OpenedSelectedFile{}, false, domain.ErrFileAccessDenied
 		}
-		return domain.SelectedFileContent{}, false, nil
+		return domain.OpenedSelectedFile{}, false, nil
 	}
 	if files == nil {
-		return domain.SelectedFileContent{}, false, domain.ErrFileAccessDenied
+		return domain.OpenedSelectedFile{}, false, domain.ErrFileAccessDenied
 	}
-	file, err = files.ReadSelectedFile(ref.Token)
+	file, err = files.OpenSelectedFile(ref.Token)
 	if err != nil {
-		return domain.SelectedFileContent{}, false, err
+		return domain.OpenedSelectedFile{}, false, err
 	}
 	return file, true, nil
+}
+
+// readSelectedFile は開いたファイルを開いた時点のサイズ分だけ読み、ハンドルを閉じる。
+func readSelectedFile(file domain.OpenedSelectedFile) ([]byte, error) {
+	defer func() { _ = file.File.Close() }() //nolint:errcheck // 読み取り専用ハンドルの後始末
+	data, err := io.ReadAll(io.NewSectionReader(file.File, 0, file.Size))
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }

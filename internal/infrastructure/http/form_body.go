@@ -17,7 +17,7 @@ var quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")
 // buildMultipartBody は form-data の行から multipart ボディと Content-Type を組み立てる。
 // 返す Content-Type は採番済みの boundary を含むため、呼び出し側で必ず優先させる。
 // file 行は files で token を解決したファイルだけを読む。
-func buildMultipartBody(rows []domain.FormRow, files domain.SelectedFileReader) (*bytes.Buffer, string, error) {
+func buildMultipartBody(rows []domain.FormRow, files domain.SelectedFileOpener) (*bytes.Buffer, string, error) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	for i := range rows {
@@ -36,11 +36,11 @@ func buildMultipartBody(rows []domain.FormRow, files domain.SelectedFileReader) 
 }
 
 // writeFormRow は 1 行をパートとして書き出す。
-func writeFormRow(mw *multipart.Writer, r *domain.FormRow, files domain.SelectedFileReader) error {
+func writeFormRow(mw *multipart.Writer, r *domain.FormRow, files domain.SelectedFileOpener) error {
 	switch r.EffectiveKind() {
 	case domain.FormRowKindFile:
 		// 送信元はダイアログで選ばれ token で解決できるファイルだけで、パスを受け取る経路は無い。
-		file, ok, err := resolveFile(files, r.File)
+		file, ok, err := openFile(files, r.File)
 		if err != nil {
 			return err
 		}
@@ -54,7 +54,11 @@ func writeFormRow(mw *multipart.Writer, r *domain.FormRow, files domain.Selected
 		if contentType == "" {
 			contentType = file.ContentType
 		}
-		return writePart(mw, r.Key, file.Name, contentType, file.Data)
+		data, err := readSelectedFile(file)
+		if err != nil {
+			return err
+		}
+		return writePart(mw, r.Key, file.Name, contentType, data)
 	case domain.FormRowKindJSON:
 		contentType := r.ContentType
 		if contentType == "" {

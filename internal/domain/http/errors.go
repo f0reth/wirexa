@@ -23,6 +23,8 @@ var (
 	ErrFileAccessDenied = errors.New("file access denied: select the file again")
 	// ErrSelectedFileUnavailable は選択後の削除・権限変更などでファイルを読めないことを示す。
 	ErrSelectedFileUnavailable = errors.New("selected file unavailable")
+	// ErrSelectedFileChanged は選択したファイルが送信中に書き換えられたことを示す。
+	ErrSelectedFileChanged = errors.New("selected file changed while sending")
 	// ErrFileSelectionLimit は選択済みファイルの登録数が上限に達したことを示す。
 	ErrFileSelectionLimit = errors.New("file selection limit reached")
 )

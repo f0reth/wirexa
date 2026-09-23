@@ -3,6 +3,7 @@ package httpdomain
 
 import (
 	"context"
+	"io"
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 )
@@ -15,18 +16,33 @@ type HTTPTransport interface {
 	Do(ctx context.Context, executionID string, req HTTPRequest) (HTTPResponse, error)
 }
 
-// SelectedFileReader は file token を解決し、ファイルダイアログで選択されたファイルを読むポート。
+// SelectedFileOpener は file token を解決し、ファイルダイアログで選択されたファイルを開くポート。
 // 空・未登録の token では ErrFileAccessDenied を返し、ファイルを開かない。
-type SelectedFileReader interface {
-	ReadSelectedFile(token string) (SelectedFileContent, error)
+// パスを受け取る経路は無く、返すエラーにパスや token を含めない。
+type SelectedFileOpener interface {
+	OpenSelectedFile(token string) (OpenedSelectedFile, error)
 }
 
-// SelectedFileContent は送信用に読み込んだ選択ファイル。
+// OpenedSelectedFile は送信用に開いた選択ファイル。呼び出し側が File を必ず Close する。
 // Name と ContentType は registry が選択時に決めた値で、frontend から渡された値ではない。
-type SelectedFileContent struct {
+// Size は開いた時点のサイズで、送信ボディの長さはこの値で決める。
+type OpenedSelectedFile struct {
+	File        SelectedFileHandle
 	Name        string
 	ContentType string
-	Data        []byte
+	Size        int64
+}
+
+// SelectedFileHandle は開いた選択ファイルのハンドル。
+// ReadAt は読み位置を共有しないため、複数のリーダーから並行して読める。
+// ReadAt と CheckUnchanged が返すのは io.EOF か、パスを含まない domain エラー
+// (ErrSelectedFileUnavailable / ErrSelectedFileChanged) だけ。
+type SelectedFileHandle interface {
+	io.ReaderAt
+	io.Closer
+	// CheckUnchanged は開いた時点からサイズと更新時刻が変わっていないかを確かめ、
+	// 変わっていれば ErrSelectedFileChanged を返す。
+	CheckUnchanged() error
 }
 
 // ResponseBodyStore は切り詰められたレスポンス全文の一時ファイルを execution ID で管理するポート。

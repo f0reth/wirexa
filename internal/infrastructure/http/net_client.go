@@ -43,7 +43,7 @@ type transportKey struct {
 
 // NetClient は net/http を使った domain.HTTPTransport の実装。
 type NetClient struct {
-	files      domain.SelectedFileReader
+	files      domain.SelectedFileOpener
 	transports map[transportKey]*http.Transport
 	responses  *ResponseStore
 	mu         sync.Mutex
@@ -54,7 +54,7 @@ type NetClient struct {
 // NewNetClient は NetClient を生成する。files は request file の token を解決する registry で、
 // nil の場合はファイルを送る全てのリクエストを拒否する。sessionDir は打ち切りレスポンスの
 // 一時ファイルを置く app 管理ディレクトリ (例: os.UserCacheDir()/Wirexa/http-sessions)。
-func NewNetClient(files domain.SelectedFileReader, sessionDir string) *NetClient {
+func NewNetClient(files domain.SelectedFileOpener, sessionDir string) *NetClient {
 	return &NetClient{
 		files:        files,
 		transports:   make(map[transportKey]*http.Transport),
@@ -145,12 +145,16 @@ func (c *NetClient) Do(ctx context.Context, executionID string, req domain.HTTPR
 	case domain.BodyTypeFile:
 		// 送信元は token を registry で解決したファイルだけ。Contents の文字列 (旧データのパス) は読まない。
 		// filename と Content-Type も frontend の値ではなく registry の値を使う。
-		file, ok, ferr := resolveFile(c.files, req.Body.File)
+		file, ok, ferr := openFile(c.files, req.Body.File)
 		if ferr != nil {
 			return domain.HTTPResponse{}, ferr
 		}
 		if ok {
-			bodyReader = bytes.NewReader(file.Data)
+			data, rerr := readSelectedFile(file)
+			if rerr != nil {
+				return domain.HTTPResponse{}, rerr
+			}
+			bodyReader = bytes.NewReader(data)
 			contentType = file.ContentType
 		}
 	}

@@ -1,30 +1,71 @@
 package httpinfra
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"mime"
 	"mime/multipart"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
-// fakeFiles は SelectedFileReader のテスト用実装。token → 選択済みファイル。
-type fakeFiles map[string]domain.SelectedFileContent
+// fakeFile は選択済みファイルのテスト用の名前・Content-Type・内容。
+type fakeFile struct {
+	name        string
+	contentType string
+	data        string
+}
 
-func (f fakeFiles) ReadSelectedFile(token string) (domain.SelectedFileContent, error) {
+// fakeFiles は SelectedFileOpener のテスト用実装。token → 選択済みファイル。
+type fakeFiles map[string]fakeFile
+
+func (f fakeFiles) OpenSelectedFile(token string) (domain.OpenedSelectedFile, error) {
 	file, ok := f[token]
 	if !ok {
-		return domain.SelectedFileContent{}, domain.ErrFileAccessDenied
+		return domain.OpenedSelectedFile{}, domain.ErrFileAccessDenied
 	}
-	return file, nil
+	return domain.OpenedSelectedFile{
+		File:        &memHandle{data: []byte(file.data)},
+		Name:        file.name,
+		ContentType: file.contentType,
+		Size:        int64(len(file.data)),
+	}, nil
 }
 
 var testFiles = fakeFiles{
-	"tok-json": {Name: "hello.json", ContentType: "application/json", Data: []byte(`{"from":"file"}`)},
-	"tok-bin":  {Name: "a.bin", ContentType: "application/octet-stream", Data: []byte("bytes")},
+	"tok-json": {name: "hello.json", contentType: "application/json", data: `{"from":"file"}`},
+	"tok-bin":  {name: "a.bin", contentType: "application/octet-stream", data: "bytes"},
+}
+
+// memHandle は SelectedFileHandle のテスト用実装。CheckUnchanged の結果と呼び出し回数、
+// Close の回数を確かめられる。
+type memHandle struct {
+	// check は n 回目 (1 始まり) の CheckUnchanged の結果を返す。nil なら常に成功する。
+	check  func(n int32) error
+	data   []byte
+	checks atomic.Int32
+	closes atomic.Int32
+}
+
+func (h *memHandle) ReadAt(p []byte, off int64) (int, error) {
+	return bytes.NewReader(h.data).ReadAt(p, off)
+}
+
+func (h *memHandle) CheckUnchanged() error {
+	n := h.checks.Add(1)
+	if h.check != nil {
+		return h.check(n)
+	}
+	return nil
+}
+
+func (h *memHandle) Close() error {
+	h.closes.Add(1)
+	return nil
 }
 
 // part は読み戻した multipart の 1 パート。
