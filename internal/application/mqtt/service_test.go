@@ -7,6 +7,7 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -758,5 +759,639 @@ func TestMQTTService_Subscribe_InvalidQoS_ReturnsValidationError(t *testing.T) {
 	}
 	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 		t.Errorf("expected ValidationError, got %T", err)
+	}
+}
+
+// ------- 接続ライフサイクルの競合 -------
+
+// barrierEmitter は発行されたイベントを記録し、blockOn の最初の発行中に barrier で停止する。
+// Emit は接続の stateMu 保持中に呼ばれるため、MQTTService を呼び返してはならない。
+type barrierEmitter struct {
+	entered chan struct{}
+	release chan struct{}
+	blockOn string
+	mockEmitter
+	once sync.Once
+}
+
+func newBarrierEmitter(blockOn string) *barrierEmitter {
+	return &barrierEmitter{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+		blockOn: blockOn,
+	}
+}
+
+func (e *barrierEmitter) Emit(event string, data any) {
+	e.mockEmitter.Emit(event, data)
+	if event != e.blockOn {
+		return
+	}
+	first := false
+	e.once.Do(func() { first = true })
+	if first {
+		close(e.entered)
+		<-e.release
+	}
+}
+
+// count は記録されたイベントのうち event に一致するものの数を返す。空文字なら全件数を返す。
+func (e *mockEmitter) count(event string) int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	n := 0
+	for _, ev := range e.events {
+		if event == "" || ev.event == event {
+			n++
+		}
+	}
+	return n
+}
+
+func (e *mockEmitter) snapshot() []emittedEvent {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return slices.Clone(e.events)
+}
+
+// eventConnID はイベントの対象接続 ID を返す。
+func eventConnID(ev emittedEvent) string {
+	switch data := ev.data.(type) {
+	case map[string]any:
+		id, _ := data[keyConnectionID].(string)
+		return id
+	case domain.MQTTMessage:
+		return data.ConnectionID
+	}
+	return ""
+}
+
+// callbackRecorder は factory に渡された callback と Subscribe に渡されたハンドラを記録し、
+// 任意のタイミングで叩けるようにする。
+type callbackRecorder struct {
+	connected []func()
+	lost      []func(error)
+	handlers  []domain.MessageHandler
+	mu        sync.Mutex
+}
+
+func (r *callbackRecorder) factory(client *mockBrokerClient) domain.BrokerClientFactory {
+	return func(_ domain.ConnectionConfig, onConnected func(), onConnectionLost func(error)) domain.BrokerClient {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.connected = append(r.connected, onConnected)
+		r.lost = append(r.lost, onConnectionLost)
+		return client
+	}
+}
+
+// subscribeFn は受け取ったハンドラを記録する mockBrokerClient.subscribeFn。
+func (r *callbackRecorder) subscribeFn(_ string, _ byte, handler domain.MessageHandler) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.handlers = append(r.handlers, handler)
+	return nil
+}
+
+func (r *callbackRecorder) onConnected(i int) func() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.connected[i]
+}
+
+func (r *callbackRecorder) onConnectionLost(i int) func(error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lost[i]
+}
+
+func (r *callbackRecorder) handler(i int) domain.MessageHandler {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.handlers[i]
+}
+
+// fireAll は記録済みの全 callback と全ハンドラを 1 回ずつ呼ぶ。
+func (r *callbackRecorder) fireAll() {
+	r.mu.Lock()
+	connected := slices.Clone(r.connected)
+	lost := slices.Clone(r.lost)
+	handlers := slices.Clone(r.handlers)
+	r.mu.Unlock()
+	for _, f := range connected {
+		f()
+	}
+	for _, f := range lost {
+		f(errors.New("connection lost"))
+	}
+	for _, h := range handlers {
+		h("sensors/temp", []byte("1"), 0, false)
+	}
+}
+
+// assertBlocked は短い猶予の間に ch へ結果が届かない (処理が待たされている) ことを確認する。
+func assertBlocked[T any](t *testing.T, ch <-chan T, msg string) {
+	t.Helper()
+	select {
+	case <-ch:
+		t.Fatal(msg)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// waitConnGoroutines は接続 goroutine がすべて復帰するまで待つ。
+// 打ち切りが効かない退行でテストがハングしないよう、上限を設ける。
+func waitConnGoroutines(t *testing.T, svc *MQTTService) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		svc.connWg.Wait()
+		close(done)
+	}()
+	waitForEvent(t, done, 2*time.Second, "connect goroutine did not return")
+}
+
+// waitDetached は Disconnect が接続を map から外すまで待つ。
+func waitDetached(t *testing.T, svc *MQTTService) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for len(svc.GetConnections()) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("timeout waiting for connection to be detached")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// paho と同じく onConnected が Connect の復帰より先に走っても、正常な接続として扱うこと。
+func TestMQTTService_Connect_CallbackBeforeToken_KeepsConnection(t *testing.T) {
+	rec := &callbackRecorder{}
+	var disconnects atomic.Int32
+	client := &mockBrokerClient{
+		connectFn: func(context.Context) error {
+			rec.onConnected(0)()
+			return nil
+		},
+		disconnectFn: func(uint) { disconnects.Add(1) },
+	}
+	emitter := &mockEmitter{}
+	svc := newTestService(t, emitter, rec.factory(client))
+	if _, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	waitConnGoroutines(t, svc)
+
+	if n := disconnects.Load(); n != 0 {
+		t.Errorf("client.Disconnect called %d times, want 0", n)
+	}
+	if n := emitter.count(cmn.EventMQTTConnected); n != 1 {
+		t.Errorf("mqtt:connected emitted %d times, want 1", n)
+	}
+	conns := svc.GetConnections()
+	if len(conns) != 1 || !conns[0].Connected {
+		t.Errorf("expected 1 connected connection, got %+v", conns)
+	}
+}
+
+// Disconnect の前に opMu を待っていた操作は、Disconnect の後に client を触らないこと。
+func TestMQTTService_Disconnect_RejectsQueuedOperation(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var publishes atomic.Int32
+	client := &mockBrokerClient{
+		publishFn: func(string, byte, bool, string) error {
+			if publishes.Add(1) == 1 {
+				close(entered)
+				<-release
+			}
+			return nil
+		},
+	}
+	svc := newTestService(t, &mockEmitter{}, factoryWith(client))
+	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	waitEstablished(t, svc, 1)
+
+	first := make(chan error, 1)
+	go func() { first <- svc.Publish(id, "t", "1", 0, false) }()
+	waitForEvent(t, entered, time.Second, "first publish did not start")
+
+	second := make(chan error, 1)
+	go func() { second <- svc.Publish(id, "t", "2", 0, false) }()
+	// 2 件目が opMu 待ちに入る猶予。間に合わず map 参照で弾かれても期待結果は同じ。
+	time.Sleep(20 * time.Millisecond)
+
+	disconnected := make(chan error, 1)
+	go func() { disconnected <- svc.Disconnect(id) }()
+	waitDetached(t, svc)
+	close(release)
+
+	if err := <-first; err != nil {
+		t.Errorf("first publish: %v", err)
+	}
+	if err := <-second; err == nil {
+		t.Error("expected queued publish to fail after disconnect")
+	} else if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
+		t.Errorf("expected NotFoundError, got %T (%v)", err, err)
+	}
+	if err := <-disconnected; err != nil {
+		t.Errorf("Disconnect: %v", err)
+	}
+	if n := publishes.Load(); n != 1 {
+		t.Errorf("client.Publish called %d times, want 1", n)
+	}
+}
+
+// Connect の直後に Shutdown しても、接続 goroutine の復帰を待ってから true を返すこと。
+func TestMQTTService_Shutdown_DrainsAcceptedConnect(t *testing.T) {
+	var returned atomic.Bool
+	client := &mockBrokerClient{
+		connectFn: func(ctx context.Context) error {
+			<-ctx.Done()
+			returned.Store(true)
+			return ctx.Err()
+		},
+	}
+	emitter := &mockEmitter{}
+	svc := newTestService(t, emitter, factoryWith(client))
+	if _, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"}); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if !svc.Shutdown(time.Second) {
+		t.Fatal("expected Shutdown to drain within timeout")
+	}
+	if !returned.Load() {
+		t.Error("Shutdown returned before the connect goroutine")
+	}
+	if n := emitter.count(""); n != 0 {
+		t.Errorf("expected no events, got %d (%v)", n, emitter.snapshot())
+	}
+}
+
+// Disconnect の完了後に届いた callback はイベントを発行しないこと。
+func TestMQTTService_ConnectedCallback_AfterDisconnect_NoEvent(t *testing.T) {
+	rec := &callbackRecorder{}
+	emitter := &mockEmitter{}
+	svc := newTestService(t, emitter, rec.factory(&mockBrokerClient{}))
+	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	waitEstablished(t, svc, 1)
+	rec.onConnected(0)()
+
+	if err := svc.Disconnect(id); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	rec.onConnected(0)()
+	rec.onConnectionLost(0)(errors.New("lost"))
+
+	events := emitter.snapshot()
+	if last := events[len(events)-1]; last.event != cmn.EventMQTTDisconnected {
+		t.Errorf("last event = %s, want %s (%v)", last.event, cmn.EventMQTTDisconnected, events)
+	}
+	if n := emitter.count(cmn.EventMQTTConnected); n != 1 {
+		t.Errorf("mqtt:connected emitted %d times, want 1", n)
+	}
+	if n := emitter.count(cmn.EventMQTTConnectionLost); n != 0 {
+		t.Errorf("mqtt:connection-lost emitted %d times, want 0", n)
+	}
+}
+
+// Shutdown は実行中の callback の発行を待ってから終端状態に遷移し、以後の callback は捨てること。
+func TestMQTTService_Shutdown_WaitsForInFlightCallback(t *testing.T) {
+	rec := &callbackRecorder{}
+	var disconnects atomic.Int32
+	client := &mockBrokerClient{disconnectFn: func(uint) { disconnects.Add(1) }}
+	emitter := newBarrierEmitter(cmn.EventMQTTConnected)
+	svc := newTestService(t, emitter, rec.factory(client))
+	svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	waitEstablished(t, svc, 1)
+
+	go rec.onConnected(0)()
+	waitForEvent(t, emitter.entered, time.Second, "connected callback did not start emitting")
+
+	result := make(chan bool, 1)
+	go func() { result <- svc.Shutdown(time.Second) }()
+	assertBlocked(t, result, "Shutdown returned while a callback was emitting")
+	if n := disconnects.Load(); n != 0 {
+		t.Errorf("client.Disconnect called %d times before the callback finished, want 0", n)
+	}
+	close(emitter.release)
+
+	if !<-result {
+		t.Error("expected Shutdown to drain within timeout")
+	}
+	before := emitter.count("")
+	rec.onConnected(0)()
+	rec.onConnectionLost(0)(errors.New("lost"))
+	if after := emitter.count(""); after != before {
+		t.Errorf("events emitted after Shutdown: %d -> %d", before, after)
+	}
+}
+
+// subscribeWithHandler は接続して購読し、ハンドラを記録した callbackRecorder を返す。
+func subscribeWithHandler(t *testing.T, emitter cmn.Emitter) (*MQTTService, string, *callbackRecorder) {
+	t.Helper()
+	rec := &callbackRecorder{}
+	client := &mockBrokerClient{subscribeFn: rec.subscribeFn}
+	svc := newTestService(t, emitter, rec.factory(client))
+	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	waitEstablished(t, svc, 1)
+	if err := svc.Subscribe(id, "sensors/#", 0); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	return svc, id, rec
+}
+
+// Disconnect は実行中のメッセージ発行の完了を待ち、復帰後のメッセージは発行しないこと。
+func TestMQTTService_Disconnect_WaitsForInFlightMessage(t *testing.T) {
+	emitter := newBarrierEmitter(cmn.EventMQTTMessage)
+	svc, id, rec := subscribeWithHandler(t, emitter)
+
+	go rec.handler(0)("sensors/temp", []byte("1"), 0, false)
+	waitForEvent(t, emitter.entered, time.Second, "message handler did not start emitting")
+
+	result := make(chan error, 1)
+	go func() { result <- svc.Disconnect(id) }()
+	assertBlocked(t, result, "Disconnect returned while a message was emitting")
+	close(emitter.release)
+
+	if err := <-result; err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	rec.handler(0)("sensors/temp", []byte("2"), 0, false)
+	if n := emitter.count(cmn.EventMQTTMessage); n != 1 {
+		t.Errorf("mqtt:message emitted %d times, want 1", n)
+	}
+}
+
+// Shutdown の復帰後はメッセージを発行しないこと。
+func TestMQTTService_Shutdown_SuppressesMessages(t *testing.T) {
+	emitter := newBarrierEmitter(cmn.EventMQTTMessage)
+	svc, _, rec := subscribeWithHandler(t, emitter)
+
+	go rec.handler(0)("sensors/temp", []byte("1"), 0, false)
+	waitForEvent(t, emitter.entered, time.Second, "message handler did not start emitting")
+
+	result := make(chan bool, 1)
+	go func() { result <- svc.Shutdown(time.Second) }()
+	assertBlocked(t, result, "Shutdown returned while a message was emitting")
+	close(emitter.release)
+
+	if !<-result {
+		t.Error("expected Shutdown to drain within timeout")
+	}
+	rec.handler(0)("sensors/temp", []byte("2"), 0, false)
+	if n := emitter.count(cmn.EventMQTTMessage); n != 1 {
+		t.Errorf("mqtt:message emitted %d times, want 1", n)
+	}
+}
+
+// timeout エラーで失敗した接続は一覧から消え、以後の callback もイベントを出さないこと。
+func TestMQTTService_Connect_TimeoutErrorRemovesEntry(t *testing.T) {
+	rec := &callbackRecorder{}
+	client := &mockBrokerClient{
+		connectFn: func(context.Context) error { return errors.New("connection timed out") },
+	}
+	emitter := &mockEmitter{}
+	svc := newTestService(t, emitter, rec.factory(client))
+	svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	waitConnGoroutines(t, svc)
+
+	if n := emitter.count(cmn.EventMQTTConnectionFailed); n != 1 {
+		t.Errorf("mqtt:connection-failed emitted %d times, want 1", n)
+	}
+	if conns := svc.GetConnections(); len(conns) != 0 {
+		t.Errorf("expected 0 connections, got %d", len(conns))
+	}
+	rec.onConnected(0)()
+	if n := emitter.count(cmn.EventMQTTConnected); n != 0 {
+		t.Errorf("mqtt:connected emitted %d times, want 0", n)
+	}
+}
+
+// Disconnect は client 内でブロック中の Publish の完了を待ってから client を切断すること。
+func TestMQTTService_Disconnect_WaitsForInFlightPublish(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var calls []string
+	record := func(name string) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls = append(calls, name)
+	}
+	client := &mockBrokerClient{
+		publishFn: func(string, byte, bool, string) error {
+			close(entered)
+			<-release
+			record("publish")
+			return nil
+		},
+		disconnectFn: func(uint) { record("disconnect") },
+	}
+	svc := newTestService(t, &mockEmitter{}, factoryWith(client))
+	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	waitEstablished(t, svc, 1)
+
+	published := make(chan error, 1)
+	go func() { published <- svc.Publish(id, "t", "1", 0, false) }()
+	waitForEvent(t, entered, time.Second, "publish did not start")
+
+	disconnected := make(chan error, 1)
+	go func() { disconnected <- svc.Disconnect(id) }()
+	waitDetached(t, svc)
+	assertBlocked(t, disconnected, "Disconnect returned while a publish was in flight")
+	close(release)
+
+	if err := <-published; err != nil {
+		t.Errorf("Publish: %v", err)
+	}
+	if err := <-disconnected; err != nil {
+		t.Errorf("Disconnect: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(calls, []string{"publish", "disconnect"}) {
+		t.Errorf("calls = %v, want [publish disconnect]", calls)
+	}
+}
+
+// Disconnect は進行中の Connect を打ち切り、接続失敗イベントを出さないこと。
+func TestMQTTService_Disconnect_CancelsInFlightConnect(t *testing.T) {
+	started := make(chan struct{})
+	client := &mockBrokerClient{
+		connectFn: func(ctx context.Context) error {
+			close(started)
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
+	emitter := &mockEmitter{}
+	svc := newTestService(t, emitter, factoryWith(client))
+	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	waitForEvent(t, started, time.Second, "connect did not start")
+
+	if err := svc.Disconnect(id); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	waitConnGoroutines(t, svc)
+
+	if emitter.hasEvent(cmn.EventMQTTConnectionFailed) {
+		t.Error("unexpected mqtt:connection-failed after Disconnect")
+	}
+	if !emitter.hasEvent(cmn.EventMQTTDisconnected) {
+		t.Error("expected mqtt:disconnected")
+	}
+}
+
+// Disconnect の後に成功した接続は破棄され、接続済みイベントを出さないこと。
+func TestMQTTService_Connect_LateSuccessAfterDisconnect_Discards(t *testing.T) {
+	rec := &callbackRecorder{}
+	started := make(chan struct{})
+	proceed := make(chan struct{})
+	var disconnects atomic.Int32
+	client := &mockBrokerClient{
+		// ctx を無視して遅れて成功する (paho と同じく onConnected を先に呼ぶ)。
+		connectFn: func(context.Context) error {
+			close(started)
+			<-proceed
+			rec.onConnected(0)()
+			return nil
+		},
+		disconnectFn: func(uint) { disconnects.Add(1) },
+	}
+	emitter := &mockEmitter{}
+	svc := newTestService(t, emitter, rec.factory(client))
+	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	waitForEvent(t, started, time.Second, "connect did not start")
+
+	if err := svc.Disconnect(id); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	close(proceed)
+	waitConnGoroutines(t, svc)
+
+	if n := disconnects.Load(); n != 2 {
+		t.Errorf("client.Disconnect called %d times, want 2 (Disconnect + discard)", n)
+	}
+	if emitter.hasEvent(cmn.EventMQTTConnected) {
+		t.Error("unexpected mqtt:connected after Disconnect")
+	}
+}
+
+func TestMQTTService_Connect_AfterShutdown_Rejected(t *testing.T) {
+	var connects atomic.Int32
+	client := &mockBrokerClient{
+		connectFn: func(context.Context) error { connects.Add(1); return nil },
+	}
+	svc := newTestService(t, &mockEmitter{}, factoryWith(client))
+	if !svc.Shutdown(time.Second) {
+		t.Fatal("expected Shutdown to drain within timeout")
+	}
+
+	if _, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"}); !errors.Is(err, errShuttingDown) {
+		t.Errorf("err = %v, want errShuttingDown", err)
+	}
+	if conns := svc.GetConnections(); len(conns) != 0 {
+		t.Errorf("expected 0 connections, got %d", len(conns))
+	}
+	waitConnGoroutines(t, svc)
+	if n := connects.Load(); n != 0 {
+		t.Errorf("client.Connect called %d times, want 0", n)
+	}
+}
+
+// ctx を無視して止まり続ける Connect では false を返し、その後に成功してもイベントを出さないこと。
+func TestMQTTService_Shutdown_TimesOutWhenConnectHangs(t *testing.T) {
+	rec := &callbackRecorder{}
+	started := make(chan struct{})
+	proceed := make(chan struct{})
+	client := &mockBrokerClient{
+		connectFn: func(context.Context) error {
+			close(started)
+			<-proceed
+			rec.onConnected(0)()
+			return nil
+		},
+	}
+	emitter := &mockEmitter{}
+	svc := newTestService(t, emitter, rec.factory(client))
+	svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	waitForEvent(t, started, time.Second, "connect did not start")
+
+	if svc.Shutdown(50 * time.Millisecond) {
+		t.Error("expected Shutdown to time out while Connect hangs")
+	}
+	close(proceed)
+	waitConnGoroutines(t, svc)
+
+	if n := emitter.count(""); n != 0 {
+		t.Errorf("expected no events, got %d (%v)", n, emitter.snapshot())
+	}
+}
+
+// -race 下で全操作・全 callback を並行に実行し、データ競合が無く、切断後・終了後にイベントが出ないこと。
+func TestMQTTService_ConcurrentOperations(t *testing.T) {
+	const connCount = 4
+	rec := &callbackRecorder{}
+	client := &mockBrokerClient{subscribeFn: rec.subscribeFn}
+	emitter := &mockEmitter{}
+	svc := newTestService(t, emitter, rec.factory(client))
+
+	ids := make([]string, connCount)
+	for i := range ids {
+		ids[i], _ = svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	}
+	waitEstablished(t, svc, connCount)
+	for _, id := range ids {
+		if err := svc.Subscribe(id, "sensors/#", 0); err != nil {
+			t.Fatalf("Subscribe: %v", err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		wg.Go(func() {
+			for range 20 {
+				_ = svc.Publish(id, "sensors/temp", "1", 0, false)
+				_ = svc.Subscribe(id, "sensors/humidity", 1)
+				_ = svc.Unsubscribe(id, "sensors/humidity")
+				_ = svc.GetConnections()
+			}
+		})
+		wg.Go(func() {
+			for range 20 {
+				rec.fireAll()
+			}
+		})
+		// 半分の接続は操作と並行に切断する。
+		if i%2 == 0 {
+			wg.Go(func() { _ = svc.Disconnect(id) })
+		}
+	}
+	shutdownDone := make(chan bool, 1)
+	wg.Go(func() {
+		time.Sleep(5 * time.Millisecond)
+		shutdownDone <- svc.Shutdown(time.Second)
+	})
+	wg.Wait()
+
+	if !<-shutdownDone {
+		t.Error("expected Shutdown to drain within timeout")
+	}
+	before := emitter.count("")
+	rec.fireAll()
+	if after := emitter.count(""); after != before {
+		t.Errorf("events emitted after Shutdown: %d -> %d", before, after)
+	}
+
+	// mqtt:disconnected の後に、その接続のイベントが続かないこと。
+	disconnected := make(map[string]bool)
+	for _, ev := range emitter.snapshot() {
+		id := eventConnID(ev)
+		if disconnected[id] {
+			t.Errorf("event %s for %s emitted after mqtt:disconnected", ev.event, id)
+		}
+		if ev.event == cmn.EventMQTTDisconnected {
+			disconnected[id] = true
+		}
 	}
 }
