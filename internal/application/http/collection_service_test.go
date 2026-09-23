@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -1548,5 +1549,188 @@ func TestCollectionService_ConcurrentUpdateWithSaveFailures(t *testing.T) {
 	// 保存に失敗した名前がキャッシュへ漏れていないこと。
 	if got, want := cachedCollection(t, svc, col.ID).Name, repo.snapshot(col.ID).Name; got != want {
 		t.Errorf("cached name = %q, persisted name = %q; they must not diverge", got, want)
+	}
+}
+
+// --- 返却値・入力値とキャッシュの切り離し ---
+
+// richRequest は参照型のフィールド (Headers / Params / Contents / FormData) を
+// すべて埋めたリクエストを返す。共有の有無を各階層で確かめるために使う。
+func richRequest(id string) domain.HTTPRequest {
+	return domain.HTTPRequest{
+		ID:      id,
+		Name:    testReqName,
+		Method:  http.MethodPost,
+		Headers: []domain.KeyValuePair{{Key: "X-H", Value: "h", Enabled: true}},
+		Params:  []domain.KeyValuePair{{Key: "q", Value: "p", Enabled: true}},
+		Body: domain.RequestBody{
+			Type:     domain.BodyTypeFormData,
+			Contents: map[string]string{"json": "{}"},
+			FormData: []domain.FormRow{{Key: "f", Value: "v", Kind: domain.FormRowKindText, Enabled: true}},
+		},
+	}
+}
+
+// scribbleItems は items 以下のあらゆる階層を書き換える。
+// 行儀の悪い呼び出し側が戻り値を書き換えることを模す。
+func scribbleItems(items []*domain.TreeItem) {
+	for i, item := range items {
+		item.Name = "scribbled"
+		if r := item.Request; r != nil {
+			r.Name = "scribbled"
+			for j := range r.Headers {
+				r.Headers[j].Value = "scribbled"
+			}
+			for j := range r.Params {
+				r.Params[j].Value = "scribbled"
+			}
+			if r.Body.Contents != nil {
+				r.Body.Contents["json"] = "scribbled"
+			}
+			for j := range r.Body.FormData {
+				r.Body.FormData[j].Value = "scribbled"
+			}
+		}
+		scribbleItems(item.Children)
+		items[i] = &domain.TreeItem{ID: "replaced"}
+	}
+}
+
+// assertCacheEqual はキャッシュ上のコレクションが want と同じ内容であることを確かめる。
+func assertCacheEqual(t *testing.T, svc *CollectionService, want *domain.Collection) {
+	t.Helper()
+	if got := cachedCollection(t, svc, want.ID); !reflect.DeepEqual(got, want) {
+		t.Errorf("cache changed through an aliased value:\n got  %+v\n want %+v", got, want)
+	}
+}
+
+// newSvcWithNestedRequest はフォルダ F の下に richRequest("r1") を置いた
+// コレクションを collectionID に用意する。collectionID が空なら新規コレクションを作る。
+func newSvcWithNestedRequest(t *testing.T, collectionID string) (*CollectionService, string) {
+	t.Helper()
+	svc := newSvc(t)
+	if collectionID == "" {
+		collectionID = mustCreate(t, svc, "Col").ID
+	}
+	folder, err := svc.AddFolder(collectionID, "", "F")
+	if err != nil {
+		t.Fatalf("AddFolder: %v", err)
+	}
+	if _, err := svc.AddRequest(collectionID, folder.ID, richRequest("r1")); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	return svc, collectionID
+}
+
+func TestCollectionService_GetCollections_ReturnsDeepCopy(t *testing.T) {
+	svc, colID := newSvcWithNestedRequest(t, "")
+	want := cachedCollection(t, svc, colID).Clone()
+
+	got := svc.GetCollections()
+	if len(got) != 1 {
+		t.Fatalf("collections = %d, want 1", len(got))
+	}
+	got[0].Name = "scribbled"
+	got[0].Items = append(got[0].Items, &domain.TreeItem{ID: "appended"})
+	scribbleItems(got[0].Items)
+
+	assertCacheEqual(t, svc, want)
+	if again := svc.GetCollections(); !reflect.DeepEqual(again[0], *want) {
+		t.Errorf("GetCollections changed through an aliased value:\n got  %+v\n want %+v", again[0], *want)
+	}
+}
+
+func TestCollectionService_GetRootItems_ReturnsDeepCopy(t *testing.T) {
+	svc, _ := newSvcWithNestedRequest(t, domain.RootCollectionID)
+	want := cachedCollection(t, svc, domain.RootCollectionID).Clone()
+
+	scribbleItems(svc.GetRootItems())
+
+	assertCacheEqual(t, svc, want)
+	if again := svc.GetRootItems(); !reflect.DeepEqual(again, want.Items) {
+		t.Errorf("GetRootItems changed through an aliased value:\n got  %+v\n want %+v", again, want.Items)
+	}
+}
+
+func TestCollectionService_AddedItems_AreNotAliased(t *testing.T) {
+	svc := newSvc(t)
+
+	col := mustCreate(t, svc, "Col")
+	want := cachedCollection(t, svc, col.ID).Clone()
+	col.Items = append(col.Items, &domain.TreeItem{ID: "appended"})
+	assertCacheEqual(t, svc, want)
+
+	folder, err := svc.AddFolder(col.ID, "", "F")
+	if err != nil {
+		t.Fatalf("AddFolder: %v", err)
+	}
+	want = cachedCollection(t, svc, col.ID).Clone()
+	folder.Name = "scribbled"
+	folder.Children = append(folder.Children, &domain.TreeItem{ID: "appended"})
+	assertCacheEqual(t, svc, want)
+
+	item, err := svc.AddRequest(col.ID, "", richRequest("r1"))
+	if err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	want = cachedCollection(t, svc, col.ID).Clone()
+	scribbleItems([]*domain.TreeItem{item})
+	assertCacheEqual(t, svc, want)
+}
+
+// scribbleRequest は呼び出し後の引数 req の参照型フィールドを書き換える。
+func scribbleRequest(req *domain.HTTPRequest) {
+	req.Headers[0].Value = "scribbled"
+	req.Params[0].Value = "scribbled"
+	req.Body.Contents["json"] = "scribbled"
+	req.Body.FormData[0].Value = "scribbled"
+}
+
+func TestCollectionService_AddRequest_DoesNotRetainArgument(t *testing.T) {
+	svc := newSvc(t)
+	req := richRequest("r1")
+	if _, err := svc.AddRequest(domain.RootCollectionID, "", req); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	want := cachedCollection(t, svc, domain.RootCollectionID).Clone()
+
+	scribbleRequest(&req)
+
+	assertCacheEqual(t, svc, want)
+}
+
+func TestCollectionService_UpdateRequest_DoesNotRetainArgument(t *testing.T) {
+	svc := newSvc(t)
+	if _, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{ID: "r1"}); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	req := richRequest("r1")
+	if err := svc.UpdateRequest(domain.RootCollectionID, req); err != nil {
+		t.Fatalf("UpdateRequest: %v", err)
+	}
+	want := cachedCollection(t, svc, domain.RootCollectionID).Clone()
+
+	scribbleRequest(&req)
+
+	assertCacheEqual(t, svc, want)
+}
+
+// file キーの削除はキャッシュへ取り込むコピーにだけ行い、呼び出し側の map は書き換えない。
+func TestCollectionService_AddRequest_DoesNotMutateArgument(t *testing.T) {
+	svc := newSvc(t)
+	req := domain.HTTPRequest{ID: "r1", Method: http.MethodPost, Body: fileBody()}
+	if _, err := svc.AddRequest(domain.RootCollectionID, "", req); err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	if _, ok := req.Body.Contents[domain.BodyTypeFile]; !ok {
+		t.Errorf("AddRequest removed the file key from the caller's contents: %v", req.Body.Contents)
+	}
+
+	req = domain.HTTPRequest{ID: "r1", Method: http.MethodPost, Body: fileBody()}
+	if err := svc.UpdateRequest(domain.RootCollectionID, req); err != nil {
+		t.Fatalf("UpdateRequest: %v", err)
+	}
+	if _, ok := req.Body.Contents[domain.BodyTypeFile]; !ok {
+		t.Errorf("UpdateRequest removed the file key from the caller's contents: %v", req.Body.Contents)
 	}
 }
