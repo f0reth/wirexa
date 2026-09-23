@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 - `$ARGUMENTS` にファイル名が指定された場合 → そのファイルのみ対象
   - 例: `2026-05-17-add-mqtt-reconnect.md` → `docs/2026-05-17-add-mqtt-reconnect.md`
-- `$ARGUMENTS` が空の場合 → `docs/` 配下の全 `.md` ファイルを対象とする
+- `$ARGUMENTS` が空の場合 → `docs/` 直下でファイル名が日付で始まる `.md`（`docs/????-??-??-*.md`、plan-app の計画書）をすべて対象とする。レビューレポートなど日付で始まらないファイルは対象外
 
 ## 実行手順
 
@@ -57,9 +57,9 @@ disable-model-invocation: true
 
 ### 観点 3: 品質・構成確認（Quality-Check）
 
-- 計画書が `plan-app` スキルの出力形式（概要・変更対象ファイル表・実装方針・コード生成・テスト方針・副作用・Git運用）を満たしているか
+- 計画書が `plan-app` スキルの出力形式（概要・変更対象ファイル表・実装方針・永続化への影響・コード生成・テスト方針・副作用・Git運用）を満たしているか
 - 実装方針が**実現可能で具体的**か（「リファクタリングすべき」のような根拠のない抽象的な記述でないか）
-- Git 運用として `task format` → `task lint` → `task test` の確認後に main へマージという手順が含まれているか
+- Git 運用の完了条件に `task format` → `task lint` → `task test` が含まれ、変更内容に応じて `task go:test:integration`（`internal/integration/` が検証する振る舞いに関わる場合）、`task frontend:test:e2e`（UI の振る舞いや `frontend/e2e/fake-backend/` を変える場合）、`task go:test:race`（並行処理に触れる場合）も挙げているか
 
 ### 観点 4: プロジェクトアーキテクチャ整合性（Consistency-Check）
 
@@ -83,12 +83,14 @@ infrastructure ┘
 ```
 
 - `domain` は他のどの層にも依存してはならない。
-- `application` / `infrastructure` は `domain` の出力ポートを実装する（依存性逆転）。
+- 出力ポート（リポジトリ、トランスポート、emitter など）は `domain` が定義し、実装するのは `infrastructure` だけ（`var _ domain.XxxRepository = (*XxxRepository)(nil)` で検査する）。`application` は出力ポートを使う側で、実装はしない。
 - `adapters` は自分で定義したインターフェース（ユースケースの入力ポート）経由でユースケースを呼び出し、`application` を直接 import しない。`application` のサービスはこれを構造的に満たし、その検証は `app.go` で行う。
+  - 間にユースケースが無い場合に domain の出力ポートを `SetupXxxHandler` の引数で直接受け取るのは違反ではない（既存例: `HTTPHandlerDeps.Responses` の `ResponseBodyStore`、`SetupLogHandler` の `domain.Logger`）。業務ロジックを adapters に置く提案は違反として扱う。
 - 具体型の組み立て・注入は合成ルート `app.go` でのみ行う。
 
 **フロントエンド:** `frontend/src/` も同様のクリーンアーキテクチャ（`domain` / `application` / `infrastructure` / `presentation` / `shared`）を採用。
-`wailsjs/` を import してよいのは `infrastructure/` のみ。コンポーネントからの `infrastructure/` 直接 import は禁止（ポート経由で注入する）。
+`wailsjs/` を import してよいのは `infrastructure/` のみ。依存の注入は合成ルートの `presentation/providers/*.tsx` と `App.tsx` で行い、`presentation/components/` からの `infrastructure/` の直接 import は禁止（biome の `noRestrictedImports` がエラーにする）。`application/` から `infrastructure/` への import は既存の例外（`id/generator`、`storage/local-storage`、`openapi/file-io`）だけで、これ以外を増やす提案は違反として扱う（既存の例外そのものは指摘対象にしない）。`infrastructure/` から `application/` への import も既存の 2 か所（`logger/client.ts`、`openapi/parser.ts`）以外を増やす提案は違反とする。
+新しい外部作用のポートの置き場所は、保存（localStorage など）なら `domain/<proto>/ports.ts`、RPC なら使う側の application ファイルの `XxxApi` インターフェース。RPC のインターフェースを `domain` に置く提案は既存の慣習に反するので指摘する。
 
 確認項目:
 - 提案する変更がこの依存方向を破っていないか（内側の層が外側を import していないか）
@@ -110,6 +112,7 @@ infrastructure ┘
 | エッジケースの未考慮 | 空値・nil・ゼロ値・境界値・エラー時のケースを考慮しているか |
 | 型・インターフェース整合性 | 変更後も呼び出し元が期待する型・シグネチャ・インターフェースと一致しているか |
 | 並行安全性 | Go コードの場合、変更によって競合状態やデッドロックが生じる可能性はないか |
+| RPC 引数の信頼 | RPC で受け取ったパスを検証なしに backend が読み書きしたり、backend が内部で作ったパスや一時ファイルをフロントエンドに返したりしていないか。ダイアログで選ばれたファイルだけを、token 方式（HTTP: `FileReference.Token`）か許可リスト方式（OpenAPI: `openapiapp.FileService.checkGranted` で照合。選ばれたパス自体はフロントエンドに返してよい）で扱い、内部のパスや一時ファイルは ID で参照させているか（`docs/http-local-file-access-hardening.md`） |
 | 既存テストへの影響 | 変更後に `internal/` 配下の既存テストが壊れる可能性はないか |
 
 ---
