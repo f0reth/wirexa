@@ -19,7 +19,7 @@ task dev     # 開発環境を起動する (wails dev)
 task build   # 本番ビルドを行う (wails build)
 task test    # Go とフロントエンドのユニットテストをまとめて実行
 task lint    # Go とフロントエンドの Lint をまとめて実行
-task format  # フロントエンドのコードを整形する
+task format  # Go とフロントエンドのコードを整形する
 ```
 
 ### Go (repo root)
@@ -36,7 +36,7 @@ task go:lint              # golangci-lint run
 
 Go tests and `go vet` require `frontend/dist/index.html` to exist (the `//go:embed` in main.go fails otherwise). CI stubs it with `mkdir -p frontend/dist && touch frontend/dist/index.html`.
 
-Go lint is golangci-lint (v7 action in CI). Wails CLI version must match go.mod (`v2.12.0`).
+Go lint is golangci-lint (v7 action in CI). Wails CLI version must match go.mod (`v2.16.0`).
 
 ### Frontend
 
