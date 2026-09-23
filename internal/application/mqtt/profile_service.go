@@ -7,9 +7,6 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 )
 
-// コンパイル時に domain.ProfileUseCase を満たすことを検証
-var _ domain.ProfileUseCase = (*ProfileService)(nil)
-
 // ProfileService は MQTT ブローカープロファイルの CRUD を管理するアプリケーションサービス。
 type ProfileService struct {
 	store *store.CachedStore[domain.BrokerProfile]

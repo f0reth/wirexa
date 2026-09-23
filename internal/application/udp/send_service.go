@@ -8,8 +8,6 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/udp"
 )
 
-var _ domain.SendUseCase = (*UDPSendService)(nil)
-
 // UDPSendService は UDP パケット送信ユースケースの実装。
 type UDPSendService struct {
 	socket domain.UDPSocket

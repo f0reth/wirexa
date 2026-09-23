@@ -16,9 +16,6 @@ import (
 // maxRecents は保持する最近使ったファイルの最大件数。
 const maxRecents = 50
 
-// コンパイル時に domain.FileUseCase を満たすことを検証
-var _ domain.FileUseCase = (*FileService)(nil)
-
 // FileService は OpenAPI ファイルの許可リストと recents を管理する。
 //
 // セキュリティ: Wails RPC は webview 上の JS から誰でも呼べるため、ReadFile /

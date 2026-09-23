@@ -22,8 +22,6 @@ const (
 // errShuttingDown は終了処理の開始後に接続しようとした場合に返す。
 var errShuttingDown = errors.New("application is shutting down")
 
-var _ domain.MQTTUseCase = (*MQTTService)(nil)
-
 // connState は接続のライフサイクル状態。フロントエンドには公開せず、
 // ConnectionStatus.Connected の導出とイベント発行の判定にだけ使う。
 type connState int

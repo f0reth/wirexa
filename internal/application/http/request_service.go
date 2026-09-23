@@ -11,8 +11,6 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
-var _ domain.RequestUseCase = (*HTTPRequestService)(nil)
-
 var validMethods = map[string]bool{
 	"GET": true, "POST": true, "PUT": true, "DELETE": true,
 	"PATCH": true, "HEAD": true, "OPTIONS": true,

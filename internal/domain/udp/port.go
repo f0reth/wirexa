@@ -17,29 +17,9 @@ type UDPSocket interface {
 	Listen(port int) (UDPConn, error)
 }
 
-// SendUseCase は UDP パケット送信のユースケース入力ポート。
-type SendUseCase interface {
-	Send(req UDPSendRequest) (UDPSendResult, error)
-}
-
-// TargetUseCase はターゲット管理のユースケース入力ポート。
-type TargetUseCase interface {
-	GetTargets() []UDPTarget
-	SaveTarget(target UDPTarget) (UDPTarget, error)
-	DeleteTarget(id string) error
-}
-
 // TargetRepository はターゲットの永続化抽象。
 type TargetRepository interface {
 	Load() ([]UDPTarget, error)
 	Save(target *UDPTarget) error
 	Delete(id string) error
-}
-
-// ListenUseCase は UDP 受信管理のユースケース入力ポート。
-type ListenUseCase interface {
-	StartListen(port int, encoding PayloadEncoding) (UDPListenSession, error)
-	StopListen(sessionID string) error
-	GetListeners() []UDPListenSession
-	StopAll()
 }

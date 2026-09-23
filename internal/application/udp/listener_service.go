@@ -11,8 +11,6 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/udp"
 )
 
-var _ domain.ListenUseCase = (*UDPListenerService)(nil)
-
 // listenSession はアクティブなリスニングセッションの内部状態を保持する。
 type listenSession struct {
 	conn    domain.UDPConn

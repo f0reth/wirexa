@@ -6,8 +6,6 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/udp"
 )
 
-var _ domain.TargetUseCase = (*TargetService)(nil)
-
 // TargetService はターゲット管理ユースケースの実装。
 type TargetService struct {
 	store *store.CachedStore[domain.UDPTarget]
