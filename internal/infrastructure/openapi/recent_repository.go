@@ -1,12 +1,6 @@
 package openapiinfra
 
 import (
-	"encoding/json/v2"
-	"errors"
-	"fmt"
-	"os"
-
-	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/openapi"
 	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 )
@@ -28,16 +22,9 @@ func NewRecentRepository(path string) *RecentRepository {
 // JSON として解釈できない場合は cmn.ErrCorruptData を wrap して返し、
 // 読み込み自体の失敗と区別できるようにする。
 func (r *RecentRepository) Load() ([]domain.OpenAPIRecent, error) {
-	data, err := os.ReadFile(r.path)
+	items, _, err := infra.ReadJSONFile[[]domain.OpenAPIRecent](r.path)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return []domain.OpenAPIRecent{}, nil
-		}
 		return nil, err
-	}
-	var items []domain.OpenAPIRecent
-	if err := json.Unmarshal(data, &items); err != nil {
-		return nil, fmt.Errorf("%w: %w", cmn.ErrCorruptData, err)
 	}
 	if items == nil {
 		items = []domain.OpenAPIRecent{}

@@ -1,7 +1,11 @@
 // Package httpdomain は HTTP ドメイン層のポートインターフェースを定義する。
 package httpdomain
 
-import "context"
+import (
+	"context"
+
+	cmn "github.com/f0reth/Wirexa/internal/domain"
+)
 
 // HTTPTransport はHTTPリクエスト実行を担うポート。
 // Application層はこのインターフェースを通じてネットワークI/Oを行う。
@@ -55,10 +59,13 @@ type CollectionRepository interface {
 	Exists(id string) (bool, error)
 }
 
-// SidebarLayoutRepository はサイドバーレイアウトの永続化抽象。
+// SidebarLayoutRepository はサイドバーレイアウトの永続化抽象。一覧全体を 1 単位で読み書きする。
 type SidebarLayoutRepository interface {
+	// Load はレイアウトを読む。未作成なら空スライスと nil を返す。
+	// JSON として壊れている場合は cmn.ErrCorruptData を wrap して返し、それ以外の失敗はそのまま返す。
 	Load() ([]SidebarEntry, error)
 	Save(layout []SidebarEntry) error
+	cmn.Quarantiner
 }
 
 // RequestUseCase は HTTP リクエスト送信のユースケース入力ポート。

@@ -1,10 +1,13 @@
 package httpinfra
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
@@ -46,15 +49,80 @@ func TestSidebarLayoutRepository_LoadMissingReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestSidebarLayoutRepository_LoadCorruptReturnsError(t *testing.T) {
+func TestSidebarLayoutRepository_LoadCorruptReturnsErrCorruptData(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sidebar_layout.json")
 	if err := os.WriteFile(path, []byte("{ not json"), 0o600); err != nil {
 		t.Fatalf("write corrupt file: %v", err)
 	}
 	repo := NewSidebarLayoutRepository(path)
 
-	if _, err := repo.Load(); err == nil {
-		t.Fatalf("expected error for corrupt file")
+	if _, err := repo.Load(); !errors.Is(err, cmn.ErrCorruptData) {
+		t.Fatalf("Load on corrupt file: want ErrCorruptData, got %v", err)
+	}
+}
+
+// 読み込み自体の失敗 (ここではパスがディレクトリ) は破損と区別する。
+func TestSidebarLayoutRepository_LoadUnreadableIsNotCorrupt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sidebar_layout.json")
+	if err := os.Mkdir(path, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSidebarLayoutRepository(path)
+
+	_, err := repo.Load()
+	if err == nil {
+		t.Fatal("Load on unreadable path should fail")
+	}
+	if errors.Is(err, cmn.ErrCorruptData) {
+		t.Fatalf("unreadable file must not be reported as corrupt: %v", err)
+	}
+}
+
+func TestSidebarLayoutRepository_QuarantineMovesCorruptFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sidebar_layout.json")
+	corrupt := []byte("{ not json")
+	if err := os.WriteFile(path, corrupt, 0o600); err != nil {
+		t.Fatalf("write corrupt file: %v", err)
+	}
+	repo := NewSidebarLayoutRepository(path)
+
+	dest, err := repo.Quarantine()
+	if err != nil {
+		t.Fatalf("Quarantine: %v", err)
+	}
+	if dest != path+".corrupt" {
+		t.Errorf("Quarantine dest = %q, want %q", dest, path+".corrupt")
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read quarantined file: %v", err)
+	}
+	if !bytes.Equal(got, corrupt) {
+		t.Errorf("quarantined content = %q, want %q", got, corrupt)
+	}
+
+	layout, err := repo.Load()
+	if err != nil {
+		t.Fatalf("Load after Quarantine: %v", err)
+	}
+	if layout == nil || len(layout) != 0 {
+		t.Fatalf("Load after Quarantine = %#v, want empty non-nil slice", layout)
+	}
+}
+
+func TestSidebarLayoutRepository_LoadNullReturnsEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sidebar_layout.json")
+	if err := os.WriteFile(path, []byte("null"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSidebarLayoutRepository(path)
+
+	layout, err := repo.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if layout == nil || len(layout) != 0 {
+		t.Fatalf("Load on null = %#v, want empty non-nil slice", layout)
 	}
 }
 

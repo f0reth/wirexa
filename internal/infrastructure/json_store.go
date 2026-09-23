@@ -2,7 +2,6 @@
 package infrastructure
 
 import (
-	"encoding/json/v2"
 	"errors"
 	"os"
 	"path/filepath"
@@ -43,23 +42,25 @@ func (s *JSONStore[T]) Load() ([]T, error) {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 			continue
 		}
+		// path は ReadDir が返した s.dir 直下のエントリ名で、外部入力ではない。
 		path := filepath.Join(s.dir, e.Name())
-		// #nosec G304 -- path は ReadDir が返した s.dir 直下のエントリ名で、外部入力ではない。
-		data, err := os.ReadFile(path)
-		if err != nil {
-			// 読めないファイルは触らずスキップして起動を継続する。
-			s.logf("json_store: failed to read file, skipping", "file", e.Name(), "error", err)
-			continue
-		}
-		var item T
-		if err := json.Unmarshal(data, &item); err != nil {
+		item, found, err := ReadJSONFile[T](path)
+		switch {
+		case errors.Is(err, domain.ErrCorruptData):
 			// 破損ファイルは .corrupt へ退避してスキップし、読めた分だけで継続する。
 			dest, rerr := QuarantineFile(path)
 			if rerr != nil {
-				s.logf("json_store: failed to quarantine corrupt file", "file", e.Name(), "error", rerr)
+				s.logf("json_store: failed to quarantine corrupt file", "file", e.Name(), "error", err, "quarantineError", rerr)
 			} else {
 				s.logf("json_store: quarantined corrupt file", "file", e.Name(), "quarantined", filepath.Base(dest), "error", err)
 			}
+			continue
+		case err != nil:
+			// 読めないファイルは触らずスキップして起動を継続する。
+			s.logf("json_store: failed to read file, skipping", "file", e.Name(), "error", err)
+			continue
+		case !found:
+			// ReadDir の後に消えたファイルは読み込み対象から外す。
 			continue
 		}
 		// ファイルの中身に書かれた ID はそのままドメイン型とキャッシュのキーになる。

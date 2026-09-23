@@ -100,11 +100,27 @@ func (r *inMemoryRepo) saveOrder() []string {
 	return append([]string{}, r.saves...)
 }
 
+// inMemoryLayoutRepo はサイドバーレイアウトリポジトリのフェイク。
+// Quarantine は成功すると保存済みレイアウトと loadErr を消し、ファイルが退避された後の状態を模す。
 type inMemoryLayoutRepo struct {
-	loadErr error
-	saveErr error
-	layout  []domain.SidebarEntry
-	mu      sync.Mutex
+	loadErr       error
+	saveErr       error
+	quarantineErr error
+	layout        []domain.SidebarEntry
+	quarantines   int
+	mu            sync.Mutex
+}
+
+func (r *inMemoryLayoutRepo) Quarantine() (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.quarantines++
+	if r.quarantineErr != nil {
+		return "", r.quarantineErr
+	}
+	r.loadErr = nil
+	r.layout = nil
+	return "sidebar_layout.json.corrupt", nil
 }
 
 func (r *inMemoryLayoutRepo) Load() ([]domain.SidebarEntry, error) {
