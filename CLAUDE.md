@@ -63,8 +63,8 @@ Both sides follow the same layered (ports & adapters) structure. Dependency dire
 
 ### Backend (`internal/`)
 
-- `domain/` — types, port interfaces, event name constants, errors. No dependencies on other layers. Subpackages per protocol: `http/`, `mqtt/`, `udp/`.
-- `application/` — services implementing use cases (`http/`, `mqtt/`, `udp/`, `store/`). Depend only on domain ports.
+- `domain/` — types, port interfaces, event name constants, errors. No dependencies on other layers. Subpackages per protocol: `http/`, `mqtt/`, `udp/`, `openapi/`.
+- `application/` — services implementing use cases (`http/`, `mqtt/`, `udp/`, `openapi/`, `store/`). Depend only on domain ports.
 - `infrastructure/` — port implementations: `JSONStore[T]` (generic per-entity JSON file persistence with atomic writes), paho MQTT client factory + embedded mochi broker, HTTP `NetClient`, UDP socket, `WailsEmitter` (domain events → Wails runtime events), file logger (lumberjack), window state manager.
 - `adapters/` — Wails-bound handler structs (`MQTTHandler`, `HTTPHandler`, `UDPHandler`, `LogHandler`, `OpenAPIHandler`). These are the RPC surface exposed to the frontend.
 - `integration/` — cross-layer tests behind the `integration` build tag.

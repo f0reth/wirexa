@@ -64,9 +64,6 @@ infrastructure ┘
 - `adapters` は `domain` のインターフェース経由でユースケースを呼び出し、`application` を直接 import しない。
 - 具体型の組み立て・注入は合成ルート `app.go` でのみ行う。
 
-**既知の例外:** `internal/adapters/openapi_handler.go` と `openapi_recents.go` は `internal/infrastructure` を直接 import している。
-OpenAPI 周辺を変更する場合はこの既存状態を前提に計画し、ついでの是正を勝手に含めない（必要なら計画書で別途提案する）。
-
 ### サービス追加時の二段階配線
 
 `app.go` が合成ルート。ハンドラは `NewApp()` で**空のまま生成**し（Wails が `main.go` でバインドするため）、

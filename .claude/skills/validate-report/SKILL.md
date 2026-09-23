@@ -90,9 +90,6 @@ infrastructure ┘
 **フロントエンド:** `frontend/src/` も同様のクリーンアーキテクチャ（`domain` / `application` / `infrastructure` / `presentation` / `shared`）を採用。
 `wailsjs/` を import してよいのは `infrastructure/` のみ。コンポーネントからの `infrastructure/` 直接 import は禁止（ポート経由で注入する）。
 
-**既知の例外:** `internal/adapters/openapi_handler.go` と `openapi_recents.go` は `internal/infrastructure` を直接 import している。
-これを計画書の新たな違反として報告しない。
-
 確認項目:
 - 提案する変更がこの依存方向を破っていないか（内側の層が外側を import していないか）
 - ドメイン型と同型の DTO を `internal/adapters/` に新設していないか（ハンドラはドメイン型の薄いパススルー）

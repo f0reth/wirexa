@@ -35,8 +35,6 @@ infrastructure ┘
 - 具体型の組み立て・注入は合成ルート `app.go` でのみ行う
 - 各レイヤーが持つ責務を逸脱する変更は禁止
 
-**既知の例外:** `internal/adapters/openapi_handler.go` と `openapi_recents.go` は `internal/infrastructure` を直接 import している。OpenAPI 周辺を変更する場合はこの既存状態を前提とし、ついでの是正を勝手に含めない（必要なら変更とは別に提案する）。
-
 ## 実装ルール
 
 - 後方互換性は考慮しない（内部コードのみ変更するため）
