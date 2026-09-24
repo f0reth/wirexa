@@ -4,7 +4,7 @@ import type {
   NotificationLevel,
   NotifyOptions,
 } from "../../domain/ui/ports";
-import { generateId } from "../../infrastructure/id/generator";
+import { generateId } from "../../shared/id";
 
 export type { Notification, NotificationLevel, NotifyOptions };
 

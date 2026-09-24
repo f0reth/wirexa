@@ -11,9 +11,9 @@ import type {
 } from "../../domain/udp/types";
 import { FIELD_TYPE_SIZES } from "../../domain/udp/types";
 import type { Notifier } from "../../domain/ui/ports";
-import { generateId } from "../../infrastructure/id/generator";
 import { withLoading } from "../../shared/async-op";
 import { errorMessage } from "../../shared/error";
+import { generateId } from "../../shared/id";
 
 /** UI 管理用 id を付加したアプリケーション層のフィールド型。 */
 export type FixedLengthFieldState = FixedLengthField & { id: string };

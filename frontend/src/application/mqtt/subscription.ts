@@ -1,6 +1,6 @@
 import { compilePattern } from "../../domain/mqtt/topic";
 import type { Subscription } from "../../domain/mqtt/types";
-import { generateId } from "../../infrastructure/id/generator";
+import { generateId } from "../../shared/id";
 
 /** topic/qos から UI 表示用 Subscription を生成する。ワイルドカードには patternParts を付与。 */
 export function makeSubscription(topic: string, qos: number): Subscription {

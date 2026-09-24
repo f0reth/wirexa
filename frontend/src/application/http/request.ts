@@ -21,8 +21,8 @@ import {
   isResponseUnavailableError,
 } from "../../domain/http/types";
 import type { Notifier } from "../../domain/ui/ports";
-import { generateId } from "../../infrastructure/id/generator";
 import { errorMessage } from "../../shared/error";
+import { generateId } from "../../shared/id";
 
 const JSON_BODY_DEFAULT = '{\n  "": ""\n}';
 

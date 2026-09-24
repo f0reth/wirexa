@@ -1,8 +1,8 @@
 import { createSignal } from "solid-js";
 import type { PresetStorage } from "../../domain/mqtt/ports";
 import type { PublishPreset } from "../../domain/mqtt/types";
-import { generateId } from "../../infrastructure/id/generator";
 import { moveItem } from "../../shared/array";
+import { generateId } from "../../shared/id";
 
 export type { PresetStorage };
 

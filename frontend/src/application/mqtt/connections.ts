@@ -13,8 +13,8 @@ import type {
   Tab,
 } from "../../domain/mqtt/types";
 import type { Notifier } from "../../domain/ui/ports";
-import { generateId } from "../../infrastructure/id/generator";
 import { errorMessage } from "../../shared/error";
+import { generateId } from "../../shared/id";
 import { type MqttEventName, WailsEvents } from "../../shared/wails-events";
 import { makeSubscription } from "./subscription";
 
