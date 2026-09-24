@@ -1,13 +1,8 @@
 import { createSignal } from "solid-js";
+import type { ProfileOrderStorage } from "../../domain/mqtt/ports";
 import type { BrokerProfile } from "../../domain/mqtt/types";
-import {
-  loadFromStorage,
-  saveToStorage,
-} from "../../infrastructure/storage/local-storage";
 import { moveItem } from "../../shared/array";
 import { applyOrder } from "../shared/order";
-
-const PROFILE_ORDER_KEY = "mqtt:profileOrder";
 
 /** 新規作成ダイアログの初期プロファイル。ID はサーバが採番するので空にする。 */
 export function createEmptyProfile(): BrokerProfile {
@@ -29,16 +24,19 @@ export interface ProfileApi {
   deleteProfile(id: string): Promise<void>;
 }
 
-export function createProfilesState(api: ProfileApi) {
+export function createProfilesState(
+  api: ProfileApi,
+  orderStorage: ProfileOrderStorage,
+) {
   const [profiles, setProfiles] = createSignal<BrokerProfile[]>([]);
 
   async function loadProfiles(): Promise<void> {
     const loaded = await api.getProfiles();
-    const order = loadFromStorage<string[]>(PROFILE_ORDER_KEY, []);
+    const order = orderStorage.load();
     setProfiles(applyOrder(loaded, order));
   }
 
-  // 新規作成では ID がサーバ採番されるため、state と order キーには
+  // 新規作成では ID がサーバ採番されるため、state と並び順には
   // 引数ではなく保存結果の ID を使う。
   async function saveProfile(profile: BrokerProfile): Promise<BrokerProfile> {
     const saved = await api.saveProfile(profile);
@@ -48,10 +46,7 @@ export function createProfilesState(api: ProfileApi) {
         idx >= 0
           ? prev.map((p) => (p.id === saved.id ? saved : p))
           : [...prev, saved];
-      saveToStorage(
-        PROFILE_ORDER_KEY,
-        next.map((p) => p.id),
-      );
+      orderStorage.save(next.map((p) => p.id));
       return next;
     });
     return saved;
@@ -61,10 +56,7 @@ export function createProfilesState(api: ProfileApi) {
     await api.deleteProfile(id);
     setProfiles((prev) => {
       const next = prev.filter((p) => p.id !== id);
-      saveToStorage(
-        PROFILE_ORDER_KEY,
-        next.map((p) => p.id),
-      );
+      orderStorage.save(next.map((p) => p.id));
       return next;
     });
   }
@@ -73,10 +65,7 @@ export function createProfilesState(api: ProfileApi) {
     setProfiles((prev) => {
       const next = moveItem(prev, fromIndex, toIndex);
       if (!next) return prev;
-      saveToStorage(
-        PROFILE_ORDER_KEY,
-        next.map((p) => p.id),
-      );
+      orderStorage.save(next.map((p) => p.id));
       return next;
     });
   }

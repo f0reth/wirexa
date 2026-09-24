@@ -1,14 +1,20 @@
+import type { ExpandedFoldersStorage } from "../../domain/http/ports";
 import type {
   ConnectionPersistence,
   PresetStorage,
+  ProfileOrderStorage,
 } from "../../domain/mqtt/ports";
 import type { PublishPreset } from "../../domain/mqtt/types";
+import type { TargetOrderStorage } from "../../domain/udp/ports";
 import type { Theme, ThemeStorage } from "../../domain/ui/ports";
 
 const MQTT_LAST_PROFILE_KEY = "mqtt:lastActiveProfileId";
 const MQTT_PRESETS_KEY = "mqtt:presets";
+const MQTT_PROFILE_ORDER_KEY = "mqtt:profileOrder";
 const THEME_KEY = "app:theme";
 const HTTP_ACTIVE_REQUEST_KEY = "wirexa:http:activeRequest";
+const HTTP_EXPANDED_FOLDERS_KEY = "wirexa:http:expandedFolders";
+const UDP_TARGET_ORDER_KEY = "udp:targetOrder";
 
 export function createLastProfileStorage(): ConnectionPersistence {
   return {
@@ -52,6 +58,28 @@ export function createActiveRequestStorage() {
     save: (requestId: string, collectionId: string) =>
       saveToStorage(HTTP_ACTIVE_REQUEST_KEY, { requestId, collectionId }),
     clear: () => removeFromStorage(HTTP_ACTIVE_REQUEST_KEY),
+  };
+}
+
+export function createExpandedFoldersStorage(): ExpandedFoldersStorage {
+  return {
+    load: () =>
+      loadFromStorage<Record<string, boolean>>(HTTP_EXPANDED_FOLDERS_KEY, {}),
+    save: (ids) => saveToStorage(HTTP_EXPANDED_FOLDERS_KEY, ids),
+  };
+}
+
+export function createProfileOrderStorage(): ProfileOrderStorage {
+  return {
+    load: () => loadFromStorage<string[]>(MQTT_PROFILE_ORDER_KEY, []),
+    save: (ids) => saveToStorage(MQTT_PROFILE_ORDER_KEY, ids),
+  };
+}
+
+export function createTargetOrderStorage(): TargetOrderStorage {
+  return {
+    load: () => loadFromStorage<string[]>(UDP_TARGET_ORDER_KEY, []),
+    save: (ids) => saveToStorage(UDP_TARGET_ORDER_KEY, ids),
   };
 }
 

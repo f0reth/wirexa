@@ -2,8 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createActiveRequestStorage,
+  createExpandedFoldersStorage,
   createLastProfileStorage,
   createPresetsStorage,
+  createProfileOrderStorage,
+  createTargetOrderStorage,
   createThemeStorage,
   loadFromStorage,
   removeFromStorage,
@@ -139,6 +142,78 @@ describe("createActiveRequestStorage", () => {
     storage.save("req-1", "col-1");
     storage.clear();
     expect(storage.load()).toBeNull();
+  });
+});
+
+describe("createExpandedFoldersStorage", () => {
+  it("load returns {} when empty", () => {
+    const storage = createExpandedFoldersStorage();
+    expect(storage.load()).toEqual({});
+  });
+
+  it("save persists expanded ids and load retrieves them", () => {
+    const storage = createExpandedFoldersStorage();
+    storage.save({ "folder-1": true, "col-1": false });
+    expect(storage.load()).toEqual({ "folder-1": true, "col-1": false });
+  });
+
+  it("keeps using the existing key", () => {
+    localStorage.setItem(
+      "wirexa:http:expandedFolders",
+      JSON.stringify({ "folder-1": true }),
+    );
+    const storage = createExpandedFoldersStorage();
+    expect(storage.load()).toEqual({ "folder-1": true });
+    storage.save({ "folder-2": false });
+    expect(
+      JSON.parse(localStorage.getItem("wirexa:http:expandedFolders") ?? "null"),
+    ).toEqual({ "folder-2": false });
+  });
+});
+
+describe("createProfileOrderStorage", () => {
+  it("load returns [] when empty", () => {
+    const storage = createProfileOrderStorage();
+    expect(storage.load()).toEqual([]);
+  });
+
+  it("save persists the order and load retrieves it", () => {
+    const storage = createProfileOrderStorage();
+    storage.save(["p2", "p1"]);
+    expect(storage.load()).toEqual(["p2", "p1"]);
+  });
+
+  it("keeps using the existing key", () => {
+    localStorage.setItem("mqtt:profileOrder", JSON.stringify(["p1", "p2"]));
+    const storage = createProfileOrderStorage();
+    expect(storage.load()).toEqual(["p1", "p2"]);
+    storage.save(["p3"]);
+    expect(
+      JSON.parse(localStorage.getItem("mqtt:profileOrder") ?? "null"),
+    ).toEqual(["p3"]);
+  });
+});
+
+describe("createTargetOrderStorage", () => {
+  it("load returns [] when empty", () => {
+    const storage = createTargetOrderStorage();
+    expect(storage.load()).toEqual([]);
+  });
+
+  it("save persists the order and load retrieves it", () => {
+    const storage = createTargetOrderStorage();
+    storage.save(["t2", "t1"]);
+    expect(storage.load()).toEqual(["t2", "t1"]);
+  });
+
+  it("keeps using the existing key", () => {
+    localStorage.setItem("udp:targetOrder", JSON.stringify(["t1", "t2"]));
+    const storage = createTargetOrderStorage();
+    expect(storage.load()).toEqual(["t1", "t2"]);
+    storage.save(["t3"]);
+    expect(
+      JSON.parse(localStorage.getItem("udp:targetOrder") ?? "null"),
+    ).toEqual(["t3"]);
   });
 });
 

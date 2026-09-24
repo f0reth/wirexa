@@ -33,6 +33,7 @@ import { onMqttEvent } from "../../infrastructure/mqtt/events";
 import {
   createLastProfileStorage,
   createPresetsStorage,
+  createProfileOrderStorage,
 } from "../../infrastructure/storage/local-storage";
 
 // --- MqttConnectionContext ---
@@ -119,7 +120,7 @@ export function MqttProvider(props: { children: JSX.Element }) {
     saveProfile,
     deleteProfile,
     reorderProfiles,
-  } = createProfilesState(mqttClient);
+  } = createProfilesState(mqttClient, createProfileOrderStorage());
   const mqttLogger = createLogger("frontend:mqtt");
   const connState = createConnectionsState(
     mqttClient,

@@ -1,15 +1,10 @@
 import { createStore, reconcile } from "solid-js/store";
+import type { TargetOrderStorage } from "../../domain/udp/ports";
 import type { UdpTarget } from "../../domain/udp/types";
 import type { Notifier } from "../../domain/ui/ports";
-import {
-  loadFromStorage,
-  saveToStorage,
-} from "../../infrastructure/storage/local-storage";
 import { moveItem } from "../../shared/array";
 import { applyOrder } from "../shared/order";
 import { notifyOnError, runGuarded } from "../ui/guard";
-
-const TARGET_ORDER_KEY = "udp:targetOrder";
 
 export interface UdpTargetApi {
   getTargets(): Promise<UdpTarget[]>;
@@ -17,22 +12,23 @@ export interface UdpTargetApi {
   deleteTarget(id: string): Promise<void>;
 }
 
-export function createTargetsState(api: UdpTargetApi, notifier: Notifier) {
+export function createTargetsState(
+  api: UdpTargetApi,
+  notifier: Notifier,
+  orderStorage: TargetOrderStorage,
+) {
   const [targets, setTargets] = createStore<UdpTarget[]>([]);
 
   async function refreshTargets(): Promise<void> {
     const list = await api.getTargets();
-    const order = loadFromStorage<string[]>(TARGET_ORDER_KEY, []);
+    const order = orderStorage.load();
     setTargets(reconcile(applyOrder(list, order)));
   }
 
   function reorderTargets(fromIndex: number, toIndex: number): void {
     const next = moveItem(targets, fromIndex, toIndex);
     if (!next) return;
-    saveToStorage(
-      TARGET_ORDER_KEY,
-      next.map((t) => t.id),
-    );
+    orderStorage.save(next.map((t) => t.id));
     setTargets(reconcile(next));
   }
 

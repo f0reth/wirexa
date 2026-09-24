@@ -33,7 +33,10 @@ import type {
 } from "../../domain/http/types";
 import * as httpClient from "../../infrastructure/http/client";
 import { createLogger } from "../../infrastructure/logger/client";
-import { createActiveRequestStorage } from "../../infrastructure/storage/local-storage";
+import {
+  createActiveRequestStorage,
+  createExpandedFoldersStorage,
+} from "../../infrastructure/storage/local-storage";
 
 export interface RequestContextValue {
   method: Accessor<HttpMethod>;
@@ -122,7 +125,11 @@ const HttpRequestContext = createContext<RequestContextValue>();
 const HttpCollectionsContext = createContext<CollectionsContextValue>();
 
 export function HttpProvider(props: { children: JSX.Element }) {
-  const collectionsState = createCollectionsState(httpClient, notify);
+  const collectionsState = createCollectionsState(
+    httpClient,
+    notify,
+    createExpandedFoldersStorage(),
+  );
   const requestState = createRequestState(
     {
       sendRequest: httpClient.sendRequest,

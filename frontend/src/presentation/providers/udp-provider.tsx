@@ -20,6 +20,7 @@ import type {
   UdpTarget,
 } from "../../domain/udp/types";
 import { createLogger } from "../../infrastructure/logger/client";
+import { createTargetOrderStorage } from "../../infrastructure/storage/local-storage";
 import * as udpClient from "../../infrastructure/udp/client";
 
 export interface UdpSendContextValue {
@@ -77,7 +78,11 @@ export function UdpProvider(props: { children: JSX.Element }) {
     createLogger("frontend:udp"),
     notify,
   );
-  const targetsState = createTargetsState(udpClient, notify);
+  const targetsState = createTargetsState(
+    udpClient,
+    notify,
+    createTargetOrderStorage(),
+  );
   const receiveState = createUdpReceiveState(udpClient, notify);
 
   // 起動時のシーケンスはここに集約する（TargetTree を表示しなくても一覧を読み込む）。

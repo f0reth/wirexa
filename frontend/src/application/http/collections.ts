@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
+import type { ExpandedFoldersStorage } from "../../domain/http/ports";
 import type {
   Collection,
   HttpRequest,
@@ -8,13 +9,7 @@ import type {
 } from "../../domain/http/types";
 import { ROOT_COLLECTION_ID } from "../../domain/http/types";
 import type { Notifier } from "../../domain/ui/ports";
-import {
-  loadFromStorage,
-  saveToStorage,
-} from "../../infrastructure/storage/local-storage";
 import { notifyOnError, runGuarded } from "../ui/guard";
-
-const STORAGE_KEY = "wirexa:http:expandedFolders";
 
 /**
  * 保存済みのアクティブリクエスト（id とコレクション id）をツリーから探す。
@@ -47,14 +42,6 @@ export function findRequestById(
     return null;
   };
   return walk(collection.items);
-}
-
-function loadExpandedIds(): Record<string, boolean> {
-  return loadFromStorage<Record<string, boolean>>(STORAGE_KEY, {});
-}
-
-function saveExpandedIds(ids: Record<string, boolean>): void {
-  saveToStorage(STORAGE_KEY, ids);
 }
 
 export interface CollectionsApi {
@@ -100,12 +87,13 @@ export interface CollectionsApi {
 export function createCollectionsState(
   api: CollectionsApi,
   notifier: Notifier,
+  expandedStorage: ExpandedFoldersStorage,
 ) {
   const [collections, setCollections] = createStore<Collection[]>([]);
   const [rootItems, setRootItems] = createStore<TreeItem[]>([]);
   const [sidebarLayout, setSidebarLayout] = createStore<SidebarEntry[]>([]);
   const [expandedIds, setExpandedIds] = createStore<Record<string, boolean>>(
-    loadExpandedIds(),
+    expandedStorage.load(),
   );
   const [collectionsLoaded, setCollectionsLoaded] = createSignal(false);
 
@@ -115,7 +103,7 @@ export function createCollectionsState(
 
   function setExpanded(id: string, val: boolean): void {
     setExpandedIds(id, val);
-    saveExpandedIds({ ...expandedIds, [id]: val });
+    expandedStorage.save({ ...expandedIds, [id]: val });
   }
 
   function pruneExpandedIds(cols: Collection[]): void {
@@ -137,7 +125,7 @@ export function createCollectionsState(
         for (const id of staleIds) delete draft[id];
       }),
     );
-    saveExpandedIds({ ...expandedIds });
+    expandedStorage.save({ ...expandedIds });
   }
 
   async function refreshRootItems(): Promise<void> {

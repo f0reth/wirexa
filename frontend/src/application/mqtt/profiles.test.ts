@@ -1,14 +1,12 @@
-// @vitest-environment jsdom
 import { createRoot } from "solid-js";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { ProfileOrderStorage } from "../../domain/mqtt/ports";
 import type { BrokerProfile } from "../../domain/mqtt/types";
 import {
   createEmptyProfile,
   createProfilesState,
   type ProfileApi,
 } from "./profiles";
-
-const PROFILE_ORDER_KEY = "mqtt:profileOrder";
 
 function makeProfile(id: string, over: Partial<BrokerProfile> = {}) {
   return {
@@ -36,19 +34,28 @@ function makeApi(initial: BrokerProfile[] = []): ProfileApi {
   };
 }
 
+/** 並び順をメモリに持つストレージ。 */
+function makeOrderStorage(initial: string[] = []) {
+  let stored = [...initial];
+  const storage: ProfileOrderStorage = {
+    load: () => [...stored],
+    save: (ids) => {
+      stored = [...ids];
+    },
+  };
+  return { storage, stored: () => stored };
+}
+
 function withState(
   api: ProfileApi,
   fn: (state: ReturnType<typeof createProfilesState>) => Promise<void>,
+  orderStorage: ProfileOrderStorage = makeOrderStorage().storage,
 ): Promise<void> {
   return createRoot(async (dispose) => {
-    await fn(createProfilesState(api));
+    await fn(createProfilesState(api, orderStorage));
     dispose();
   });
 }
-
-beforeEach(() => {
-  localStorage.clear();
-});
 
 describe("createEmptyProfile", () => {
   it("leaves the id empty so the server assigns one", () => {
@@ -57,16 +64,19 @@ describe("createEmptyProfile", () => {
 });
 
 describe("createProfilesState saveProfile", () => {
-  it("puts the server-assigned id into the state and the order key", async () => {
-    await withState(makeApi(), async (state) => {
-      const saved = await state.saveProfile(createEmptyProfile());
+  it("puts the server-assigned id into the state and the stored order", async () => {
+    const { storage, stored } = makeOrderStorage();
+    await withState(
+      makeApi(),
+      async (state) => {
+        const saved = await state.saveProfile(createEmptyProfile());
 
-      expect(saved.id).toBe("server-1");
-      expect(state.profiles()).toEqual([saved]);
-      expect(
-        JSON.parse(localStorage.getItem(PROFILE_ORDER_KEY) ?? "[]"),
-      ).toEqual(["server-1"]);
-    });
+        expect(saved.id).toBe("server-1");
+        expect(state.profiles()).toEqual([saved]);
+        expect(stored()).toEqual(["server-1"]);
+      },
+      storage,
+    );
   });
 
   it("updates in place when an existing profile is saved", async () => {
@@ -78,5 +88,37 @@ describe("createProfilesState saveProfile", () => {
       expect(state.profiles().map((p) => p.id)).toEqual(["p1", "p2"]);
       expect(state.profiles()[0].name).toBe("Renamed");
     });
+  });
+});
+
+describe("createProfilesState order", () => {
+  it("applies the stored order on load", async () => {
+    const api = makeApi([makeProfile("p1"), makeProfile("p2")]);
+    const { storage } = makeOrderStorage(["p2", "p1"]);
+    await withState(
+      api,
+      async (state) => {
+        await state.loadProfiles();
+        expect(state.profiles().map((p) => p.id)).toEqual(["p2", "p1"]);
+      },
+      storage,
+    );
+  });
+
+  it("saves the order when profiles are reordered or deleted", async () => {
+    const api = makeApi([makeProfile("p1"), makeProfile("p2")]);
+    const { storage, stored } = makeOrderStorage();
+    await withState(
+      api,
+      async (state) => {
+        await state.loadProfiles();
+        state.reorderProfiles(0, 1);
+        expect(stored()).toEqual(["p2", "p1"]);
+
+        await state.deleteProfile("p2");
+        expect(stored()).toEqual(["p1"]);
+      },
+      storage,
+    );
   });
 });
