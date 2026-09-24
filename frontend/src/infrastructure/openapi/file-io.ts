@@ -8,6 +8,16 @@ import {
   WriteFile,
 } from "../../../wailsjs/go/adapters/OpenAPIHandler";
 import type { openapidomain } from "../../../wailsjs/go/models";
+import type { OpenApiFile } from "../../domain/openapi/types";
+
+function fromWailsRecent(r: openapidomain.OpenAPIRecent): OpenApiFile {
+  return {
+    path: r.path,
+    name: r.name,
+    order: r.order,
+    lastOpenedAt: r.lastOpenedAt,
+  };
+}
 
 export async function openFilePicker(): Promise<string> {
   return OpenFilePicker();
@@ -32,8 +42,9 @@ export async function saveFileAs(
   return SaveFileAs(defaultName, content);
 }
 
-export async function getRecents(): Promise<openapidomain.OpenAPIRecent[]> {
-  return GetRecents();
+export async function getRecents(): Promise<OpenApiFile[]> {
+  const recents = await GetRecents();
+  return recents.map(fromWailsRecent);
 }
 
 export async function removeRecent(path: string): Promise<void> {

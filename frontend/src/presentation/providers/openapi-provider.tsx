@@ -22,8 +22,11 @@ import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import type { ActiveDoc } from "../../domain/openapi/types";
 import { confirmQuit, onBeforeClose } from "../../infrastructure/app/lifecycle";
 import {
+  getRecents,
+  moveRecent,
   openFilePicker,
   readFile,
+  removeRecent,
   saveFileAs,
   writeFile,
 } from "../../infrastructure/openapi/file-io";
@@ -52,7 +55,10 @@ function basename(path: string): string {
 type ConfirmChoice = "save" | "discard" | "cancel";
 
 export function OpenApiProvider(props: { children: JSX.Element }) {
-  const filesState = createFilesState(notify);
+  const filesState = createFilesState(
+    { getRecents, removeRecent, moveRecent },
+    notify,
+  );
   const editorState = createEditorState();
 
   // 未保存確認ダイアログの状態。resolve でユーザーの選択を返す。
