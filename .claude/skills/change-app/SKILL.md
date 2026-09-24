@@ -29,7 +29,7 @@ $ARGUMENTS
 - 出力ポートを実装するのは `infrastructure` だけで、`var _ domain.XxxRepository = (*XxxRepository)(nil)` で検査する。`application` は使う側で、実装はしない。
 - adapters が domain の出力ポートを直接受け取ってよいのは、間にユースケースが無い場合だけ。業務ロジックが要るならユースケースを経由させる。
 - localStorage 系のポートの実装は `infrastructure/storage/local-storage.ts` に置く。
-- `application/` → `infrastructure/` の既存の例外は、そのための計画でない限り解消しない。
+- `application/` から `infrastructure/` と `wailsjs/` は import できない（biome がエラーにする）。保存は `domain/<proto>/ports.ts` のポート、RPC は使う側の application ファイルの `XxxApi` インターフェースとして定義し、Provider から注入する。
 
 ### RPC 型
 

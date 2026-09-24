@@ -32,7 +32,7 @@ $ARGUMENTS
 - 入力ポートの充足検証と具体型の組み立ては `app.go` だけで行う。
 - adapters は `application` を import しない。間にユースケースが無い場合は、domain の出力ポートを `SetupXxxHandler` の引数で直接受け取る例もある（`HTTPHandlerDeps.Responses` の `ResponseBodyStore`、`SetupLogHandler` の `domain.Logger`）。業務ロジックが要るならユースケースを経由させる。
 - adapters に許される独自の型は、ドメインに対応物の無いアダプタ固有の入力型だけ（例: `log_handler.go` の `LogEntry`）。名前付き文字列型の引数は Wails が型を生成しないため `string` で受けて内部で変換する（例: `UDPHandler.StartListen` の `encoding`）。
-- フロントエンドの依存の注入は合成ルートの **`presentation/providers/*.tsx` と `App.tsx`** で行う。`presentation/components/` から `infrastructure/` を import しない（biome の `noRestrictedImports` がエラーにする）。`application/` から `infrastructure/` への import は CLAUDE.md に書かれた既存の例外（`id/generator`、`storage/local-storage`、`openapi/file-io`）だけで、増やさない。`infrastructure/` から `application/` への import も既存の 2 か所（`logger/client.ts`、`openapi/parser.ts`）だけで、増やさない。
+- フロントエンドの依存の注入は合成ルートの **`presentation/providers/*.tsx` と `App.tsx`** で行う。`presentation/components/` から `infrastructure/` を import しない（biome の `noRestrictedImports` がエラーにする）。`application/` から `infrastructure/` と `wailsjs/` も import しない（同じく biome がエラーにする）。`infrastructure/` から `application/` への import も既存の 2 か所（`logger/client.ts`、`openapi/parser.ts`）だけで、増やさない。
 - 新しい外部作用のポートは用途で置き場所を分け、計画書にどちらかを書く。
   - localStorage などの保存: `domain/<proto>/ports.ts`（例: `PresetStorage`、`ThemeStorage`）。実装は `infrastructure/storage/local-storage.ts`。
   - RPC: 使う側の application ファイルが定義する `XxxApi` インターフェース（例: `CollectionsApi`、`UdpSendApi`）。infrastructure の `client.ts` は `XxxApi` を import せずに構造的に満たし、Provider がモジュールをそのまま注入する（例: `udp-provider.tsx` の `udpClient`）。

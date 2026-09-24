@@ -89,7 +89,7 @@ infrastructure ┘
 - 具体型の組み立て・注入は合成ルート `app.go` でのみ行う。
 
 **フロントエンド:** `frontend/src/` も同様のクリーンアーキテクチャ（`domain` / `application` / `infrastructure` / `presentation` / `shared`）を採用。
-`wailsjs/` を import してよいのは `infrastructure/` のみ。依存の注入は合成ルートの `presentation/providers/*.tsx` と `App.tsx` で行い、`presentation/components/` からの `infrastructure/` の直接 import は禁止（biome の `noRestrictedImports` がエラーにする）。`application/` から `infrastructure/` への import は既存の例外（`id/generator`、`storage/local-storage`、`openapi/file-io`）だけで、これ以外を増やす提案は違反として扱う（既存の例外そのものは指摘対象にしない）。`infrastructure/` から `application/` への import も既存の 2 か所（`logger/client.ts`、`openapi/parser.ts`）以外を増やす提案は違反とする。
+`wailsjs/` を import してよいのは `infrastructure/` のみ。依存の注入は合成ルートの `presentation/providers/*.tsx` と `App.tsx` で行い、`presentation/components/` からの `infrastructure/` の直接 import は禁止（biome の `noRestrictedImports` がエラーにする）。`application/` から `infrastructure/` と `wailsjs/` への import も禁止（同じく biome がエラーにする）で、これを含む提案は違反として扱う。`infrastructure/` から `application/` への import も既存の 2 か所（`logger/client.ts`、`openapi/parser.ts`）以外を増やす提案は違反とする。
 新しい外部作用のポートの置き場所は、保存（localStorage など）なら `domain/<proto>/ports.ts`、RPC なら使う側の application ファイルの `XxxApi` インターフェース。RPC のインターフェースを `domain` に置く提案は既存の慣習に反するので指摘する。
 
 確認項目:

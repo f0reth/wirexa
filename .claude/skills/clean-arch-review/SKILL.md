@@ -25,7 +25,7 @@ Wails + Go + SolidJS で構成されたこのプロジェクトのクリーン�
 |---|---|
 | `domain/` | ビジネスモデル・型定義（`http/`・`mqtt/`・`udp/`・`openapi/`・`ui/`） |
 | `application/` | ユースケース・状態管理（`http/`・`mqtt/`・`udp/`・`openapi/`・`shared/`・`ui/`） |
-| `infrastructure/` | 外部サービス連携（`http/`・`mqtt/`・`udp/`・`openapi/`・`id/`・`logger/`・`storage/`） |
+| `infrastructure/` | 外部サービス連携（`http/`・`mqtt/`・`udp/`・`openapi/`・`logger/`・`storage/`） |
 | `presentation/` | UIコンポーネント・プロバイダー（`components/`・`providers/`・`constants/`・`utils/`） |
 | `components/` | 汎用UIコンポーネント（`presentation/components/` との違いに注意） |
 | `config/` | 設定定数 |
