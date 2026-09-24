@@ -59,6 +59,26 @@
           }
         }
       }
+    },
+    {
+      "includes": ["src/application/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["**/infrastructure/**", "**/wailsjs/**"],
+                    "message": "層規約違反: application からは infrastructure と wailsjs を import しない。保存は domain/<proto>/ports.ts のポート、RPC は使う側の application ファイルの XxxApi インターフェースとして定義し、Provider (composition root) から注入する。"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }
