@@ -152,6 +152,73 @@ describe("isValidNumericFieldValue", () => {
     });
   });
 
+  describe("uint type negative and decimal rejection", () => {
+    it.each(["uint16", "uint32"] as const)("%s: rejects -1", (type) => {
+      expect(isValidNumericFieldValue("-1", type)).toBe(false);
+    });
+    it("uint64: rejects decimal and + prefix", () => {
+      expect(isValidNumericFieldValue("1.5", "uint64")).toBe(false);
+      expect(isValidNumericFieldValue("+5", "uint64")).toBe(false);
+    });
+  });
+
+  describe("int type lower bound", () => {
+    it.each([
+      ["int16", "-32769"],
+      ["int32", "-2147483649"],
+      ["int64", "-9223372036854775809"],
+    ] as const)("%s: rejects below the minimum (%s)", (type, value) => {
+      expect(isValidNumericFieldValue(value, type)).toBe(false);
+    });
+  });
+
+  describe("float type boundaries", () => {
+    it("float32: accepts exactly FLT_MAX in both signs", () => {
+      expect(isValidNumericFieldValue("3.4028234663852886e38", "float32")).toBe(
+        true,
+      );
+      expect(
+        isValidNumericFieldValue("-3.4028234663852886e38", "float32"),
+      ).toBe(true);
+    });
+    it("float32: rejects just above FLT_MAX", () => {
+      expect(isValidNumericFieldValue("3.40283e38", "float32")).toBe(false);
+      expect(isValidNumericFieldValue("-3.40283e38", "float32")).toBe(false);
+    });
+  });
+
+  // backend は strconv.ParseFloat で読むので、Number() が解釈できても Go が読めない表記は弾く。
+  describe.each([
+    "float32",
+    "float64",
+  ] as const)("%s: accepts only decimal notation", (type) => {
+    it.each([
+      "1",
+      "-1",
+      "+1",
+      "1.5",
+      ".5",
+      "5.",
+      "1e3",
+      "-1.5E-3",
+    ])("accepts %s", (value) => {
+      expect(isValidNumericFieldValue(value, type)).toBe(true);
+    });
+    it.each([
+      " ",
+      " 1.5 ",
+      "0x10",
+      "0b1",
+      "0o7",
+      "1_000",
+      ".",
+      "e3",
+      "1e",
+    ])("rejects %j", (value) => {
+      expect(isValidNumericFieldValue(value, type)).toBe(false);
+    });
+  });
+
   describe("default branch (string/bytes type)", () => {
     it("returns true for string type (default branch)", () => {
       expect(isValidNumericFieldValue("anything", "string")).toBe(true);

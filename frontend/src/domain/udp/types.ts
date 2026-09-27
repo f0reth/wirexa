@@ -55,6 +55,10 @@ export const FIELD_TYPE_SIZES: Partial<Record<FieldType, number>> = {
   float64: 8,
 };
 
+// 10 進の浮動小数点表記。Number() は空白・0x・0b・0o も数値として読むが、
+// backend の strconv.ParseFloat はそれらを受け付けないので、送信前にここで弾く。
+const DECIMAL_FLOAT = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
 /**
  * 数値型フィールドの値が型の有効範囲内かを検証する。
  * 空文字列は true を返す（未入力扱い）。
@@ -105,11 +109,13 @@ export function isValidNumericFieldValue(
       }
     }
     case "float32": {
+      if (!DECIMAL_FLOAT.test(value)) return false;
       const n = Number(value);
       if (Number.isNaN(n) || !Number.isFinite(n)) return false;
       return Math.abs(n) <= 3.4028234663852886e38;
     }
     case "float64": {
+      if (!DECIMAL_FLOAT.test(value)) return false;
       const n = Number(value);
       return !Number.isNaN(n) && Number.isFinite(n);
     }
