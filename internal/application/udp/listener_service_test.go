@@ -13,15 +13,24 @@ import (
 
 // mockUDPConn は domain.UDPConn のモック。
 // packets に登録されたデータを順番に返し、なくなると done チャンネルが閉じられるまでブロックする。
+// ReadFrom がエラーを返すたびに readErrs を数える。
 type mockUDPConn struct {
 	done    chan struct{}
 	packets []struct {
 		addr string
 		data []byte
 	}
-	mu     sync.Mutex
-	idx    int
-	closed bool
+	mu       sync.Mutex
+	idx      int
+	readErrs int
+	closed   bool
+}
+
+// readErrCount は ReadFrom がエラーを返した回数を返す。
+func (m *mockUDPConn) readErrCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.readErrs
 }
 
 func newMockConn(packets ...struct {
@@ -47,6 +56,9 @@ func (m *mockUDPConn) ReadFrom(b []byte) (int, string, error) {
 	}
 	// ブロックして Close() を待つ
 	<-m.done
+	m.mu.Lock()
+	m.readErrs++
+	m.mu.Unlock()
 	return 0, "", errors.New("connection closed")
 }
 
@@ -348,5 +360,87 @@ func TestUDPListenerService_ReceiveLoop_StopsOnClose(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("StopAll should complete quickly after StopListen")
+	}
+}
+
+// StopListen の後、receiveLoop は ReadFrom のエラーで 1 度だけ抜け、以後 ReadFrom を呼ばない。
+func TestUDPListenerService_ReceiveLoop_ExitsAfterStop(t *testing.T) {
+	conn := newMockConn()
+	socket := &mockUDPSocket{
+		listenFn: func(_ int) (domain.UDPConn, error) { return conn, nil },
+	}
+	svc := newListenerSvc(socket, nil)
+	session, err := svc.StartListen(9000, domain.EncodingText)
+	if err != nil {
+		t.Fatalf("StartListen: %v", err)
+	}
+	if err := svc.StopListen(session.ID); err != nil {
+		t.Fatalf("StopListen: %v", err)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for conn.readErrCount() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if conn.readErrCount() != 1 {
+		t.Fatalf("ReadFrom returned an error %d times, want 1", conn.readErrCount())
+	}
+	// ループが続いていれば、閉じた conn の ReadFrom が即座にエラーを返し続ける。
+	time.Sleep(50 * time.Millisecond)
+	if n := conn.readErrCount(); n != 1 {
+		t.Fatalf("receiveLoop kept reading after close: ReadFrom errors = %d, want 1", n)
+	}
+}
+
+// 同じポートへ並行に StartListen しても、成功するのは 1 つだけで socket.Listen も 1 回だけ呼ぶ。
+func TestUDPListenerService_StartListen_ConcurrentSamePort(t *testing.T) {
+	var mu sync.Mutex
+	listens := 0
+	socket := &mockUDPSocket{
+		listenFn: func(_ int) (domain.UDPConn, error) {
+			mu.Lock()
+			listens++
+			mu.Unlock()
+			return newMockConn(), nil
+		},
+	}
+	svc := newListenerSvc(socket, nil)
+	defer svc.StopAll()
+
+	const workers = 16
+	errs := make(chan error, workers)
+	var start, wg sync.WaitGroup
+	start.Add(1)
+	for range workers {
+		wg.Go(func() {
+			start.Wait()
+			_, err := svc.StartListen(9000, domain.EncodingText)
+			errs <- err
+		})
+	}
+	start.Done()
+	wg.Wait()
+	close(errs)
+
+	succeeded := 0
+	for err := range errs {
+		if err == nil {
+			succeeded++
+			continue
+		}
+		if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
+			t.Errorf("unexpected error type %T: %v", err, err)
+		}
+	}
+	if succeeded != 1 {
+		t.Errorf("successful StartListen = %d, want 1", succeeded)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if listens != 1 {
+		t.Errorf("socket.Listen called %d times, want 1", listens)
+	}
+	if n := len(svc.GetListeners()); n != 1 {
+		t.Errorf("listeners = %d, want 1", n)
 	}
 }

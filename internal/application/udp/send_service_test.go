@@ -183,3 +183,27 @@ func TestUDPSendService_Send_BytesSentMatchesSocketReturn(t *testing.T) {
 		t.Errorf("BytesSent = %d, want 3", result.BytesSent)
 	}
 }
+
+// リクエストの Host と Port をそのまま socket へ渡す。
+func TestUDPSendService_Send_PassesHostAndPort(t *testing.T) {
+	var gotHost string
+	var gotPort int
+	socket := &mockUDPSocket{
+		sendFn: func(host string, port int, data []byte) (int, error) {
+			gotHost, gotPort = host, port
+			return len(data), nil
+		},
+	}
+	svc := newSendSvc(socket)
+	if _, err := svc.Send(domain.UDPSendRequest{
+		Host:     "192.0.2.10",
+		Port:     40123,
+		Encoding: domain.EncodingText,
+		Payload:  "x",
+	}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if gotHost != "192.0.2.10" || gotPort != 40123 {
+		t.Errorf("socket.Send got host=%q port=%d, want 192.0.2.10:40123", gotHost, gotPort)
+	}
+}
