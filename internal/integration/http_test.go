@@ -549,8 +549,8 @@ func TestHTTP_SidebarLayout(t *testing.T) {
 		t.Fatalf("expected 2 sidebar entries, got %d", len(layout))
 	}
 
-	// MoveSidebarEntry: col1 (Alpha) を末尾（position 1）へ移動 → [Beta, Alpha]
-	if err = h.MoveSidebarEntry("collection", col1.ID, 1); err != nil {
+	// MoveSidebarEntry: col1 (Alpha) を末尾の挿入ゾーン（移動前の一覧で position 2）へ移動 → [Beta, Alpha]
+	if err = h.MoveSidebarEntry("collection", col1.ID, 2); err != nil {
 		t.Fatalf("MoveSidebarEntry: %v", err)
 	}
 	layout, err = h.GetSidebarLayout()
@@ -1236,7 +1236,7 @@ func TestHTTP_CorruptSidebarLayout(t *testing.T) {
 		t.Fatalf("CreateCollection: %v", err)
 	}
 	// 名前順と逆に並べ替えておき、再生成でリセットされることを確かめる。
-	if err = h1.MoveSidebarEntry("collection", alpha.ID, 1); err != nil {
+	if err = h1.MoveSidebarEntry("collection", alpha.ID, 2); err != nil {
 		t.Fatalf("MoveSidebarEntry: %v", err)
 	}
 

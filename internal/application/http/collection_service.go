@@ -413,7 +413,9 @@ func (s *CollectionService) RenameItem(collectionID, itemID, name string) error 
 
 // MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。
 // sourceCollectionID と targetCollectionID が同一の場合は同一コレクション内移動。
-// position は削除後の挿入先インデックス。-1 または範囲外の場合は末尾に追加する。
+// position は移動前の配列に対する挿入先インデックス（UI の挿入ゾーンの位置）。
+// 同一の親の中で後方へ移すときは、取り除いたぶんをここで補正する。
+// -1 または範囲外の場合は末尾に追加する。
 func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -536,6 +538,7 @@ func (s *CollectionService) snapshotForLayout() ([]*domain.Collection, []*domain
 }
 
 // MoveSidebarEntry はサイドバー上のエントリを指定位置に移動する。
+// position は移動前のレイアウトに対する挿入先インデックス（UI の挿入ゾーンの位置）。
 // 並び替えそのものが目的なので、保存失敗はエラーとして呼び出し側へ返す。
 // 移動前に突合するのは、frontend が GetSidebarLayout の（突合済みの）並びを見て
 // 移動先を決めるため。ファイルにまだ無いエントリの移動を取りこぼさない。

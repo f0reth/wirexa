@@ -61,7 +61,7 @@ type HTTPCollectionItemUseCase interface {
 	DeleteItem(collectionID, itemID string) error
 	// MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。
 	// targetParentID が空の場合はターゲットコレクションルートへ移動する。
-	// position は挿入先インデックス（削除後の配列に対する）。-1 の場合は末尾に追加。
+	// position は挿入先インデックス（移動前の配列に対する。UI の挿入ゾーンの位置）。-1 の場合は末尾に追加。
 	MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error
 }
 
@@ -297,6 +297,7 @@ func (h *HTTPHandler) GetSidebarLayout() ([]httpdomain.SidebarEntry, error) {
 }
 
 // MoveSidebarEntry はサイドバー上のエントリを指定位置に移動する。
+// position は移動前のレイアウトに対する挿入先インデックスで、負または範囲外なら末尾へ移す。
 func (h *HTTPHandler) MoveSidebarEntry(kind, id string, position int) error {
 	return h.collSvc.MoveSidebarEntry(kind, id, position)
 }

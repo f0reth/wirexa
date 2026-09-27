@@ -59,6 +59,8 @@ func layoutRemove(kind, id string) layoutMutator {
 }
 
 // layoutMove は既存エントリを position へ移動する。見つからない場合は NotFoundError を返す。
+// position は移動前のレイアウトに対する挿入先インデックス（UI の挿入ゾーンの位置）で、
+// 負または範囲外なら末尾へ移す。
 func layoutMove(kind, id string, position int) layoutMutator {
 	return func(layout []domain.SidebarEntry) ([]domain.SidebarEntry, error) {
 		srcIdx := -1
@@ -73,6 +75,10 @@ func layoutMove(kind, id string, position int) layoutMutator {
 		}
 		entry := layout[srcIdx]
 		layout = append(layout[:srcIdx], layout[srcIdx+1:]...)
+		// 後方へ移すときは、取り除いたぶん挿入先が 1 つ前に詰まる。
+		if srcIdx < position {
+			position--
+		}
 		return cmn.InsertAt(layout, entry, position), nil
 	}
 }

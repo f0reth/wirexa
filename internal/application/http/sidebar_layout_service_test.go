@@ -87,9 +87,15 @@ func TestLayoutMove(t *testing.T) {
 		position int
 		want     []string
 	}{
+		// position は移動前の一覧に対するインデックス（UI の挿入ゾーン）。
 		{"末尾から先頭へ", "c3", 0, []string{"c:c3", "c:c1", "c:c2"}},
-		{"先頭から末尾へ", "c1", 2, []string{"c:c2", "c:c3", "c:c1"}},
-		{"範囲外は末尾", "c1", -1, []string{"c:c2", "c:c3", "c:c1"}},
+		{"末尾から中間へ", "c3", 1, []string{"c:c1", "c:c3", "c:c2"}},
+		{"先頭を c2 と c3 の間へ", "c1", 2, []string{"c:c2", "c:c1", "c:c3"}},
+		{"先頭から末尾の挿入ゾーンへ", "c1", 3, []string{"c:c2", "c:c3", "c:c1"}},
+		{"自分の直前の挿入ゾーンは動かさない", "c2", 1, []string{"c:c1", "c:c2", "c:c3"}},
+		{"自分の直後の挿入ゾーンも動かさない", "c2", 2, []string{"c:c1", "c:c2", "c:c3"}},
+		{"負は末尾", "c1", -1, []string{"c:c2", "c:c3", "c:c1"}},
+		{"範囲外は末尾", "c1", 10, []string{"c:c2", "c:c3", "c:c1"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -100,6 +106,16 @@ func TestLayoutMove(t *testing.T) {
 			assertLayout(t, got, tc.want...)
 		})
 	}
+}
+
+// TestLayoutMove_MovesDownUsesPreRemovalIndex はルートのアイテムも、コレクションと同じく
+// 移動前のインデックスで後方へ移動することを確認する。
+func TestLayoutMove_MovesDownUsesPreRemovalIndex(t *testing.T) {
+	got, err := layoutMove(sidebarKindItem, "r1", 2)(entries("i:r1", "c:c1", "c:c2"))
+	if err != nil {
+		t.Fatalf("layoutMove: %v", err)
+	}
+	assertLayout(t, got, "c:c1", "i:r1", "c:c2")
 }
 
 func TestLayoutMove_NotFound(t *testing.T) {

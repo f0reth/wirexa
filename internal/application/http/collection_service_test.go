@@ -961,6 +961,92 @@ func TestCollectionService_MoveItem_SameCollection(t *testing.T) {
 	}
 }
 
+// TestCollectionService_MoveItem_SameCollection_MovesDown は同一コレクション内で後方へ移すとき、
+// position を移動前の配列に対するインデックス（UI の挿入ゾーン）として扱うことを確認する。
+func TestCollectionService_MoveItem_SameCollection_MovesDown(t *testing.T) {
+	tests := []struct {
+		name     string
+		id       string
+		position int
+		want     []string
+	}{
+		{"r1 を r2 と r3 の間へ", "r1", 2, []string{"r2", "r1", "r3"}},
+		{"r1 を末尾の挿入ゾーンへ", "r1", 3, []string{"r2", "r3", "r1"}},
+		{"r2 を末尾の挿入ゾーンへ", "r2", 3, []string{"r1", "r3", "r2"}},
+		{"自分の直後の挿入ゾーンは動かさない", "r2", 2, []string{"r1", "r2", "r3"}},
+		{"前方への移動は補正しない", "r3", 1, []string{"r1", "r3", "r2"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newSvc(t)
+			col := mustCreate(t, svc, "Col")
+			for _, id := range []string{"r1", "r2", "r3"} {
+				svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: id, Name: id})
+			}
+
+			if err := svc.MoveItem(col.ID, tc.id, col.ID, "", tc.position); err != nil {
+				t.Fatalf("MoveItem: %v", err)
+			}
+			got := itemIDs(svc.GetCollections()[0].Items)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("items = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestCollectionService_MoveItem_WithinFolder_MovesDown はフォルダの中で後方へ移すときも、
+// フォルダの子の並び（移動前）に対して補正することを確認する。
+func TestCollectionService_MoveItem_WithinFolder_MovesDown(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	folder, err := svc.AddFolder(col.ID, "", "Folder")
+	if err != nil {
+		t.Fatalf("AddFolder: %v", err)
+	}
+	for _, id := range []string{"r1", "r2", "r3"} {
+		svc.AddRequest(col.ID, folder.ID, domain.HTTPRequest{ID: id, Name: id})
+	}
+
+	if err := svc.MoveItem(col.ID, "r1", col.ID, folder.ID, 2); err != nil {
+		t.Fatalf("MoveItem: %v", err)
+	}
+	node, _, ok := findColItem(t, svc, col.ID, folder.ID)
+	if !ok {
+		t.Fatal("folder not found")
+	}
+	if got, want := itemIDs(node.Children), []string{"r2", "r1", "r3"}; !slices.Equal(got, want) {
+		t.Errorf("folder children = %v, want %v", got, want)
+	}
+}
+
+// TestCollectionService_MoveItem_ToOtherParent_NoAdjustment は同一コレクションでも
+// 別の親へ移すときは、移動元の位置で position を補正しないことを確認する。
+func TestCollectionService_MoveItem_ToOtherParent_NoAdjustment(t *testing.T) {
+	svc := newSvc(t)
+	col := mustCreate(t, svc, "Col")
+	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "r1"})
+	folder, err := svc.AddFolder(col.ID, "", "Folder")
+	if err != nil {
+		t.Fatalf("AddFolder: %v", err)
+	}
+	for _, id := range []string{"f1", "f2"} {
+		svc.AddRequest(col.ID, folder.ID, domain.HTTPRequest{ID: id, Name: id})
+	}
+
+	// r1 はルートの index 0。フォルダの子の position 1 へ入れる → [f1, r1, f2]
+	if err := svc.MoveItem(col.ID, "r1", col.ID, folder.ID, 1); err != nil {
+		t.Fatalf("MoveItem: %v", err)
+	}
+	node, _, ok := findColItem(t, svc, col.ID, folder.ID)
+	if !ok {
+		t.Fatal("folder not found")
+	}
+	if got, want := itemIDs(node.Children), []string{"f1", "r1", "f2"}; !slices.Equal(got, want) {
+		t.Errorf("folder children = %v, want %v", got, want)
+	}
+}
+
 func TestCollectionService_MoveItem_AcrossCollections(t *testing.T) {
 	svc := newSvc(t)
 	col1 := mustCreate(t, svc, "Col1")
@@ -1081,6 +1167,15 @@ func TestCollectionService_MoveSidebarEntry_Success(t *testing.T) {
 	if layout[0].ID != "c3" || layout[1].ID != "c1" || layout[2].ID != "c2" {
 		t.Errorf("unexpected layout after move: %v", layout)
 	}
+}
+
+func TestCollectionService_MoveSidebarEntry_MovesDownUsesPreRemovalIndex(t *testing.T) {
+	svc, layoutRepo := newSvcWithOrderedLayout(t, "c1", "c2", "c3")
+	// UI で c1 を c2 と c3 の間へ落とすと position 2 が届く → [c2, c1, c3]
+	if err := svc.MoveSidebarEntry(sidebarKindCollection, "c1", 2); err != nil {
+		t.Fatalf("MoveSidebarEntry: %v", err)
+	}
+	assertLayout(t, layoutRepo.snapshot(), "c:c2", "c:c1", "c:c3")
 }
 
 // --- MoveItemToSidebar ---
