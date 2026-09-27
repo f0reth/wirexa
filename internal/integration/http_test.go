@@ -3,16 +3,21 @@
 package integration
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -24,6 +29,7 @@ import (
 
 	"github.com/f0reth/Wirexa/internal/adapters"
 	httpapp "github.com/f0reth/Wirexa/internal/application/http"
+	cmndomain "github.com/f0reth/Wirexa/internal/domain"
 	httpdomain "github.com/f0reth/Wirexa/internal/domain/http"
 	httpinfra "github.com/f0reth/Wirexa/internal/infrastructure/http"
 	"github.com/f0reth/Wirexa/internal/testutil"
@@ -42,18 +48,49 @@ func newHTTPHandlerWithDialog(t *testing.T, dialog adapters.FileDialog) *adapter
 	return buildHTTPHandler(t, t.TempDir(), dialog)
 }
 
-// fileDialog は統合テスト用の FileDialog。OpenFile はユーザーが path を選んだものとして返す。
-type fileDialog struct{ path string }
+// newHTTPHandlerWithDirAndDialog は dir に保存し、ダイアログの選択結果を dialog が返す HTTPHandler を組み立てる。
+// 一時ファイルの場所 (dir/http-sessions) を確かめるテストで使う。
+func newHTTPHandlerWithDirAndDialog(t *testing.T, dir string, dialog adapters.FileDialog) *adapters.HTTPHandler {
+	t.Helper()
+	return buildHTTPHandler(t, dir, dialog)
+}
+
+// fileDialog は統合テスト用の FileDialog。OpenFile はユーザーが path を選んだものとして返し、
+// SaveFile は savePath (空ならキャンセル) を返して呼び出し回数を数える。
+type fileDialog struct {
+	path      string
+	savePath  string
+	saveCalls atomic.Int32
+}
 
 func (d *fileDialog) OpenFile(context.Context, runtime.OpenDialogOptions) (string, error) {
 	return d.path, nil
 }
 
 func (d *fileDialog) SaveFile(context.Context, runtime.SaveDialogOptions) (string, error) {
-	return "", nil
+	d.saveCalls.Add(1)
+	return d.savePath, nil
 }
 
+// httpFixture は HTTPHandler と、app.go の終了処理を再現するためのサービスをまとめる。
+type httpFixture struct {
+	h         *adapters.HTTPHandler
+	reqSvc    *httpapp.HTTPRequestService
+	netClient *httpinfra.NetClient
+}
+
+// buildHTTPHandler は HTTPHandler を組み立て、テスト終了時に一時ファイルを回収する。
 func buildHTTPHandler(t *testing.T, dir string, dialog adapters.FileDialog) *adapters.HTTPHandler {
+	t.Helper()
+	f := buildHTTPFixture(t, dir, dialog)
+	t.Cleanup(f.netClient.Cleanup)
+	return f.h
+}
+
+// buildHTTPFixture は app.go の initialize と同じ依存で HTTPHandler を組み立てる。
+// NetClient.Cleanup は登録しないので、終了処理の順序やクラッシュ (Cleanup が走らない終了) を
+// 再現するテストで使う。回収が必要なら呼び出し側で登録する。
+func buildHTTPFixture(t *testing.T, dir string, dialog adapters.FileDialog) httpFixture {
 	t.Helper()
 	collDir := filepath.Join(dir, "collections")
 	repo, err := httpinfra.NewCollectionRepository(collDir, nil)
@@ -67,7 +104,6 @@ func buildHTTPHandler(t *testing.T, dir string, dialog adapters.FileDialog) *ada
 	}
 	files := httpinfra.NewFileRegistry()
 	netClient := httpinfra.NewNetClient(files, filepath.Join(dir, "http-sessions"))
-	t.Cleanup(netClient.Cleanup)
 	reqSvc := httpapp.NewHTTPRequestService(context.Background(), netClient, testutil.NoopLogger{})
 	h := &adapters.HTTPHandler{}
 	adapters.SetupHTTPHandler(context.Background(), h, adapters.HTTPHandlerDeps{
@@ -78,7 +114,7 @@ func buildHTTPHandler(t *testing.T, dir string, dialog adapters.FileDialog) *ada
 		Files:     files,
 		Dialog:    dialog,
 	})
-	return h
+	return httpFixture{h: h, reqSvc: reqSvc, netClient: netClient}
 }
 
 // newHTTPHandler は統合テスト用に HTTPHandler を DI で組み立てる。
@@ -1454,13 +1490,17 @@ func writeCollectionJSON(t *testing.T, dir, id, body string) {
 	}
 }
 
-// collectionJSON は1件のリクエストだけを持つコレクションの JSON を返す。
-func collectionJSON(id, name, itemID string) string {
-	const tmpl = `{"id":%[1]q,"name":%[2]q,"items":[{"type":"request","id":%[3]q,"name":%[3]q,"children":[],
-		"request":{"id":%[3]q,"name":%[3]q,"method":"GET","url":"http://example.com","doc":"",
+// collectionJSON は itemIDs のリクエストをルート直下に並べたコレクションの JSON を返す。
+func collectionJSON(id, name string, itemIDs ...string) string {
+	const itemTmpl = `{"type":"request","id":%[1]q,"name":%[1]q,"children":[],
+		"request":{"id":%[1]q,"name":%[1]q,"method":"GET","url":"http://example.com","doc":"",
 		"headers":[],"params":[],"auth":{"type":"none","username":"","password":"","token":""},
-		"settings":{},"body":{"type":"json","contents":{}}}}]}`
-	return fmt.Sprintf(tmpl, id, name, itemID)
+		"settings":{},"body":{"type":"json","contents":{}}}}`
+	items := make([]string, 0, len(itemIDs))
+	for _, itemID := range itemIDs {
+		items = append(items, fmt.Sprintf(itemTmpl, itemID))
+	}
+	return fmt.Sprintf(`{"id":%q,"name":%q,"items":[%s]}`, id, name, strings.Join(items, ","))
 }
 
 // TestHTTP_RecoversDuplicateItemsOnStartup は、移動の途中でプロセスが消えて
@@ -1600,5 +1640,909 @@ func TestHTTP_AddRequest_IgnoresCallerItemID(t *testing.T) {
 		if len(c.Items) != 1 || c.Items[0].ID != want[c.ID] {
 			t.Errorf("%s items after restart = %v, want [%s]", c.Name, c.Items, want[c.ID])
 		}
+	}
+}
+
+// truncatedBody は MaxResponseBodyMB: 1 で切り詰められる大きさ (1 MiB + 1 KiB) の本文を返す。
+func truncatedBody() []byte {
+	return bytes.Repeat([]byte("0123456789abcdef"), (1<<20+1<<10)/16)
+}
+
+// newBodyServer は body を text/plain で返すサーバーを起動する。
+func newBodyServer(t *testing.T, body []byte) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// sendTruncated は MaxResponseBodyMB: 1 で url へ送り、本文が切り詰められたことを確かめる。
+func sendTruncated(t *testing.T, h *adapters.HTTPHandler, executionID, url string) httpdomain.HTTPResponse {
+	t.Helper()
+	resp, err := h.SendRequest(executionID, httpdomain.HTTPRequest{
+		Method:   "GET",
+		URL:      url,
+		Settings: httpdomain.RequestSettings{MaxResponseBodyMB: 1},
+	})
+	if err != nil {
+		t.Fatalf("SendRequest(%s): %v", executionID, err)
+	}
+	if !resp.BodyTruncated {
+		t.Fatalf("SendRequest(%s): BodyTruncated = false, want true", executionID)
+	}
+	return resp
+}
+
+// spillFiles は dir/http-sessions 配下にある、切り詰めたレスポンスの一時ファイルを返す。
+func spillFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "http-sessions", "wirexa-http-*", "response-*"))
+	if err != nil {
+		t.Fatalf("Glob: %v", err)
+	}
+	return files
+}
+
+// TestHTTP_TruncatedResponse_SaveAndDiscard は、切り詰めたレスポンスの全文が一時ファイルへ退避され、
+// Handler と NetClient が共有する ResponseStore を通して保存・破棄できることを確認する。
+func TestHTTP_TruncatedResponse_SaveAndDiscard(t *testing.T) {
+	body := truncatedBody()
+	srv := newBodyServer(t, body)
+	dir := t.TempDir()
+	dialog := &fileDialog{}
+	h := newHTTPHandlerWithDirAndDialog(t, dir, dialog)
+
+	resp := sendTruncated(t, h, "exec-save", srv.URL)
+	if len(resp.Body) != 1<<20 {
+		t.Errorf("len(Body) = %d, want %d", len(resp.Body), 1<<20)
+	}
+	if resp.Size != int64(len(body)) {
+		t.Errorf("Size = %d, want the full length %d", resp.Size, len(body))
+	}
+	spilled := spillFiles(t, dir)
+	if len(spilled) != 1 {
+		t.Fatalf("temp files = %v, want 1", spilled)
+	}
+
+	// ダイアログのキャンセルでは保存せず、一時ファイルを残して再保存できるようにする。
+	saved, err := h.SaveResponseBody("exec-save")
+	if err != nil || saved {
+		t.Fatalf("SaveResponseBody (canceled) = (%v, %v), want (false, nil)", saved, err)
+	}
+	if _, err = os.Stat(spilled[0]); err != nil {
+		t.Fatalf("temp file should be kept after cancel: %v", err)
+	}
+
+	// 保存すると全文が保存先へコピーされ、元の一時ファイルは削除される。
+	dialog.savePath = filepath.Join(t.TempDir(), "out.txt")
+	saved, err = h.SaveResponseBody("exec-save")
+	if err != nil || !saved {
+		t.Fatalf("SaveResponseBody = (%v, %v), want (true, nil)", saved, err)
+	}
+	got, err := os.ReadFile(dialog.savePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Errorf("saved %d bytes, want the full body (%d bytes)", len(got), len(body))
+	}
+	if _, err = os.Stat(spilled[0]); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("temp file should be removed after saving: %v", err)
+	}
+
+	// 保存済みの ID はダイアログを開く前に拒否する。
+	calls := dialog.saveCalls.Load()
+	if _, err = h.SaveResponseBody("exec-save"); !errors.Is(err, httpdomain.ErrResponseUnavailable) {
+		t.Errorf("second SaveResponseBody: want ErrResponseUnavailable, got %v", err)
+	}
+	if err = h.DiscardResponseBody("exec-save"); !errors.Is(err, httpdomain.ErrResponseUnavailable) {
+		t.Errorf("DiscardResponseBody after saving: want ErrResponseUnavailable, got %v", err)
+	}
+	if got := dialog.saveCalls.Load(); got != calls {
+		t.Errorf("save dialog opened %d more times for a saved response", got-calls)
+	}
+
+	// 保持中の ID では送信できず、破棄すると一時ファイルが消えて再び送信できる。
+	sendTruncated(t, h, "exec-discard", srv.URL)
+	if files := spillFiles(t, dir); len(files) != 1 {
+		t.Fatalf("temp files = %v, want 1", files)
+	}
+	_, err = h.SendRequest("exec-discard", httpdomain.HTTPRequest{Method: "GET", URL: srv.URL})
+	if !errors.Is(err, httpdomain.ErrResponseBusy) {
+		t.Errorf("SendRequest while the response is held: want ErrResponseBusy, got %v", err)
+	}
+	if err := h.DiscardResponseBody("exec-discard"); err != nil {
+		t.Fatalf("DiscardResponseBody: %v", err)
+	}
+	if files := spillFiles(t, dir); len(files) != 0 {
+		t.Errorf("temp files after discard = %v, want none", files)
+	}
+	sendTruncated(t, h, "exec-discard", srv.URL)
+}
+
+// TestHTTP_SaveResponseBase64_BinaryBody は非 UTF-8 の本文が base64 で返り、
+// SaveResponseBase64 でデコードして元のバイト列のまま保存できることを確認する。
+func TestHTTP_SaveResponseBase64_BinaryBody(t *testing.T) {
+	payload := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe, 0x80}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(payload)
+	}))
+	defer srv.Close()
+
+	dialog := &fileDialog{savePath: filepath.Join(t.TempDir(), "out.png")}
+	h := newHTTPHandlerWithDialog(t, dialog)
+	resp, err := h.SendRequest("exec-bin", httpdomain.HTTPRequest{Method: "GET", URL: srv.URL})
+	if err != nil {
+		t.Fatalf("SendRequest: %v", err)
+	}
+	if !resp.BodyBase64 {
+		t.Fatalf("BodyBase64 = false, want true for a non UTF-8 body")
+	}
+	if err = h.SaveResponseBase64(resp.Body, resp.ContentType); err != nil {
+		t.Fatalf("SaveResponseBase64: %v", err)
+	}
+	got, err := os.ReadFile(dialog.savePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Errorf("saved = %x, want %x", got, payload)
+	}
+}
+
+// treeShape は木構造を名前で表した文字列にする (フォルダは name[子...])。
+// ID は採番されるため、並びと入れ子は名前で比べる。
+func treeShape(items []*httpdomain.TreeItem) string {
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.Type == httpdomain.ItemTypeFolder {
+			parts = append(parts, item.Name+"["+treeShape(item.Children)+"]")
+			continue
+		}
+		parts = append(parts, item.Name)
+	}
+	return strings.Join(parts, " ")
+}
+
+// collectionShapes はコレクション ID ごとの treeShape を返す。
+func collectionShapes(h *adapters.HTTPHandler) map[string]string {
+	shapes := map[string]string{}
+	for _, c := range h.GetCollections() {
+		shapes[c.ID] = treeShape(c.Items)
+	}
+	return shapes
+}
+
+// TestHTTP_MoveItem_ReorderAndIntoFolder は、コレクション内の並び替え・フォルダへの移動・
+// 自分のサブツリーへの移動の拒否・入れ子のフォルダのコレクション間の移動が、
+// ディスクから読み直しても同じ木構造になることを確認する。
+func TestHTTP_MoveItem_ReorderAndIntoFolder(t *testing.T) {
+	dir := t.TempDir()
+	h := newHTTPHandlerWithDir(t, dir)
+	src, err := h.CreateCollection("Src")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
+	}
+	dst, err := h.CreateCollection("Dst")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
+	}
+	add := func(parentID, name string) string {
+		t.Helper()
+		item, aerr := h.AddRequest(src.ID, parentID, httpdomain.HTTPRequest{Name: name, Method: "GET"})
+		if aerr != nil {
+			t.Fatalf("AddRequest(%s): %v", name, aerr)
+		}
+		return item.ID
+	}
+	r1 := add("", "r1")
+	add("", "r2")
+	r3 := add("", "r3")
+	folder, err := h.AddFolder(src.ID, "", "F")
+	if err != nil {
+		t.Fatalf("AddFolder: %v", err)
+	}
+	add(folder.ID, "fc")
+	sub, err := h.AddFolder(src.ID, folder.ID, "SF")
+	if err != nil {
+		t.Fatalf("AddFolder: %v", err)
+	}
+	assertShapes := func(when string, want map[string]string) {
+		t.Helper()
+		if got := collectionShapes(h); !maps.Equal(got, want) {
+			t.Errorf("%s: trees = %v, want %v", when, got, want)
+		}
+	}
+
+	// position は移動前の並びに対する挿入位置。r1 を r2 と r3 の間 (position 2) へ。
+	if err = h.MoveItem(src.ID, r1, src.ID, "", 2); err != nil {
+		t.Fatalf("MoveItem (reorder): %v", err)
+	}
+	assertShapes("after reorder", map[string]string{src.ID: "r2 r1 r3 F[fc SF[]]", dst.ID: ""})
+
+	if err = h.MoveItem(src.ID, r3, src.ID, folder.ID, -1); err != nil {
+		t.Fatalf("MoveItem (into folder): %v", err)
+	}
+	assertShapes("after moving into the folder", map[string]string{src.ID: "r2 r1 F[fc SF[] r3]", dst.ID: ""})
+
+	// 自分の子フォルダへの移動は拒否し、ファイルを書き換えない。
+	srcPath := filepath.Join(dir, "collections", src.ID+".json")
+	before, err := os.ReadFile(srcPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var ve *cmndomain.ValidationError
+	if err = h.MoveItem(src.ID, folder.ID, src.ID, sub.ID, 0); !errors.As(err, &ve) {
+		t.Fatalf("MoveItem into its own subtree: want ValidationError, got %v", err)
+	}
+	after, err := os.ReadFile(srcPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("rejected move rewrote the collection file")
+	}
+
+	// 子を持つフォルダをコレクションごと移す。
+	if err := h.MoveItem(src.ID, folder.ID, dst.ID, "", -1); err != nil {
+		t.Fatalf("MoveItem (across collections): %v", err)
+	}
+	want := map[string]string{src.ID: "r2 r1", dst.ID: "F[fc SF[] r3]"}
+	assertShapes("after moving across collections", want)
+
+	h = newHTTPHandlerWithDir(t, dir)
+	assertShapes("after restart", want)
+}
+
+// TestHTTP_SidebarOperations_SurviveRestart は MoveItemToSidebar・MoveSidebarEntry・
+// __root__ 直下の DeleteItem の結果が、再起動後のレイアウトとコレクションに残ることを確認する。
+func TestHTTP_SidebarOperations_SurviveRestart(t *testing.T) {
+	dir := t.TempDir()
+	layoutPath := filepath.Join(dir, "sidebar_layout.json")
+	h1 := newHTTPHandlerWithDir(t, dir)
+	alpha, err := h1.CreateCollection("Alpha")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
+	}
+	beta, err := h1.CreateCollection("Beta")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
+	}
+	item, err := h1.AddRequest(alpha.ID, "", httpdomain.HTTPRequest{Name: "R", Method: "GET"})
+	if err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	if err = h1.MoveItemToSidebar(alpha.ID, item.ID, 0); err != nil {
+		t.Fatalf("MoveItemToSidebar: %v", err)
+	}
+	// [item, Alpha, Beta] の Alpha を末尾の挿入ゾーン (position 3) へ。
+	if err = h1.MoveSidebarEntry("collection", alpha.ID, 3); err != nil {
+		t.Fatalf("MoveSidebarEntry: %v", err)
+	}
+	want := []httpdomain.SidebarEntry{
+		{Kind: "item", ID: item.ID},
+		{Kind: "collection", ID: beta.ID},
+		{Kind: "collection", ID: alpha.ID},
+	}
+
+	h2 := newHTTPHandlerWithDir(t, dir)
+	layout, err := h2.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	if !slices.Equal(layout, want) {
+		t.Errorf("layout after restart = %v, want %v", layout, want)
+	}
+	if items := h2.GetRootItems(); len(items) != 1 || items[0].ID != item.ID {
+		t.Errorf("root items after restart = %v, want [%s]", items, item.ID)
+	}
+	for _, c := range h2.GetCollections() {
+		if len(c.Items) != 0 {
+			t.Errorf("%s still holds %v after MoveItemToSidebar", c.Name, c.Items)
+		}
+	}
+
+	if err = h2.DeleteItem(httpdomain.RootCollectionID, item.ID); err != nil {
+		t.Fatalf("DeleteItem: %v", err)
+	}
+	want = want[1:]
+	h3 := newHTTPHandlerWithDir(t, dir)
+	layout, err = h3.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	if !slices.Equal(layout, want) {
+		t.Errorf("layout after DeleteItem and restart = %v, want %v", layout, want)
+	}
+	// 読み出し時の突合ではなく、ファイルからもエントリが消えている。
+	saved, err := httpinfra.NewSidebarLayoutRepository(layoutPath).Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !slices.Equal(saved, want) {
+		t.Errorf("sidebar_layout.json = %v, want %v", saved, want)
+	}
+}
+
+// TestHTTP_ReconcilesRootItemEntriesOnStartup は、__root__.json と食い違うアイテムのエントリ
+// (stale・重複・欠落) が起動時に修復され、ファイルにも書き戻されることを確認する。
+func TestHTTP_ReconcilesRootItemEntriesOnStartup(t *testing.T) {
+	dir := t.TempDir()
+	root := httpdomain.RootCollectionID
+	writeCollectionJSON(t, dir, root, collectionJSON(root, root, "r1", "r2"))
+	layoutPath := filepath.Join(dir, "sidebar_layout.json")
+	layout := `[{"kind":"item","id":"gone"},{"kind":"item","id":"r1"},{"kind":"item","id":"r1"}]`
+	if err := os.WriteFile(layoutPath, []byte(layout), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	h := newHTTPHandlerWithDir(t, dir)
+	want := []httpdomain.SidebarEntry{{Kind: "item", ID: "r1"}, {Kind: "item", ID: "r2"}}
+	got, err := h.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("layout = %v, want %v", got, want)
+	}
+	saved, err := httpinfra.NewSidebarLayoutRepository(layoutPath).Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !slices.Equal(saved, want) {
+		t.Errorf("sidebar_layout.json = %v, want %v", saved, want)
+	}
+}
+
+// TestHTTP_StaleResponseFilesSweptOnRestart は、切り詰めたまま Cleanup せずに終わった
+// セッションの一時ファイルを起動時の sweep が回収し、marker の無いディレクトリは残すことと、
+// 前回セッションのファイル token が再起動後に使えないことを確認する。
+// sweep を app.go と同じ sessionDir で NetClient の作成前に呼ぶ配線は、このテストでは確かめない。
+// 注意: SweepStaleTempFiles は os.TempDir() 直下の旧形式の一時ファイル (wirexa-response-*) も消す。
+func TestHTTP_StaleResponseFilesSweptOnRestart(t *testing.T) {
+	srv := newBodyServer(t, truncatedBody())
+	selected := filepath.Join(t.TempDir(), "payload.txt")
+	if err := os.WriteFile(selected, []byte("payload"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	dir := t.TempDir()
+	sessions := filepath.Join(dir, "http-sessions")
+	dialog := &fileDialog{path: selected}
+
+	// 1 回目: 本文を切り詰めたまま NetClient.Cleanup を呼ばずに終わる (クラッシュ相当)。
+	first := buildHTTPFixture(t, dir, dialog)
+	picked, err := first.h.OpenFilePicker("")
+	if err != nil {
+		t.Fatalf("OpenFilePicker: %v", err)
+	}
+	sendTruncated(t, first.h, "exec-stale", srv.URL)
+	stale, err := filepath.Glob(filepath.Join(sessions, "wirexa-http-*"))
+	if err != nil || len(stale) != 1 {
+		t.Fatalf("session dirs = %v (%v), want 1", stale, err)
+	}
+	// 接頭辞だけが一致し、Wirexa の marker を持たないディレクトリ。
+	foreign := filepath.Join(sessions, "wirexa-http-foreign")
+	if err = os.MkdirAll(foreign, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err = os.WriteFile(filepath.Join(foreign, "keep.txt"), []byte("keep"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	httpinfra.SweepStaleTempFiles(sessions)
+
+	if _, err = os.Stat(stale[0]); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("stale session dir should be swept: %v", err)
+	}
+	if _, err = os.Stat(filepath.Join(foreign, "keep.txt")); err != nil {
+		t.Errorf("a dir without the Wirexa marker must be kept: %v", err)
+	}
+	if _, err = os.Stat(filepath.Join(sessions, ".session-secret")); err != nil {
+		t.Errorf(".session-secret must be kept: %v", err)
+	}
+
+	// 2 回目: ファイル token はセッション内でしか使えない。
+	second := newHTTPHandlerWithDirAndDialog(t, dir, dialog)
+	_, err = second.SendRequest("exec-token", httpdomain.HTTPRequest{
+		Method: "POST",
+		URL:    srv.URL,
+		Body:   httpdomain.RequestBody{Type: httpdomain.BodyTypeFile, File: httpdomain.FileReference{Token: picked.Token}},
+	})
+	if !errors.Is(err, httpdomain.ErrFileAccessDenied) {
+		t.Errorf("previous session's token: want ErrFileAccessDenied, got %v", err)
+	}
+}
+
+// TestHTTP_Shutdown_CancelsInFlightThenCleansTempFiles は app.go の終了順序
+// (HTTPRequestService.Shutdown → NetClient.Cleanup) を再現し、実行中のリクエストが止まり、
+// 以降の送信がサーバーへ届かず、一時ファイルとセッションディレクトリが消えることを確認する。
+func TestHTTP_Shutdown_CancelsInFlightThenCleansTempFiles(t *testing.T) {
+	body := truncatedBody()
+	hang := make(chan struct{})
+	var afterHits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/big":
+			_, _ = w.Write(body)
+		case "/hang":
+			close(hang)
+			<-r.Context().Done()
+		default:
+			afterHits.Add(1)
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	f := buildHTTPFixture(t, dir, &fileDialog{})
+	t.Cleanup(f.netClient.Cleanup)
+	sendTruncated(t, f.h, "exec-held", srv.URL+"/big")
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.h.SendRequest("exec-hang", httpdomain.HTTPRequest{Method: "GET", URL: srv.URL + "/hang"})
+		done <- err
+	}()
+	select {
+	case <-hang:
+	case <-time.After(5 * time.Second):
+		t.Fatal("server did not receive the in-flight request")
+	}
+
+	if !f.reqSvc.Shutdown(3 * time.Second) {
+		t.Fatal("Shutdown timed out waiting for the in-flight request")
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("in-flight SendRequest should fail after Shutdown")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("in-flight SendRequest did not return after Shutdown")
+	}
+
+	if _, err := f.h.SendRequest("exec-after", httpdomain.HTTPRequest{Method: "GET", URL: srv.URL + "/after"}); err == nil {
+		t.Error("SendRequest after Shutdown should fail")
+	}
+	if got := afterHits.Load(); got != 0 {
+		t.Errorf("request after Shutdown reached the server %d times", got)
+	}
+	// 終了処理中のキャンセルは何もせず、墓標も残さない。
+	f.h.CancelRequest("exec-after")
+
+	f.netClient.Cleanup()
+	entries, err := os.ReadDir(filepath.Join(dir, "http-sessions"))
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	for _, e := range entries {
+		if e.Name() != ".session-secret" {
+			t.Errorf("left after Cleanup: %s", e.Name())
+		}
+	}
+	if _, err := f.h.SaveResponseBody("exec-held"); !errors.Is(err, httpdomain.ErrResponseUnavailable) {
+		t.Errorf("SaveResponseBody after Cleanup: want ErrResponseUnavailable, got %v", err)
+	}
+}
+
+// TestHTTP_MoveItem_ThroughRootCollection は、予約済みの __root__ をサイドバーのコレクションとして
+// 動かせないことと、MoveItem で __root__ に出し入れしたアイテムのエントリが、レイアウトを
+// 保存せずに読み出し時の突合で現れ・消えることを確認する。
+func TestHTTP_MoveItem_ThroughRootCollection(t *testing.T) {
+	dir := t.TempDir()
+	layoutPath := filepath.Join(dir, "sidebar_layout.json")
+	h := newHTTPHandlerWithDir(t, dir)
+	col, err := h.CreateCollection("C")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
+	}
+	item, err := h.AddRequest(col.ID, "", httpdomain.HTTPRequest{Name: "R", Method: "GET"})
+	if err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+
+	var nf *cmndomain.NotFoundError
+	if err = h.MoveSidebarEntry("collection", httpdomain.RootCollectionID, 0); !errors.As(err, &nf) {
+		t.Errorf("MoveSidebarEntry(__root__): want NotFoundError, got %v", err)
+	}
+
+	if err = h.MoveItem(col.ID, item.ID, httpdomain.RootCollectionID, "", -1); err != nil {
+		t.Fatalf("MoveItem into __root__: %v", err)
+	}
+	if items := h.GetRootItems(); len(items) != 1 || items[0].ID != item.ID {
+		t.Errorf("root items = %v, want [%s]", items, item.ID)
+	}
+	layout, err := h.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	if last := layout[len(layout)-1]; last != (httpdomain.SidebarEntry{Kind: "item", ID: item.ID}) {
+		t.Errorf("last entry = %v, want the moved item", last)
+	}
+	raw, err := os.ReadFile(layoutPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(raw), item.ID) {
+		t.Errorf("MoveItem should not write the layout (the entry comes from reconciliation):\n%s", raw)
+	}
+
+	if err = h.MoveItem(httpdomain.RootCollectionID, item.ID, col.ID, "", -1); err != nil {
+		t.Fatalf("MoveItem out of __root__: %v", err)
+	}
+	layout, err = h.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	want := []httpdomain.SidebarEntry{{Kind: "collection", ID: col.ID}}
+	if !slices.Equal(layout, want) {
+		t.Errorf("layout = %v, want %v", layout, want)
+	}
+}
+
+// TestHTTP_SendRequest_AuthOverridesAuthorizationHeader は、認証の設定がユーザー指定の
+// Authorization ヘッダーより優先され、ワイヤ上に値が 1 つだけ載ることを確認する。
+func TestHTTP_SendRequest_AuthOverridesAuthorizationHeader(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+		auth httpdomain.RequestAuth
+	}{
+		{
+			name: "basic",
+			auth: httpdomain.RequestAuth{Type: "basic", Username: "user", Password: "pass"},
+			want: "Basic " + base64.StdEncoding.EncodeToString([]byte("user:pass")),
+		},
+		{
+			name: "bearer",
+			auth: httpdomain.RequestAuth{Type: "bearer", Token: "mytoken"},
+			want: "Bearer mytoken",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = r.Header.Values("Authorization")
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer srv.Close()
+
+			h := newHTTPHandler(t)
+			_, err := h.SendRequest("exec-auth", httpdomain.HTTPRequest{
+				Method:  "GET",
+				URL:     srv.URL,
+				Headers: []httpdomain.KeyValuePair{{Key: "Authorization", Value: "Custom x", Enabled: true}},
+				Auth:    tc.auth,
+			})
+			if err != nil {
+				t.Fatalf("SendRequest: %v", err)
+			}
+			if !slices.Equal(got, []string{tc.want}) {
+				t.Errorf("Authorization = %q, want [%q]", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestHTTP_SendRequest_SelectedFileRemoved は、選択後・送信前に消えたファイルを送ろうとすると
+// パスを含まない ErrSelectedFileUnavailable になり、本文がサーバーへ届かないことを確認する。
+func TestHTTP_SendRequest_SelectedFileRemoved(t *testing.T) {
+	const content = "must not be sent"
+	var mu sync.Mutex
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(data))
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	tests := []struct {
+		body func(token string) httpdomain.RequestBody
+		name string
+	}{
+		{name: "file body", body: func(token string) httpdomain.RequestBody {
+			return httpdomain.RequestBody{Type: httpdomain.BodyTypeFile, File: httpdomain.FileReference{Token: token}}
+		}},
+		{name: "form-data の file 行", body: func(token string) httpdomain.RequestBody {
+			return httpdomain.RequestBody{Type: httpdomain.BodyTypeFormData, FormData: []httpdomain.FormRow{
+				{Key: "f", Kind: httpdomain.FormRowKindFile, File: httpdomain.FileReference{Token: token}, Enabled: true},
+			}}
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "gone.txt")
+			if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+			h := newHTTPHandlerWithDialog(t, &fileDialog{path: p})
+			picked, err := h.OpenFilePicker("")
+			if err != nil {
+				t.Fatalf("OpenFilePicker: %v", err)
+			}
+			if err = os.Remove(p); err != nil {
+				t.Fatalf("Remove: %v", err)
+			}
+
+			_, err = h.SendRequest("exec-gone", httpdomain.HTTPRequest{Method: "POST", URL: srv.URL, Body: tc.body(picked.Token)})
+			if !errors.Is(err, httpdomain.ErrSelectedFileUnavailable) {
+				t.Fatalf("SendRequest: want ErrSelectedFileUnavailable, got %v", err)
+			}
+			if strings.Contains(err.Error(), p) {
+				t.Errorf("error leaks the path: %q", err)
+			}
+		})
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, b := range bodies {
+		if strings.Contains(b, content) {
+			t.Errorf("the removed file reached the server: %q", b)
+		}
+	}
+}
+
+// smallReadBufferListener は accept した接続の受信バッファを小さくして、
+// サーバーが止まっている間にクライアントが先読みして送れる量を減らす。
+type smallReadBufferListener struct{ net.Listener }
+
+func (l smallReadBufferListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if tc, ok := c.(*net.TCPConn); ok {
+		_ = tc.SetReadBuffer(4 << 10)
+	}
+	return c, err
+}
+
+// TestHTTP_SendRequest_SelectedFileModifiedDuringSend は、送信中に選択ファイルが変更された場合の
+// 扱いを確認する。Windows は共有モードで書き込みを拒否するので変更自体が失敗して送信が成功し、
+// それ以外は ErrSelectedFileChanged で送信を打ち切る (CI の ubuntu では後者だけを検証する)。
+//
+// クライアントの読み取り位置を外から観測できないので、変更は書き換えではなく 0 バイトへの切り詰めにし
+// (以降の読み込みがすべて短くなり、末尾の検査を待たずに気付く)、ファイルをソケットのバッファより
+// 十分大きくして「変更がクライアントの末尾の読み取りより先に起きる」状況を作る。
+func TestHTTP_SendRequest_SelectedFileModifiedDuringSend(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "big.bin")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err = f.Truncate(64 << 20); err != nil {
+		t.Fatalf("Truncate: %v", err)
+	}
+	if err = f.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	started := make(chan struct{})
+	resume := make(chan struct{})
+	var once sync.Once
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 1<<10)
+		_, _ = io.ReadFull(r.Body, buf)
+		once.Do(func() { close(started) })
+		<-resume
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.Listener = smallReadBufferListener{srv.Listener}
+	srv.Start()
+	defer srv.Close()
+
+	h := newHTTPHandlerWithDialog(t, &fileDialog{path: p})
+	picked, err := h.OpenFilePicker("")
+	if err != nil {
+		t.Fatalf("OpenFilePicker: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, serr := h.SendRequest("exec-modify", httpdomain.HTTPRequest{
+			Method: "POST",
+			URL:    srv.URL,
+			Body:   httpdomain.RequestBody{Type: httpdomain.BodyTypeFile, File: httpdomain.FileReference{Token: picked.Token}},
+		})
+		done <- serr
+	}()
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		close(resume)
+		t.Fatal("server did not start reading the body")
+	}
+	truncErr := os.Truncate(p, 0)
+	close(resume)
+
+	var sendErr error
+	select {
+	case sendErr = <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("SendRequest did not return")
+	}
+
+	if goruntime.GOOS == "windows" {
+		if truncErr == nil {
+			t.Fatal("truncating the file being sent succeeded; the share mode should deny writers")
+		}
+		if sendErr != nil {
+			t.Fatalf("SendRequest: %v", sendErr)
+		}
+		return
+	}
+	if truncErr != nil {
+		t.Fatalf("Truncate: %v", truncErr)
+	}
+	if sendErr == nil {
+		t.Fatal("前提が崩れた: 切り詰めより先にファイル全体を読み終えて送信が成功した (ファイルを大きくする必要がある)")
+	}
+	if !errors.Is(sendErr, httpdomain.ErrSelectedFileChanged) {
+		t.Fatalf("SendRequest: want ErrSelectedFileChanged, got %v", sendErr)
+	}
+}
+
+// droppingServer は Content-Length で declared バイトを宣言し、written バイトだけ書いてから
+// 接続を閉じるサーバーを起動し、その URL を返す。
+func droppingServer(t *testing.T, declared, written int) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, aerr := ln.Accept()
+			if aerr != nil {
+				return
+			}
+			go func() {
+				defer func() { _ = conn.Close() }()
+				if _, rerr := http.ReadRequest(bufio.NewReader(conn)); rerr != nil {
+					return
+				}
+				fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n", declared)
+				_, _ = conn.Write(bytes.Repeat([]byte("x"), written))
+			}()
+		}
+	}()
+	return "http://" + ln.Addr().String()
+}
+
+// TestHTTP_SendRequest_ConnectionDroppedMidBody は、本文の途中で接続が切れるとエラーになり、
+// 一時ファイルへ退避している最中に切れた場合も作りかけの一時ファイルを残さず、
+// 同じ executionID を再利用できることを確認する。
+func TestHTTP_SendRequest_ConnectionDroppedMidBody(t *testing.T) {
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ok.Close()
+
+	tests := []struct {
+		name    string
+		written int
+	}{
+		{name: "閾値未満で切断", written: 512 << 10},
+		{name: "閾値を超えて一時ファイルへ退避中に切断", written: 2 << 20},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			url := droppingServer(t, 4<<20, tc.written)
+			dir := t.TempDir()
+			h := newHTTPHandlerWithDir(t, dir)
+
+			_, err := h.SendRequest("exec-drop", httpdomain.HTTPRequest{
+				Method:   "GET",
+				URL:      url,
+				Settings: httpdomain.RequestSettings{MaxResponseBodyMB: 1},
+			})
+			if err == nil {
+				t.Fatal("SendRequest should fail when the connection drops mid-body")
+			}
+			if files := spillFiles(t, dir); len(files) != 0 {
+				t.Errorf("partial temp files left: %v", files)
+			}
+			if _, err := h.SendRequest("exec-drop", httpdomain.HTTPRequest{Method: "GET", URL: ok.URL}); err != nil {
+				t.Errorf("the execution ID should be reusable after the failure: %v", err)
+			}
+		})
+	}
+}
+
+// TestHTTP_CorruptCollectionAmongValidOnes は、壊れたコレクションと壊れた __root__.json だけを
+// 退避して正常なコレクションで起動し、__root__ を空で作り直すことを確認する。
+func TestHTTP_CorruptCollectionAmongValidOnes(t *testing.T) {
+	dir := t.TempDir()
+	collDir := filepath.Join(dir, "collections")
+	root := httpdomain.RootCollectionID
+	const corrupt = "{ not json"
+	writeCollectionJSON(t, dir, "col-a", collectionJSON("col-a", "Alpha", "r1"))
+	writeCollectionJSON(t, dir, "col-b", corrupt)
+	writeCollectionJSON(t, dir, root, corrupt)
+
+	h := newHTTPHandlerWithDir(t, dir)
+	cols := h.GetCollections()
+	if len(cols) != 1 || cols[0].ID != "col-a" || len(cols[0].Items) != 1 {
+		t.Fatalf("collections = %v, want only col-a with its item", cols)
+	}
+	if items := h.GetRootItems(); len(items) != 0 {
+		t.Errorf("root items = %v, want empty", items)
+	}
+	for _, id := range []string{"col-b", root} {
+		got, err := os.ReadFile(filepath.Join(collDir, id+".json.corrupt"))
+		if err != nil {
+			t.Errorf("%s.json.corrupt should exist: %v", id, err)
+			continue
+		}
+		if string(got) != corrupt {
+			t.Errorf("%s.json.corrupt = %q, want the original bytes", id, got)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(collDir, "col-b.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("col-b.json should have been moved away: %v", err)
+	}
+
+	// 退避で「ファイルが無い」状態になった __root__ は作り直されて使える。
+	item, err := h.AddRequest(root, "", httpdomain.HTTPRequest{Name: "R", Method: "GET"})
+	if err != nil {
+		t.Fatalf("AddRequest to the recreated __root__: %v", err)
+	}
+	h2 := newHTTPHandlerWithDir(t, dir)
+	if items := h2.GetRootItems(); len(items) != 1 || items[0].ID != item.ID {
+		t.Errorf("root items after restart = %v, want [%s]", items, item.ID)
+	}
+}
+
+// TestHTTP_UnreadableSidebarLayout_RegeneratesWithoutQuarantine は、sidebar_layout.json が
+// 破損以外の理由で読めないとき (ここではディレクトリ)、退避せずに再生成した並びで動作を続けることを確認する。
+func TestHTTP_UnreadableSidebarLayout_RegeneratesWithoutQuarantine(t *testing.T) {
+	dir := t.TempDir()
+	// 名前順 (Alpha, Beta) と ID 順 (col-a, col-z) を逆にしておく。
+	writeCollectionJSON(t, dir, "col-z", collectionJSON("col-z", "Alpha", "r1"))
+	writeCollectionJSON(t, dir, "col-a", collectionJSON("col-a", "Beta", "r2"))
+	layoutPath := filepath.Join(dir, "sidebar_layout.json")
+	if err := os.Mkdir(layoutPath, 0o750); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+
+	h := newHTTPHandlerWithDir(t, dir)
+	layout, err := h.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	want := []httpdomain.SidebarEntry{{Kind: "collection", ID: "col-z"}, {Kind: "collection", ID: "col-a"}}
+	if !slices.Equal(layout, want) {
+		t.Errorf("layout = %v, want %v (name order)", layout, want)
+	}
+
+	if err = h.MoveSidebarEntry("collection", "col-a", 0); err == nil {
+		t.Error("MoveSidebarEntry should fail while the layout cannot be read")
+	}
+	// レイアウトの更新は best effort なので、コレクションの作成は成功する。
+	col, err := h.CreateCollection("Gamma")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
+	}
+	layout, err = h.GetSidebarLayout()
+	if err != nil {
+		t.Fatalf("GetSidebarLayout: %v", err)
+	}
+	if want = append(want, httpdomain.SidebarEntry{Kind: "collection", ID: col.ID}); !slices.Equal(layout, want) {
+		t.Errorf("layout after CreateCollection = %v, want %v", layout, want)
+	}
+
+	if _, err := os.Stat(layoutPath + ".corrupt"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("an unreadable (not corrupt) layout must not be quarantined: %v", err)
+	}
+	if info, err := os.Stat(layoutPath); err != nil || !info.IsDir() {
+		t.Errorf("sidebar_layout.json should be left as is: %v", err)
 	}
 }
