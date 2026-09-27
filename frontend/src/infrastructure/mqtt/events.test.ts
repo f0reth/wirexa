@@ -5,16 +5,18 @@ vi.mock("../../../wailsjs/runtime/runtime", () => ({
 }));
 
 import * as Runtime from "../../../wailsjs/runtime/runtime";
+import { WailsEvents } from "../../shared/wails-events";
 import type { MqttEventName } from "./events";
 import { onMqttEvent } from "./events";
 
-const MQTT_EVENTS: MqttEventName[] = [
-  "mqtt:connected",
-  "mqtt:disconnected",
-  "mqtt:connection-lost",
-  "mqtt:connection-failed",
-  "mqtt:message",
-];
+// 生成されたイベント名から作り、Go 側で MQTT のイベントが増えても追従する。
+const MQTT_EVENTS = Object.values(WailsEvents).filter((e): e is MqttEventName =>
+  e.startsWith("mqtt:"),
+);
+
+it("covers every generated MQTT event", () => {
+  expect(MQTT_EVENTS).toHaveLength(5);
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
