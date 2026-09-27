@@ -124,6 +124,65 @@ describe("createTargetsState failure contract", () => {
     });
   });
 
+  it("returns the saved target and refreshes the list", async () => {
+    const api = makeApi([makeTarget("t1")]);
+    api.saveTarget = vi.fn(async (t: UdpTarget) => ({ ...t, id: "server-1" }));
+
+    await withState(api, async (state, notifier) => {
+      const saved = await state.saveTarget({ ...makeTarget(""), name: "new" });
+
+      expect(saved).toEqual({ ...makeTarget("server-1"), name: "new" });
+      expect(api.getTargets).toHaveBeenCalledTimes(1);
+      expect(state.targets.map((t) => t.id)).toEqual(["t1"]);
+      expect(notifier.error).not.toHaveBeenCalled();
+    });
+  });
+
+  it("deletes the target and refreshes the list", async () => {
+    const api = makeApi([makeTarget("t2")]);
+
+    await withState(api, async (state, notifier) => {
+      await state.deleteTarget("t1");
+
+      expect(api.deleteTarget).toHaveBeenCalledWith("t1");
+      expect(api.getTargets).toHaveBeenCalledTimes(1);
+      expect(state.targets.map((t) => t.id)).toEqual(["t2"]);
+      expect(notifier.error).not.toHaveBeenCalled();
+    });
+  });
+
+  // refreshTargets はガードせず、呼び出し側（起動時の読み込み）に失敗を伝える。
+  it("propagates getTargets failures", async () => {
+    const api = makeApi();
+    api.getTargets = vi.fn(async () => {
+      throw new Error("rpc down");
+    });
+
+    await withState(api, async (state, notifier) => {
+      await expect(state.refreshTargets()).rejects.toThrow("rpc down");
+      expect(notifier.error).not.toHaveBeenCalled();
+    });
+  });
+
+  // 保存自体は成功しているが、直後の再読み込みも notifyOnError の中にあるため失敗として扱われる。
+  it("reports failure when the refresh after save fails", async () => {
+    const api = makeApi();
+    api.getTargets = vi.fn(async () => {
+      throw new Error("rpc down");
+    });
+
+    await withState(api, async (state, notifier) => {
+      await expect(state.saveTarget(makeTarget("t1"))).rejects.toThrow(
+        "rpc down",
+      );
+      expect(api.saveTarget).toHaveBeenCalled();
+      expect(notifier.error).toHaveBeenCalledWith(
+        "Failed to save target",
+        "rpc down",
+      );
+    });
+  });
+
   it("notifies and swallows the error when deleting fails", async () => {
     const api = makeApi();
     api.deleteTarget = vi.fn(async () => {
