@@ -188,12 +188,16 @@ export function createConnectionsState(
           }
 
           const msgParts = data.topic.split("/");
-          const matchingSub = state.subscriptions.find(
+          // 重なる購読（例: muted の sensors/# と sensors/temp）があれば、
+          // muted でない購読が 1 つでも一致すれば表示する。
+          const delivered = state.subscriptions.some(
             (s) =>
-              s.topic === data.topic ||
-              (s.patternParts && topicMatchesParts(s.patternParts, msgParts)),
+              !s.muted &&
+              (s.topic === data.topic ||
+                (s.patternParts &&
+                  topicMatchesParts(s.patternParts, msgParts))),
           );
-          if (matchingSub && !matchingSub.muted) {
+          if (delivered) {
             pendingMessages.push({
               id: generateId(),
               topic: data.topic,
