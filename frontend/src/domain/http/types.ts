@@ -101,7 +101,8 @@ export const FORM_PAIR_FIELDS = {
 export type FormBodyType = keyof typeof FORM_PAIR_FIELDS;
 
 export function isFormBodyType(v: BodyType): v is FormBodyType {
-  return v in FORM_PAIR_FIELDS;
+  // in 演算子はプロトタイプチェーンも見る（"toString" でも true になる）ので自身のキーだけを見る。
+  return Object.hasOwn(FORM_PAIR_FIELDS, v);
 }
 
 export type AuthType = "none" | "basic" | "bearer";
