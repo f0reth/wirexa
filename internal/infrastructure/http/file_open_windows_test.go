@@ -85,18 +85,3 @@ func TestOpenSelectedFile_WindowsRejectsFileOpenForWriting(t *testing.T) {
 	}
 	_ = got.File.Close()
 }
-
-func TestLongPath(t *testing.T) {
-	long := `C:\` + strings.Repeat(`a\`, 130) + "f.txt"
-	tests := []struct{ in, want string }{
-		{in: `C:\short\f.txt`, want: `C:\short\f.txt`},
-		{in: long, want: `\\?\` + long},
-		{in: `\\server\share\` + long[3:], want: `\\?\UNC\server\share\` + long[3:]},
-		{in: `\\?\` + long, want: `\\?\` + long},
-	}
-	for _, tc := range tests {
-		if got := longPath(tc.in); got != tc.want {
-			t.Errorf("longPath(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}

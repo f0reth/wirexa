@@ -3,8 +3,6 @@ package httpinfra
 import (
 	"errors"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"golang.org/x/sys/windows"
 
@@ -30,17 +28,4 @@ func openSelectedFile(path string) (*os.File, error) {
 		return nil, domain.ErrSelectedFileUnavailable
 	}
 	return os.NewFile(uintptr(h), path), nil
-}
-
-// longPath は MAX_PATH を超える絶対パスに \\?\ を付ける。os.Open は内部で同じ変換をするが、
-// CreateFile を直接呼ぶのでここで行う。
-func longPath(path string) string {
-	const maxDirPath = 248 // CreateDirectory の制限。os パッケージと同じ閾値を使う
-	if len(path) < maxDirPath || !filepath.IsAbs(path) || strings.HasPrefix(path, `\\?\`) {
-		return path
-	}
-	if rest, ok := strings.CutPrefix(path, `\\`); ok {
-		return `\\?\UNC\` + rest
-	}
-	return `\\?\` + path
 }
