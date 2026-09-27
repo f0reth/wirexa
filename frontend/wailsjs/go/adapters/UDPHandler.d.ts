@@ -12,8 +12,6 @@ export function SaveTarget(arg1:udpdomain.UDPTarget):Promise<udpdomain.UDPTarget
 
 export function Send(arg1:udpdomain.UDPSendRequest):Promise<udpdomain.UDPSendResult>;
 
-export function Shutdown():Promise<void>;
-
 export function StartListen(arg1:number,arg2:string):Promise<udpdomain.UDPListenSession>;
 
 export function StopListen(arg1:string):Promise<void>;

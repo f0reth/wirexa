@@ -64,6 +64,7 @@ type App struct {
 	netClient      *httpinfra.NetClient
 	reqSvc         *httpapp.HTTPRequestService
 	mqttSvc        *mqttapp.MQTTService
+	udpListenSvc   *udpapp.UDPListenerService
 	windowMgr      *infra.WindowManager
 	ready          bool
 	quitConfirmed  bool
@@ -181,8 +182,8 @@ func (a *App) initialize(ctx context.Context) error {
 	}
 	udpSocket := udpinfra.NewNetSocket()
 	sendSvc := udpapp.NewUDPSendService(udpSocket, logger)
-	listenSvc := udpapp.NewUDPListenerService(udpSocket, emitter, logger)
-	adapters.SetupUDPHandler(a.udpHandler, sendSvc, targetSvc, listenSvc)
+	a.udpListenSvc = udpapp.NewUDPListenerService(udpSocket, emitter, logger)
+	adapters.SetupUDPHandler(a.udpHandler, sendSvc, targetSvc, a.udpListenSvc)
 
 	recentRepo := openapiinfra.NewRecentRepository(filepath.Join(configDir, wirexaConfigDir, "openapi-recents.json"))
 	openapiSvc := openapiapp.NewFileService(recentRepo, openapiinfra.NewNativeFileAccess(), logger)
@@ -233,7 +234,7 @@ func (a *App) shutdown(_ context.Context) {
 	}
 	// 戻り値は HTTP と同じく使わない。上限を過ぎてもイベント発行は止まっている。
 	a.mqttSvc.Shutdown(mqttShutdownTimeout)
-	a.udpHandler.Shutdown()
+	a.udpListenSvc.StopAll()
 	// 実行中の HTTP リクエストを先に止めてから一時ファイルを回収する。
 	// 待機上限を過ぎたリクエストの一時ファイルは次回起動時の sweep に任せる。
 	if a.reqSvc != nil {

@@ -103,6 +103,7 @@ func (s *UDPListenerService) GetListeners() []domain.UDPListenSession {
 }
 
 // StopAll は全セッションを停止する。
+// アプリケーションのライフサイクルは合成ルートの責務なので、RPC 面には公開しない (app.go の shutdown から呼ぶ)。
 func (s *UDPListenerService) StopAll() {
 	s.mu.Lock()
 	sessions := make([]*listenSession, 0, len(s.sessions))

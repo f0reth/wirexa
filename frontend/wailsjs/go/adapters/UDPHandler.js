@@ -22,10 +22,6 @@ export function Send(arg1) {
   return window['go']['adapters']['UDPHandler']['Send'](arg1);
 }
 
-export function Shutdown() {
-  return window['go']['adapters']['UDPHandler']['Shutdown']();
-}
-
 export function StartListen(arg1, arg2) {
   return window['go']['adapters']['UDPHandler']['StartListen'](arg1, arg2);
 }

@@ -60,7 +60,8 @@ func (e *mockEmitter) noMessage(t *testing.T, wait time.Duration) {
 }
 
 // newUDPHandlerWithDir は指定ディレクトリから UDPHandler を組み立てる（永続化テスト用）。
-func newUDPHandlerWithDir(t *testing.T, emitter cmndomain.Emitter, dir string) *adapters.UDPHandler {
+// 終了処理 (StopAll) は RPC 面に無いため、リスナーサービスも返す。
+func newUDPHandlerWithDir(t *testing.T, emitter cmndomain.Emitter, dir string) (*adapters.UDPHandler, *udpapp.UDPListenerService) {
 	t.Helper()
 	repo, err := udpinfra.NewTargetRepository(dir, nil)
 	if err != nil {
@@ -75,11 +76,11 @@ func newUDPHandlerWithDir(t *testing.T, emitter cmndomain.Emitter, dir string) *
 	listenSvc := udpapp.NewUDPListenerService(socket, emitter, testutil.NoopLogger{})
 	h := &adapters.UDPHandler{}
 	adapters.SetupUDPHandler(h, sendSvc, targetSvc, listenSvc)
-	return h
+	return h, listenSvc
 }
 
 // newUDPHandler は統合テスト用に UDPHandler を DI で組み立てる。
-func newUDPHandler(t *testing.T, emitter cmndomain.Emitter) *adapters.UDPHandler {
+func newUDPHandler(t *testing.T, emitter cmndomain.Emitter) (*adapters.UDPHandler, *udpapp.UDPListenerService) {
 	t.Helper()
 	return newUDPHandlerWithDir(t, emitter, t.TempDir())
 }
@@ -87,7 +88,7 @@ func newUDPHandler(t *testing.T, emitter cmndomain.Emitter) *adapters.UDPHandler
 // TestUDP_SendRaw はテキストエンコードで送信したペイロードがリスナーに届くことを確認する。
 func TestUDP_SendRaw(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	port := freeUDPPort(t)
 	sess, err := h.StartListen(port, string(udpdomain.EncodingText))
@@ -124,7 +125,7 @@ func TestUDP_SendRaw(t *testing.T) {
 // TestUDP_SendFixed は Fixed (hex) エンコードで送受信が正しく動くことを確認する。
 func TestUDP_SendFixed(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	port := freeUDPPort(t)
 	// リスナーも fixed エンコードで起動し、受信ペイロードが hex 文字列になることを確認する
@@ -161,7 +162,7 @@ func TestUDP_SendFixed(t *testing.T) {
 // TestUDP_ListenerStartStop は StartListen/StopListen でセッション管理が正しいことを確認する。
 func TestUDP_ListenerStartStop(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	port := freeUDPPort(t)
 	sess, err := h.StartListen(port, string(udpdomain.EncodingText))
@@ -188,7 +189,7 @@ func TestUDP_ListenerStartStop(t *testing.T) {
 // TestUDP_GetListeners はアクティブセッション一覧が正しく返ることを確認する。
 func TestUDP_GetListeners(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	if listeners := h.GetListeners(); len(listeners) != 0 {
 		t.Fatalf("expected 0 listeners initially, got %d", len(listeners))
@@ -222,7 +223,7 @@ func TestUDP_GetListeners(t *testing.T) {
 // TestUDP_TargetCRUD はターゲットの保存・取得・削除が永続化されることを確認する。
 func TestUDP_TargetCRUD(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	if targets := h.GetTargets(); len(targets) != 0 {
 		t.Fatalf("expected 0 targets initially, got %d", len(targets))
@@ -270,7 +271,7 @@ func TestUDP_SaveTarget_RejectsTraversalID(t *testing.T) {
 	base := t.TempDir()
 	dir := filepath.Join(base, "targets")
 	emitter := newMockEmitter()
-	h := newUDPHandlerWithDir(t, emitter, dir)
+	h, _ := newUDPHandlerWithDir(t, emitter, dir)
 
 	for _, id := range traversalIDs {
 		t.Run(id, func(t *testing.T) {
@@ -294,10 +295,11 @@ func TestUDP_SaveTarget_RejectsTraversalID(t *testing.T) {
 	assertNoFilesOutside(t, base, "targets")
 }
 
-// TestUDP_Shutdown は全セッションが停止することを確認する。
+// TestUDP_Shutdown は app.go の終了処理と同じくリスナーサービスの StopAll で全セッションが停止することを確認する。
+// 終了処理は RPC 面に公開しない (WebView の JS から全リスナーを黙って止められないようにする)。
 func TestUDP_Shutdown(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, listenSvc := newUDPHandler(t, emitter)
 
 	port1 := freeUDPPort(t)
 	if _, err := h.StartListen(port1, string(udpdomain.EncodingText)); err != nil {
@@ -312,7 +314,7 @@ func TestUDP_Shutdown(t *testing.T) {
 		t.Fatalf("expected 2 listeners before shutdown")
 	}
 
-	h.Shutdown()
+	listenSvc.StopAll()
 
 	if len(h.GetListeners()) != 0 {
 		t.Errorf("expected 0 listeners after shutdown, got %d", len(h.GetListeners()))
@@ -325,7 +327,7 @@ func TestUDP_TargetPersistenceRoundTrip(t *testing.T) {
 	emitter := newMockEmitter()
 
 	// 1 回目: ターゲットを保存
-	h1 := newUDPHandlerWithDir(t, emitter, dir)
+	h1, _ := newUDPHandlerWithDir(t, emitter, dir)
 	target, err := h1.SaveTarget(udpdomain.UDPTarget{
 		Name: "PersistTarget",
 		Host: "192.168.1.100",
@@ -336,7 +338,7 @@ func TestUDP_TargetPersistenceRoundTrip(t *testing.T) {
 	}
 
 	// 2 回目: 同一 dir から Handler を再作成してデータを確認
-	h2 := newUDPHandlerWithDir(t, emitter, dir)
+	h2, _ := newUDPHandlerWithDir(t, emitter, dir)
 	targets := h2.GetTargets()
 	if len(targets) != 1 {
 		t.Fatalf("expected 1 target after reload, got %d", len(targets))
@@ -355,7 +357,7 @@ func TestUDP_TargetPersistenceRoundTrip(t *testing.T) {
 // TestUDP_StartListen_DuplicatePort は同一ポートで 2 回 StartListen を呼ぶと ValidationError が返ることを確認する。
 func TestUDP_StartListen_DuplicatePort(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	port := freeUDPPort(t)
 	sess, err := h.StartListen(port, string(udpdomain.EncodingText))
@@ -374,7 +376,7 @@ func TestUDP_StartListen_DuplicatePort(t *testing.T) {
 // TestUDP_StartListen_PortInUse は OS が既にバインドしているポートで StartListen を呼ぶと error が返ることを確認する。
 func TestUDP_StartListen_PortInUse(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	// 先にポートを OS レベルで全インターフェースで先占する
 	prebound, err := net.ListenPacket("udp4", ":0")
@@ -394,7 +396,7 @@ func TestUDP_StartListen_PortInUse(t *testing.T) {
 // TestUDP_Send_EmptyHost は Host が空文字列のとき ValidationError が返ることを確認する。
 func TestUDP_Send_EmptyHost(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	_, err := h.Send(udpdomain.UDPSendRequest{
 		Host:     "",
@@ -410,7 +412,7 @@ func TestUDP_Send_EmptyHost(t *testing.T) {
 // TestUDP_Send_InvalidPort は Port が範囲外のとき ValidationError が返ることを確認する。
 func TestUDP_Send_InvalidPort(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	for _, port := range []int{0, 65536, -1} {
 		_, err := h.Send(udpdomain.UDPSendRequest{
@@ -428,7 +430,7 @@ func TestUDP_Send_InvalidPort(t *testing.T) {
 // TestUDP_StartListen_InvalidPort は port が範囲外のとき ValidationError が返ることを確認する。
 func TestUDP_StartListen_InvalidPort(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	for _, port := range []int{0, 65536, -1} {
 		_, err := h.StartListen(port, string(udpdomain.EncodingText))
@@ -441,7 +443,7 @@ func TestUDP_StartListen_InvalidPort(t *testing.T) {
 // TestUDP_StartListen_AfterStop は StopListen 後に同一ポートで再 StartListen が成功することを確認する。
 func TestUDP_StartListen_AfterStop(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	port := freeUDPPort(t)
 
@@ -464,7 +466,7 @@ func TestUDP_StartListen_AfterStop(t *testing.T) {
 // TestUDP_Send_UnreachableHost は存在しないホストへの Send でエラーが返ることを確認する。
 func TestUDP_Send_UnreachableHost(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	// 解決不能なホスト名を使い DNS 失敗を確実に引き起こす
 	_, err := h.Send(udpdomain.UDPSendRequest{
@@ -481,7 +483,7 @@ func TestUDP_Send_UnreachableHost(t *testing.T) {
 // TestUDP_SendJSON は JSON エンコードで送受信が正しく動くことを確認する。
 func TestUDP_SendJSON(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	port := freeUDPPort(t)
 	sess, err := h.StartListen(port, string(udpdomain.EncodingJSON))
@@ -514,7 +516,7 @@ func TestUDP_SendJSON(t *testing.T) {
 // TestUDP_EncodingMismatch はリスナーの Encoding と送信 Encoding が異なる場合、受信側は自身の Encoding で処理することを確認する。
 func TestUDP_EncodingMismatch(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	port := freeUDPPort(t)
 	// リスナーは Text エンコード
@@ -553,7 +555,7 @@ func TestUDP_EncodingMismatch(t *testing.T) {
 // TestUDP_StopListen_RaceWithSend は Send 直後に StopListen を呼んでも goroutine が安全に終了することを確認する。
 func TestUDP_StopListen_RaceWithSend(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 
 	port := freeUDPPort(t)
 	sess, err := h.StartListen(port, string(udpdomain.EncodingText))
@@ -587,8 +589,8 @@ func TestUDP_StopListen_RaceWithSend(t *testing.T) {
 // TestUDP_Concurrent_StartStopListen は複数 goroutine から StartListen / StopListen を並行実行しても安全であることを確認する。
 func TestUDP_Concurrent_StartStopListen(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
-	t.Cleanup(func() { h.Shutdown() })
+	h, listenSvc := newUDPHandler(t, emitter)
+	t.Cleanup(listenSvc.StopAll)
 
 	const n = 4
 	ports := make([]int, n)
@@ -649,7 +651,7 @@ func TestUDP_CorruptStorage(t *testing.T) {
 // ValidationError になって何も送信されないことを確認する。
 func TestUDP_UnknownEncodingAndInvalidPayload(t *testing.T) {
 	emitter := newMockEmitter()
-	h := newUDPHandler(t, emitter)
+	h, _ := newUDPHandler(t, emitter)
 	port := freeUDPPort(t)
 
 	var ve *cmndomain.ValidationError

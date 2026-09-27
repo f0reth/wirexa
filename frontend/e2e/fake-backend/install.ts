@@ -514,8 +514,6 @@ const UdpHandler = {
       bytesSent: req.payload.length,
     }),
   ),
-
-  Shutdown: counted("Shutdown", async () => {}),
 };
 
 // ── MqttHandler ───────────────────────────────────────────────────────────────

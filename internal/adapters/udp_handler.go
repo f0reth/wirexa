@@ -21,7 +21,6 @@ type UDPListenUseCase interface {
 	StartListen(port int, encoding udpdomain.PayloadEncoding) (udpdomain.UDPListenSession, error)
 	StopListen(sessionID string) error
 	GetListeners() []udpdomain.UDPListenSession
-	StopAll()
 }
 
 // UDPHandler は Wails RPC アダプターとして UDP ユースケースを公開する。
@@ -73,9 +72,4 @@ func (h *UDPHandler) StopListen(sessionID string) error {
 // GetListeners はアクティブなリスニングセッション一覧を返す。
 func (h *UDPHandler) GetListeners() []udpdomain.UDPListenSession {
 	return h.listenSvc.GetListeners()
-}
-
-// Shutdown は全リスニングセッションを停止する。
-func (h *UDPHandler) Shutdown() {
-	h.listenSvc.StopAll()
 }
