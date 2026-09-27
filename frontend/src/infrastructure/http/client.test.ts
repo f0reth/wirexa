@@ -24,6 +24,7 @@ vi.mock("../../../wailsjs/go/adapters/HTTPHandler", () => ({
 }));
 
 import * as Handler from "../../../wailsjs/go/adapters/HTTPHandler";
+import { DEFAULT_SETTINGS } from "../../domain/http/types";
 import {
   addFolder,
   addRequest,
@@ -1152,5 +1153,216 @@ describe("saveResponseBinary", () => {
     await expect(
       saveResponseBinary("AAECaGk=", "application/zip"),
     ).rejects.toThrow("save failed");
+  });
+});
+
+// ---- Wails 生成型との変換の境界 ----
+
+/** getRootItems 経由で 1 件のリクエストを変換する。 */
+async function mapRequest(request: Record<string, unknown>) {
+  vi.mocked(Handler.GetRootItems).mockResolvedValue([
+    makeWailsTreeItem({ type: "request", id: "r1", request }) as never,
+  ]);
+  const [item] = await getRootItems();
+  return item.request;
+}
+
+describe("request mapping from the backend", () => {
+  it("maps a stored request field by field", async () => {
+    const mapped = await mapRequest(
+      makeWailsRequest({
+        method: "POST",
+        headers: [{ key: "A", value: "1", enabled: true }],
+        params: [{ key: "q", value: "x", enabled: false }],
+        body: { type: "json", contents: { json: "{}" } },
+        auth: { type: "basic", username: "u", password: "p", token: "" },
+        settings: {
+          timeoutSec: 30,
+          proxyMode: "custom",
+          proxyURL: "http://proxy:8080",
+          insecureSkipVerify: false,
+          disableRedirects: true,
+          maxResponseBodyMB: 5,
+        },
+        doc: "memo",
+      }),
+    );
+
+    expect(mapped).toEqual({
+      id: "req-1",
+      name: "Test",
+      method: "POST",
+      url: "https://example.com",
+      headers: [{ key: "A", value: "1", enabled: true }],
+      params: [{ key: "q", value: "x", enabled: false }],
+      body: { type: "json", contents: { json: "{}" } },
+      auth: { type: "basic", username: "u", password: "p", token: "" },
+      settings: {
+        timeoutSec: 30,
+        proxyMode: "custom",
+        proxyURL: "http://proxy:8080",
+        insecureSkipVerify: false,
+        disableRedirects: true,
+        maxResponseBodyMB: 5,
+      },
+      doc: "memo",
+    });
+  });
+
+  it("fills DEFAULT_SETTINGS and an empty doc for a request without them", async () => {
+    const mapped = await mapRequest({
+      ...makeWailsRequest(),
+      settings: null,
+      doc: undefined,
+    });
+
+    expect(mapped?.settings).toEqual(DEFAULT_SETTINGS);
+    expect(mapped?.doc).toBe("");
+  });
+
+  // settings が null なら DEFAULT_SETTINGS だが、一部だけ欠けた場合は Go のゼロ値と同じ値で補う。
+  // Go 側は全フィールドを送るので、欠けるのは想定外の入力だけ。
+  it("fills missing setting fields individually", async () => {
+    const mapped = await mapRequest(
+      makeWailsRequest({ settings: { proxyURL: "http://p" } }),
+    );
+
+    expect(mapped?.settings).toEqual({
+      timeoutSec: 0,
+      proxyMode: "system",
+      proxyURL: "http://p",
+      insecureSkipVerify: false,
+      disableRedirects: false,
+      maxResponseBodyMB: 0,
+    });
+  });
+
+  it("normalizes null auth and contents", async () => {
+    const mapped = await mapRequest(
+      makeWailsRequest({
+        auth: null,
+        body: { type: "text", contents: null },
+      }),
+    );
+
+    expect(mapped?.auth).toEqual({
+      type: "none",
+      username: "",
+      password: "",
+      token: "",
+    });
+    expect(mapped?.body.contents).toEqual({});
+  });
+
+  it("keeps a file reference that only has a token", async () => {
+    const mapped = await mapRequest(
+      makeWailsRequest({
+        body: { type: "file", contents: {}, file: { token: "t" } },
+      }),
+    );
+
+    expect(mapped?.body.file).toEqual({
+      token: "t",
+      name: "",
+      contentType: "",
+      needsReselect: false,
+    });
+  });
+});
+
+describe("response mapping from the backend", () => {
+  it("normalizes null headers and missing flags", async () => {
+    vi.mocked(Handler.SendRequest).mockResolvedValue(
+      makeWailsResponse({ headers: null }) as never,
+    );
+
+    const res = await sendRequest("exec-1", makeDomainRequest());
+
+    expect(res.headers).toEqual({});
+    expect(res.bodyTruncated).toBe(false);
+    expect(res.bodyBase64).toBe(false);
+    expect(res.bodyCapped).toBe(false);
+  });
+});
+
+describe("request mapping to the backend", () => {
+  const fileRequest = () => ({
+    ...makeDomainRequest(),
+    body: {
+      type: "file" as const,
+      contents: {},
+      file: { token: "tok", name: "a.bin", hint: "C:secreta.bin" },
+    },
+  });
+
+  it("sends the request as created by createFrom", async () => {
+    vi.mocked(Handler.SendRequest).mockResolvedValue(
+      makeWailsResponse() as never,
+    );
+    const req = {
+      ...makeDomainRequest(),
+      method: "PUT" as const,
+      headers: [{ key: "A", value: "1", enabled: true }],
+      auth: { type: "bearer" as const, username: "", password: "", token: "t" },
+      doc: "memo",
+    };
+
+    await sendRequest("exec-1", req);
+
+    expect(vi.mocked(Handler.SendRequest).mock.calls[0][1]).toEqual(req);
+  });
+
+  it("does not send the file hint to the backend", async () => {
+    vi.mocked(Handler.SendRequest).mockResolvedValue(
+      makeWailsResponse() as never,
+    );
+    vi.mocked(Handler.AddRequest).mockResolvedValue(
+      makeWailsTreeItem({ type: "request" }) as never,
+    );
+    vi.mocked(Handler.UpdateRequest).mockResolvedValue(undefined);
+
+    await sendRequest("exec-1", fileRequest());
+    await addRequest("col-1", "", fileRequest());
+    await updateRequest("col-1", fileRequest());
+
+    for (const sent of [
+      vi.mocked(Handler.SendRequest).mock.calls[0][1],
+      vi.mocked(Handler.AddRequest).mock.calls[0][2],
+      vi.mocked(Handler.UpdateRequest).mock.calls[0][1],
+    ]) {
+      expect(sent.body.file).toEqual({ token: "tok", name: "a.bin" });
+      expect(sent.body.file).not.toHaveProperty("hint");
+    }
+  });
+
+  it("sends the whole request on add and update", async () => {
+    vi.mocked(Handler.AddRequest).mockResolvedValue(
+      makeWailsTreeItem({ type: "request" }) as never,
+    );
+    vi.mocked(Handler.UpdateRequest).mockResolvedValue(undefined);
+    const req = { ...makeDomainRequest(), url: "https://edited.example" };
+
+    await addRequest("col-1", "p", req);
+    await updateRequest("col-1", req);
+
+    expect(vi.mocked(Handler.AddRequest).mock.calls[0][2]).toEqual(req);
+    expect(vi.mocked(Handler.UpdateRequest).mock.calls[0][1]).toEqual(req);
+  });
+});
+
+describe("backend failures and empty results", () => {
+  it("returns undefined when the file picker returns null", async () => {
+    vi.mocked(Handler.OpenFilePicker).mockResolvedValue(null as never);
+    await expect(openFilePicker("")).resolves.toBeUndefined();
+  });
+
+  it("propagates a file picker rejection", async () => {
+    vi.mocked(Handler.OpenFilePicker).mockRejectedValue(new Error("dialog"));
+    await expect(openFilePicker("")).rejects.toThrow("dialog");
+  });
+
+  it("propagates a discard rejection", async () => {
+    vi.mocked(Handler.DiscardResponseBody).mockRejectedValue(new Error("gone"));
+    await expect(discardResponseBody("exec-1")).rejects.toThrow("gone");
   });
 });
