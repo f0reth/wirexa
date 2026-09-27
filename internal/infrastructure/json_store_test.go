@@ -410,3 +410,143 @@ func TestJSONStore_NewJSONStore_CreatesDirectory(t *testing.T) {
 		t.Error("directory was not created")
 	}
 }
+
+// logRecord は recordingLogger が記録した Error の 1 回分。
+type logRecord struct {
+	msg  string
+	args []any
+}
+
+// recordingLogger は Error の呼び出しを記録するテスト用ロガー。
+type recordingLogger struct{ errors []logRecord }
+
+func (l *recordingLogger) Info(_ string, _ ...any)  {}
+func (l *recordingLogger) Debug(_ string, _ ...any) {}
+func (l *recordingLogger) Error(msg string, args ...any) {
+	l.errors = append(l.errors, logRecord{msg: msg, args: args})
+}
+
+// attr は args から key に対応する値を取り出す。
+func (r logRecord) attr(key string) (any, bool) {
+	for i := 0; i+1 < len(r.args); i += 2 {
+		if r.args[i] == key {
+			return r.args[i+1], true
+		}
+	}
+	return nil, false
+}
+
+// failQuarantine は quarantine を常に失敗させ、テスト終了時に元へ戻す。
+func failQuarantine(t *testing.T) error {
+	t.Helper()
+	errQuarantine := errors.New("rename denied")
+	orig := quarantine
+	quarantine = func(string) (string, error) { return "", errQuarantine }
+	t.Cleanup(func() { quarantine = orig })
+	return errQuarantine
+}
+
+// 復旧方針表「必須」の退避失敗時: 破損ファイルをスキップして元のファイルを残し、残りで起動する。
+func TestJSONStore_Load_QuarantineFailureSkipsAndKeepsFile(t *testing.T) {
+	store := newTestStore(t)
+	logger := &recordingLogger{}
+	store.SetLogger(logger)
+	errQuarantine := failQuarantine(t)
+
+	valid := testItem{ID: "good", Name: "Valid"}
+	if err := store.Save(&valid); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	broken := filepath.Join(store.dir, "broken.json")
+	if err := os.WriteFile(broken, []byte("{{{"), 0o600); err != nil {
+		t.Fatalf("write broken.json: %v", err)
+	}
+
+	items, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load should not fail when quarantine fails: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "good" {
+		t.Fatalf("items = %+v, want only good", items)
+	}
+	if got, err := os.ReadFile(broken); err != nil || string(got) != "{{{" {
+		t.Errorf("broken.json should be left in place: %q, %v", got, err)
+	}
+	if len(logger.errors) != 1 {
+		t.Fatalf("logged %d errors, want 1: %+v", len(logger.errors), logger.errors)
+	}
+	rec := logger.errors[0]
+	if file, _ := rec.attr("file"); file != "broken.json" {
+		t.Errorf("file attr = %v, want broken.json", file)
+	}
+	if qerr, _ := rec.attr("quarantineError"); qerr != errQuarantine {
+		t.Errorf("quarantineError attr = %v, want %v", qerr, errQuarantine)
+	}
+	if cerr, _ := rec.attr("error"); !errors.Is(cerr.(error), domain.ErrCorruptData) {
+		t.Errorf("error attr = %v, want ErrCorruptData", cerr)
+	}
+}
+
+// 復旧方針表「必須」の破損以外の読み込み失敗（ファイル単位）: スキップし、退避しない。
+// 読めないファイル (権限やロック) は readFile を差し替えて再現する。
+func TestJSONStore_Load_ReadErrorSkipsWithoutQuarantine(t *testing.T) {
+	store := newTestStore(t)
+	logger := &recordingLogger{}
+	store.SetLogger(logger)
+
+	valid := testItem{ID: "good", Name: "Valid"}
+	if err := store.Save(&valid); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	unreadable := filepath.Join(store.dir, "unreadable.json")
+	if err := os.WriteFile(unreadable, []byte(`{"id":"unreadable"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	orig := readFile
+	readFile = func(path string) ([]byte, error) {
+		if path == unreadable {
+			return nil, &os.PathError{Op: "open", Path: path, Err: os.ErrPermission}
+		}
+		return orig(path)
+	}
+	t.Cleanup(func() { readFile = orig })
+
+	items, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load should not fail on an unreadable file: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "good" {
+		t.Fatalf("items = %+v, want only good", items)
+	}
+	if _, err := os.Lstat(unreadable); err != nil {
+		t.Errorf("unreadable file should be left in place: %v", err)
+	}
+	if _, err := os.Lstat(unreadable + ".corrupt"); !os.IsNotExist(err) {
+		t.Errorf("unreadable file must not be quarantined: %v", err)
+	}
+	if len(logger.errors) != 1 {
+		t.Fatalf("logged %d errors, want 1: %+v", len(logger.errors), logger.errors)
+	}
+	rec := logger.errors[0]
+	if file, _ := rec.attr("file"); file != "unreadable.json" {
+		t.Errorf("file attr = %v, want unreadable.json", file)
+	}
+	if cerr, _ := rec.attr("error"); errors.Is(cerr.(error), domain.ErrCorruptData) {
+		t.Errorf("read failure must not be classified as corrupt: %v", cerr)
+	}
+}
+
+// 復旧方針表「必須」のディレクトリ自体を読めない場合: Load はエラーを返す (起動失敗)。
+func TestJSONStore_Load_UnreadableDirReturnsError(t *testing.T) {
+	store := newTestStore(t)
+	if err := os.RemoveAll(store.dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.dir, []byte("not a dir"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.Load(); err == nil {
+		t.Fatal("Load should fail when the store directory cannot be read")
+	}
+}

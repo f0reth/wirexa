@@ -12,6 +12,8 @@ import (
 
 type fileLogger struct {
 	slog *slog.Logger
+	// out はログファイルの書き込み先。テストでファイルを閉じるために保持する。
+	out *lumberjack.Logger
 }
 
 // NewFileLogger はファイルローテーション付きのロガーを生成する。
@@ -27,7 +29,7 @@ func NewFileLogger(logDir string) (domain.Logger, error) {
 		Compress:   true,
 	}
 	handler := slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo})
-	return &fileLogger{slog: slog.New(handler)}, nil
+	return &fileLogger{slog: slog.New(handler), out: w}, nil
 }
 
 func (l *fileLogger) Info(msg string, args ...any) {

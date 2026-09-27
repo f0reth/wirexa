@@ -48,7 +48,7 @@ func (s *JSONStore[T]) Load() ([]T, error) {
 		switch {
 		case errors.Is(err, domain.ErrCorruptData):
 			// 破損ファイルは .corrupt へ退避してスキップし、読めた分だけで継続する。
-			dest, rerr := QuarantineFile(path)
+			dest, rerr := quarantine(path)
 			if rerr != nil {
 				s.logf("json_store: failed to quarantine corrupt file", "file", e.Name(), "error", err, "quarantineError", rerr)
 			} else {

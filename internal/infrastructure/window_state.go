@@ -30,7 +30,7 @@ func LoadWindowState(path string, logger domain.Logger) (WindowState, bool) {
 	s, found, err := ReadJSONFile[WindowState](path)
 	switch {
 	case errors.Is(err, domain.ErrCorruptData):
-		dest, qerr := QuarantineFile(path)
+		dest, qerr := quarantine(path)
 		if qerr != nil {
 			logError(logger, "window_state: failed to quarantine corrupt file, it will be overwritten on exit",
 				"file", filepath.Base(path), "error", err, "quarantineError", qerr)

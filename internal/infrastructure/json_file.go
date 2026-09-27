@@ -10,14 +10,18 @@ import (
 	"github.com/f0reth/Wirexa/internal/domain"
 )
 
+// readFile は ReadJSONFile がファイルの読み込みに使う関数。
+// 権限・ロックによる読み込み失敗を OS に依存せず再現できるよう、テストから差し替えられる変数にしている。
+// #nosec G304 -- path はアプリが決める設定ファイルのパスで、外部入力ではない。
+var readFile = os.ReadFile
+
 // ReadJSONFile は path の JSON を T へ読み込む。設定ファイルの読み込みはすべてここを通し、
 // 「未作成」「破損」「読み込み失敗」の分類をこの 1 か所で決める。
 //   - ファイルが存在しない: found=false, err=nil
 //   - JSON として解釈できない: domain.ErrCorruptData を wrap したエラー
 //   - それ以外の I/O エラー (権限・ロック等): そのまま返す (破損とは扱わない)
 func ReadJSONFile[T any](path string) (v T, found bool, err error) {
-	// #nosec G304 -- path はアプリが決める設定ファイルのパスで、外部入力ではない。
-	data, err := os.ReadFile(path)
+	data, err := readFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return v, false, nil

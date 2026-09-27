@@ -93,3 +93,25 @@ func TestLoadWindowState_ReadErrorIsNotQuarantined(t *testing.T) {
 		t.Error("read failure should be logged")
 	}
 }
+
+// 復旧方針表「再生成可能」の退避失敗時: 既定サイズを使い (ok=false)、ログに残す。
+// 元のファイルは終了時の保存で上書きしてよいので、ここでは触らない。
+func TestLoadWindowState_QuarantineFailureStillUsesDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "window-state.json")
+	corrupt := []byte("{ not json")
+	if err := os.WriteFile(path, corrupt, 0o600); err != nil {
+		t.Fatalf("write corrupt file: %v", err)
+	}
+	failQuarantine(t)
+	logger := &countLogger{}
+
+	if s, ok := LoadWindowState(path, logger); ok || s != (WindowState{}) {
+		t.Fatalf("LoadWindowState = %+v, %v; want zero value and ok=false", s, ok)
+	}
+	if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, corrupt) {
+		t.Errorf("corrupt file should be left in place: %q, %v", got, err)
+	}
+	if logger.errors == 0 {
+		t.Error("quarantine failure should be logged")
+	}
+}
