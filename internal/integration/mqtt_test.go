@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -854,7 +856,8 @@ func TestMQTT_Unsubscribe_EmptyTopic(t *testing.T) {
 	}
 }
 
-// TestMQTT_Connect_Concurrent は複数 goroutine から並行して Connect / Disconnect を呼んでも安全であることを確認する。
+// TestMQTT_Connect_Concurrent は複数 goroutine から並行して Connect / Disconnect を呼んでも、
+// 全接続が一意な ID で確立し、全て切断できることを確認する。
 func TestMQTT_Connect_Concurrent(t *testing.T) {
 	emitter := newMQTTMockEmitter()
 	h, svc := newMQTTHandler(t, emitter)
@@ -863,6 +866,7 @@ func TestMQTT_Connect_Concurrent(t *testing.T) {
 	const n = 5
 	var wg sync.WaitGroup
 	ids := make(chan string, n)
+	errs := make(chan error, n)
 
 	for range n {
 		wg.Go(func() {
@@ -870,17 +874,42 @@ func TestMQTT_Connect_Concurrent(t *testing.T) {
 				Name:   "concurrent",
 				Broker: brokerAddr,
 			})
-			if err == nil {
-				ids <- id
+			if err != nil {
+				errs <- err
+				return
 			}
+			ids <- id
 		})
 	}
 	wg.Wait()
 	close(ids)
+	close(errs)
+	for err := range errs {
+		t.Errorf("Connect: %v", err)
+	}
 
-	// 全接続を切断する
+	seen := map[string]bool{}
 	for id := range ids {
-		_ = h.Disconnect(id)
+		if seen[id] {
+			t.Errorf("duplicate connection ID %q", id)
+		}
+		seen[id] = true
+		waitConnected(t, h, id, 5*time.Second)
+	}
+	if len(seen) != n {
+		t.Fatalf("connections = %d, want %d", len(seen), n)
+	}
+
+	for id := range seen {
+		wg.Go(func() {
+			if err := h.Disconnect(id); err != nil {
+				t.Errorf("Disconnect(%s): %v", id, err)
+			}
+		})
+	}
+	wg.Wait()
+	if conns := h.GetConnections(); len(conns) != 0 {
+		t.Errorf("connections after Disconnect = %d, want 0", len(conns))
 	}
 }
 
@@ -1058,5 +1087,239 @@ func TestMQTT_ConnectionLostAndReconnect(t *testing.T) {
 		cmndomain.EventMQTTConnected, cmndomain.EventMQTTConnectionLost, cmndomain.EventMQTTConnected,
 	}) {
 		t.Errorf("lifecycle events = %v", got)
+	}
+}
+
+// TestMQTT_ConcurrentPublish は同じ接続から並行に QoS 1 で publish しても、全件がブローカーへ届き
+// 購読側で受信できることを確認する (client 操作は opMu で直列化される)。
+func TestMQTT_ConcurrentPublish(t *testing.T) {
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+	subID := connectBroker(t, h, "sub")
+	pubID := connectBroker(t, h, "pub")
+	waitConnected(t, h, subID, 5*time.Second)
+	waitConnected(t, h, pubID, 5*time.Second)
+	const topic = "concurrent/publish"
+	if err := h.Subscribe(subID, topic, 1); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	const n = 50
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() {
+			if err := h.Publish(pubID, topic, strconv.Itoa(i), 1, false); err != nil {
+				t.Errorf("Publish(%d): %v", i, err)
+			}
+		})
+	}
+	wg.Wait()
+
+	got := map[string]bool{}
+	for range n {
+		msg := emitter.receiveMessage(t, 10*time.Second)
+		got[msg.Payload] = true
+	}
+	for i := range n {
+		if !got[strconv.Itoa(i)] {
+			t.Errorf("message %d was not received", i)
+		}
+	}
+}
+
+// TestMQTT_Connect_InvalidBrokerURL は、未対応のスキームと解析できない URL への接続が
+// mqtt:connected を出さずに失敗して接続一覧から消えることと、スキームを省いたアドレスは
+// tcp:// として接続できることを確認する。
+func TestMQTT_Connect_InvalidBrokerURL(t *testing.T) {
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandlerWithConfig(t, emitter, mqttinfra.MQTTClientConfig{
+		ConnectTimeout: time.Second,
+		TokenTimeout:   3 * time.Second,
+	})
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+
+	for _, broker := range []string{
+		fmt.Sprintf("http://127.0.0.1:%d", freePort(t)), // 解析はできるが接続時に unknown protocol
+		"tcp://[::1", // 解析できず、接続先が 1 つも無い
+	} {
+		t.Run(broker, func(t *testing.T) {
+			id, err := h.Connect(mqttdomain.ConnectionConfig{Name: "invalid", Broker: broker})
+			if err != nil {
+				return // 同期エラーで拒否するのでもよい
+			}
+			emitter.waitEvent(t, cmndomain.EventMQTTConnectionFailed, id, 1, 10*time.Second)
+			if n := emitter.countEvent(cmndomain.EventMQTTConnected, id); n != 0 {
+				t.Errorf("mqtt:connected emitted %d times for an invalid URL", n)
+			}
+			if _, ok := connectionStatus(h, id); ok {
+				t.Error("the failed connection should be removed")
+			}
+		})
+	}
+
+	id, err := h.Connect(mqttdomain.ConnectionConfig{Name: "no-scheme", Broker: strings.TrimPrefix(brokerAddr, "tcp://")})
+	if err != nil {
+		t.Fatalf("Connect without a scheme: %v", err)
+	}
+	waitConnected(t, h, id, 5*time.Second)
+}
+
+// TestMQTT_OperationsAfterDisconnectAndShutdown は、切断した接続への操作が NotFoundError になり、
+// Shutdown 後の Connect が拒否されてイベントも出ないことを確認する。
+func TestMQTT_OperationsAfterDisconnectAndShutdown(t *testing.T) {
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	id := connectBroker(t, h, "after")
+	waitConnected(t, h, id, 5*time.Second)
+	if err := h.Subscribe(id, "after/disconnect", 0); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	if err := h.Disconnect(id); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+
+	ops := map[string]func() error{
+		"Publish":     func() error { return h.Publish(id, "after/disconnect", "x", 0, false) },
+		"Subscribe":   func() error { return h.Subscribe(id, "after/disconnect", 0) },
+		"Unsubscribe": func() error { return h.Unsubscribe(id, "after/disconnect") },
+	}
+	for name, op := range ops {
+		var nf *cmndomain.NotFoundError
+		if err := op(); !errors.As(err, &nf) {
+			t.Errorf("%s after Disconnect: want NotFoundError, got %v", name, err)
+		}
+	}
+
+	if !svc.Shutdown(mqttShutdownTimeout) {
+		t.Error("expected Shutdown to drain within timeout")
+	}
+	if _, err := h.Connect(mqttdomain.ConnectionConfig{Name: "late", Broker: brokerAddr}); err == nil {
+		t.Error("Connect after Shutdown should be rejected")
+	}
+	emitter.assertSilent(t, 300*time.Millisecond)
+	if conns := h.GetConnections(); len(conns) != 0 {
+		t.Errorf("connections after Shutdown = %d, want 0", len(conns))
+	}
+}
+
+// TestMQTT_OverlappingSubscriptions は、同じ接続で重なる購読 (overlap/# と overlap/specific) が
+// あるときの mqtt:message の回数を固定する。ブローカーは接続ごとに 1 回配信するが、paho は
+// 一致する全ての購読のハンドラを呼ぶので、現状は一致した購読ごとに 1 回ずつ発行する。
+func TestMQTT_OverlappingSubscriptions(t *testing.T) {
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+	subID := connectBroker(t, h, "sub")
+	pubID := connectBroker(t, h, "pub")
+	waitConnected(t, h, subID, 5*time.Second)
+	waitConnected(t, h, pubID, 5*time.Second)
+	for _, filter := range []string{"overlap/#", "overlap/specific"} {
+		if err := h.Subscribe(subID, filter, 1); err != nil {
+			t.Fatalf("Subscribe(%s): %v", filter, err)
+		}
+	}
+
+	tests := []struct {
+		topic string
+		want  int
+	}{
+		{topic: "overlap/specific", want: 2},
+		{topic: "overlap/other", want: 1},
+	}
+	for _, tc := range tests {
+		if err := h.Publish(pubID, tc.topic, "x", 1, false); err != nil {
+			t.Fatalf("Publish(%s): %v", tc.topic, err)
+		}
+		for range tc.want {
+			if msg := emitter.receiveMessage(t, 5*time.Second); msg.Topic != tc.topic {
+				t.Fatalf("topic = %s, want %s", msg.Topic, tc.topic)
+			}
+		}
+		emitter.noMessage(t, 300*time.Millisecond)
+	}
+}
+
+// TestMQTT_CorruptProfileAmongValidOnes は、壊れたプロファイルだけを退避して正常なもので起動し、
+// 中身の ID が不正なファイルは退避せずに読み飛ばすこと、プロファイルのディレクトリを
+// 作れなければ起動に失敗することを確認する。
+func TestMQTT_CorruptProfileAmongValidOnes(t *testing.T) {
+	dir := t.TempDir()
+	emitter := newMQTTMockEmitter()
+	h1, _ := newMQTTHandlerWithDir(t, emitter, dir)
+	valid, err := h1.SaveProfile(mqttdomain.BrokerProfile{Name: "Valid", Broker: brokerAddr})
+	if err != nil {
+		t.Fatalf("SaveProfile: %v", err)
+	}
+	const corrupt = "{ not json"
+	escape := `{"id":"../escape","name":"Escape","broker":"tcp://localhost:1883","clientId":"","username":"","password":"","useTls":false}`
+	for name, content := range map[string]string{"x.json": corrupt, "escape.json": escape} {
+		if err = os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile(%s): %v", name, err)
+		}
+	}
+
+	h2, _ := newMQTTHandlerWithDir(t, emitter, dir)
+	profiles := h2.GetProfiles()
+	if len(profiles) != 1 || profiles[0].ID != valid.ID {
+		t.Fatalf("profiles = %v, want only %s", profiles, valid.ID)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "x.json.corrupt"))
+	if err != nil {
+		t.Fatalf("x.json.corrupt should exist: %v", err)
+	}
+	if string(got) != corrupt {
+		t.Errorf("x.json.corrupt = %q, want the original bytes", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "escape.json")); err != nil {
+		t.Errorf("a file with an invalid ID must be left in place: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "escape.json.corrupt")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a file with an invalid ID must not be quarantined: %v", err)
+	}
+	if _, err := h2.SaveProfile(mqttdomain.BrokerProfile{Name: "New", Broker: brokerAddr}); err != nil {
+		t.Errorf("SaveProfile after skipping broken files: %v", err)
+	}
+
+	// ディレクトリの位置に通常のファイルがあると作成できず、起動に失敗する。
+	blocked := filepath.Join(t.TempDir(), "mqtt-profiles")
+	if err := os.WriteFile(blocked, []byte("not a dir"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, err := mqttinfra.NewProfileRepository(blocked, nil); err == nil {
+		t.Error("NewProfileRepository should fail when the directory cannot be created")
+	}
+}
+
+// TestMQTT_LifecycleEvents は、Connect で mqtt:connected、Disconnect で mqtt:disconnected が
+// connectionId 付きで 1 回ずつ出てその後は何も出ないことと、接続失敗では
+// mqtt:connection-failed だけが出て mqtt:connected が出ないことを確認する。
+func TestMQTT_LifecycleEvents(t *testing.T) {
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandlerWithConfig(t, emitter, mqttinfra.MQTTClientConfig{
+		ConnectTimeout: time.Second,
+		TokenTimeout:   3 * time.Second,
+	})
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+
+	id := connectBroker(t, h, "lifecycle")
+	emitter.waitEvent(t, cmndomain.EventMQTTConnected, id, 1, 5*time.Second)
+	if err := h.Disconnect(id); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	emitter.waitEvent(t, cmndomain.EventMQTTDisconnected, id, 1, 5*time.Second)
+	emitter.assertSilent(t, 300*time.Millisecond)
+	if got, want := emitter.lifecycle(id), []string{cmndomain.EventMQTTConnected, cmndomain.EventMQTTDisconnected}; !slices.Equal(got, want) {
+		t.Errorf("events = %v, want %v", got, want)
+	}
+
+	failed, err := h.Connect(mqttdomain.ConnectionConfig{Name: "unreachable", Broker: fmt.Sprintf("tcp://127.0.0.1:%d", freePort(t))})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	emitter.waitEvent(t, cmndomain.EventMQTTConnectionFailed, failed, 1, 10*time.Second)
+	emitter.assertSilent(t, 300*time.Millisecond)
+	if got, want := emitter.lifecycle(failed), []string{cmndomain.EventMQTTConnectionFailed}; !slices.Equal(got, want) {
+		t.Errorf("events = %v, want %v", got, want)
 	}
 }
