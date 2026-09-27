@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
@@ -323,4 +324,44 @@ func TestNetClient_TruncatedSameRequest_TrackedPerExecution(t *testing.T) {
 		t.Fatalf("AcquireSave(exec-2) after discarding exec-1: %v", err)
 	}
 	lease.Release()
+}
+
+// errReader は常に err を返す io.Reader。
+type errReader struct{ err error }
+
+func (r errReader) Read([]byte) (int, error) { return 0, r.err }
+
+// 一時ファイルへの書き込み失敗は分類済みの errSpillWrite にし、パスを含めない。
+func TestWriteSpill_WriteErrorIsClassified(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "response-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	_, _, err = writeSpill(f, 1024, []byte("head"), []byte("p"), strings.NewReader("rest"))
+	if !errors.Is(err, errSpillWrite) {
+		t.Fatalf("writeSpill error = %v, want errSpillWrite", err)
+	}
+	if strings.Contains(err.Error(), f.Name()) {
+		t.Fatalf("error must not contain the temp path: %q", err)
+	}
+}
+
+// 残りの本文の読み込みエラーは "failed to read response" で包み、書き込みの失敗と区別する。
+func TestWriteSpill_ReadErrorIsNotWriteError(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "response-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	errBroken := errors.New("connection reset")
+
+	_, _, err = writeSpill(f, 1024, []byte("head"), []byte("p"), errReader{errBroken})
+	if errors.Is(err, errSpillWrite) {
+		t.Fatalf("a read error must not be classified as errSpillWrite: %v", err)
+	}
+	if !errors.Is(err, errBroken) || !strings.HasPrefix(err.Error(), "failed to read response: ") {
+		t.Fatalf("writeSpill error = %v, want a wrapped read error", err)
+	}
 }

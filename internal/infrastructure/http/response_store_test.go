@@ -415,3 +415,62 @@ func TestResponseStore_ConcurrentOperations(t *testing.T) {
 		t.Fatalf("orphan temp files: %v", files)
 	}
 }
+
+// assertNoAccounting は件数・総容量・同時 spill の計上がすべて解放されていることを確かめる。
+func assertNoAccounting(t *testing.T, s *ResponseStore) {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.files != 0 || s.total != 0 || s.spilling != 0 {
+		t.Fatalf("accounting leaked: files=%d total=%d spilling=%d", s.files, s.total, s.spilling)
+	}
+}
+
+// spill の書き込み中に Cleanup が走ったら、書き込み完了時にファイルを公開せずに削除し、
+// ErrResponseUnavailable を返す。計上は Cleanup 側で解放済みなので二重に解放しない。
+func TestResponseStore_CleanupDuringSpillDiscardsFile(t *testing.T) {
+	s, dir := newTestStore(t)
+	if err := s.Begin("exec-1"); err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	var path string
+	err := s.Spill("exec-1", 16, "text/plain", func(f *os.File) (int64, error) {
+		path = f.Name()
+		s.Cleanup()
+		n, werr := f.WriteString("body")
+		return int64(n), werr
+	})
+	s.Finish("exec-1")
+
+	if !errors.Is(err, domain.ErrResponseUnavailable) {
+		t.Fatalf("Spill: want ErrResponseUnavailable, got %v", err)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("spilled file must be removed, err=%v", statErr)
+	}
+	if files := tempFilesIn(t, dir); len(files) != 0 {
+		t.Fatalf("expected no temp files left, found %v", files)
+	}
+	assertNoAccounting(t, s)
+}
+
+// 書き込み中に Cleanup が走り、そのうえ書き込みも失敗したとき、abortSpill は計上を二重に解放しない。
+func TestResponseStore_CleanupDuringFailedSpillDoesNotDoubleRelease(t *testing.T) {
+	s, dir := newTestStore(t)
+	if err := s.Begin("exec-1"); err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	err := s.Spill("exec-1", 16, "", func(*os.File) (int64, error) {
+		s.Cleanup()
+		return 0, errSpillWrite
+	})
+	s.Finish("exec-1")
+
+	if !errors.Is(err, errSpillWrite) {
+		t.Fatalf("Spill: want errSpillWrite, got %v", err)
+	}
+	if files := tempFilesIn(t, dir); len(files) != 0 {
+		t.Fatalf("expected no temp files left, found %v", files)
+	}
+	assertNoAccounting(t, s)
+}

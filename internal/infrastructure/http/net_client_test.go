@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -181,5 +185,175 @@ func TestNetClient_ImageBody_Base64(t *testing.T) {
 	}
 	if res.Body != base64.StdEncoding.EncodeToString(png) {
 		t.Fatalf("image body not base64-encoded as expected")
+	}
+}
+
+// DisableRedirects なら 3xx を追わずにそのまま返し、既定では追う。
+func TestNetClient_DisableRedirects_Returns3xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/start" {
+			http.Redirect(w, r, "/final", http.StatusFound)
+			return
+		}
+		_, _ = w.Write([]byte("final"))
+	}))
+	defer srv.Close()
+
+	tests := []struct {
+		name    string
+		disable bool
+		status  int
+		body    string
+	}{
+		{"redirects disabled", true, http.StatusFound, ""},
+		{"redirects followed", false, http.StatusOK, "final"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewNetClient(nil, t.TempDir())
+			defer c.Cleanup()
+			res, err := c.Do(context.Background(), "exec-1", domain.HTTPRequest{
+				Method:   http.MethodGet,
+				URL:      srv.URL + "/start",
+				Settings: domain.RequestSettings{DisableRedirects: tc.disable},
+			})
+			if err != nil {
+				t.Fatalf("Do: %v", err)
+			}
+			if res.StatusCode != tc.status {
+				t.Fatalf("StatusCode = %d, want %d", res.StatusCode, tc.status)
+			}
+			if tc.body != "" && res.Body != tc.body {
+				t.Fatalf("Body = %q, want %q", res.Body, tc.body)
+			}
+			if tc.disable && res.Headers["Location"][0] != "/final" {
+				t.Fatalf("Location = %v, want /final", res.Headers["Location"])
+			}
+		})
+	}
+}
+
+func TestResolveProxy_Modes(t *testing.T) {
+	fromEnv := reflect.ValueOf(http.ProxyFromEnvironment).Pointer()
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+
+	for _, mode := range []string{"", "system"} {
+		p := resolveProxy(domain.RequestSettings{ProxyMode: mode})
+		if p == nil || reflect.ValueOf(p).Pointer() != fromEnv {
+			t.Errorf("ProxyMode %q should use ProxyFromEnvironment", mode)
+		}
+	}
+	if p := resolveProxy(domain.RequestSettings{ProxyMode: "none"}); p != nil {
+		t.Error(`ProxyMode "none" should connect directly (nil)`)
+	}
+
+	p := resolveProxy(domain.RequestSettings{ProxyMode: "custom", ProxyURL: "http://proxy.local:8080"})
+	if p == nil {
+		t.Fatal(`ProxyMode "custom" with a valid URL should return a proxy func`)
+	}
+	got, err := p(req)
+	if err != nil || got.String() != "http://proxy.local:8080" {
+		t.Errorf("custom proxy = %v, %v; want http://proxy.local:8080", got, err)
+	}
+
+	// 空・解釈できないカスタムプロキシは、現在の仕様では黙って直結 (nil) になる。
+	for _, raw := range []string{"", "http://[::1"} {
+		if p := resolveProxy(domain.RequestSettings{ProxyMode: "custom", ProxyURL: raw}); p != nil {
+			t.Errorf("custom proxy %q should fall back to a direct connection (nil)", raw)
+		}
+	}
+}
+
+// 失敗した Do のあとも ResponseStore に予約が残らず、同じ execution ID で再送できることを確かめる。
+func assertExecutionReleased(t *testing.T, c *NetClient, executionID string) {
+	t.Helper()
+	if err := c.responses.Begin(executionID); err != nil {
+		t.Fatalf("execution %s should be released after a failed Do: %v", executionID, err)
+	}
+	c.responses.Finish(executionID)
+}
+
+func TestNetClient_InvalidURL(t *testing.T) {
+	c := NewNetClient(nil, t.TempDir())
+	defer c.Cleanup()
+
+	_, err := c.Do(context.Background(), "exec-1", domain.HTTPRequest{Method: http.MethodGet, URL: "http://[::1"})
+	if err == nil || !strings.HasPrefix(err.Error(), "invalid URL: ") {
+		t.Fatalf("Do error = %v, want an invalid URL error", err)
+	}
+	if _, ok := errors.AsType[*url.Error](err); !ok {
+		t.Fatalf("error should wrap *url.Error, got %T", errors.Unwrap(err))
+	}
+	assertExecutionReleased(t, c, "exec-1")
+}
+
+// hijackServer は Content-Length より短い本文を送ってから onBody を呼ぶサーバを起動する。
+func hijackServer(t *testing.T, contentLength int, body []byte, onBody func(net.Conn)) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("response writer does not support hijacking")
+			return
+		}
+		conn, buf, err := hj.Hijack()
+		if err != nil {
+			t.Errorf("Hijack: %v", err)
+			return
+		}
+		defer conn.Close()
+		_, _ = fmt.Fprintf(buf, "HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n", contentLength)
+		_, _ = buf.Write(body)
+		_ = buf.Flush()
+		onBody(conn)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// 本文の途中でサーバが切断したら "failed to read response" で包み、元のエラーを辿れる。
+func TestNetClient_ResponseReadError(t *testing.T) {
+	u := hijackServer(t, 100, []byte("partial"), func(net.Conn) {})
+	c := NewNetClient(nil, t.TempDir())
+	defer c.Cleanup()
+
+	_, err := c.Do(context.Background(), "exec-1", domain.HTTPRequest{Method: http.MethodGet, URL: u})
+	if err == nil || !strings.HasPrefix(err.Error(), "failed to read response: ") {
+		t.Fatalf("Do error = %v, want a read error", err)
+	}
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("error should wrap io.ErrUnexpectedEOF: %v", err)
+	}
+	assertExecutionReleased(t, c, "exec-1")
+}
+
+// 本文の読み込み中にタイムアウトしたら、タイムアウトとして分類する。
+func TestNetClient_ResponseReadTimeout(t *testing.T) {
+	stall := func(net.Conn) { time.Sleep(3 * time.Second) }
+	tests := []struct {
+		name string
+		body []byte
+	}{
+		// maxBody に届く前に止まる: 本文の読み込みでタイムアウトする。
+		{"while reading body", []byte("partial")},
+		// maxBody ちょうどで止まる: 続きを確かめる 1 バイトの先読みでタイムアウトする。
+		{"while peeking past maxBody", bytes.Repeat([]byte("a"), 1024*1024)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			u := hijackServer(t, 2*1024*1024, tc.body, stall)
+			c := NewNetClient(nil, t.TempDir())
+			defer c.Cleanup()
+
+			_, err := c.Do(context.Background(), "exec-1", domain.HTTPRequest{
+				Method:   http.MethodGet,
+				URL:      u,
+				Settings: domain.RequestSettings{TimeoutSec: 1, MaxResponseBodyMB: 1},
+			})
+			if err == nil || !strings.Contains(err.Error(), "timed out") {
+				t.Fatalf("Do error = %v, want a timeout", err)
+			}
+			assertExecutionReleased(t, c, "exec-1")
+		})
 	}
 }
