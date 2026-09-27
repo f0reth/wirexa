@@ -59,7 +59,72 @@ function withState(
 
 describe("createEmptyProfile", () => {
   it("leaves the id empty so the server assigns one", () => {
-    expect(createEmptyProfile().id).toBe("");
+    expect(createEmptyProfile()).toEqual({
+      id: "",
+      name: "",
+      broker: "mqtt://localhost:1883",
+      clientId: "",
+      username: "",
+      password: "",
+      useTls: false,
+    });
+  });
+
+  it("returns a fresh object each time", () => {
+    expect(createEmptyProfile()).not.toBe(createEmptyProfile());
+  });
+});
+
+describe("createProfilesState failures", () => {
+  it("leaves the list untouched when saving fails", async () => {
+    const api = makeApi([makeProfile("p1")]);
+    api.saveProfile = vi.fn(async () => {
+      throw new Error("disk full");
+    });
+    const { storage, stored } = makeOrderStorage(["p1"]);
+    await withState(
+      api,
+      async (state) => {
+        await state.loadProfiles();
+
+        await expect(state.saveProfile(makeProfile("p2"))).rejects.toThrow(
+          "disk full",
+        );
+        expect(state.profiles().map((p) => p.id)).toEqual(["p1"]);
+        expect(stored()).toEqual(["p1"]);
+      },
+      storage,
+    );
+  });
+
+  it("keeps the profile when deleting fails", async () => {
+    const api = makeApi([makeProfile("p1"), makeProfile("p2")]);
+    api.deleteProfile = vi.fn(async () => {
+      throw new Error("locked");
+    });
+    const { storage, stored } = makeOrderStorage(["p1", "p2"]);
+    await withState(
+      api,
+      async (state) => {
+        await state.loadProfiles();
+
+        await expect(state.deleteProfile("p1")).rejects.toThrow("locked");
+        expect(state.profiles().map((p) => p.id)).toEqual(["p1", "p2"]);
+        expect(stored()).toEqual(["p1", "p2"]);
+      },
+      storage,
+    );
+  });
+
+  it("propagates a load failure and keeps the list empty", async () => {
+    const api = makeApi();
+    api.getProfiles = vi.fn(async () => {
+      throw new Error("rpc down");
+    });
+    await withState(api, async (state) => {
+      await expect(state.loadProfiles()).rejects.toThrow("rpc down");
+      expect(state.profiles()).toEqual([]);
+    });
   });
 });
 
@@ -117,6 +182,23 @@ describe("createProfilesState order", () => {
 
         await state.deleteProfile("p2");
         expect(stored()).toEqual(["p1"]);
+      },
+      storage,
+    );
+  });
+
+  it("does not save when the indices are out of range", async () => {
+    const api = makeApi([makeProfile("p1"), makeProfile("p2")]);
+    const storage = { load: vi.fn(() => []), save: vi.fn() };
+    await withState(
+      api,
+      async (state) => {
+        await state.loadProfiles();
+        state.reorderProfiles(0, 2);
+        state.reorderProfiles(-1, 0);
+
+        expect(state.profiles().map((p) => p.id)).toEqual(["p1", "p2"]);
+        expect(storage.save).not.toHaveBeenCalled();
       },
       storage,
     );

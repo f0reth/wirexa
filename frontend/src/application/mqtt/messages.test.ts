@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
-import type { MqttMessageView } from "./connections";
-import { collectFilterTopics, filterMessagesByTopic } from "./messages";
+import { createRoot, createSignal } from "solid-js";
+import { createStore } from "solid-js/store";
+import { describe, expect, it, vi } from "vitest";
+import type { ConnectionStateExt, MqttMessageView } from "./connections";
+import {
+  collectFilterTopics,
+  createMessagesState,
+  filterMessagesByTopic,
+} from "./messages";
 
 function makeMessage(topic: string, id = topic): MqttMessageView {
   return {
@@ -97,5 +103,153 @@ describe("filterMessagesByTopic", () => {
 
   it("returns nothing when no topic matches", () => {
     expect(filterMessagesByTopic(messages, "missing/topic")).toEqual([]);
+  });
+});
+
+function makeConnection(
+  connectionId: string,
+  over: Partial<ConnectionStateExt> = {},
+): ConnectionStateExt {
+  return {
+    type: "offline",
+    connectionId,
+    profileId: connectionId,
+    profile: {
+      id: connectionId,
+      name: connectionId,
+      broker: "mqtt://localhost:1883",
+      clientId: "",
+      username: "",
+      password: "",
+      useTls: false,
+    },
+    subscriptions: [],
+    messages: [],
+    selectedMessage: null,
+    autoFollow: false,
+    brokerTopics: [],
+    brokerTopicsSet: new Set(),
+    isScanning: false,
+    ...over,
+  } as ConnectionStateExt;
+}
+
+/** connections.ts と同じ形の接続ストアの上に messages state を作る。 */
+function setupMessages(initial: ConnectionStateExt[]) {
+  return createRoot((dispose) => {
+    const [connections, setConnections] = createStore<
+      Record<string, ConnectionStateExt>
+    >(Object.fromEntries(initial.map((c) => [c.connectionId, c])));
+    const [activeId, setActiveId] = createSignal<string | null>(
+      initial[0]?.connectionId ?? null,
+    );
+    const updateConnection = vi.fn(
+      (id: string, fn: (s: ConnectionStateExt) => ConnectionStateExt) => {
+        const existing = connections[id];
+        if (existing) setConnections(id, fn(existing));
+      },
+    );
+    const state = createMessagesState(() => {
+      const id = activeId();
+      return id ? (connections[id] ?? null) : null;
+    }, updateConnection);
+    const push = (id: string, msg: MqttMessageView) =>
+      updateConnection(id, (s) => ({ ...s, messages: [...s.messages, msg] }));
+    return {
+      state,
+      connections,
+      setActiveId,
+      updateConnection,
+      push,
+      dispose,
+    };
+  });
+}
+
+describe("createMessagesState", () => {
+  it("follows the newest message while autoFollow is on", () => {
+    const h = setupMessages([makeConnection("c1")]);
+    h.push("c1", makeMessage("a", "m1"));
+    expect(h.state.selectedMessage()).toBeNull();
+
+    h.state.setAutoFollow(true);
+    expect(h.state.selectedMessage()?.id).toBe("m1");
+
+    h.push("c1", makeMessage("a", "m2"));
+    expect(h.state.selectedMessage()?.id).toBe("m2");
+
+    h.state.setAutoFollow(false);
+    h.push("c1", makeMessage("a", "m3"));
+    expect(h.state.selectedMessage()?.id).toBe("m2");
+    h.dispose();
+  });
+
+  it("does not update the connection when the newest message is already selected", () => {
+    const last = makeMessage("a", "m1");
+    const h = setupMessages([
+      makeConnection("c1", {
+        messages: [last],
+        selectedMessage: last,
+        autoFollow: true,
+      }),
+    ]);
+
+    // 初回の effect は選択済みの末尾を見て何もしない。
+    expect(h.updateConnection).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it("computes setAutoFollow from the current value", () => {
+    const h = setupMessages([makeConnection("c1")]);
+
+    h.state.setAutoFollow((prev) => !prev);
+    expect(h.state.autoFollow()).toBe(true);
+    h.state.setAutoFollow((prev) => !prev);
+    expect(h.state.autoFollow()).toBe(false);
+    h.dispose();
+  });
+
+  it("clears the selection together with the messages", () => {
+    const msg = makeMessage("a", "m1");
+    const h = setupMessages([
+      makeConnection("c1", { messages: [msg], selectedMessage: msg }),
+    ]);
+
+    h.state.clearMessages();
+
+    expect(h.state.messages()).toEqual([]);
+    expect(h.state.selectedMessage()).toBeNull();
+    h.dispose();
+  });
+
+  it("reads and writes only the active connection", () => {
+    const h = setupMessages([
+      makeConnection("c1", { messages: [makeMessage("a", "m1")] }),
+      makeConnection("c2", { messages: [makeMessage("b", "m2")] }),
+    ]);
+
+    h.setActiveId("c2");
+    expect(h.state.messages().map((m) => m.id)).toEqual(["m2"]);
+    h.state.setSelectedMessage(h.state.messages()[0]);
+
+    expect(h.connections.c2.selectedMessage?.id).toBe("m2");
+    expect(h.connections.c1.selectedMessage).toBeNull();
+    h.dispose();
+  });
+
+  it("does nothing without an active connection", () => {
+    const h = setupMessages([makeConnection("c1")]);
+    h.setActiveId(null);
+    h.updateConnection.mockClear();
+
+    h.state.setSelectedMessage(makeMessage("a"));
+    h.state.setAutoFollow(true);
+    h.state.clearMessages();
+
+    expect(h.updateConnection).not.toHaveBeenCalled();
+    expect(h.state.messages()).toEqual([]);
+    expect(h.state.selectedMessage()).toBeNull();
+    expect(h.state.autoFollow()).toBe(false);
+    h.dispose();
   });
 });
