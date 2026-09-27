@@ -41,6 +41,36 @@ describe("parseBrokerUrl", () => {
     // ホストにコロンを含む形（IPv6 リテラル）は未対応。
     expect(parseBrokerUrl("mqtt://[::1]:1883")).toEqual(fallback);
   });
+
+  it("falls back for an upper-case scheme", () => {
+    expect(parseBrokerUrl("MQTT://host:1883")).toEqual({
+      scheme: "mqtt",
+      host: "localhost",
+      port: "1883",
+    });
+  });
+
+  it("falls back when the port is empty", () => {
+    expect(parseBrokerUrl("mqtt://h:")).toEqual({
+      scheme: "mqtt",
+      host: "localhost",
+      port: "1883",
+    });
+  });
+
+  // ポートの範囲は profile-validation 側で検証する。
+  it("does not validate the port range", () => {
+    expect(parseBrokerUrl("mqtt://h:99999").port).toBe("99999");
+    expect(parseBrokerUrl("mqtt://h:0").port).toBe("0");
+  });
+
+  it("treats a path as part of the host", () => {
+    expect(parseBrokerUrl("mqtt://host/path")).toEqual({
+      scheme: "mqtt",
+      host: "host/path",
+      port: "1883",
+    });
+  });
 });
 
 describe("composeBrokerUrl", () => {

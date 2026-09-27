@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { composeBrokerUrl, parseBrokerUrl } from "./broker-url";
 import { isValidBrokerPort, isValidProfileDraft } from "./profile-validation";
 
 describe("isValidBrokerPort", () => {
@@ -23,6 +24,31 @@ describe("isValidBrokerPort", () => {
   it("rejects non-integer numbers", () => {
     expect(isValidBrokerPort("1883.5")).toBe(false);
   });
+
+  // type="number" の入力欄からも "1e3" と "1883.0" は入力できる。
+  // 通すと保存した broker URL を parseBrokerUrl が読めず、既定値に戻ってしまう。
+  it("rejects exponent and decimal port strings", () => {
+    expect(isValidBrokerPort("1e3")).toBe(false);
+    expect(isValidBrokerPort("1883.0")).toBe(false);
+  });
+
+  it("rejects hex, signed and padded port strings", () => {
+    expect(isValidBrokerPort("0x50")).toBe(false);
+    expect(isValidBrokerPort("+1883")).toBe(false);
+    expect(isValidBrokerPort(" 1883 ")).toBe(false);
+  });
+
+  it("accepts leading zeros within range", () => {
+    expect(isValidBrokerPort("01883")).toBe(true);
+    expect(isValidBrokerPort("00000")).toBe(false);
+  });
+
+  it("round-trips a valid port through compose/parse", () => {
+    for (const port of ["1", "1883", "65535"]) {
+      const parsed = parseBrokerUrl(composeBrokerUrl("mqtt", "host", port));
+      expect(parsed).toEqual({ scheme: "mqtt", host: "host", port });
+    }
+  });
 });
 
 describe("isValidProfileDraft", () => {
@@ -40,6 +66,24 @@ describe("isValidProfileDraft", () => {
   it("rejects a blank host", () => {
     expect(isValidProfileDraft({ ...valid, host: "" })).toBe(false);
     expect(isValidProfileDraft({ ...valid, host: "   " })).toBe(false);
+  });
+
+  // parseBrokerUrl はホストのコロンを読めず、空白やパスは接続先として解釈できない。
+  it("rejects hosts that parseBrokerUrl cannot read back", () => {
+    expect(isValidProfileDraft({ ...valid, host: "::1" })).toBe(false);
+    expect(isValidProfileDraft({ ...valid, host: "[::1]" })).toBe(false);
+    expect(isValidProfileDraft({ ...valid, host: "host:1883" })).toBe(false);
+    expect(isValidProfileDraft({ ...valid, host: " host " })).toBe(false);
+    expect(isValidProfileDraft({ ...valid, host: "my host" })).toBe(false);
+    expect(isValidProfileDraft({ ...valid, host: "host/path" })).toBe(false);
+  });
+
+  it("accepts hostnames and IPv4 addresses", () => {
+    for (const host of ["localhost", "broker.example.com", "192.168.0.1"]) {
+      expect(isValidProfileDraft({ ...valid, host })).toBe(true);
+      const url = composeBrokerUrl("mqtt", host, valid.port);
+      expect(parseBrokerUrl(url).host).toBe(host);
+    }
   });
 
   it("rejects an invalid port", () => {

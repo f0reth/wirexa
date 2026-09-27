@@ -23,6 +23,35 @@ test("new broker dialog save button is disabled when name is empty", async ({
   ).toBeDisabled();
 });
 
+// 保存した broker URL を読み戻せない値（指数表記・小数のポート、コロンを含むホスト）は保存させない。
+test("new broker dialog rejects a port or host that cannot be read back", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "New Broker" }).click();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  const save = dialog.getByRole("button", { name: "Save", exact: true });
+  const host = dialog.locator("#broker-host");
+  const port = dialog.locator("#broker-port");
+
+  await dialog.locator("#broker-name").fill("Validation Broker");
+  await host.fill("localhost");
+  await port.fill("1883");
+  await expect(save).toBeEnabled();
+
+  await port.fill("1e3");
+  await expect(save).toBeDisabled();
+  await port.fill("1883.0");
+  await expect(save).toBeDisabled();
+
+  await port.fill("1883");
+  await host.fill("::1");
+  await expect(save).toBeDisabled();
+  await host.fill("broker.example.com");
+  await expect(save).toBeEnabled();
+});
+
 test("can delete a broker profile", async ({ page, app }) => {
   await app.createBrokerProfile("Delete Me");
   await expect(page.getByText("Delete Me")).toBeVisible();
