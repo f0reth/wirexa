@@ -22,7 +22,9 @@ const maxRecents = 50
 // WriteFile が受理するパスは許可リストに登録済みのものに限定する。
 // 許可リストへの登録は OpenSelected / SaveSelected (adapter のダイアログ処理が
 // ダイアログの戻り値だけを渡す) と、起動時の recents seed でしか行われない。
-// recents から外したパスは許可も取り消す。
+// recents から外すことを確定した（保存に成功した）パスは許可も取り消す。
+// recents の保存に失敗したときは、一覧に載っていなくても許可を残す
+// （ダイアログで選ばれたパスはそのセッションの間は読み書きできる）。
 type FileService struct {
 	files   domain.FileAccess
 	repo    domain.RecentRepository
@@ -179,7 +181,8 @@ func (s *FileService) checkGranted(path string) (string, bool) {
 }
 
 // addRecentLocked はパスを recents へ追加する。既存なら LastOpenedAt だけ更新する。
-// 上限超過時は LastOpenedAt が古いものから間引く。保存失敗はログに残すだけにする。
+// 上限超過時は LastOpenedAt が古いものから間引き、保存に成功したら間引いたパスの許可を取り消す。
+// 保存失敗はログに残すだけにする（recents は変わらないので許可も取り消さない）。
 // 呼び出し側で lock 済み。
 func (s *FileService) addRecentLocked(path string) {
 	now := s.now().UTC().Format(time.RFC3339)
@@ -194,13 +197,22 @@ func (s *FileService) addRecentLocked(path string) {
 		})
 	}
 
+	var dropped []domain.OpenAPIRecent
 	if len(next) > maxRecents {
 		sort.SliceStable(next, func(i, j int) bool { return next[i].LastOpenedAt > next[j].LastOpenedAt })
+		dropped = slices.Clone(next[maxRecents:])
 		next = next[:maxRecents]
 	}
 	reindex(next)
 	if err := s.commitLocked(next); err != nil {
 		s.logger.Error("openapi_recents: failed to save recents", "error", err)
+		return
+	}
+	for _, it := range dropped {
+		// いま選ばれたパスは、間引かれても今回の操作のために許可を残す。
+		if cleaned := filepath.Clean(it.Path); cleaned != path {
+			delete(s.granted, cleaned)
+		}
 	}
 }
 

@@ -361,6 +361,71 @@ func TestOpenSelectedTrimsToMaxRecents(t *testing.T) {
 	}
 }
 
+// newFullRecents は 00.yaml から古い順に maxRecents 件を開き、中身も用意したサービスを返す。
+func newFullRecents(t *testing.T, repo *memRepo) (*FileService, *memFiles) {
+	t.Helper()
+	s, files := newTestService(t, repo)
+	for i := range maxRecents {
+		p := s.OpenSelected(spec(fmt.Sprintf("%02d.yaml", i)))
+		files.data[p] = []byte("openapi: 3.0.0")
+	}
+	return s, files
+}
+
+// 上限を超えて間引いたパスは、recents から外すことが確定したので許可も取り消す。
+func TestOpenSelectedTrimRevokesGrantOfDroppedPath(t *testing.T) {
+	s, files := newFullRecents(t, &memRepo{})
+	dropped := spec("00.yaml")
+
+	added := s.OpenSelected(spec("new.yaml"))
+	files.data[added] = []byte("openapi: 3.0.0")
+
+	if _, err := s.ReadFile(dropped); !errors.Is(err, domain.ErrFileAccessDenied) {
+		t.Fatalf("ReadFile(trimmed) error = %v, want ErrFileAccessDenied", err)
+	}
+	if err := s.WriteFile(dropped, "x"); !errors.Is(err, domain.ErrFileAccessDenied) {
+		t.Fatalf("WriteFile(trimmed) error = %v, want ErrFileAccessDenied", err)
+	}
+	// 残ったパスと、いま開いたパスの許可は残る。
+	for _, p := range []string{spec("01.yaml"), added} {
+		if _, err := s.ReadFile(p); err != nil {
+			t.Fatalf("ReadFile(%s) should still be granted: %v", p, err)
+		}
+	}
+}
+
+// 保存に失敗したときは間引きも起きない（recents は変わらない）ので、許可も残す。
+func TestOpenSelectedTrimSaveFailureKeepsGrant(t *testing.T) {
+	repo := &memRepo{}
+	s, files := newFullRecents(t, repo)
+	before := s.GetRecents()
+	repo.saveErr = errors.New("disk full")
+
+	added := s.OpenSelected(spec("new.yaml"))
+	files.data[added] = []byte("openapi: 3.0.0")
+
+	if got := s.GetRecents(); !slices.Equal(got, before) {
+		t.Fatalf("GetRecents changed after failed save:\n got  %+v\n want %+v", got, before)
+	}
+	for _, p := range []string{spec("00.yaml"), added} {
+		if _, err := s.ReadFile(p); err != nil {
+			t.Fatalf("ReadFile(%s) should still be granted: %v", p, err)
+		}
+	}
+}
+
+// 保存済みの recents が Order 順に並んでいなくても、Order の昇順で返す。
+func TestRecentsSeedAreSortedByOrder(t *testing.T) {
+	repo := &memRepo{items: []domain.OpenAPIRecent{
+		{Path: spec("c.yaml"), Name: "c.yaml", Order: 2},
+		{Path: spec("a.yaml"), Name: "a.yaml", Order: 0},
+		{Path: spec("b.yaml"), Name: "b.yaml", Order: 1},
+	}}
+	s, _ := newTestService(t, repo)
+
+	assertRecentOrder(t, s, "a.yaml", "b.yaml", "c.yaml")
+}
+
 func TestNewFileService_CorruptQuarantinedThenSaves(t *testing.T) {
 	repo := &memRepo{loadErr: fmt.Errorf("%w: bad json", cmn.ErrCorruptData)}
 	logger := &recordLogger{}
