@@ -116,6 +116,9 @@ export function createRequestState(
     string | null
   >(null);
   const [saveError, setSaveError] = createSignal<string | null>(null);
+  // 編集中のリクエストの世代。別のリクエストへ切り替えるたびに進め、
+  // 切り替え前に送信した応答が切り替え先に表示されないようにする。
+  let view = 0;
 
   // file 種別は本文を contents に持たない（送信元は file 参照の token だけ）。
   const contentKey = (): ContentBodyType | null => {
@@ -177,14 +180,27 @@ export function createRequestState(
       prev.response.bodyTruncated &&
       responseSaveState() === "idle"
     ) {
-      api.discardResponseBody(prev.executionId).catch((err) =>
-        logger.error("Failed to discard response body", {
-          error: errorMessage(err),
-        }),
-      );
+      discardResponseBody(prev.executionId);
     }
     setCurrent(next);
     setResponseSaveState("idle");
+  }
+
+  function discardResponseBody(executionId: string): void {
+    api.discardResponseBody(executionId).catch((err) =>
+      logger.error("Failed to discard response body", {
+        error: errorMessage(err),
+      }),
+    );
+  }
+
+  // 送信後に別のリクエストへ切り替えていたら、応答は表示せず全文も破棄する。
+  function showResponse(sentView: number, next: CurrentResponse): void {
+    if (sentView === view) {
+      replaceResponse(next);
+    } else if (next.response.bodyTruncated) {
+      discardResponseBody(next.executionId);
+    }
   }
 
   async function sendRequest(): Promise<void> {
@@ -201,6 +217,7 @@ export function createRequestState(
       });
       return;
     }
+    const sentView = view;
     setInFlight((ids) => [...ids, executionId]);
     logger.info("HTTP request sent", { method: m, url: u });
     try {
@@ -217,7 +234,7 @@ export function createRequestState(
         settings: settings(),
         doc: doc(),
       });
-      replaceResponse({ executionId, response: res });
+      showResponse(sentView, { executionId, response: res });
       logger.info("HTTP response received", {
         method: m,
         url: u,
@@ -226,7 +243,7 @@ export function createRequestState(
       });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      replaceResponse({
+      showResponse(sentView, {
         executionId,
         response: errorResponse(errorMsg),
       });
@@ -285,6 +302,7 @@ export function createRequestState(
     );
     // 別のリクエストへ切り替えたら、前のリクエストのレスポンスは表示せず破棄する。
     if (req.id !== activeRequestId() || collectionId !== activeCollectionId()) {
+      view++;
       replaceResponse(null);
     }
     setMethod(req.method);
@@ -303,6 +321,7 @@ export function createRequestState(
     saveCurrentRequest().catch((err) =>
       notifier.error("Failed to save request", errorMessage(err)),
     );
+    view++;
     replaceResponse(null);
     setMethod("GET");
     setUrl("");
