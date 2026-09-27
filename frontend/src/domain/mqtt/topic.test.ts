@@ -220,4 +220,14 @@ describe("topicMatches", () => {
   it("handles leading slash in topic", () => {
     expect(topicMatches("/sensors", "/sensors")).toBe(true);
   });
+
+  it("matches an empty middle level with +", () => {
+    expect(topicMatches("a/+/b", "a//b")).toBe(true);
+    expect(topicMatches("a//b", "a//b")).toBe(true);
+    expect(topicMatches("a/b", "a//b")).toBe(false);
+  });
+
+  it("matches an empty topic with +", () => {
+    expect(topicMatches("+", "")).toBe(true);
+  });
 });
