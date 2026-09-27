@@ -10,6 +10,11 @@ describe("moveItem", () => {
     expect(moveItem(["a", "b", "c", "d"], 3, 1)).toEqual(["a", "d", "b", "c"]);
   });
 
+  it("moves an item to the last index", () => {
+    expect(moveItem(["a", "b", "c"], 0, 2)).toEqual(["b", "c", "a"]);
+    expect(moveItem(["a", "b", "c"], 1, 2)).toEqual(["a", "c", "b"]);
+  });
+
   it("returns an unchanged order when from === to", () => {
     expect(moveItem(["a", "b", "c"], 1, 1)).toEqual(["a", "b", "c"]);
   });

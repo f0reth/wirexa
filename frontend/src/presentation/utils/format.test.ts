@@ -22,6 +22,11 @@ describe("formatJson", () => {
 
   it("passes through a bare primitive, which is still valid JSON", () => {
     expect(formatJson("123")).toBe("123");
+    expect(formatJson("null")).toBe("null");
+  });
+
+  it("returns null for whitespace-only input", () => {
+    expect(formatJson("  ")).toBeNull();
   });
 });
 
@@ -45,5 +50,10 @@ describe("formatTime", () => {
 
   it("zero-pads milliseconds to 3 digits", () => {
     expect(formatTime(local(0, 0, 0, 7))).toBe("00:00:00.007");
+  });
+
+  // 不正な日時の判定は持たない。表示側が有効な timestamp を渡す前提を記録する。
+  it("formats an invalid date as NaN fields", () => {
+    expect(formatTime(new Date(Number.NaN))).toBe("NaN:NaN:NaN.NaN");
   });
 });

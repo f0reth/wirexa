@@ -24,6 +24,8 @@ describe("makeLongPressDragHandlers", () => {
   });
 
   afterEach(() => {
+    // 途中で終わったテストのリスナーを次のテストへ持ち越さない。
+    dispatchUp();
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -73,6 +75,41 @@ describe("makeLongPressDragHandlers", () => {
     handleMouseDown(mouseDown(0, 0));
     dispatchMove(3, 3); // 距離 ≈ 4.24 < 5
     expect(onActivate).not.toHaveBeenCalled();
+    dispatchUp();
+  });
+
+  it("does not activate at exactly the threshold distance", () => {
+    const onActivate = vi.fn();
+    const { handleMouseDown } = makeLongPressDragHandlers(
+      { suppress: false },
+      onActivate,
+    );
+
+    handleMouseDown(mouseDown(10, 10));
+    dispatchMove(13, 14); // 距離 = 5
+    expect(onActivate).not.toHaveBeenCalled();
+
+    dispatchMove(13, 15); // 距離 ≈ 5.83 > 5
+    expect(onActivate).toHaveBeenCalledWith(13, 15);
+  });
+
+  it("leaves no document listeners behind after a move activation", () => {
+    const onActivate = vi.fn();
+    const removeSpy = vi.spyOn(document, "removeEventListener");
+    const { handleMouseDown } = makeLongPressDragHandlers(
+      { suppress: false },
+      onActivate,
+    );
+
+    handleMouseDown(mouseDown(0, 0));
+    dispatchMove(10, 0);
+    expect(onActivate).toHaveBeenCalledTimes(1);
+    expect(removeSpy).toHaveBeenCalledWith("mousemove", expect.any(Function));
+    expect(removeSpy).toHaveBeenCalledWith("mouseup", expect.any(Function));
+
+    dispatchMove(500, 500);
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+    expect(onActivate).toHaveBeenCalledTimes(1);
   });
 
   it("cancels the long press when the mouse is released early", () => {

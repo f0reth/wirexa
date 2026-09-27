@@ -26,16 +26,23 @@ describe("byteCountLabel", () => {
 
 describe("FIELD_VALUE_LABELS / FIELD_VALUE_PLACEHOLDERS / FIELD_VALUE_INPUT_TYPES", () => {
   it("labels the value input per field kind", () => {
-    expect(FIELD_VALUE_LABELS.ascii).toBe("Value (ASCII)");
-    expect(FIELD_VALUE_LABELS.hex).toBe("Value (hex)");
-    expect(FIELD_VALUE_LABELS.integer).toBe("Value");
+    expect(FIELD_VALUE_LABELS).toEqual({
+      ascii: "Value (ASCII)",
+      hex: "Value (hex)",
+      integer: "Value",
+      "wide-integer": "Value",
+      float: "Value",
+    });
   });
 
   it("uses a placeholder matching the field kind", () => {
-    expect(FIELD_VALUE_PLACEHOLDERS.ascii).toBe("hello");
-    expect(FIELD_VALUE_PLACEHOLDERS.hex).toBe("0a 1b 2c");
-    expect(FIELD_VALUE_PLACEHOLDERS.float).toBe("1.0");
-    expect(FIELD_VALUE_PLACEHOLDERS.integer).toBe("0");
+    expect(FIELD_VALUE_PLACEHOLDERS).toEqual({
+      ascii: "hello",
+      hex: "0a 1b 2c",
+      integer: "0",
+      "wide-integer": "0",
+      float: "1.0",
+    });
   });
 
   it("falls back to a text input where number input would lose precision", () => {
