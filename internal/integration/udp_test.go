@@ -7,6 +7,9 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,16 +22,32 @@ import (
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
 
-// mockEmitter はテスト用の Emitter 実装。受信メッセージをチャンネルで収集する。
+// mockEmitter はテスト用の Emitter 実装。受信メッセージをチャンネルで収集し、イベント名を順に記録する。
 type mockEmitter struct {
-	ch chan udpdomain.UDPReceivedMessage
+	ch    chan udpdomain.UDPReceivedMessage
+	names []string
+	mu    sync.Mutex
 }
+
+// udpMessageBuffer は受信メッセージのバッファ。溢れた分は黙って捨てるので、
+// 並行送信のテストでも溢れない大きさにする。
+const udpMessageBuffer = 256
 
 func newMockEmitter() *mockEmitter {
-	return &mockEmitter{ch: make(chan udpdomain.UDPReceivedMessage, 16)}
+	return &mockEmitter{ch: make(chan udpdomain.UDPReceivedMessage, udpMessageBuffer)}
 }
 
-func (e *mockEmitter) Emit(_ string, data any) {
+// eventNames は発行されたイベント名を発行順に返す。
+func (e *mockEmitter) eventNames() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return slices.Clone(e.names)
+}
+
+func (e *mockEmitter) Emit(name string, data any) {
+	e.mu.Lock()
+	e.names = append(e.names, name)
+	e.mu.Unlock()
 	if msg, ok := data.(udpdomain.UDPReceivedMessage); ok {
 		select {
 		case e.ch <- msg:
@@ -563,30 +582,33 @@ func TestUDP_StopListen_RaceWithSend(t *testing.T) {
 		t.Fatalf("StartListen: %v", err)
 	}
 
-	// Send と StopListen を並行して実行し race condition を発生させる
+	// Send と StopListen を並行して実行し race condition を発生させる。
+	// UDP の送信は受信側の状態に依らず成功し、停止は必ず成功する。
 	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		_, _ = h.Send(udpdomain.UDPSendRequest{
+	wg.Go(func() {
+		if _, serr := h.Send(udpdomain.UDPSendRequest{
 			Host:     "127.0.0.1",
 			Port:     port,
 			Encoding: udpdomain.EncodingText,
 			Payload:  "race-test",
-		})
-	}()
-
-	go func() {
-		defer wg.Done()
-		_ = h.StopListen(sess.ID)
-	}()
-
+		}); serr != nil {
+			t.Errorf("Send: %v", serr)
+		}
+	})
+	wg.Go(func() {
+		if serr := h.StopListen(sess.ID); serr != nil {
+			t.Errorf("StopListen: %v", serr)
+		}
+	})
 	wg.Wait()
-	// goroutine leak がなく正常終了することを確認（race detector で検出）
+
+	if listeners := h.GetListeners(); len(listeners) != 0 {
+		t.Errorf("listeners after StopListen = %v, want none", listeners)
+	}
 }
 
-// TestUDP_Concurrent_StartStopListen は複数 goroutine から StartListen / StopListen を並行実行しても安全であることを確認する。
+// TestUDP_Concurrent_StartStopListen は複数 goroutine から StartListen / StopListen を並行実行しても、
+// 全て成功してセッションが過不足なく登録・削除されることを確認する。
 func TestUDP_Concurrent_StartStopListen(t *testing.T) {
 	emitter := newMockEmitter()
 	h, listenSvc := newUDPHandler(t, emitter)
@@ -604,16 +626,29 @@ func TestUDP_Concurrent_StartStopListen(t *testing.T) {
 	for _, port := range ports {
 		wg.Go(func() {
 			sess, err := h.StartListen(port, string(udpdomain.EncodingText))
-			if err == nil {
-				sessIDs <- sess.ID
+			if err != nil {
+				t.Errorf("StartListen(%d): %v", port, err)
+				return
 			}
+			sessIDs <- sess.ID
 		})
 	}
 	wg.Wait()
 	close(sessIDs)
+	if listeners := h.GetListeners(); len(listeners) != n {
+		t.Fatalf("listeners = %d, want %d", len(listeners), n)
+	}
 
 	for id := range sessIDs {
-		_ = h.StopListen(id)
+		wg.Go(func() {
+			if err := h.StopListen(id); err != nil {
+				t.Errorf("StopListen(%s): %v", id, err)
+			}
+		})
+	}
+	wg.Wait()
+	if listeners := h.GetListeners(); len(listeners) != 0 {
+		t.Errorf("listeners after StopListen = %v, want none", listeners)
 	}
 }
 
@@ -680,6 +715,159 @@ func TestUDP_UnknownEncodingAndInvalidPayload(t *testing.T) {
 		if _, err := h.Send(req); !errors.As(err, &ve) {
 			t.Errorf("%s: want ValidationError, got %v", name, err)
 		}
+	}
+	emitter.noMessage(t, 300*time.Millisecond)
+}
+
+// sendText は text エンコーディングで 127.0.0.1:port へ payload を送る。
+func sendText(t *testing.T, h *adapters.UDPHandler, port int, payload string) (udpdomain.UDPSendResult, error) {
+	t.Helper()
+	return h.Send(udpdomain.UDPSendRequest{
+		Host:     "127.0.0.1",
+		Port:     port,
+		Encoding: udpdomain.EncodingText,
+		Payload:  payload,
+	})
+}
+
+// TestUDP_Shutdown_ReleasesPortsAndStopsEvents は、StopAll の後に送ったパケットがイベントにならず、
+// ソケットが閉じて同じポートで待ち受け直せることを確認する。
+func TestUDP_Shutdown_ReleasesPortsAndStopsEvents(t *testing.T) {
+	emitter := newMockEmitter()
+	h, listenSvc := newUDPHandler(t, emitter)
+	ports := []int{freeUDPPort(t), freeUDPPort(t)}
+	for _, port := range ports {
+		if _, err := h.StartListen(port, string(udpdomain.EncodingText)); err != nil {
+			t.Fatalf("StartListen(%d): %v", port, err)
+		}
+	}
+
+	listenSvc.StopAll()
+	for _, port := range ports {
+		if _, err := sendText(t, h, port, "after shutdown"); err != nil {
+			t.Fatalf("Send: %v", err)
+		}
+	}
+	emitter.noMessage(t, 300*time.Millisecond)
+
+	for _, port := range ports {
+		sess, err := h.StartListen(port, string(udpdomain.EncodingText))
+		if err != nil {
+			t.Fatalf("StartListen(%d) after StopAll: %v (the port was not released)", port, err)
+		}
+		t.Cleanup(func() { _ = h.StopListen(sess.ID) })
+	}
+}
+
+// TestUDP_Send_PayloadSizeBoundaries は、0 バイトのペイロードが空のメッセージとして届くことと、
+// UDP の最大ペイロード (IPv4 で 65,507 バイト) を超える送信が OS のエラーになり何も届かないことを確認する。
+func TestUDP_Send_PayloadSizeBoundaries(t *testing.T) {
+	emitter := newMockEmitter()
+	h, _ := newUDPHandler(t, emitter)
+	port := freeUDPPort(t)
+	sess, err := h.StartListen(port, string(udpdomain.EncodingText))
+	if err != nil {
+		t.Fatalf("StartListen: %v", err)
+	}
+	t.Cleanup(func() { _ = h.StopListen(sess.ID) })
+
+	result, err := sendText(t, h, port, "")
+	if err != nil {
+		t.Fatalf("Send (empty): %v", err)
+	}
+	if result.BytesSent != 0 {
+		t.Errorf("BytesSent = %d, want 0", result.BytesSent)
+	}
+	if msg := emitter.receiveMessage(t, 3*time.Second); msg.Payload != "" || msg.SessionID != sess.ID {
+		t.Errorf("message = %+v, want an empty payload for session %s", msg, sess.ID)
+	}
+
+	if _, err := sendText(t, h, port, strings.Repeat("a", 65508)); err == nil {
+		t.Error("Send over the maximum UDP payload should fail")
+	}
+	emitter.noMessage(t, 300*time.Millisecond)
+}
+
+// TestUDP_ConcurrentSend は複数 goroutine からの並行送信が全て成功することを確認する。
+// ループバックでも UDP は落ちうるので、受信数の完全一致は求めない。
+func TestUDP_ConcurrentSend(t *testing.T) {
+	emitter := newMockEmitter()
+	h, _ := newUDPHandler(t, emitter)
+	port := freeUDPPort(t)
+	sess, err := h.StartListen(port, string(udpdomain.EncodingText))
+	if err != nil {
+		t.Fatalf("StartListen: %v", err)
+	}
+	t.Cleanup(func() { _ = h.StopListen(sess.ID) })
+
+	const n = 20
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() {
+			if _, serr := sendText(t, h, port, strconv.Itoa(i)); serr != nil {
+				t.Errorf("Send(%d): %v", i, serr)
+			}
+		})
+	}
+	wg.Wait()
+
+	received := 0
+	deadline := time.After(2 * time.Second)
+wait:
+	for received < n {
+		select {
+		case <-emitter.ch:
+			received++
+		case <-deadline:
+			break wait
+		}
+	}
+	if received == 0 {
+		t.Error("no message was received")
+	}
+}
+
+// TestUDP_MessageEventPayloadAndSilenceAfterStop は、udp:message イベントの名前と中身
+// (送信元アドレス・エンコーディング・時刻) を確かめ、StopListen の後に送ったパケットが
+// イベントにならないことを確認する。
+// StopListen は受信 goroutine の終了を待たないので、停止より前に読まれたパケットが後から
+// 出る可能性は残る (テストでは決定的に作れない)。
+func TestUDP_MessageEventPayloadAndSilenceAfterStop(t *testing.T) {
+	emitter := newMockEmitter()
+	h, _ := newUDPHandler(t, emitter)
+	port := freeUDPPort(t)
+	sess, err := h.StartListen(port, string(udpdomain.EncodingJSON))
+	if err != nil {
+		t.Fatalf("StartListen: %v", err)
+	}
+
+	before := time.Now().UnixMilli()
+	if _, err = sendText(t, h, port, `{"k":"v"}`); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	msg := emitter.receiveMessage(t, 3*time.Second)
+	if names := emitter.eventNames(); !slices.Equal(names, []string{cmndomain.EventUDPMessage}) {
+		t.Errorf("events = %v, want [%s]", names, cmndomain.EventUDPMessage)
+	}
+	host, _, err := net.SplitHostPort(msg.RemoteAddr)
+	if err != nil || host != "127.0.0.1" {
+		t.Errorf("RemoteAddr = %q (%v), want 127.0.0.1:<port>", msg.RemoteAddr, err)
+	}
+	if msg.Encoding != udpdomain.EncodingJSON || msg.Port != port || msg.SessionID != sess.ID {
+		t.Errorf("message = %+v, want json encoding on port %d for session %s", msg, port, sess.ID)
+	}
+	if msg.Payload != "{\n  \"k\": \"v\"\n}" {
+		t.Errorf("Payload = %q, want the indented JSON", msg.Payload)
+	}
+	if msg.Timestamp < before || msg.Timestamp > time.Now().UnixMilli() {
+		t.Errorf("Timestamp = %d, want between send and receive", msg.Timestamp)
+	}
+
+	if err := h.StopListen(sess.ID); err != nil {
+		t.Fatalf("StopListen: %v", err)
+	}
+	if _, err := sendText(t, h, port, "after stop"); err != nil {
+		t.Fatalf("Send: %v", err)
 	}
 	emitter.noMessage(t, 300*time.Millisecond)
 }
