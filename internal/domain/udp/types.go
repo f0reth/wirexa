@@ -19,6 +19,16 @@ const (
 	EncodingFixed PayloadEncoding = "fixed"
 )
 
+// Validate は e が既知のエンコーディングかを検証する。
+// RPC の文字列から変換した値が、そのまま受信イベントの Encoding に載るのを防ぐ。
+func (e PayloadEncoding) Validate() error {
+	switch e {
+	case EncodingText, EncodingJSON, EncodingFixed:
+		return nil
+	}
+	return &cmn.ValidationError{Field: "encoding", Message: "unknown: " + string(e)}
+}
+
 // FieldType は fixed encoding フィールドのデータ型を表す。
 type FieldType string
 

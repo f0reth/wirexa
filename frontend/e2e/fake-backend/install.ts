@@ -491,6 +491,10 @@ const UdpHandler = {
   GetListeners: counted("GetListeners", async () => clone(db.listeners)),
 
   StartListen: mutates("StartListen", (port: number, encoding: string) => {
+    // Go 側と同じく、未知のエンコーディングは拒否する。
+    if (!["text", "json", "fixed"].includes(encoding)) {
+      throw new Error(`unknown encoding: ${encoding}`);
+    }
     const session = {
       id: newId("listener"),
       port,

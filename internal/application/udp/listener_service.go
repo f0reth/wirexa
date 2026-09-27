@@ -41,6 +41,9 @@ func (s *UDPListenerService) StartListen(port int, encoding domain.PayloadEncodi
 	if port < 1 || port > 65535 {
 		return domain.UDPListenSession{}, &cmn.ValidationError{Field: "port", Message: "must be 1-65535"}
 	}
+	if err := encoding.Validate(); err != nil {
+		return domain.UDPListenSession{}, err
+	}
 
 	// ポート衝突チェックと登録をロック保持のままアトミックに行い TOCTOU 競合を防ぐ。
 	s.mu.Lock()

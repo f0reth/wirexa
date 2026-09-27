@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -45,6 +46,16 @@ func (e *mockEmitter) receiveMessage(t *testing.T, timeout time.Duration) udpdom
 	case <-time.After(timeout):
 		t.Fatal("timeout waiting for UDP message")
 		return udpdomain.UDPReceivedMessage{}
+	}
+}
+
+// noMessage は wait の間に受信メッセージが届かないことを確認する。
+func (e *mockEmitter) noMessage(t *testing.T, wait time.Duration) {
+	t.Helper()
+	select {
+	case msg := <-e.ch:
+		t.Fatalf("unexpected UDP message: %+v", msg)
+	case <-time.After(wait):
 	}
 }
 
@@ -631,4 +642,42 @@ func TestUDP_CorruptStorage(t *testing.T) {
 	if _, statErr := os.Stat(corruptFile + ".corrupt"); statErr != nil {
 		t.Errorf("corrupt.json.corrupt should exist: %v", statErr)
 	}
+}
+
+// TestUDP_UnknownEncodingAndInvalidPayload は、未知のエンコーディングでの StartListen がソケットを
+// 開く前に ValidationError になることと、Send の未知のエンコーディング・不正な JSON・不正な hex が
+// ValidationError になって何も送信されないことを確認する。
+func TestUDP_UnknownEncodingAndInvalidPayload(t *testing.T) {
+	emitter := newMockEmitter()
+	h := newUDPHandler(t, emitter)
+	port := freeUDPPort(t)
+
+	var ve *cmndomain.ValidationError
+	if _, err := h.StartListen(port, "bogus"); !errors.As(err, &ve) {
+		t.Fatalf("StartListen(bogus): want ValidationError, got %v", err)
+	}
+	if listeners := h.GetListeners(); len(listeners) != 0 {
+		t.Fatalf("listeners = %v, want none", listeners)
+	}
+	// 拒否はソケットを開く前なので、同じポートで正しいエンコーディングなら待ち受けられる。
+	sess, err := h.StartListen(port, string(udpdomain.EncodingText))
+	if err != nil {
+		t.Fatalf("StartListen(text): %v", err)
+	}
+	t.Cleanup(func() { _ = h.StopListen(sess.ID) })
+
+	tests := map[string]udpdomain.UDPSendRequest{
+		"未知のエンコーディング": {Encoding: "bogus", Payload: "x"},
+		"不正な JSON":    {Encoding: udpdomain.EncodingJSON, Payload: "{not json"},
+		"不正な hex": {Encoding: udpdomain.EncodingFixed, FixedLengthPayload: udpdomain.FixedLengthPayload{
+			Fields: []udpdomain.FixedLengthField{{Name: "raw", FieldType: udpdomain.FieldTypeBytes, Length: 2, Value: "zz"}},
+		}},
+	}
+	for name, req := range tests {
+		req.Host, req.Port = "127.0.0.1", port
+		if _, err := h.Send(req); !errors.As(err, &ve) {
+			t.Errorf("%s: want ValidationError, got %v", name, err)
+		}
+	}
+	emitter.noMessage(t, 300*time.Millisecond)
 }

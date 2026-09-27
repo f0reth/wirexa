@@ -3,6 +3,7 @@ package udpapp
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -111,6 +112,31 @@ func TestUDPListenerService_StartListen_InvalidPort(t *testing.T) {
 		if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 			t.Errorf("port=%d: expected ValidationError, got %T", port, err)
 		}
+	}
+}
+
+// 未知のエンコーディングはソケットを開く前に拒否する。
+func TestUDPListenerService_StartListen_UnknownEncoding(t *testing.T) {
+	var listened atomic.Int32
+	socket := &mockUDPSocket{
+		listenFn: func(_ int) (domain.UDPConn, error) {
+			listened.Add(1)
+			return newMockConn(), nil
+		},
+	}
+	svc := newListenerSvc(socket, nil)
+	for _, encoding := range []domain.PayloadEncoding{"", "bogus", "TEXT"} {
+		if _, err := svc.StartListen(9000, encoding); err == nil {
+			t.Errorf("StartListen(%q): expected error, got nil", encoding)
+		} else if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
+			t.Errorf("StartListen(%q): expected ValidationError, got %T", encoding, err)
+		}
+	}
+	if n := listened.Load(); n != 0 {
+		t.Errorf("socket opened %d times for unknown encodings", n)
+	}
+	if sessions := svc.GetListeners(); len(sessions) != 0 {
+		t.Errorf("listeners = %v, want none", sessions)
 	}
 }
 
