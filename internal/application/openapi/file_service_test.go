@@ -264,14 +264,38 @@ func TestMoveRecentReorders(t *testing.T) {
 	assertRecentOrder(t, s, "c.yaml", "a.yaml", "b.yaml")
 }
 
-// index は対象を取り除いた後のスライスに対する位置なので、3 件から 1 件抜いた
-// len == 2 がちょうど末尾を指す。
+// index は移動前の一覧に対する挿入先（UI の挿入ゾーン）なので、
+// 3 件の一覧では len == 3 が末尾の挿入ゾーンを指す。
 func TestMoveRecentIndexAtLenAppendsToEnd(t *testing.T) {
 	s := newRecentsABC(t)
-	if err := s.MoveRecent(spec("a.yaml"), 2); err != nil {
+	if err := s.MoveRecent(spec("a.yaml"), 3); err != nil {
 		t.Fatalf("MoveRecent: %v", err)
 	}
 	assertRecentOrder(t, s, "b.yaml", "c.yaml", "a.yaml")
+}
+
+// UI で a を b と c の間へ落とすと index 2 が届く。
+func TestMoveRecentMovesDownUsesPreRemovalIndex(t *testing.T) {
+	tests := []struct {
+		name  string
+		path  string
+		index int
+		want  []string
+	}{
+		{"a を b と c の間へ", "a.yaml", 2, []string{"b.yaml", "a.yaml", "c.yaml"}},
+		{"b を末尾の挿入ゾーンへ", "b.yaml", 3, []string{"a.yaml", "c.yaml", "b.yaml"}},
+		{"自分の直前の挿入ゾーンは動かさない", "b.yaml", 1, []string{"a.yaml", "b.yaml", "c.yaml"}},
+		{"自分の直後の挿入ゾーンも動かさない", "b.yaml", 2, []string{"a.yaml", "b.yaml", "c.yaml"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newRecentsABC(t)
+			if err := s.MoveRecent(spec(tc.path), tc.index); err != nil {
+				t.Fatalf("MoveRecent: %v", err)
+			}
+			assertRecentOrder(t, s, tc.want...)
+		})
+	}
 }
 
 func TestMoveRecentIndexBeyondLenAppendsToEnd(t *testing.T) {

@@ -148,7 +148,7 @@ func (s *FileService) RemoveRecent(path string) error {
 }
 
 // MoveRecent は recents 内でパスを index の位置へ並び替える。
-// index は対象を取り除いた後の位置で、負または範囲外なら末尾へ移す。
+// index は移動前の一覧に対する挿入先（UI の挿入ゾーンの位置）で、負または範囲外なら末尾へ移す。
 func (s *FileService) MoveRecent(path string, index int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -159,6 +159,10 @@ func (s *FileService) MoveRecent(path string, index int) error {
 	}
 	item := s.recents[from]
 	next := slices.Delete(slices.Clone(s.recents), from, from+1)
+	// 後方へ移すときは、取り除いたぶん挿入先が 1 つ前に詰まる。
+	if from < index {
+		index--
+	}
 	next = cmn.InsertAt(next, item, index)
 	reindex(next)
 	return s.commitLocked(next)

@@ -33,6 +33,7 @@ type OpenAPIFileUseCase interface {
 	// RemoveRecent は recents と許可リストからパスを削除する。
 	RemoveRecent(path string) error
 	// MoveRecent は recents 内でパスを index の位置へ並び替える。
+	// index は移動前の一覧に対する挿入先で、負または範囲外なら末尾へ移す。
 	MoveRecent(path string, index int) error
 }
 
