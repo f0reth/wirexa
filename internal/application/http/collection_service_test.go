@@ -2184,3 +2184,53 @@ func TestCollectionService_ConcurrentMarshalAndUpdate(t *testing.T) {
 	})
 	wg.Wait()
 }
+
+// --- DeleteCollection: 削除の失敗 ---
+
+// ファイルの削除に失敗したときはエラーを返し、キャッシュにもレイアウトにもコレクションを残す。
+func TestCollectionService_DeleteCollection_DeleteError_KeepsCacheAndLayout(t *testing.T) {
+	layoutRepo := &inMemoryLayoutRepo{}
+	repo := newFakeRepo()
+	svc := newSvcWithRepo(t, repo, layoutRepo)
+	col := mustCreate(t, svc, "Col")
+	layoutBefore := layoutRepo.snapshot()
+	if !slices.ContainsFunc(layoutBefore, func(e domain.SidebarEntry) bool { return e.ID == col.ID }) {
+		t.Fatalf("precondition: layout should contain the collection: %v", layoutBefore)
+	}
+	errDelete := errors.New("delete denied")
+	repo.failDelete[col.ID] = errDelete
+
+	err := svc.DeleteCollection(col.ID)
+	if !errors.Is(err, errDelete) {
+		t.Fatalf("DeleteCollection error = %v, want %v", err, errDelete)
+	}
+	if !slices.ContainsFunc(svc.GetCollections(), func(c domain.Collection) bool { return c.ID == col.ID }) {
+		t.Error("collection should stay in the cache after a failed delete")
+	}
+	if repo.snapshot(col.ID) == nil {
+		t.Error("collection file should be left in the repository")
+	}
+	// applyLayoutBestEffort を呼ばないので、保存済みのレイアウトも変わらない。
+	if got := layoutRepo.snapshot(); !slices.Equal(got, layoutBefore) {
+		t.Errorf("layout changed after a failed delete: got %v, want %v", got, layoutBefore)
+	}
+}
+
+// --- NewCollectionService: __root__ の作成失敗 ---
+
+// __root__ のファイルが本当に無く、新しく作る保存が失敗したときは起動を止める。
+func TestNewCollectionService_RootCreateError_FailsStartup(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failSaveAlways(domain.RootCollectionID)
+
+	svc, err := NewCollectionService(repo, &inMemoryLayoutRepo{}, nil)
+	if err == nil {
+		t.Fatal("NewCollectionService should fail when the root collection cannot be created")
+	}
+	if svc != nil {
+		t.Errorf("service should be nil on failure, got %v", svc)
+	}
+	if !errors.Is(err, errFakeSave) {
+		t.Errorf("error = %v, want it to wrap the save error", err)
+	}
+}
