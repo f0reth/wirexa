@@ -353,3 +353,31 @@ func TestSaveResponseBase64_InvalidBase64SkipsDialog(t *testing.T) {
 		t.Fatalf("save dialog must not open for invalid input, got %d calls", len(d.saveCalls))
 	}
 }
+
+// SaveResponseBody と同じく、ダイアログの起動失敗は errSaveDialog に置き換えて Wails の文言を透過させない。
+func TestSaveResponseBase64_DialogErrorIsClassified(t *testing.T) {
+	d := &fakeDialog{saveErr: errors.New("default directory '/Users/secret' does not exist")}
+	h := newDialogHandler(d)
+
+	err := h.SaveResponseBase64(base64.StdEncoding.EncodeToString([]byte("x")), "text/plain")
+	if !errors.Is(err, errSaveDialog) {
+		t.Fatalf("want errSaveDialog, got %v", err)
+	}
+	if strings.Contains(err.Error(), "/Users/secret") {
+		t.Fatalf("error must not leak the dialog path: %q", err)
+	}
+}
+
+// 選ばれた保存先へ書けないときは、書き込みのエラーをそのまま返す。
+func TestSaveResponseBase64_WriteErrorPropagates(t *testing.T) {
+	dst := filepath.Join(t.TempDir(), "missing-dir", "out.bin")
+	h := newDialogHandler(&fakeDialog{savePath: dst})
+
+	err := h.SaveResponseBase64(base64.StdEncoding.EncodeToString([]byte("x")), "application/octet-stream")
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("want ErrNotExist from the write, got %v", err)
+	}
+	if _, statErr := os.Stat(dst); !os.IsNotExist(statErr) {
+		t.Fatalf("nothing should be written: %v", statErr)
+	}
+}

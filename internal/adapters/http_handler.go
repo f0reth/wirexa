@@ -216,8 +216,11 @@ func (h *HTTPHandler) SaveResponseBase64(base64Content, contentType string) erro
 		return err
 	}
 	savePath, err := h.dialog.SaveFile(h.ctx, saveDialogOptions(contentType))
-	if err != nil || savePath == "" {
-		return err
+	if err != nil {
+		return errSaveDialog
+	}
+	if savePath == "" {
+		return nil
 	}
 	return os.WriteFile(savePath, data, 0o600)
 }
