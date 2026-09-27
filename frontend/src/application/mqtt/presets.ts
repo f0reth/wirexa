@@ -38,6 +38,8 @@ export function createPresetsState(storage: PresetStorage) {
 
   /** プリセットを選択し、その内容をフォームへ読み込む。 */
   function selectPreset(id: string): void {
+    // 存在しない id を選ぶと、以後の編集がどのプリセットにも書き戻されなくなる。
+    if (!presets().some((p) => p.id === id)) return;
     setSelectedPresetId(id);
     loadDraftFromPreset(id);
   }

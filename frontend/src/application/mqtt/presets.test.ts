@@ -111,4 +111,123 @@ describe("createPresetsState draft", () => {
       expect(state.draft().topic).toBe("topic/p1");
     });
   });
+
+  it("does not select a missing preset", () => {
+    const { state, storage, dispose } = setup();
+    state.selectPreset("p1");
+
+    state.selectPreset("missing");
+    expect(state.selectedPresetId()).toBe("p1");
+    expect(state.draft().topic).toBe("topic/p1");
+
+    // 選択が変わっていないので、編集は p1 に書き戻される。
+    state.updateDraft({ topic: "edited" });
+    expect(storage.save).toHaveBeenLastCalledWith([
+      makePreset("p1", { topic: "edited" }),
+      makePreset("p2"),
+    ]);
+    dispose();
+  });
+});
+
+/** state とストレージの spy を返す。 */
+function setup(initial = [makePreset("p1"), makePreset("p2")]) {
+  const storage = makeStorage(initial);
+  return createRoot((dispose) => ({
+    state: createPresetsState(storage),
+    storage: vi.mocked(storage),
+    dispose,
+  }));
+}
+
+describe("createPresetsState persistence", () => {
+  it("saves a new preset, selects it and loads it into the draft", () => {
+    const { state, storage, dispose } = setup();
+
+    state.savePreset({
+      name: "new",
+      topic: "a/b",
+      payload: "{}",
+      qos: 2,
+      retain: true,
+    });
+
+    const saved = state.presets()[2];
+    expect(saved).toMatchObject({ name: "new", topic: "a/b", qos: 2 });
+    expect(saved.id).not.toBe("");
+    expect(state.selectedPresetId()).toBe(saved.id);
+    expect(state.draft()).toEqual({
+      topic: "a/b",
+      payload: "{}",
+      qos: 2,
+      retain: true,
+    });
+    expect(storage.save).toHaveBeenLastCalledWith(state.presets());
+    dispose();
+  });
+
+  it("names an added preset 'no name' by default and saves it", () => {
+    const { state, storage, dispose } = setup([]);
+
+    state.addPreset();
+    state.addPreset("named");
+
+    expect(state.presets().map((p) => p.name)).toEqual(["no name", "named"]);
+    expect(state.presets()[0]).toMatchObject({
+      topic: "",
+      payload: "",
+      qos: 0,
+      retain: false,
+    });
+    expect(state.selectedPresetId()).toBe(state.presets()[1].id);
+    expect(storage.save).toHaveBeenCalledTimes(2);
+    expect(storage.save).toHaveBeenLastCalledWith(state.presets());
+    dispose();
+  });
+
+  it("saves updates and removals", () => {
+    const { state, storage, dispose } = setup();
+
+    state.updatePreset("p2", { name: "renamed" });
+    expect(storage.save).toHaveBeenLastCalledWith([
+      makePreset("p1"),
+      makePreset("p2", { name: "renamed" }),
+    ]);
+
+    state.removePreset("p1");
+    expect(storage.save).toHaveBeenLastCalledWith([
+      makePreset("p2", { name: "renamed" }),
+    ]);
+    dispose();
+  });
+
+  it("does not save draft edits while no preset is selected", () => {
+    const { state, storage, dispose } = setup();
+
+    state.updateDraft({ topic: "ad-hoc" });
+
+    expect(storage.save).not.toHaveBeenCalled();
+    dispose();
+  });
+
+  it("reorders presets and saves the new order", () => {
+    const { state, storage, dispose } = setup();
+
+    state.reorderPresets(0, 1);
+
+    expect(state.presets().map((p) => p.id)).toEqual(["p2", "p1"]);
+    expect(storage.save).toHaveBeenLastCalledWith(state.presets());
+    dispose();
+  });
+
+  it("ignores out-of-range reorder", () => {
+    const { state, storage, dispose } = setup();
+
+    state.reorderPresets(0, 2);
+    state.reorderPresets(-1, 0);
+
+    expect(state.presets().map((p) => p.id)).toEqual(["p1", "p2"]);
+    expect(storage.save).not.toHaveBeenCalled();
+    dispose();
+  });
 });
