@@ -1395,3 +1395,66 @@ func TestMQTTService_ConcurrentOperations(t *testing.T) {
 		}
 	}
 }
+
+// ------- connection-lost / connection-failed のイベントの中身 -------
+
+// 接続中に接続が切れたら、connectionId と error を付けた connection-lost を 1 回だけ出す。
+func TestMQTTService_ConnectionLost_EmitsEventWithError(t *testing.T) {
+	rec := &callbackRecorder{}
+	emitter := &mockEmitter{}
+	svc := newTestService(t, emitter, rec.factory(&mockBrokerClient{}))
+	id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	waitEstablished(t, svc, 1)
+
+	rec.onConnectionLost(0)(errors.New("broker went away"))
+
+	if n := emitter.count(cmn.EventMQTTConnectionLost); n != 1 {
+		t.Fatalf("mqtt:connection-lost emitted %d times, want 1", n)
+	}
+	for _, ev := range emitter.snapshot() {
+		if ev.event != cmn.EventMQTTConnectionLost {
+			continue
+		}
+		data, ok := ev.data.(map[string]any)
+		if !ok {
+			t.Fatalf("event data = %T, want map[string]any", ev.data)
+		}
+		if data[keyConnectionID] != id || data["error"] != "broker went away" {
+			t.Errorf("event data = %v, want connectionId %s and error %q", data, id, "broker went away")
+		}
+	}
+	// paho が自動再接続するので、接続は追跡したまま残す。
+	if conns := svc.GetConnections(); len(conns) != 1 {
+		t.Errorf("connections = %d, want 1 (kept for auto-reconnect)", len(conns))
+	}
+}
+
+// 接続に失敗したら、connectionId と error を付けた connection-failed を出す。
+func TestMQTTService_Connect_FailureEventCarriesError(t *testing.T) {
+	failedCh := make(chan struct{})
+	emitter := &mockEmitterWithChan{ch: failedCh, targetEvent: cmn.EventMQTTConnectionFailed}
+	client := &mockBrokerClient{
+		connectFn: func(context.Context) error { return errors.New("connection refused") },
+	}
+	svc := newTestService(t, emitter, factoryWith(client))
+	id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	waitForEvent(t, failedCh, time.Second, "timeout waiting for connection-failed event")
+
+	events := emitter.snapshot()
+	if len(events) != 1 {
+		t.Fatalf("events = %v, want only connection-failed", events)
+	}
+	data, ok := events[0].data.(map[string]any)
+	if !ok {
+		t.Fatalf("event data = %T, want map[string]any", events[0].data)
+	}
+	if data[keyConnectionID] != id || data["error"] != "connection refused" {
+		t.Errorf("event data = %v, want connectionId %s and error %q", data, id, "connection refused")
+	}
+}

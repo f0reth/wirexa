@@ -2,6 +2,7 @@ package mqttinfra
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -266,4 +267,103 @@ func TestPahoClient_Connect_CancelThenLateConnack_Disconnects(t *testing.T) {
 	}
 	waitClosed(t, conn, 100*time.Millisecond)
 	assertNoOnConnected(t, calls)
+}
+
+func TestApplyTLSScheme(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"tcp://broker:1883", "ssl://broker:1883"},
+		{"mqtt://broker:1883", "mqtts://broker:1883"},
+		{"ws://broker:8080/mqtt", "wss://broker:8080/mqtt"},
+		{"ssl://broker:8883", "ssl://broker:8883"},
+		{"mqtts://broker:8883", "mqtts://broker:8883"},
+		{"wss://broker:443/mqtt", "wss://broker:443/mqtt"},
+		{"broker:1883", "broker:1883"},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.in, func(t *testing.T) {
+			if got := applyTLSScheme(tc.in); got != tc.want {
+				t.Errorf("applyTLSScheme(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// newFactoryClient は factory が組み立てた pahoClient を返す。
+func newFactoryClient(t *testing.T, config domain.ConnectionConfig, onLost func(error)) *pahoClient {
+	t.Helper()
+	c := NewPahoClientFactory(MQTTClientConfig{ConnectTimeout: time.Second, TokenTimeout: time.Second})(
+		config, func() {}, onLost,
+	)
+	p, ok := c.(*pahoClient)
+	if !ok {
+		t.Fatalf("factory returned %T, want *pahoClient", c)
+	}
+	return p
+}
+
+// UseTLS なら Broker のスキームを TLS 用に変え、TLS 1.2 以上の TLSConfig を設定する。
+func TestNewPahoClientFactory_UseTLS(t *testing.T) {
+	p := newFactoryClient(t, domain.ConnectionConfig{Broker: "tcp://broker:1883", ClientID: "c", UseTLS: true}, func(error) {})
+
+	opts := p.client.OptionsReader()
+	servers := opts.Servers()
+	if len(servers) != 1 || servers[0].Scheme != "ssl" || servers[0].Host != "broker:1883" {
+		t.Fatalf("servers = %v, want ssl://broker:1883", servers)
+	}
+	if cfg := opts.TLSConfig(); cfg == nil || cfg.MinVersion != tls.VersionTLS12 {
+		t.Fatalf("TLSConfig = %+v, want MinVersion TLS1.2", cfg)
+	}
+}
+
+func TestNewPahoClientFactory_WithoutTLSKeepsScheme(t *testing.T) {
+	p := newFactoryClient(t, domain.ConnectionConfig{Broker: "tcp://broker:1883", ClientID: "c"}, func(error) {})
+
+	opts := p.client.OptionsReader()
+	servers := opts.Servers()
+	if len(servers) != 1 || servers[0].Scheme != "tcp" {
+		t.Fatalf("servers = %v, want tcp://broker:1883", servers)
+	}
+}
+
+// 確立済みの接続をブローカーが切ると、factory に渡した onConnectionLost がエラー付きで呼ばれる。
+func TestPahoClient_ConnectionLost_InvokesCallback(t *testing.T) {
+	var accepted atomic.Int32
+	broker := newFakeBroker(t, func(conn net.Conn) {
+		defer conn.Close()
+		// 自動再接続の試行は受け付けずに閉じる。
+		if accepted.Add(1) > 1 {
+			return
+		}
+		if readConnect(conn) != nil || writeConnack(conn) != nil {
+			return
+		}
+		// CONNACK のあと少し置いてから切断する。
+		_ = conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+		_, _ = io.Copy(io.Discard, conn)
+	})
+	lost := make(chan error, 1)
+	p := newFactoryClient(t, domain.ConnectionConfig{Broker: broker.url(), ClientID: "wirexa-test"}, func(err error) {
+		select {
+		case lost <- err:
+		default:
+		}
+	})
+
+	if err := p.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer p.Disconnect(0)
+
+	select {
+	case err := <-lost:
+		if err == nil {
+			t.Error("onConnectionLost should receive the cause")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("onConnectionLost was not called after the broker closed the connection")
+	}
 }
