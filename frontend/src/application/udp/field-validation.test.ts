@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { FIELD_TYPES, type FieldType } from "../../domain/udp/types";
 import {
+  type FieldValueKind,
   fieldByteCount,
   fieldByteCountInfo,
   fieldByteCountStatus,
@@ -140,6 +142,12 @@ describe("fieldByteCountStatus", () => {
     ).toBe("ok");
   });
 
+  it("reports ok when a bytes value exactly fills its length", () => {
+    expect(
+      fieldByteCountStatus({ fieldType: "bytes", value: "0a1b", length: 2 }),
+    ).toBe("ok");
+  });
+
   it("ignores length for numeric fields", () => {
     expect(
       fieldByteCountStatus({
@@ -199,6 +207,26 @@ describe("fieldValueKind", () => {
   it("separates 64bit integers, where a number input would lose precision", () => {
     expect(fieldValueKind("int64")).toBe("wide-integer");
     expect(fieldValueKind("uint64")).toBe("wide-integer");
+  });
+
+  // FIELD_TYPES に型が増えたら、この表に期待値を足さないと失敗する。
+  const expected: Record<FieldType, FieldValueKind> = {
+    string: "ascii",
+    bytes: "hex",
+    uint8: "integer",
+    uint16: "integer",
+    uint32: "integer",
+    uint64: "wide-integer",
+    int8: "integer",
+    int16: "integer",
+    int32: "integer",
+    int64: "wide-integer",
+    float32: "float",
+    float64: "float",
+  };
+
+  it.each(FIELD_TYPES)("maps %s to its value kind", (fieldType) => {
+    expect(fieldValueKind(fieldType)).toBe(expected[fieldType]);
   });
 });
 
