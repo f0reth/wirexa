@@ -96,6 +96,54 @@ describe("createFilesState removeFile", () => {
       expect(state.activeDoc()).toEqual(active);
     });
   });
+
+  it("keeps an untitled active document", async () => {
+    const api = makeApi([makeFile("Untitled", 0)]);
+
+    await withState(api, async (state) => {
+      const active = { kind: "untitled", name: "Untitled" } as const;
+      state.setActiveDoc(active);
+      await state.removeFile("Untitled");
+
+      expect(state.activeDoc()).toEqual(active);
+    });
+  });
+
+  // moveFile と違いガードしないので、失敗は呼び出し側に伝わる。
+  it("propagates a removeRecent failure without clearing the active doc", async () => {
+    const api = makeApi([makeFile("/specs/a.yaml", 0)]);
+    api.removeRecent = vi.fn(async () => {
+      throw new Error("locked");
+    });
+
+    await withState(api, async (state, notifier) => {
+      const active = {
+        kind: "file",
+        path: "/specs/a.yaml",
+        name: "a",
+      } as const;
+      state.setActiveDoc(active);
+
+      await expect(state.removeFile("/specs/a.yaml")).rejects.toThrow("locked");
+      expect(state.activeDoc()).toEqual(active);
+      expect(api.getRecents).not.toHaveBeenCalled();
+      expect(notifier.error).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("createFilesState refreshRecents failures", () => {
+  it("propagates a getRecents failure and keeps the list", async () => {
+    const api = makeApi();
+    api.getRecents = vi.fn(async () => {
+      throw new Error("rpc down");
+    });
+
+    await withState(api, async (state) => {
+      await expect(state.refreshRecents()).rejects.toThrow("rpc down");
+      expect(state.files()).toEqual([]);
+    });
+  });
 });
 
 describe("createFilesState moveFile", () => {

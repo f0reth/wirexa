@@ -1,8 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Diagnostic } from "@codemirror/lint";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createEditorState } from "./editor";
 import type { ParseResult } from "./ports";
 
 const okParse = (): ParseResult => ({ ok: true, spec: {} });
+
+// updateContent のデバウンスのタイマーを次のテストへ持ち越さないよう、全テストで偽タイマーを使う。
+beforeEach(() => {
+  vi.useFakeTimers();
+});
 
 afterEach(() => {
   vi.useRealTimers();
@@ -55,7 +61,6 @@ describe("createEditorState dirty tracking", () => {
   });
 
   it("debounced parsing does not affect dirty state timing", () => {
-    vi.useFakeTimers();
     const s = createEditorState();
     s.loadContent("a", okParse);
     s.updateContent("b", okParse);
@@ -63,5 +68,85 @@ describe("createEditorState dirty tracking", () => {
     expect(s.isDirty()).toBe(true);
     vi.advanceTimersByTime(500);
     expect(s.isDirty()).toBe(true);
+  });
+});
+
+const error: Diagnostic = {
+  from: 0,
+  to: 1,
+  severity: "error",
+  message: "bad yaml",
+};
+const ngParse = (): ParseResult => ({ ok: false, errors: [error] });
+
+describe("createEditorState parse results", () => {
+  it("exposes the spec and clears errors on a successful load", () => {
+    const s = createEditorState();
+    s.loadContent("x", ngParse);
+    expect(s.parsedSpec()).toBeNull();
+    expect(s.parseErrors()).toEqual([error]);
+
+    const spec = { openapi: "3.0.0" };
+    s.loadContent("y", () => ({ ok: true, spec }));
+
+    expect(s.parsedSpec()).toBe(spec);
+    expect(s.parseErrors()).toEqual([]);
+  });
+
+  it("exposes parse errors and clears the spec on failure after an edit", () => {
+    const s = createEditorState();
+    s.loadContent("a", () => ({ ok: true, spec: { openapi: "3.0.0" } }));
+
+    s.updateContent("broken", ngParse);
+    // デバウンス中は前回の結果のまま。
+    expect(s.parsedSpec()).not.toBeNull();
+
+    vi.advanceTimersByTime(500);
+    expect(s.parsedSpec()).toBeNull();
+    expect(s.parseErrors()).toEqual([error]);
+  });
+});
+
+describe("createEditorState debounce", () => {
+  it("parses only the last edit after the debounce", () => {
+    const s = createEditorState();
+    const parse = vi.fn(okParse);
+
+    s.updateContent("a", parse);
+    vi.advanceTimersByTime(499);
+    s.updateContent("ab", parse);
+    vi.advanceTimersByTime(499);
+    expect(parse).not.toHaveBeenCalled();
+
+    s.updateContent("abc", parse);
+    vi.advanceTimersByTime(500);
+    expect(parse).toHaveBeenCalledTimes(1);
+    expect(parse).toHaveBeenCalledWith("abc");
+  });
+
+  it("cancels a pending parse when a file is loaded", () => {
+    const s = createEditorState();
+    const staleParse = vi.fn(ngParse);
+    const spec = { openapi: "3.1.0" };
+
+    s.updateContent("stale edit", staleParse);
+    s.loadContent("loaded", () => ({ ok: true, spec }));
+    vi.advanceTimersByTime(1000);
+
+    expect(staleParse).not.toHaveBeenCalled();
+    expect(s.parsedSpec()).toBe(spec);
+    expect(s.parseErrors()).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("createEditorState preview", () => {
+  it("starts in preview mode and toggles", () => {
+    const s = createEditorState();
+    expect(s.isPreviewing()).toBe(true);
+    s.togglePreview();
+    expect(s.isPreviewing()).toBe(false);
+    s.togglePreview();
+    expect(s.isPreviewing()).toBe(true);
   });
 });
