@@ -3,7 +3,13 @@ import { defineConfig } from "vitest/config";
 const nodeMajorVersion = Number(process.versions.node.split(".")[0]);
 
 export default defineConfig({
+  // solid-js は node 条件でサーバービルドに解決され、createEffect が一度も実行されない。
+  // アプリは WebView（ブラウザ）で動くので、テストでもクライアントビルドを使う。
+  resolve: { conditions: ["browser", "development"] },
+  ssr: { resolve: { conditions: ["browser", "development"] } },
   test: {
+    // 外部依存のままだと Node 自身の解決（node 条件）で読まれるため、vite に解決させる。
+    server: { deps: { inline: [/solid-js/] } },
     // 既定は node。DOM が要るファイルだけ先頭に `// @vitest-environment jsdom` を付ける
     environment: "node",
     // Node のグローバル localStorage/sessionStorage (Node 22+) が jsdom 環境の
