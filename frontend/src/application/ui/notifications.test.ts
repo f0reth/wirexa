@@ -101,4 +101,89 @@ describe("createNotificationStore", () => {
     vi.advanceTimersByTime(60_000);
     expect(store.notifications()).toHaveLength(2);
   });
+
+  it("uses 4s / 8s / 5 as defaults", () => {
+    vi.useFakeTimers();
+    const store = createNotificationStore();
+    store.notify.info("info");
+    store.notify.error("error");
+
+    vi.advanceTimersByTime(3999);
+    expect(store.notifications()).toHaveLength(2);
+    vi.advanceTimersByTime(1);
+    expect(store.notifications().map((n) => n.title)).toEqual(["error"]);
+    vi.advanceTimersByTime(3999);
+    expect(store.notifications()).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(store.notifications()).toHaveLength(0);
+
+    for (let i = 1; i <= 6; i++) store.notify.info(String(i));
+    expect(store.notifications().map((n) => n.title)).toEqual([
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+    ]);
+  });
+
+  it("records every field including createdAt", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-27T12:00:00Z"));
+    const store = createNotificationStore();
+
+    const id = store.notify.warning("title", "desc");
+
+    expect(store.notifications()).toEqual([
+      {
+        id,
+        level: "warning",
+        title: "title",
+        description: "desc",
+        createdAt: new Date("2026-09-27T12:00:00Z").getTime(),
+      },
+    ]);
+  });
+
+  // key の解放漏れがあると、その key の通知（MQTT の connection-lost など）が以後出なくなる。
+  it("releases the key of a notification dropped by max", () => {
+    vi.useFakeTimers();
+    const store = createNotificationStore({ max: 1 });
+    const first = store.notify.error("lost", undefined, { key: "conn-1" });
+    store.notify.info("other");
+    expect(store.notifications().map((n) => n.title)).toEqual(["other"]);
+
+    const second = store.notify.error("lost", undefined, { key: "conn-1" });
+    expect(second).not.toBe(first);
+    expect(store.notifications().map((n) => n.title)).toEqual(["lost"]);
+    // 押し出された通知のタイマーも残さない（残るのは表示中の 1 件分だけ）。
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
+  it("releases the key after auto-dismiss", () => {
+    vi.useFakeTimers();
+    const store = createNotificationStore({ errorDismissMs: 1000 });
+    const first = store.notify.error("lost", undefined, { key: "conn-1" });
+    vi.advanceTimersByTime(1000);
+    expect(store.notifications()).toHaveLength(0);
+
+    const second = store.notify.error("lost", undefined, { key: "conn-1" });
+    expect(second).not.toBe(first);
+    expect(store.notifications()).toHaveLength(1);
+  });
+
+  it("releases keys and timers on clear", () => {
+    vi.useFakeTimers();
+    const store = createNotificationStore();
+    const first = store.notify.error("lost", undefined, { key: "conn-1" });
+    store.notify.info("other");
+    expect(vi.getTimerCount()).toBe(2);
+
+    store.clear();
+    expect(vi.getTimerCount()).toBe(0);
+
+    const second = store.notify.error("lost", undefined, { key: "conn-1" });
+    expect(second).not.toBe(first);
+    expect(store.notifications()).toHaveLength(1);
+  });
 });

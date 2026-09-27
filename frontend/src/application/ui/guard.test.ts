@@ -65,4 +65,22 @@ describe("notifyOnError", () => {
       "boom",
     );
   });
+
+  it("rethrows the original non-Error value", async () => {
+    const notifier = makeNotifier();
+    const value = { code: 42 };
+    await expect(
+      notifyOnError(notifier, "Failed", async () => {
+        throw value;
+      }),
+    ).rejects.toBe(value);
+    expect(notifier.error).toHaveBeenCalledWith("Failed", "[object Object]");
+
+    await expect(
+      notifyOnError(notifier, "Failed", async () => {
+        throw "offline";
+      }),
+    ).rejects.toBe("offline");
+    expect(notifier.error).toHaveBeenLastCalledWith("Failed", "offline");
+  });
 });
