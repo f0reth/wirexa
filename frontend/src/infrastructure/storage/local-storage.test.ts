@@ -268,6 +268,117 @@ describe("loadFromStorage", () => {
     localStorage.setItem("bad", '{"key": "val');
     expect(loadFromStorage("bad", "default")).toBe("default");
   });
+
+  // ストレージへのアクセスが拒否された環境では getItem 自体が SecurityError を投げる。
+  it("returns the fallback when getItem throws", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("denied", "SecurityError");
+    });
+    expect(loadFromStorage("key", "fallback")).toBe("fallback");
+    expect(console.warn).toHaveBeenCalled();
+  });
+
+  it("returns the fallback when the value fails the shape check", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    localStorage.setItem("key", JSON.stringify({ foo: 1 }));
+    const isString = (v: unknown): v is string => typeof v === "string";
+    expect(loadFromStorage("key", "fallback", isString)).toBe("fallback");
+    expect(console.warn).toHaveBeenCalled();
+  });
+});
+
+// JSON としては正しいが形が違う値（手で書き換えた・旧版の別形式など）でも起動時に落とさない。
+describe("stored values with an unexpected shape", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  it.each([
+    "null",
+    "{}",
+    '"x"',
+    "1",
+  ])("falls back to [] when presets are %s", (raw) => {
+    localStorage.setItem("mqtt:presets", raw);
+    expect(createPresetsStorage().load()).toEqual([]);
+  });
+
+  it("drops malformed presets and keeps the valid ones", () => {
+    const valid = {
+      id: "p1",
+      name: "ok",
+      topic: "a",
+      payload: "",
+      qos: 1,
+      retain: true,
+    };
+    localStorage.setItem(
+      "mqtt:presets",
+      JSON.stringify([
+        null,
+        "p0",
+        { ...valid, id: 2 },
+        { ...valid, qos: 3 },
+        { ...valid, retain: "yes" },
+        valid,
+      ]),
+    );
+    expect(createPresetsStorage().load()).toEqual([valid]);
+  });
+
+  it.each([
+    '"blue"',
+    "null",
+    "1",
+  ])("falls back to light when the theme is %s", (raw) => {
+    localStorage.setItem("app:theme", raw);
+    expect(createThemeStorage().load()).toBe("light");
+  });
+
+  it("loads a stored dark theme", () => {
+    localStorage.setItem("app:theme", '"dark"');
+    expect(createThemeStorage().load()).toBe("dark");
+  });
+
+  it.each([
+    ["mqtt:profileOrder", createProfileOrderStorage],
+    ["udp:targetOrder", createTargetOrderStorage],
+  ])("falls back to [] when %s is not a string array", (key, create) => {
+    for (const raw of ["null", "{}", '"p1"', "[1,2]", '["p1",null]']) {
+      localStorage.setItem(key, raw);
+      expect(create().load()).toEqual([]);
+    }
+  });
+
+  it.each([
+    "null",
+    "[]",
+    '"x"',
+    '{"f1":"yes"}',
+  ])("falls back to {} when expanded folders are %s", (raw) => {
+    localStorage.setItem("wirexa:http:expandedFolders", raw);
+    expect(createExpandedFoldersStorage().load()).toEqual({});
+  });
+
+  it.each([
+    '"r1"',
+    "[]",
+    '{"requestId":"r1"}',
+    '{"requestId":1,"collectionId":"c"}',
+  ])("falls back to null when the active request is %s", (raw) => {
+    localStorage.setItem("wirexa:http:activeRequest", raw);
+    expect(createActiveRequestStorage().load()).toBeNull();
+  });
+
+  it.each([
+    "1",
+    "{}",
+    "[]",
+  ])("falls back to null when the last profile id is %s", (raw) => {
+    localStorage.setItem("mqtt:lastActiveProfileId", raw);
+    expect(createLastProfileStorage().loadLastProfileId()).toBeNull();
+  });
 });
 
 describe("saveToStorage", () => {
