@@ -69,3 +69,23 @@ func TestAtomicWriteFile_MissingDirReturnsError(t *testing.T) {
 	}
 	assertNoTempLeft(t, dir)
 }
+
+// 置き換えに失敗したとき (ここでは書き込み先が空でないディレクトリ) も一時ファイルを残さない。
+func TestAtomicWriteFile_RenameFailureRemovesTemp(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.txt")
+	if err := os.Mkdir(path, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "keep"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := AtomicWriteFile(path, []byte("data"), 0o600); err == nil {
+		t.Fatal("expected error when the destination is a directory")
+	}
+	assertNoTempLeft(t, dir)
+	if _, err := os.Stat(filepath.Join(path, "keep")); err != nil {
+		t.Errorf("destination directory should be left untouched: %v", err)
+	}
+}
