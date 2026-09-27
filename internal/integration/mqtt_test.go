@@ -64,22 +64,85 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// mqttMockEmitter はテスト用の Emitter 実装。受信 MQTT メッセージとイベントをチャンネルで収集する。
+// mqttMockEmitter はテスト用の Emitter 実装。受信 MQTT メッセージとイベントをチャンネルで収集し、
+// 全イベントを名前とデータの組で順に記録する。
 type mqttMockEmitter struct {
 	ch     chan mqttdomain.MQTTMessage
 	failCh chan string // mqtt:connection-failed イベントの connectionId を受信する
+	events []mqttEvent
 	total  atomic.Int64
+	mu     sync.Mutex
 }
+
+// mqttEvent は発行されたイベントの名前とデータ。
+type mqttEvent struct {
+	data any
+	name string
+}
+
+// mqttMessageBuffer は受信メッセージのバッファ。溢れた分は黙って捨てるので、
+// 並行 publish のテストでも溢れない大きさにする。
+const mqttMessageBuffer = 256
 
 func newMQTTMockEmitter() *mqttMockEmitter {
 	return &mqttMockEmitter{
-		ch:     make(chan mqttdomain.MQTTMessage, 16),
+		ch:     make(chan mqttdomain.MQTTMessage, mqttMessageBuffer),
 		failCh: make(chan string, 16),
 	}
 }
 
+// eventConnID はライフサイクルイベント (connected など) のデータから connectionId を取り出す。
+func eventConnID(data any) string {
+	if m, ok := data.(map[string]any); ok {
+		if id, ok := m["connectionId"].(string); ok {
+			return id
+		}
+	}
+	return ""
+}
+
+// lifecycle は connID のライフサイクルイベント (mqtt:message 以外) の名前を発行順に返す。
+func (e *mqttMockEmitter) lifecycle(connID string) []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var names []string
+	for _, ev := range e.events {
+		if ev.name != cmndomain.EventMQTTMessage && eventConnID(ev.data) == connID {
+			names = append(names, ev.name)
+		}
+	}
+	return names
+}
+
+// countEvent は connID の name イベントの発行回数を返す。
+func (e *mqttMockEmitter) countEvent(name, connID string) int {
+	n := 0
+	for _, ev := range e.lifecycle(connID) {
+		if ev == name {
+			n++
+		}
+	}
+	return n
+}
+
+// waitEvent は connID の name イベントが n 回以上発行されるまで待つ。
+func (e *mqttMockEmitter) waitEvent(t *testing.T, name, connID string, n int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if e.countEvent(name, connID) >= n {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timeout waiting for %s #%d of %s (events: %v)", name, n, connID, e.lifecycle(connID))
+}
+
 func (e *mqttMockEmitter) Emit(event string, data any) {
 	e.total.Add(1)
+	e.mu.Lock()
+	e.events = append(e.events, mqttEvent{name: event, data: data})
+	e.mu.Unlock()
 	if msg, ok := data.(mqttdomain.MQTTMessage); ok {
 		select {
 		case e.ch <- msg:
@@ -821,10 +884,22 @@ func TestMQTT_Connect_Concurrent(t *testing.T) {
 	}
 }
 
-// startMQTTBroker は専用の埋め込みブローカーを addr で起動し、サーバーと実アドレス (host:port) を返す。
+// testBroker はテスト専用の埋め込みブローカー。
+type testBroker struct {
+	*mqtt.Server
+	addr      string // 実アドレス (host:port)
+	closeOnce sync.Once
+}
+
+// Close はブローカーを止める。mochi の Close は 2 回目で panic するので 1 回に限る。
+func (b *testBroker) Close() {
+	b.closeOnce.Do(func() { _ = b.Server.Close() })
+}
+
+// startMQTTBroker は専用の埋め込みブローカーを addr で起動する。
 // addr に "127.0.0.1:0" を渡すと空きポートを使う。hook が nil なら全てを許可する。
 // 共有ブローカーを止められないテスト (接続断) や、ACL を変えるテストで使う。
-func startMQTTBroker(t *testing.T, addr string, hook mqtt.Hook) (*mqtt.Server, string) {
+func startMQTTBroker(t *testing.T, addr string, hook mqtt.Hook) *testBroker {
 	t.Helper()
 	server := mqtt.New(&mqtt.Options{InlineClient: true})
 	if hook == nil {
@@ -838,8 +913,9 @@ func startMQTTBroker(t *testing.T, addr string, hook mqtt.Hook) (*mqtt.Server, s
 		t.Fatalf("AddListener(%s): %v", addr, err)
 	}
 	go func() { _ = server.Serve() }()
-	t.Cleanup(func() { _ = server.Close() })
-	return server, tcp.Address()
+	b := &testBroker{Server: server, addr: tcp.Address()}
+	t.Cleanup(b.Close)
+	return b
 }
 
 // denyFilterHook は接続を全て許可し、filter への購読と publish だけを ACL で拒否する。
@@ -900,8 +976,8 @@ func TestMQTT_InvalidWildcardTopics(t *testing.T) {
 	}
 
 	// 形式は正しいがブローカーが拒否する購読 (ここでは ACL) は SUBACK の結果でエラーにする。
-	_, addr := startMQTTBroker(t, "127.0.0.1:0", &denyFilterHook{filter: "denied/topic"})
-	denied, err := h.Connect(mqttdomain.ConnectionConfig{Name: "acl", Broker: "tcp://" + addr})
+	acl := startMQTTBroker(t, "127.0.0.1:0", &denyFilterHook{filter: "denied/topic"})
+	denied, err := h.Connect(mqttdomain.ConnectionConfig{Name: "acl", Broker: "tcp://" + acl.addr})
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -913,5 +989,74 @@ func TestMQTT_InvalidWildcardTopics(t *testing.T) {
 		if c.ID == denied && len(c.Subscriptions) != 0 {
 			t.Errorf("subscriptions = %v, want the rejected one not listed", c.Subscriptions)
 		}
+	}
+}
+
+// connectionStatus は connID の ConnectionStatus を返す。無ければ ok = false。
+func connectionStatus(h *adapters.MQTTHandler, connID string) (mqttdomain.ConnectionStatus, bool) {
+	conns := h.GetConnections()
+	for i := range conns {
+		if conns[i].ID == connID {
+			return conns[i], true
+		}
+	}
+	return mqttdomain.ConnectionStatus{}, false
+}
+
+// TestMQTT_ConnectionLostAndReconnect は、ブローカーとの接続が切れると mqtt:connection-lost が出て
+// Connected が false になり、同じアドレスでブローカーが戻ると自動再接続して mqtt:connected が
+// 再び出て、購読が張り直されてメッセージが届くことを確認する。
+// 共有ブローカーは止められないので、専用のブローカーを同じポートで起動し直す。
+func TestMQTT_ConnectionLostAndReconnect(t *testing.T) {
+	broker := startMQTTBroker(t, "127.0.0.1:0", nil)
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+
+	id, err := h.Connect(mqttdomain.ConnectionConfig{Name: "reconnect", Broker: "tcp://" + broker.addr})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	emitter.waitEvent(t, cmndomain.EventMQTTConnected, id, 1, 5*time.Second)
+	const topic = "reconnect/topic"
+	if err := h.Subscribe(id, topic, 1); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	broker.Close()
+	emitter.waitEvent(t, cmndomain.EventMQTTConnectionLost, id, 1, 5*time.Second)
+	status, ok := connectionStatus(h, id)
+	if !ok {
+		t.Fatal("the connection should be kept for auto-reconnect")
+	}
+	if status.Connected {
+		t.Error("Connected = true while the broker is down")
+	}
+	if len(status.Subscriptions) != 1 || status.Subscriptions[0].Topic != topic {
+		t.Errorf("subscriptions = %v, want [%s] kept", status.Subscriptions, topic)
+	}
+
+	restarted := startMQTTBroker(t, broker.addr, nil)
+	emitter.waitEvent(t, cmndomain.EventMQTTConnected, id, 2, 15*time.Second)
+	waitConnected(t, h, id, 5*time.Second)
+
+	// 張り直しは再接続の通知の後に非同期で行うので、ブローカー側の購読数で完了を待つ。
+	deadline := time.Now().Add(5 * time.Second)
+	for atomic.LoadInt64(&restarted.Info.Subscriptions) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the subscription was not restored on the restarted broker")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := restarted.Publish(topic, []byte("after reconnect"), false, 1); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if msg := emitter.receiveMessage(t, 5*time.Second); msg.Topic != topic || msg.Payload != "after reconnect" {
+		t.Errorf("message = %+v, want the one published after reconnect", msg)
+	}
+	if got := emitter.lifecycle(id); !slices.Equal(got, []string{
+		cmndomain.EventMQTTConnected, cmndomain.EventMQTTConnectionLost, cmndomain.EventMQTTConnected,
+	}) {
+		t.Errorf("lifecycle events = %v", got)
 	}
 }

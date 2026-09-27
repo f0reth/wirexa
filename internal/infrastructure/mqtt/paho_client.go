@@ -186,6 +186,8 @@ func (p *pahoClient) Unsubscribe(topics ...string) error {
 	return token.Error()
 }
 
+// IsConnected は接続が開いているかを返す。paho の IsConnected は自動再接続中も true を返すので、
+// 接続が切れている間も接続中と表示されないよう IsConnectionOpen を使う。
 func (p *pahoClient) IsConnected() bool {
-	return p.client.IsConnected()
+	return p.client.IsConnectionOpen()
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
@@ -176,10 +177,11 @@ func (s *MQTTService) runConnect(ctx context.Context, connID string, conn *conne
 }
 
 // onConnected は接続確立 (自動再接続を含む) のたびに呼ばれる。
+// 購読は接続が確立してからしか登録できないので、購読を持っていれば再接続である。
 func (s *MQTTService) onConnected(connID string, conn *connection) {
 	conn.stateMu.Lock()
-	defer conn.stateMu.Unlock()
 	if conn.terminal() {
+		conn.stateMu.Unlock()
 		return
 	}
 	conn.state = stateConnected
@@ -187,6 +189,13 @@ func (s *MQTTService) onConnected(connID string, conn *connection) {
 	s.emitter.Emit(cmn.EventMQTTConnected, map[string]any{
 		keyConnectionID: connID,
 	})
+	subs := maps.Clone(conn.subs)
+	conn.stateMu.Unlock()
+
+	// stateMu を放してから張り直す (stateMu の保持中は client 操作をしない)。
+	if len(subs) > 0 {
+		s.resubscribe(connID, conn, subs)
+	}
 }
 
 // onConnectionLost は確立済み接続が予期せず切れたときに呼ばれる。paho が自動再接続するので状態は変えない。
@@ -293,27 +302,7 @@ func (s *MQTTService) Subscribe(connectionID, topic string, qos byte) error {
 		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
 	}
 	return s.withConn(connectionID, func(conn *connection) error {
-		handler := func(msgTopic string, msgPayload []byte, msgQoS byte, retained bool) {
-			// RLock なのでメッセージ同士は直列化しない。状態遷移 (Lock) は実行中の発行の完了を待つ。
-			conn.stateMu.RLock()
-			defer conn.stateMu.RUnlock()
-			if conn.terminal() {
-				return // 切断・shutdown 済みの接続のメッセージは捨てる
-			}
-			s.logger.Info("MQTT message received", "source", "mqtt", "connection_id", connectionID, "topic", msgTopic, "payload_bytes", len(msgPayload))
-			// 非 UTF-8 のバイナリペイロードは string 変換で壊れるため base64 で渡す。
-			payloadStr, payloadBase64 := cmn.EncodeMaybeBase64(msgPayload)
-			s.emitter.Emit(cmn.EventMQTTMessage, domain.MQTTMessage{
-				ConnectionID:  connectionID,
-				Topic:         msgTopic,
-				Payload:       payloadStr,
-				PayloadBase64: payloadBase64,
-				QoS:           msgQoS,
-				Retained:      retained,
-				Timestamp:     time.Now().UnixMilli(),
-			})
-		}
-		if err := conn.client.Subscribe(topic, qos, handler); err != nil {
+		if err := conn.client.Subscribe(topic, qos, s.messageHandler(connectionID, conn)); err != nil {
 			return fmt.Errorf("failed to subscribe: %w", err)
 		}
 		conn.stateMu.Lock()
@@ -321,6 +310,63 @@ func (s *MQTTService) Subscribe(connectionID, topic string, qos byte) error {
 		conn.stateMu.Unlock()
 		return nil
 	})
+}
+
+// messageHandler は受信したメッセージを mqtt:message イベントとして発行するハンドラを返す。
+func (s *MQTTService) messageHandler(connectionID string, conn *connection) domain.MessageHandler {
+	return func(msgTopic string, msgPayload []byte, msgQoS byte, retained bool) {
+		// RLock なのでメッセージ同士は直列化しない。状態遷移 (Lock) は実行中の発行の完了を待つ。
+		conn.stateMu.RLock()
+		defer conn.stateMu.RUnlock()
+		if conn.terminal() {
+			return // 切断・shutdown 済みの接続のメッセージは捨てる
+		}
+		s.logger.Info("MQTT message received", "source", "mqtt", "connection_id", connectionID, "topic", msgTopic, "payload_bytes", len(msgPayload))
+		// 非 UTF-8 のバイナリペイロードは string 変換で壊れるため base64 で渡す。
+		payloadStr, payloadBase64 := cmn.EncodeMaybeBase64(msgPayload)
+		s.emitter.Emit(cmn.EventMQTTMessage, domain.MQTTMessage{
+			ConnectionID:  connectionID,
+			Topic:         msgTopic,
+			Payload:       payloadStr,
+			PayloadBase64: payloadBase64,
+			QoS:           msgQoS,
+			Retained:      retained,
+			Timestamp:     time.Now().UnixMilli(),
+		})
+	}
+}
+
+// resubscribe は再接続後に購読を張り直す。client は CleanSession で接続するので、
+// 再接続したブローカー側には前回の購読が残っていない。張り直さないと、GetConnections は
+// 購読中と返し続けるのにメッセージが届かなくなる。
+// onConnected (client のコールバック用 goroutine) から呼ぶ。client 操作なので opMu を取る。
+func (s *MQTTService) resubscribe(connID string, conn *connection, subs map[string]byte) {
+	conn.opMu.Lock()
+	defer conn.opMu.Unlock()
+	for topic, qos := range subs {
+		// 待つ間に切断された接続と、Unsubscribe で外された購読は張り直さない。
+		conn.stateMu.RLock()
+		_, still := conn.subs[topic]
+		closed := conn.terminal()
+		conn.stateMu.RUnlock()
+		if closed {
+			return
+		}
+		if !still {
+			continue
+		}
+		err := conn.client.Subscribe(topic, qos, s.messageHandler(connID, conn))
+		if err == nil {
+			continue
+		}
+		s.logger.Error("MQTT resubscribe failed", "source", "mqtt", "connection_id", connID, "topic", topic, "error", err)
+		// ブローカーが拒否した購読は表示から外す。それ以外 (再び切断した等) は次の再接続で張り直す。
+		if errors.Is(err, domain.ErrSubscriptionRejected) {
+			conn.stateMu.Lock()
+			delete(conn.subs, topic)
+			conn.stateMu.Unlock()
+		}
+	}
 }
 
 // Unsubscribe は指定トピックの購読を解除する。

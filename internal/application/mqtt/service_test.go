@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1496,5 +1497,122 @@ func TestMQTTService_Connect_FailureEventCarriesError(t *testing.T) {
 	}
 	if data[keyConnectionID] != id || data["error"] != "connection refused" {
 		t.Errorf("event data = %v, want connectionId %s and error %q", data, id, "connection refused")
+	}
+}
+
+// ------- 再接続後の購読の張り直し -------
+
+// subscribeCall は Subscribe に渡された引数を記録する。
+type subscribeCall struct {
+	topic string
+	qos   byte
+}
+
+// newResubscribeService は Subscribe の呼び出しを記録する接続を 1 本張り、topics を購読する。
+// subscribeErr を差し替えると、それ以降の Subscribe の結果を変えられる。
+func newResubscribeService(t *testing.T, emitter cmn.Emitter, topics map[string]byte) (svc *MQTTService, id string, rec *callbackRecorder, calls func() []subscribeCall, subscribeErr *atomic.Pointer[error]) {
+	t.Helper()
+	rec = &callbackRecorder{}
+	var mu sync.Mutex
+	var recorded []subscribeCall
+	subscribeErr = &atomic.Pointer[error]{}
+	client := &mockBrokerClient{subscribeFn: func(topic string, qos byte, handler domain.MessageHandler) error {
+		if err := subscribeErr.Load(); err != nil {
+			return *err
+		}
+		mu.Lock()
+		recorded = append(recorded, subscribeCall{topic: topic, qos: qos})
+		mu.Unlock()
+		return rec.subscribeFn(topic, qos, handler)
+	}}
+	svc = newTestService(t, emitter, rec.factory(client))
+	id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	waitEstablished(t, svc, 1)
+	for topic, qos := range topics {
+		if err := svc.Subscribe(id, topic, qos); err != nil {
+			t.Fatalf("Subscribe(%s): %v", topic, err)
+		}
+	}
+	calls = func() []subscribeCall {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(recorded)
+	}
+	return svc, id, rec, calls, subscribeErr
+}
+
+// 再接続 (2 回目以降の onConnected) では、同じ QoS で全購読を張り直し、メッセージが届く。
+func TestMQTTService_Reconnect_Resubscribes(t *testing.T) {
+	emitter := &mockEmitter{}
+	svc, _, rec, calls, _ := newResubscribeService(t, emitter, map[string]byte{"a/#": 1, "b/+": 2})
+
+	rec.onConnectionLost(0)(errors.New("lost"))
+	rec.onConnected(0)()
+
+	got := calls()[2:]
+	slices.SortFunc(got, func(x, y subscribeCall) int { return strings.Compare(x.topic, y.topic) })
+	if want := []subscribeCall{{"a/#", 1}, {"b/+", 2}}; !slices.Equal(got, want) {
+		t.Fatalf("resubscribed = %v, want %v", got, want)
+	}
+	// 張り直しで登録したハンドラもメッセージを発行する。
+	rec.handler(len(calls())-1)("a/x", []byte("1"), 1, false)
+	if n := emitter.count(cmn.EventMQTTMessage); n != 1 {
+		t.Errorf("mqtt:message emitted %d times, want 1", n)
+	}
+	if subs := svc.GetConnections()[0].Subscriptions; len(subs) != 2 {
+		t.Errorf("subscriptions = %v, want both kept", subs)
+	}
+}
+
+// 購読が無ければ onConnected は Subscribe を呼ばない (初回接続)。
+func TestMQTTService_Connected_WithoutSubscriptions_DoesNotSubscribe(t *testing.T) {
+	_, _, rec, calls, _ := newResubscribeService(t, &mockEmitter{}, nil)
+	rec.onConnected(0)()
+	if got := calls(); len(got) != 0 {
+		t.Errorf("Subscribe called with %v, want no calls", got)
+	}
+}
+
+// 張り直しでブローカーに拒否された購読は表示から外し、それ以外の失敗では残して次の再接続に任せる。
+func TestMQTTService_Reconnect_ResubscribeFailures(t *testing.T) {
+	svc, _, rec, _, subscribeErr := newResubscribeService(t, &mockEmitter{}, map[string]byte{"a/#": 0})
+
+	rejected := domain.ErrSubscriptionRejected
+	subscribeErr.Store(&rejected)
+	rec.onConnected(0)()
+	if subs := svc.GetConnections()[0].Subscriptions; len(subs) != 0 {
+		t.Errorf("subscriptions after rejection = %v, want none", subs)
+	}
+
+	svc2, _, rec2, _, subscribeErr2 := newResubscribeService(t, &mockEmitter{}, map[string]byte{"a/#": 0})
+	lostAgain := errors.New("not connected")
+	subscribeErr2.Store(&lostAgain)
+	rec2.onConnected(0)()
+	if subs := svc2.GetConnections()[0].Subscriptions; len(subs) != 1 {
+		t.Errorf("subscriptions after a transient failure = %v, want kept", subs)
+	}
+}
+
+// 切断済みの接続と、購読解除した購読は張り直さない。
+func TestMQTTService_Reconnect_SkipsUnsubscribedAndClosed(t *testing.T) {
+	svc, id, rec, calls, _ := newResubscribeService(t, &mockEmitter{}, map[string]byte{"a/#": 0, "b/#": 0})
+	if err := svc.Unsubscribe(id, "b/#"); err != nil {
+		t.Fatalf("Unsubscribe: %v", err)
+	}
+	rec.onConnected(0)()
+	if got := calls()[2:]; !slices.Equal(got, []subscribeCall{{"a/#", 0}}) {
+		t.Errorf("resubscribed = %v, want only a/#", got)
+	}
+
+	if err := svc.Disconnect(id); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	before := len(calls())
+	rec.onConnected(0)()
+	if n := len(calls()); n != before {
+		t.Errorf("Subscribe called %d times after Disconnect", n-before)
 	}
 }
