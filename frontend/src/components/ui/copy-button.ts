@@ -20,10 +20,25 @@ const SINGLE = Symbol("copy-single");
 export function createCopyButton<K = symbol>(resetMs = 1500) {
   const [copiedKey, setCopiedKey] = createSignal<K | symbol | null>(null);
   let timer: ReturnType<typeof setTimeout> | undefined;
-  onCleanup(() => clearTimeout(timer));
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+    clearTimeout(timer);
+  });
 
-  const copy = (text: string, key: K | symbol = SINGLE) => {
-    navigator.clipboard.writeText(text);
+  // 書き込みが成功したときだけコピー済みにする（拒否されたのに表示が付くと誤解させる）。
+  const copy = async (
+    text: string,
+    key: K | symbol = SINGLE,
+  ): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (error) {
+      console.warn("[clipboard] writeText failed:", error);
+      return;
+    }
+    // 書き込み中に破棄されたら、タイマーを残さない。
+    if (disposed) return;
     setCopiedKey(() => key);
     clearTimeout(timer);
     timer = setTimeout(() => setCopiedKey(null), resetMs);
