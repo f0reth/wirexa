@@ -118,6 +118,29 @@ describe("send", () => {
       endianness: "big",
     });
   });
+
+  // 入れ子クラスの配列変換（convertValues）は生成コード側の処理で、過去に配列の形が壊れた経路。
+  it("passes fixed-length fields intact", async () => {
+    vi.mocked(Handler.Send).mockResolvedValue(makeWailsSendResult() as never);
+    const req = makeSendRequest({
+      encoding: "fixed",
+      payload: "",
+      messageLength: 16,
+      endianness: "little",
+      fixedLengthPayload: {
+        fields: [
+          { name: "id", fieldType: "uint16", length: 0, value: "513" },
+          { name: "tag", fieldType: "string", length: 4, value: "ab" },
+          { name: "raw", fieldType: "bytes", length: 2, value: "0a1b" },
+          { name: "big", fieldType: "int64", length: 0, value: "-1" },
+        ],
+      },
+    });
+
+    await send(req);
+
+    expect(vi.mocked(Handler.Send).mock.calls[0][0]).toEqual(req);
+  });
 });
 
 describe("getTargets", () => {
