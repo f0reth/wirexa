@@ -19,6 +19,9 @@ const (
 	defaultTokenTimeout   = 30 * time.Second
 )
 
+// subackFailure は SUBACK の失敗を表す戻りコード (MQTT 3.1.1 3.9.3)。MQTT 5 の理由コードも 0x80 以上が失敗。
+const subackFailure = 0x80
+
 // abortWait は、打ち切り後に確立してしまった接続の後片付けを待つ上限 (ms)。
 // 2 回目の Disconnect は 1 回目の後片付けが終わった時点で復帰するため、通常はこれより早く返る。
 const abortWait = 1000
@@ -161,7 +164,18 @@ func (p *pahoClient) Subscribe(topic string, qos byte, handler domain.MessageHan
 	if !token.WaitTimeout(p.tokenTimeout) {
 		return errors.New("subscribe timed out")
 	}
-	return token.Error()
+	if err := token.Error(); err != nil {
+		return err
+	}
+	// paho はブローカーが SUBACK で拒否 (0x80) しても token をエラーにしないので、結果コードを見る。
+	if st, ok := token.(*pahomqtt.SubscribeToken); ok {
+		for _, code := range st.Result() {
+			if code >= subackFailure {
+				return domain.ErrSubscriptionRejected
+			}
+		}
+	}
+	return nil
 }
 
 func (p *pahoClient) Unsubscribe(topics ...string) error {

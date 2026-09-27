@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"net"
@@ -18,6 +19,7 @@ import (
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/listeners"
+	"github.com/mochi-mqtt/server/v2/packets"
 
 	"github.com/f0reth/Wirexa/internal/adapters"
 	mqttapp "github.com/f0reth/Wirexa/internal/application/mqtt"
@@ -816,5 +818,100 @@ func TestMQTT_Connect_Concurrent(t *testing.T) {
 	// 全接続を切断する
 	for id := range ids {
 		_ = h.Disconnect(id)
+	}
+}
+
+// startMQTTBroker は専用の埋め込みブローカーを addr で起動し、サーバーと実アドレス (host:port) を返す。
+// addr に "127.0.0.1:0" を渡すと空きポートを使う。hook が nil なら全てを許可する。
+// 共有ブローカーを止められないテスト (接続断) や、ACL を変えるテストで使う。
+func startMQTTBroker(t *testing.T, addr string, hook mqtt.Hook) (*mqtt.Server, string) {
+	t.Helper()
+	server := mqtt.New(&mqtt.Options{InlineClient: true})
+	if hook == nil {
+		hook = new(auth.AllowHook)
+	}
+	if err := server.AddHook(hook, nil); err != nil {
+		t.Fatalf("AddHook: %v", err)
+	}
+	tcp := listeners.NewTCP(listeners.Config{ID: "dedicated", Address: addr})
+	if err := server.AddListener(tcp); err != nil {
+		t.Fatalf("AddListener(%s): %v", addr, err)
+	}
+	go func() { _ = server.Serve() }()
+	t.Cleanup(func() { _ = server.Close() })
+	return server, tcp.Address()
+}
+
+// denyFilterHook は接続を全て許可し、filter への購読と publish だけを ACL で拒否する。
+type denyFilterHook struct {
+	mqtt.HookBase
+	filter string
+}
+
+func (h *denyFilterHook) ID() string { return "deny-filter" }
+
+func (h *denyFilterHook) Provides(b byte) bool {
+	return b == mqtt.OnConnectAuthenticate || b == mqtt.OnACLCheck
+}
+
+func (h *denyFilterHook) OnConnectAuthenticate(*mqtt.Client, packets.Packet) bool { return true }
+
+func (h *denyFilterHook) OnACLCheck(_ *mqtt.Client, topic string, _ bool) bool {
+	return topic != h.filter
+}
+
+// TestMQTT_InvalidWildcardTopics は、位置違反のワイルドカードの購読と、ワイルドカードを含む
+// トピックへの publish が送信前に ValidationError になり、購読一覧に残らず、接続も切れないこと、
+// ブローカーが SUBACK で拒否した購読がエラーになることを確認する。
+func TestMQTT_InvalidWildcardTopics(t *testing.T) {
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandlerWithConfig(t, emitter, mqttinfra.MQTTClientConfig{TokenTimeout: 2 * time.Second})
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+	id := connectBroker(t, h, "wildcards")
+	waitConnected(t, h, id, 5*time.Second)
+
+	for _, filter := range []string{"a/#/b", "a/b#", "a+/b"} {
+		var ve *cmndomain.ValidationError
+		if err := h.Subscribe(id, filter, 0); !errors.As(err, &ve) {
+			t.Errorf("Subscribe(%q): want ValidationError, got %v", filter, err)
+		}
+	}
+	if subs := h.GetConnections()[0].Subscriptions; len(subs) != 0 {
+		t.Errorf("subscriptions = %v, want none", subs)
+	}
+
+	// ブローカーはワイルドカードを含む PUBLISH をプロトコル違反として接続ごと切るので、送る前に拒否する。
+	start := time.Now()
+	var ve *cmndomain.ValidationError
+	if err := h.Publish(id, "a/+", "x", 1, false); !errors.As(err, &ve) {
+		t.Errorf("Publish(a/+): want ValidationError, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("Publish(a/+) took %v, want it rejected before sending", elapsed)
+	}
+	if err := h.Subscribe(id, "wildcards/ok", 1); err != nil {
+		t.Fatalf("Subscribe after the rejected publish: %v", err)
+	}
+	if err := h.Publish(id, "wildcards/ok", "still connected", 1, false); err != nil {
+		t.Fatalf("Publish after the rejected publish: %v", err)
+	}
+	if msg := emitter.receiveMessage(t, 5*time.Second); msg.Payload != "still connected" {
+		t.Errorf("payload = %q, want still connected", msg.Payload)
+	}
+
+	// 形式は正しいがブローカーが拒否する購読 (ここでは ACL) は SUBACK の結果でエラーにする。
+	_, addr := startMQTTBroker(t, "127.0.0.1:0", &denyFilterHook{filter: "denied/topic"})
+	denied, err := h.Connect(mqttdomain.ConnectionConfig{Name: "acl", Broker: "tcp://" + addr})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	waitConnected(t, h, denied, 5*time.Second)
+	if err := h.Subscribe(denied, "denied/topic", 0); !errors.Is(err, mqttdomain.ErrSubscriptionRejected) {
+		t.Errorf("Subscribe(denied/topic): want ErrSubscriptionRejected, got %v", err)
+	}
+	for _, c := range h.GetConnections() {
+		if c.ID == denied && len(c.Subscriptions) != 0 {
+			t.Errorf("subscriptions = %v, want the rejected one not listed", c.Subscriptions)
+		}
 	}
 }

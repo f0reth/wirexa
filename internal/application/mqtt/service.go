@@ -270,8 +270,8 @@ func (s *MQTTService) withConn(id string, fn func(conn *connection) error) error
 
 // Publish は指定トピックへメッセージを送信する。
 func (s *MQTTService) Publish(connectionID, topic, payload string, qos byte, retain bool) error {
-	if topic == "" {
-		return &cmn.ValidationError{Field: fieldTopic, Message: cmn.MsgRequired}
+	if err := domain.ValidateTopicName(fieldTopic, topic); err != nil {
+		return err
 	}
 	if qos > 2 {
 		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
@@ -286,8 +286,8 @@ func (s *MQTTService) Publish(connectionID, topic, payload string, qos byte, ret
 
 // Subscribe は指定トピックの購読を開始する。
 func (s *MQTTService) Subscribe(connectionID, topic string, qos byte) error {
-	if topic == "" {
-		return &cmn.ValidationError{Field: fieldTopic, Message: cmn.MsgRequired}
+	if err := domain.ValidateTopicFilter(fieldTopic, topic); err != nil {
+		return err
 	}
 	if qos > 2 {
 		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
@@ -325,8 +325,8 @@ func (s *MQTTService) Subscribe(connectionID, topic string, qos byte) error {
 
 // Unsubscribe は指定トピックの購読を解除する。
 func (s *MQTTService) Unsubscribe(connectionID, topic string) error {
-	if topic == "" {
-		return &cmn.ValidationError{Field: fieldTopic, Message: cmn.MsgRequired}
+	if err := domain.ValidateTopicFilter(fieldTopic, topic); err != nil {
+		return err
 	}
 	return s.withConn(connectionID, func(conn *connection) error {
 		if err := conn.client.Unsubscribe(topic); err != nil {

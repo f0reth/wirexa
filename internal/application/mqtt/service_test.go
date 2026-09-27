@@ -301,6 +301,46 @@ func TestMQTTService_Publish_EmptyTopic(t *testing.T) {
 	}
 }
 
+// ワイルドカードを含むトピックへの publish は、クライアントへ渡す前に拒否する。
+// ブローカーはプロトコル違反として接続ごと切断するため。
+func TestMQTTService_InvalidTopics_RejectedBeforeClient(t *testing.T) {
+	var calls atomic.Int32
+	client := &mockBrokerClient{
+		publishFn: func(string, byte, bool, string) error { calls.Add(1); return nil },
+		subscribeFn: func(string, byte, domain.MessageHandler) error {
+			calls.Add(1)
+			return nil
+		},
+		unsubscribeFn: func(...string) error { calls.Add(1); return nil },
+	}
+	svc := newTestService(t, &mockEmitter{}, factoryWith(client))
+	id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	waitEstablished(t, svc, 1)
+
+	ops := map[string]func() error{
+		"Publish a/+":      func() error { return svc.Publish(id, "a/+", "x", 1, false) },
+		"Publish a/#":      func() error { return svc.Publish(id, "a/#", "x", 0, false) },
+		"Subscribe a/#/b":  func() error { return svc.Subscribe(id, "a/#/b", 0) },
+		"Subscribe a/b#":   func() error { return svc.Subscribe(id, "a/b#", 0) },
+		"Subscribe a+/b":   func() error { return svc.Subscribe(id, "a+/b", 0) },
+		"Unsubscribe a+/b": func() error { return svc.Unsubscribe(id, "a+/b") },
+	}
+	for name, op := range ops {
+		if _, ok := errors.AsType[*cmn.ValidationError](op()); !ok {
+			t.Errorf("%s: expected ValidationError", name)
+		}
+	}
+	if got := calls.Load(); got != 0 {
+		t.Errorf("client was called %d times for invalid topics", got)
+	}
+	if subs := svc.GetConnections()[0].Subscriptions; len(subs) != 0 {
+		t.Errorf("subscriptions = %v, want none", subs)
+	}
+}
+
 func TestMQTTService_Publish_InvalidQoS(t *testing.T) {
 	svc := newTestService(t, &mockEmitter{}, factoryWith(&mockBrokerClient{}))
 	err := svc.Publish("connid", "topic", "payload", 3, false)

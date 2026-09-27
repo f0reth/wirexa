@@ -23,10 +23,11 @@ type BrokerClient interface {
 	// Publish は指定トピックへメッセージを送信する。
 	Publish(topic string, qos byte, retained bool, payload string) error
 	// Subscribe は指定トピックパターンの購読を開始し、受信時に handler を呼ぶ。
+	// ブローカーが購読を拒否した場合は ErrSubscriptionRejected を返す。
 	Subscribe(topic string, qos byte, handler MessageHandler) error
 	// Unsubscribe は指定トピックの購読を解除する。
 	Unsubscribe(topics ...string) error
-	// IsConnected は現在接続中かどうかを返す。
+	// IsConnected は現在接続中かどうかを返す。接続が切れて自動再接続を試みている間は false。
 	IsConnected() bool
 }
 
