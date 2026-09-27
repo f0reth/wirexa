@@ -302,11 +302,11 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 
 // AddRequest はコレクションにリクエストを追加する。
 // req は複製してから取り込むため、呼び出し側の req（Contents map など）は書き換えない。
+// ID は呼び出し側の値を使わず常に採番する。RPC から既存アイテムと同じ ID を渡されると、
+// 次回起動時の重複回収 (recoverDuplicateItems) がどちらかを黙って削除するため。
 func (s *CollectionService) AddRequest(collectionID, parentID string, req domain.HTTPRequest) (*domain.TreeItem, error) {
 	r := req.Clone()
-	if r.ID == "" {
-		r.ID = uuid.NewString()
-	}
+	r.ID = uuid.NewString()
 	r.Body.DropFileContents()
 	item := &domain.TreeItem{
 		Type:     domain.ItemTypeRequest,

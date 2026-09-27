@@ -367,20 +367,28 @@ func TestCollectionRepository_NoSavePathPersistsTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCollection: %v", err)
 	}
+	// r1 は AddRequest の採番結果を後続の手順で使う。
+	var r1 string
 	steps := []struct {
 		run  func() error
 		name string
 	}{
-		{name: "AddRequest", run: func() error { _, err := svc.AddRequest(col.ID, "", withToken("r1")); return err }},
-		{name: "AddRequest root", run: func() error {
-			_, err := svc.AddRequest(domain.RootCollectionID, "", withToken("r2"))
+		{name: "AddRequest", run: func() error {
+			item, err := svc.AddRequest(col.ID, "", withToken(""))
+			if err == nil {
+				r1 = item.ID
+			}
 			return err
 		}},
-		{name: "UpdateRequest", run: func() error { return svc.UpdateRequest(col.ID, withToken("r1")) }},
-		{name: "RenameItem", run: func() error { return svc.RenameItem(col.ID, "r1", "renamed") }},
+		{name: "AddRequest root", run: func() error {
+			_, err := svc.AddRequest(domain.RootCollectionID, "", withToken(""))
+			return err
+		}},
+		{name: "UpdateRequest", run: func() error { return svc.UpdateRequest(col.ID, withToken(r1)) }},
+		{name: "RenameItem", run: func() error { return svc.RenameItem(col.ID, r1, "renamed") }},
 		{name: "RenameCollection", run: func() error { return svc.RenameCollection(col.ID, "A2") }},
-		{name: "MoveItem", run: func() error { return svc.MoveItem(col.ID, "r1", other.ID, "", -1) }},
-		{name: "MoveItemToSidebar", run: func() error { return svc.MoveItemToSidebar(other.ID, "r1", 0) }},
+		{name: "MoveItem", run: func() error { return svc.MoveItem(col.ID, r1, other.ID, "", -1) }},
+		{name: "MoveItemToSidebar", run: func() error { return svc.MoveItemToSidebar(other.ID, r1, 0) }},
 	}
 	for _, step := range steps {
 		if err := step.run(); err != nil {

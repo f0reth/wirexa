@@ -1566,3 +1566,39 @@ func TestHTTP_CancelRequest_BeforeSend(t *testing.T) {
 		t.Fatalf("server hits = %d, want 1", got)
 	}
 }
+
+// TestHTTP_AddRequest_IgnoresCallerItemID は RPC から既存アイテムと同じ ID を渡されても
+// 新しい ID を採番し、再起動時の重複回収で既存のアイテムが消えないことを確認する。
+func TestHTTP_AddRequest_IgnoresCallerItemID(t *testing.T) {
+	dir := t.TempDir()
+	h1 := newHTTPHandlerWithDir(t, dir)
+	colA, err := h1.CreateCollection("A")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
+	}
+	colB, err := h1.CreateCollection("B")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
+	}
+	existing, err := h1.AddRequest(colA.ID, "", httpdomain.HTTPRequest{Name: "Existing", Method: "GET"})
+	if err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+
+	dup, err := h1.AddRequest(colB.ID, "", httpdomain.HTTPRequest{ID: existing.ID, Name: "Dup", Method: "GET"})
+	if err != nil {
+		t.Fatalf("AddRequest with an existing ID: %v", err)
+	}
+	if dup.ID == existing.ID || dup.Request.ID == existing.ID {
+		t.Fatalf("AddRequest reused the caller's ID %q", existing.ID)
+	}
+
+	// 再起動後も両方のアイテムがそれぞれのコレクションに残る。
+	h2 := newHTTPHandlerWithDir(t, dir)
+	want := map[string]string{colA.ID: existing.ID, colB.ID: dup.ID}
+	for _, c := range h2.GetCollections() {
+		if len(c.Items) != 1 || c.Items[0].ID != want[c.ID] {
+			t.Errorf("%s items after restart = %v, want [%s]", c.Name, c.Items, want[c.ID])
+		}
+	}
+}

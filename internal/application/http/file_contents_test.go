@@ -20,12 +20,13 @@ func fileBody() domain.RequestBody {
 // 追加・更新のどちらでもキャッシュ (= RPC 応答) に残さない。
 func TestCollectionService_DropsFileContents(t *testing.T) {
 	svc := newSvc(t)
-	if _, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{ID: "r1", Method: "POST", Body: fileBody()}); err != nil {
+	item, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{Method: "POST", Body: fileBody()})
+	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
 	assertNoFileContents(t, svc)
 
-	if err := svc.UpdateRequest(domain.RootCollectionID, domain.HTTPRequest{ID: "r1", Method: "POST", Body: fileBody()}); err != nil {
+	if err := svc.UpdateRequest(domain.RootCollectionID, domain.HTTPRequest{ID: item.ID, Method: "POST", Body: fileBody()}); err != nil {
 		t.Fatalf("UpdateRequest: %v", err)
 	}
 	assertNoFileContents(t, svc)

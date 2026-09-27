@@ -166,6 +166,16 @@ func folder(id string, children ...*domain.TreeItem) *domain.TreeItem {
 	return &domain.TreeItem{Type: domain.ItemTypeFolder, ID: id, Name: id, Children: children}
 }
 
+// itemNames はツリーを深さ優先で走査して名前を並べる。ID を採番に任せたテストで並びを見るのに使う。
+func itemNames(items []*domain.TreeItem) []string {
+	var names []string
+	for _, item := range items {
+		names = append(names, item.Name)
+		names = append(names, itemNames(item.Children)...)
+	}
+	return names
+}
+
 // itemIDs はツリーを深さ優先で走査して ID を並べる。
 func itemIDs(items []*domain.TreeItem) []string {
 	var ids []string

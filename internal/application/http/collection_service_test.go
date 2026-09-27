@@ -260,6 +260,16 @@ func mustCreate(t *testing.T, svc *CollectionService, name string) domain.Collec
 	return col
 }
 
+// mustAddRequest は name のリクエストを追加し、採番された ID を返す。
+func mustAddRequest(t *testing.T, svc *CollectionService, collectionID, parentID, name string) string {
+	t.Helper()
+	item, err := svc.AddRequest(collectionID, parentID, domain.HTTPRequest{Name: name})
+	if err != nil {
+		t.Fatalf("AddRequest(%q): %v", name, err)
+	}
+	return item.ID
+}
+
 // findColItem はキャッシュ上のコレクション内からアイテムを ID で探す。
 func findColItem(t *testing.T, svc *CollectionService, collectionID, itemID string) (*domain.TreeItem, *domain.TreeItem, bool) {
 	t.Helper()
@@ -388,10 +398,9 @@ func TestCollectionService_AddFolder_ParentNotFound(t *testing.T) {
 func TestCollectionService_AddFolder_ParentIsRequest(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HTTPRequest{ID: "r1", Name: testReqName}
-	item, _ := svc.AddRequest(col.ID, "", req)
+	r1 := mustAddRequest(t, svc, col.ID, "", testReqName)
 
-	_, err := svc.AddFolder(col.ID, item.ID, "Folder")
+	_, err := svc.AddFolder(col.ID, r1, "Folder")
 	if err == nil {
 		t.Error("expected error when parent is a request, got nil")
 	}
@@ -400,7 +409,7 @@ func TestCollectionService_AddFolder_ParentIsRequest(t *testing.T) {
 func TestCollectionService_AddRequest_ToRoot(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HTTPRequest{ID: "req1", Name: "GET /api", Method: "GET", URL: "http://example.com"}
+	req := domain.HTTPRequest{Name: "GET /api", Method: "GET", URL: "http://example.com"}
 	item, err := svc.AddRequest(col.ID, "", req)
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
@@ -408,8 +417,32 @@ func TestCollectionService_AddRequest_ToRoot(t *testing.T) {
 	if item.Type != domain.ItemTypeRequest {
 		t.Errorf("expected request type, got %q", item.Type)
 	}
-	if item.ID != "req1" {
-		t.Errorf("expected ID req1, got %q", item.ID)
+	if item.ID == "" || item.Request.ID != item.ID {
+		t.Errorf("item.ID = %q, Request.ID = %q, want the same generated ID", item.ID, item.Request.ID)
+	}
+}
+
+// TestCollectionService_AddRequest_IgnoresCallerID は呼び出し側が指定した ID を使わず採番することを確認する。
+// 既存アイテムと同じ ID を受け入れると、次回起動時の重複回収で片方が黙って削除される。
+func TestCollectionService_AddRequest_IgnoresCallerID(t *testing.T) {
+	svc := newSvc(t)
+	colA := mustCreate(t, svc, "A")
+	colB := mustCreate(t, svc, "B")
+	existing := mustAddRequest(t, svc, colA.ID, "", "Existing")
+
+	req := domain.HTTPRequest{ID: existing, Name: "Dup"}
+	item, err := svc.AddRequest(colB.ID, "", req)
+	if err != nil {
+		t.Fatalf("AddRequest: %v", err)
+	}
+	if item.ID == existing || item.Request.ID == existing {
+		t.Fatalf("AddRequest reused the caller's ID %q", existing)
+	}
+	if req.ID != existing {
+		t.Errorf("caller's req.ID was rewritten to %q", req.ID)
+	}
+	if _, _, ok := findColItem(t, svc, colA.ID, existing); !ok {
+		t.Error("the existing item disappeared")
 	}
 }
 
@@ -439,7 +472,7 @@ func TestCollectionService_AddRequest_ToFolder(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
 	folder, _ := svc.AddFolder(col.ID, "", "Folder")
-	req := domain.HTTPRequest{ID: "r1", Name: testReqName}
+	req := domain.HTTPRequest{Name: testReqName}
 
 	item, err := svc.AddRequest(col.ID, folder.ID, req)
 	if err != nil {
@@ -465,10 +498,9 @@ func TestCollectionService_AddRequest_ParentNotFound(t *testing.T) {
 func TestCollectionService_UpdateRequest_Success(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HTTPRequest{ID: "r1", Name: "Old", Method: "GET", URL: "http://old.com"}
-	svc.AddRequest(col.ID, "", req)
+	item, _ := svc.AddRequest(col.ID, "", domain.HTTPRequest{Name: "Old", Method: "GET", URL: "http://old.com"})
 
-	updated := domain.HTTPRequest{ID: "r1", Name: "New", Method: "POST", URL: "http://new.com"}
+	updated := domain.HTTPRequest{ID: item.ID, Name: "New", Method: "POST", URL: "http://new.com"}
 	if err := svc.UpdateRequest(col.ID, updated); err != nil {
 		t.Fatalf("UpdateRequest: %v", err)
 	}
@@ -489,10 +521,9 @@ func TestCollectionService_UpdateRequest_Success(t *testing.T) {
 func TestCollectionService_UpdateRequest_PreservesNameWhenEmpty(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HTTPRequest{ID: "r1", Name: testColNameMyAPI, Method: "GET", URL: "http://old.com"}
-	svc.AddRequest(col.ID, "", req)
+	item, _ := svc.AddRequest(col.ID, "", domain.HTTPRequest{Name: testColNameMyAPI, Method: "GET", URL: "http://old.com"})
 
-	updated := domain.HTTPRequest{ID: "r1", Name: "", Method: "POST", URL: "http://new.com"}
+	updated := domain.HTTPRequest{ID: item.ID, Name: "", Method: "POST", URL: "http://new.com"}
 	if err := svc.UpdateRequest(col.ID, updated); err != nil {
 		t.Fatalf("UpdateRequest: %v", err)
 	}
@@ -538,10 +569,9 @@ func TestCollectionService_RenameItem_Folder(t *testing.T) {
 func TestCollectionService_RenameItem_Request(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HTTPRequest{ID: "r1", Name: "OldReq"}
-	svc.AddRequest(col.ID, "", req)
+	r1 := mustAddRequest(t, svc, col.ID, "", "OldReq")
 
-	if err := svc.RenameItem(col.ID, "r1", "NewReq"); err != nil {
+	if err := svc.RenameItem(col.ID, r1, "NewReq"); err != nil {
 		t.Fatalf("RenameItem: %v", err)
 	}
 	cols := svc.GetCollections()
@@ -572,10 +602,9 @@ func TestCollectionService_RenameItem_ItemNotFound(t *testing.T) {
 func TestCollectionService_DeleteItem_Success(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	req := domain.HTTPRequest{ID: "r1", Name: testReqName}
-	svc.AddRequest(col.ID, "", req)
+	r1 := mustAddRequest(t, svc, col.ID, "", testReqName)
 
-	if err := svc.DeleteItem(col.ID, "r1"); err != nil {
+	if err := svc.DeleteItem(col.ID, r1); err != nil {
 		t.Fatalf("DeleteItem: %v", err)
 	}
 	cols := svc.GetCollections()
@@ -688,9 +717,7 @@ func TestNewCollectionService_UnloadableRoot_RejectsRootWrites(t *testing.T) {
 	svc, repo, _ := newSvcWithUnloadableRoot(t, func(r *inMemoryRepo) {
 		r.existing = map[string]bool{domain.RootCollectionID: true}
 	})
-	if _, err := svc.AddRequest("c1", "", domain.HTTPRequest{ID: "r1", Name: testReqName}); err != nil {
-		t.Fatalf("AddRequest to another collection should succeed: %v", err)
-	}
+	r1 := mustAddRequest(t, svc, "c1", "", testReqName)
 
 	assertRootNotFound := func(op string, err error) {
 		t.Helper()
@@ -699,15 +726,15 @@ func TestNewCollectionService_UnloadableRoot_RejectsRootWrites(t *testing.T) {
 			t.Errorf("%s: expected NotFound for the root, got %v", op, err)
 		}
 	}
-	_, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{ID: "r2", Name: testReqName})
+	_, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{Name: testReqName})
 	assertRootNotFound("AddRequest", err)
-	assertRootNotFound("MoveItemToSidebar", svc.MoveItemToSidebar("c1", "r1", 0))
-	assertRootNotFound("MoveItem", svc.MoveItem("c1", "r1", domain.RootCollectionID, "", 0))
+	assertRootNotFound("MoveItemToSidebar", svc.MoveItemToSidebar("c1", r1, 0))
+	assertRootNotFound("MoveItem", svc.MoveItem("c1", r1, domain.RootCollectionID, "", 0))
 
 	if slices.Contains(repo.saveOrder(), domain.RootCollectionID) {
 		t.Error("root collection must not be saved by rejected operations")
 	}
-	if _, _, ok := cachedCollection(t, svc, "c1").FindNode("r1"); !ok {
+	if _, _, ok := cachedCollection(t, svc, "c1").FindNode(r1); !ok {
 		t.Error("the item should stay in the source collection after rejected moves")
 	}
 }
@@ -744,9 +771,7 @@ func TestNewCollectionService_UnloadableRoot_RejectsRootDeleteAndRename(t *testi
 func TestCollectionService_DeleteCollection_RootRejected(t *testing.T) {
 	repo := newFakeRepo()
 	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
-	if _, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
-		t.Fatalf("AddRequest: %v", err)
-	}
+	r1 := mustAddRequest(t, svc, domain.RootCollectionID, "", "R1")
 
 	err := svc.DeleteCollection(domain.RootCollectionID)
 	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
@@ -755,24 +780,24 @@ func TestCollectionService_DeleteCollection_RootRejected(t *testing.T) {
 	if slices.Contains(repo.deleteOrder(), domain.RootCollectionID) {
 		t.Error("root collection must not be deleted from the repository")
 	}
-	if _, _, ok := cachedCollection(t, svc, domain.RootCollectionID).FindNode("r1"); !ok {
+	if _, _, ok := cachedCollection(t, svc, domain.RootCollectionID).FindNode(r1); !ok {
 		t.Error("root item disappeared from the cache")
 	}
 	persisted := repo.snapshot(domain.RootCollectionID)
-	if persisted == nil || len(persisted.Items) != 1 || persisted.Items[0].ID != "r1" {
+	if persisted == nil || len(persisted.Items) != 1 || persisted.Items[0].ID != r1 {
 		t.Errorf("persisted root = %v, want it to keep r1", persisted)
 	}
-	if items := svc.GetRootItems(); len(items) != 1 || items[0].ID != "r1" {
+	if items := svc.GetRootItems(); len(items) != 1 || items[0].ID != r1 {
 		t.Errorf("GetRootItems = %v, want [r1]", items)
 	}
 	layout, err := svc.GetSidebarLayout()
 	if err != nil {
 		t.Fatalf("GetSidebarLayout: %v", err)
 	}
-	assertLayout(t, layout, "i:r1")
+	assertLayout(t, layout, "i:"+r1)
 
 	// 拒否が root を壊していないこと。
-	if _, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{ID: "r2", Name: "R2"}); err != nil {
+	if _, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{Name: "R2"}); err != nil {
 		t.Errorf("AddRequest to the root after rejected delete: %v", err)
 	}
 }
@@ -809,12 +834,9 @@ func TestCollectionService_GetRootItems_Empty(t *testing.T) {
 
 func TestCollectionService_GetRootItems_WithItems(t *testing.T) {
 	svc := newSvc(t)
-	req := domain.HTTPRequest{ID: "r1", Name: testReqName}
-	if _, err := svc.AddRequest(domain.RootCollectionID, "", req); err != nil {
-		t.Fatalf("AddRequest: %v", err)
-	}
+	r1 := mustAddRequest(t, svc, domain.RootCollectionID, "", testReqName)
 	items := svc.GetRootItems()
-	if len(items) != 1 || items[0].ID != "r1" {
+	if len(items) != 1 || items[0].ID != r1 {
 		t.Errorf("expected [r1], got %v", items)
 	}
 }
@@ -884,16 +906,16 @@ func TestCollectionService_MoveItem_ItemNotFound(t *testing.T) {
 func TestCollectionService_MoveItem_TargetParentNotFolder(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	r1, _ := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
-	r2, _ := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r2", Name: "R2"})
+	r1 := mustAddRequest(t, svc, col.ID, "", "R1")
+	r2 := mustAddRequest(t, svc, col.ID, "", "R2")
 
 	// r1 をターゲット親として移動しようとする（r1 はリクエストなのでエラー）。
-	err := svc.MoveItem(col.ID, r2.ID, col.ID, r1.ID, 0)
+	err := svc.MoveItem(col.ID, r2, col.ID, r1, 0)
 	if err == nil {
 		t.Error("expected error when target parent is not folder, got nil")
 	}
 	// #6: 検証失敗時に r2 が失われていないこと。
-	if _, _, ok := findColItem(t, svc, col.ID, "r2"); !ok {
+	if _, _, ok := findColItem(t, svc, col.ID, r2); !ok {
 		t.Error("r2 was lost from source collection after failed move")
 	}
 }
@@ -901,14 +923,14 @@ func TestCollectionService_MoveItem_TargetParentNotFolder(t *testing.T) {
 func TestCollectionService_MoveItem_TargetParentNotFound_PreservesItem(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
+	r1 := mustAddRequest(t, svc, col.ID, "", "R1")
 
 	// 存在しない親を指定した移動はエラーになり、アイテムは残る (#6)。
-	err := svc.MoveItem(col.ID, "r1", col.ID, "nonexistent-parent", 0)
+	err := svc.MoveItem(col.ID, r1, col.ID, "nonexistent-parent", 0)
 	if err == nil {
 		t.Fatal("expected error for nonexistent target parent, got nil")
 	}
-	if _, _, ok := findColItem(t, svc, col.ID, "r1"); !ok {
+	if _, _, ok := findColItem(t, svc, col.ID, r1); !ok {
 		t.Error("r1 was lost from source collection after failed move")
 	}
 }
@@ -918,7 +940,7 @@ func TestCollectionService_MoveItem_IntoOwnSubtree_Rejected(t *testing.T) {
 	col := mustCreate(t, svc, "Col")
 	f, _ := svc.AddFolder(col.ID, "", "F")
 	f2, _ := svc.AddFolder(col.ID, f.ID, "F2")
-	svc.AddRequest(col.ID, f.ID, domain.HTTPRequest{ID: "r1", Name: "R1"})
+	r1 := mustAddRequest(t, svc, col.ID, f.ID, "R1")
 
 	// フォルダ F を自身へ移動 → 拒否。
 	if err := svc.MoveItem(col.ID, f.ID, col.ID, f.ID, 0); err == nil {
@@ -939,7 +961,7 @@ func TestCollectionService_MoveItem_IntoOwnSubtree_Rejected(t *testing.T) {
 	if _, _, ok := findColItem(t, svc, col.ID, f2.ID); !ok {
 		t.Error("f2 was lost after rejected self-subtree move")
 	}
-	if _, _, ok := findColItem(t, svc, col.ID, "r1"); !ok {
+	if _, _, ok := findColItem(t, svc, col.ID, r1); !ok {
 		t.Error("r1 was lost after rejected self-subtree move")
 	}
 }
@@ -947,16 +969,16 @@ func TestCollectionService_MoveItem_IntoOwnSubtree_Rejected(t *testing.T) {
 func TestCollectionService_MoveItem_SameCollection(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
-	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r2", Name: "R2"})
+	r1 := mustAddRequest(t, svc, col.ID, "", "R1")
+	r2 := mustAddRequest(t, svc, col.ID, "", "R2")
 
 	// r2 (index 1) を position 0 に移動 → [r2, r1]
-	if err := svc.MoveItem(col.ID, "r2", col.ID, "", 0); err != nil {
+	if err := svc.MoveItem(col.ID, r2, col.ID, "", 0); err != nil {
 		t.Fatalf("MoveItem: %v", err)
 	}
 	cols := svc.GetCollections()
 	items := cols[0].Items
-	if len(items) != 2 || items[0].ID != "r2" || items[1].ID != "r1" {
+	if len(items) != 2 || items[0].ID != r2 || items[1].ID != r1 {
 		t.Errorf("unexpected order: %v %v", items[0].ID, items[1].ID)
 	}
 }
@@ -980,14 +1002,15 @@ func TestCollectionService_MoveItem_SameCollection_MovesDown(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := newSvc(t)
 			col := mustCreate(t, svc, "Col")
-			for _, id := range []string{"r1", "r2", "r3"} {
-				svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: id, Name: id})
+			ids := map[string]string{}
+			for _, name := range []string{"r1", "r2", "r3"} {
+				ids[name] = mustAddRequest(t, svc, col.ID, "", name)
 			}
 
-			if err := svc.MoveItem(col.ID, tc.id, col.ID, "", tc.position); err != nil {
+			if err := svc.MoveItem(col.ID, ids[tc.id], col.ID, "", tc.position); err != nil {
 				t.Fatalf("MoveItem: %v", err)
 			}
-			got := itemIDs(svc.GetCollections()[0].Items)
+			got := itemNames(svc.GetCollections()[0].Items)
 			if !slices.Equal(got, tc.want) {
 				t.Errorf("items = %v, want %v", got, tc.want)
 			}
@@ -1004,18 +1027,19 @@ func TestCollectionService_MoveItem_WithinFolder_MovesDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddFolder: %v", err)
 	}
-	for _, id := range []string{"r1", "r2", "r3"} {
-		svc.AddRequest(col.ID, folder.ID, domain.HTTPRequest{ID: id, Name: id})
+	ids := map[string]string{}
+	for _, name := range []string{"r1", "r2", "r3"} {
+		ids[name] = mustAddRequest(t, svc, col.ID, folder.ID, name)
 	}
 
-	if err := svc.MoveItem(col.ID, "r1", col.ID, folder.ID, 2); err != nil {
+	if err := svc.MoveItem(col.ID, ids["r1"], col.ID, folder.ID, 2); err != nil {
 		t.Fatalf("MoveItem: %v", err)
 	}
 	node, _, ok := findColItem(t, svc, col.ID, folder.ID)
 	if !ok {
 		t.Fatal("folder not found")
 	}
-	if got, want := itemIDs(node.Children), []string{"r2", "r1", "r3"}; !slices.Equal(got, want) {
+	if got, want := itemNames(node.Children), []string{"r2", "r1", "r3"}; !slices.Equal(got, want) {
 		t.Errorf("folder children = %v, want %v", got, want)
 	}
 }
@@ -1025,24 +1049,24 @@ func TestCollectionService_MoveItem_WithinFolder_MovesDown(t *testing.T) {
 func TestCollectionService_MoveItem_ToOtherParent_NoAdjustment(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "r1"})
+	r1 := mustAddRequest(t, svc, col.ID, "", "r1")
 	folder, err := svc.AddFolder(col.ID, "", "Folder")
 	if err != nil {
 		t.Fatalf("AddFolder: %v", err)
 	}
-	for _, id := range []string{"f1", "f2"} {
-		svc.AddRequest(col.ID, folder.ID, domain.HTTPRequest{ID: id, Name: id})
+	for _, name := range []string{"f1", "f2"} {
+		mustAddRequest(t, svc, col.ID, folder.ID, name)
 	}
 
 	// r1 はルートの index 0。フォルダの子の position 1 へ入れる → [f1, r1, f2]
-	if err := svc.MoveItem(col.ID, "r1", col.ID, folder.ID, 1); err != nil {
+	if err := svc.MoveItem(col.ID, r1, col.ID, folder.ID, 1); err != nil {
 		t.Fatalf("MoveItem: %v", err)
 	}
 	node, _, ok := findColItem(t, svc, col.ID, folder.ID)
 	if !ok {
 		t.Fatal("folder not found")
 	}
-	if got, want := itemIDs(node.Children), []string{"f1", "r1", "f2"}; !slices.Equal(got, want) {
+	if got, want := itemNames(node.Children), []string{"f1", "r1", "f2"}; !slices.Equal(got, want) {
 		t.Errorf("folder children = %v, want %v", got, want)
 	}
 }
@@ -1051,9 +1075,9 @@ func TestCollectionService_MoveItem_AcrossCollections(t *testing.T) {
 	svc := newSvc(t)
 	col1 := mustCreate(t, svc, "Col1")
 	col2 := mustCreate(t, svc, "Col2")
-	svc.AddRequest(col1.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
+	r1 := mustAddRequest(t, svc, col1.ID, "", "R1")
 
-	if err := svc.MoveItem(col1.ID, "r1", col2.ID, "", 0); err != nil {
+	if err := svc.MoveItem(col1.ID, r1, col2.ID, "", 0); err != nil {
 		t.Fatalf("MoveItem across collections: %v", err)
 	}
 	cols := svc.GetCollections()
@@ -1065,7 +1089,7 @@ func TestCollectionService_MoveItem_AcrossCollections(t *testing.T) {
 	if len(col1State.Items) != 0 {
 		t.Errorf("col1 should be empty, got %d items", len(col1State.Items))
 	}
-	if len(col2State.Items) != 1 || col2State.Items[0].ID != "r1" {
+	if len(col2State.Items) != 1 || col2State.Items[0].ID != r1 {
 		t.Errorf("col2 should have r1, got %v", col2State.Items)
 	}
 }
@@ -1074,14 +1098,14 @@ func TestCollectionService_MoveItem_ToFolder(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
 	folder, _ := svc.AddFolder(col.ID, "", "Folder")
-	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
+	r1 := mustAddRequest(t, svc, col.ID, "", "R1")
 
-	if err := svc.MoveItem(col.ID, "r1", col.ID, folder.ID, 0); err != nil {
+	if err := svc.MoveItem(col.ID, r1, col.ID, folder.ID, 0); err != nil {
 		t.Fatalf("MoveItem to folder: %v", err)
 	}
 	cols := svc.GetCollections()
 	folderNode := cols[0].Items[0]
-	if len(folderNode.Children) != 1 || folderNode.Children[0].ID != "r1" {
+	if len(folderNode.Children) != 1 || folderNode.Children[0].ID != r1 {
 		t.Errorf("expected r1 under folder, got %v", folderNode.Children)
 	}
 }
@@ -1183,9 +1207,9 @@ func TestCollectionService_MoveSidebarEntry_MovesDownUsesPreRemovalIndex(t *test
 func TestCollectionService_MoveItemToSidebar_Success(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
+	r1 := mustAddRequest(t, svc, col.ID, "", "R1")
 
-	if err := svc.MoveItemToSidebar(col.ID, "r1", 0); err != nil {
+	if err := svc.MoveItemToSidebar(col.ID, r1, 0); err != nil {
 		t.Fatalf("MoveItemToSidebar: %v", err)
 	}
 
@@ -1195,7 +1219,7 @@ func TestCollectionService_MoveItemToSidebar_Success(t *testing.T) {
 		t.Errorf("col should be empty after MoveItemToSidebar, got %d", len(cols[0].Items))
 	}
 	rootItems := svc.GetRootItems()
-	if len(rootItems) != 1 || rootItems[0].ID != "r1" {
+	if len(rootItems) != 1 || rootItems[0].ID != r1 {
 		t.Errorf("expected r1 in root, got %v", rootItems)
 	}
 
@@ -1203,7 +1227,7 @@ func TestCollectionService_MoveItemToSidebar_Success(t *testing.T) {
 	layout, _ := svc.GetSidebarLayout()
 	found := false
 	for _, e := range layout {
-		if e.Kind == sidebarKindItem && e.ID == "r1" {
+		if e.Kind == sidebarKindItem && e.ID == r1 {
 			found = true
 			break
 		}
@@ -1236,7 +1260,7 @@ func TestCollectionService_AddFolder_ToRootCollection_UpdatesLayout(t *testing.T
 
 func TestCollectionService_AddRequest_ToRootCollection_UpdatesLayout(t *testing.T) {
 	svc := newSvc(t)
-	item, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
+	item, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{Name: "R1"})
 	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
@@ -1396,7 +1420,7 @@ func TestCollectionService_DeleteCollection_LayoutRepoError_StillSucceeds(t *tes
 func TestCollectionService_DeleteItem_LayoutRepoError_StillSucceeds(t *testing.T) {
 	layoutRepo := &inMemoryLayoutRepo{}
 	svc := newSvcWithRepo(t, newFakeRepo(), layoutRepo)
-	item, addErr := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
+	item, addErr := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{Name: "R1"})
 	if addErr != nil {
 		t.Fatalf("AddRequest: %v", addErr)
 	}
@@ -1417,15 +1441,13 @@ func TestCollectionService_MoveItemToSidebar_LayoutRepoError_StillSucceeds(t *te
 	layoutRepo := &inMemoryLayoutRepo{}
 	svc := newSvcWithRepo(t, newFakeRepo(), layoutRepo)
 	col := mustCreate(t, svc, "Col")
-	if _, err := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
-		t.Fatalf("AddRequest: %v", err)
-	}
+	r1 := mustAddRequest(t, svc, col.ID, "", "R1")
 	layoutRepo.loadErr = errors.New("layout load error")
 
-	if err := svc.MoveItemToSidebar(col.ID, "r1", 0); err != nil {
+	if err := svc.MoveItemToSidebar(col.ID, r1, 0); err != nil {
 		t.Fatalf("MoveItemToSidebar: %v", err)
 	}
-	if items := svc.GetRootItems(); len(items) != 1 || items[0].ID != "r1" {
+	if items := svc.GetRootItems(); len(items) != 1 || items[0].ID != r1 {
 		t.Errorf("root items = %v, want [r1]", items)
 	}
 	// 指定位置には入らないが、突合によりサイドバー末尾に現れる。
@@ -1434,7 +1456,7 @@ func TestCollectionService_MoveItemToSidebar_LayoutRepoError_StillSucceeds(t *te
 	if err != nil {
 		t.Fatalf("GetSidebarLayout: %v", err)
 	}
-	assertLayout(t, layout, "c:"+col.ID, "i:r1")
+	assertLayout(t, layout, "c:"+col.ID, "i:"+r1)
 }
 
 // --- NewCollectionService: layoutRepo エラー ---
@@ -1561,14 +1583,14 @@ func TestCollectionService_MoveItemToSidebar_ItemNotFound(t *testing.T) {
 func TestCollectionService_MoveItemToSidebar_NegativePosition_AppendsToEnd(t *testing.T) {
 	svc := newSvc(t)
 	col := mustCreate(t, svc, "Col")
-	svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"})
+	r1 := mustAddRequest(t, svc, col.ID, "", "R1")
 
-	if err := svc.MoveItemToSidebar(col.ID, "r1", -1); err != nil {
+	if err := svc.MoveItemToSidebar(col.ID, r1, -1); err != nil {
 		t.Fatalf("MoveItemToSidebar: %v", err)
 	}
 	layout, _ := svc.GetSidebarLayout()
 	last := layout[len(layout)-1]
-	if last.Kind != sidebarKindItem || last.ID != "r1" {
+	if last.Kind != sidebarKindItem || last.ID != r1 {
 		t.Errorf("expected r1 at end of layout, got %v", last)
 	}
 }
@@ -1684,16 +1706,18 @@ func TestCollectionService_UpdateRequest_SaveError_LeavesCacheUnchanged(t *testi
 	repo := newFakeRepo()
 	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
 	col := mustCreate(t, svc, "Col")
-	if _, err := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1", URL: "http://old.example.com"}); err != nil {
+	item, err := svc.AddRequest(col.ID, "", domain.HTTPRequest{Name: "R1", URL: "http://old.example.com"})
+	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
+	r1 := item.ID
 	repo.failSaveAlways(col.ID)
 
-	err := svc.UpdateRequest(col.ID, domain.HTTPRequest{ID: "r1", URL: "http://new.example.com"})
+	err = svc.UpdateRequest(col.ID, domain.HTTPRequest{ID: r1, URL: "http://new.example.com"})
 	if err == nil {
 		t.Fatal("expected error from repo.Save, got nil")
 	}
-	node, _, ok := findColItem(t, svc, col.ID, "r1")
+	node, _, ok := findColItem(t, svc, col.ID, r1)
 	if !ok {
 		t.Fatal("r1 not found in cache")
 	}
@@ -1709,15 +1733,13 @@ func TestCollectionService_RenameItem_SaveError_LeavesCacheUnchanged(t *testing.
 	repo := newFakeRepo()
 	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
 	col := mustCreate(t, svc, "Col")
-	if _, err := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "OldReq"}); err != nil {
-		t.Fatalf("AddRequest: %v", err)
-	}
+	r1 := mustAddRequest(t, svc, col.ID, "", "OldReq")
 	repo.failSaveAlways(col.ID)
 
-	if err := svc.RenameItem(col.ID, "r1", "NewReq"); err == nil {
+	if err := svc.RenameItem(col.ID, r1, "NewReq"); err == nil {
 		t.Fatal("expected error from repo.Save, got nil")
 	}
-	node, _, _ := findColItem(t, svc, col.ID, "r1")
+	node, _, _ := findColItem(t, svc, col.ID, r1)
 	if node.Name != "OldReq" {
 		t.Errorf("cached name = %q, want OldReq", node.Name)
 	}
@@ -1730,15 +1752,13 @@ func TestCollectionService_DeleteItem_SaveError_KeepsItem(t *testing.T) {
 	repo := newFakeRepo()
 	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
 	col := mustCreate(t, svc, "Col")
-	if _, err := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
-		t.Fatalf("AddRequest: %v", err)
-	}
+	r1 := mustAddRequest(t, svc, col.ID, "", "R1")
 	repo.failSaveAlways(col.ID)
 
-	if err := svc.DeleteItem(col.ID, "r1"); err == nil {
+	if err := svc.DeleteItem(col.ID, r1); err == nil {
 		t.Fatal("expected error from repo.Save, got nil")
 	}
-	if _, _, ok := findColItem(t, svc, col.ID, "r1"); !ok {
+	if _, _, ok := findColItem(t, svc, col.ID, r1); !ok {
 		t.Error("r1 disappeared from the cache although the save failed")
 	}
 	if len(repo.snapshot(col.ID).Items) != 1 {
@@ -1768,16 +1788,14 @@ func TestCollectionService_MoveItem_SourceSaveError_RollsBackTarget(t *testing.T
 	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
 	src := mustCreate(t, svc, "Src")
 	dst := mustCreate(t, svc, "Dst")
-	if _, err := svc.AddRequest(src.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
-		t.Fatalf("AddRequest: %v", err)
-	}
+	r1 := mustAddRequest(t, svc, src.ID, "", "R1")
 	repo.failSaveAlways(src.ID)
 
-	if err := svc.MoveItem(src.ID, "r1", dst.ID, "", -1); err == nil {
+	if err := svc.MoveItem(src.ID, r1, dst.ID, "", -1); err == nil {
 		t.Fatal("expected error from repo.Save, got nil")
 	}
 	// キャッシュは操作前のまま。
-	if _, _, ok := findColItem(t, svc, src.ID, "r1"); !ok {
+	if _, _, ok := findColItem(t, svc, src.ID, r1); !ok {
 		t.Error("r1 disappeared from the source collection in the cache")
 	}
 	if items := cachedCollection(t, svc, dst.ID).Items; len(items) != 0 {
@@ -1796,15 +1814,13 @@ func TestCollectionService_MoveItemToSidebar_SourceSaveError_RollsBackRoot(t *te
 	repo := newFakeRepo()
 	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
 	col := mustCreate(t, svc, "Col")
-	if _, err := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
-		t.Fatalf("AddRequest: %v", err)
-	}
+	r1 := mustAddRequest(t, svc, col.ID, "", "R1")
 	repo.failSaveAlways(col.ID)
 
-	if err := svc.MoveItemToSidebar(col.ID, "r1", 0); err == nil {
+	if err := svc.MoveItemToSidebar(col.ID, r1, 0); err == nil {
 		t.Fatal("expected error from repo.Save, got nil")
 	}
-	if _, _, ok := findColItem(t, svc, col.ID, "r1"); !ok {
+	if _, _, ok := findColItem(t, svc, col.ID, r1); !ok {
 		t.Error("r1 disappeared from the source collection in the cache")
 	}
 	if items := svc.GetRootItems(); len(items) != 0 {
@@ -1849,11 +1865,9 @@ func TestCollectionService_MoveItem_AcrossCollections_WritesTargetFirst(t *testi
 	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
 	src := mustCreate(t, svc, "Src")
 	dst := mustCreate(t, svc, "Dst")
-	if _, err := svc.AddRequest(src.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
-		t.Fatalf("AddRequest: %v", err)
-	}
+	r1 := mustAddRequest(t, svc, src.ID, "", "R1")
 
-	if err := svc.MoveItem(src.ID, "r1", dst.ID, "", -1); err != nil {
+	if err := svc.MoveItem(src.ID, r1, dst.ID, "", -1); err != nil {
 		t.Fatalf("MoveItem: %v", err)
 	}
 	// クラッシュ時の残骸が喪失ではなく重複になることの根拠なので順序を直接固定する。
@@ -1867,11 +1881,9 @@ func TestCollectionService_MoveItemToSidebar_WritesRootFirst(t *testing.T) {
 	repo := newFakeRepo()
 	svc := newSvcWithRepo(t, repo, &inMemoryLayoutRepo{})
 	col := mustCreate(t, svc, "Col")
-	if _, err := svc.AddRequest(col.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
-		t.Fatalf("AddRequest: %v", err)
-	}
+	r1 := mustAddRequest(t, svc, col.ID, "", "R1")
 
-	if err := svc.MoveItemToSidebar(col.ID, "r1", 0); err != nil {
+	if err := svc.MoveItemToSidebar(col.ID, r1, 0); err != nil {
 		t.Fatalf("MoveItemToSidebar: %v", err)
 	}
 	got := lastSaves(repo, 2)
@@ -1886,9 +1898,7 @@ func TestCollectionService_MoveItem_RollbackFailure_ReturnsOriginalErrorAndLogs(
 	svc := newSvcWithLogger(t, repo, logger)
 	src := mustCreate(t, svc, "Src")
 	dst := mustCreate(t, svc, "Dst")
-	if _, err := svc.AddRequest(src.ID, "", domain.HTTPRequest{ID: "r1", Name: "R1"}); err != nil {
-		t.Fatalf("AddRequest: %v", err)
-	}
+	r1 := mustAddRequest(t, svc, src.ID, "", "R1")
 
 	// 移動先の書き込みは通り、移動元の書き込みと移動先の巻き戻しが失敗する状況を作る。
 	// 移動先は作成時とこの移動で2回書かれるので、3回目 (巻き戻し) から失敗させる。
@@ -1896,7 +1906,7 @@ func TestCollectionService_MoveItem_RollbackFailure_ReturnsOriginalErrorAndLogs(
 	repo.failSaveAlways(src.ID)
 	logger.errors = 0
 
-	err := svc.MoveItem(src.ID, "r1", dst.ID, "", -1)
+	err := svc.MoveItem(src.ID, r1, dst.ID, "", -1)
 	if !errors.Is(err, errFakeSave) {
 		t.Fatalf("MoveItem error = %v, want the original save error", err)
 	}
@@ -1904,7 +1914,7 @@ func TestCollectionService_MoveItem_RollbackFailure_ReturnsOriginalErrorAndLogs(
 		t.Error("rollback failure was not logged")
 	}
 	// 巻き戻しに失敗してもキャッシュは操作前のまま (差し替えは永続化成功後のみ)。
-	if _, _, ok := findColItem(t, svc, src.ID, "r1"); !ok {
+	if _, _, ok := findColItem(t, svc, src.ID, r1); !ok {
 		t.Error("r1 disappeared from the source collection in the cache")
 	}
 }
@@ -1984,11 +1994,12 @@ func assertCacheEqual(t *testing.T, svc *CollectionService, want *domain.Collect
 	}
 }
 
-// newSvcWithNestedRequest はフォルダ F の下に richRequest("r1") を置いた
-// コレクションを collectionID に用意する。collectionID が空なら新規コレクションを作る。
-func newSvcWithNestedRequest(t *testing.T, collectionID string) (*CollectionService, string) {
+// newSvcWithNestedRequest はフォルダ F の下に richRequest を置いたコレクションを
+// collectionID に用意し、コレクション ID と採番されたリクエストの ID を返す。
+// collectionID が空なら新規コレクションを作る。
+func newSvcWithNestedRequest(t *testing.T, collectionID string) (svc *CollectionService, colID, reqID string) {
 	t.Helper()
-	svc := newSvc(t)
+	svc = newSvc(t)
 	if collectionID == "" {
 		collectionID = mustCreate(t, svc, "Col").ID
 	}
@@ -1996,14 +2007,15 @@ func newSvcWithNestedRequest(t *testing.T, collectionID string) (*CollectionServ
 	if err != nil {
 		t.Fatalf("AddFolder: %v", err)
 	}
-	if _, err := svc.AddRequest(collectionID, folder.ID, richRequest("r1")); err != nil {
+	item, err := svc.AddRequest(collectionID, folder.ID, richRequest(""))
+	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
-	return svc, collectionID
+	return svc, collectionID, item.ID
 }
 
 func TestCollectionService_GetCollections_ReturnsDeepCopy(t *testing.T) {
-	svc, colID := newSvcWithNestedRequest(t, "")
+	svc, colID, _ := newSvcWithNestedRequest(t, "")
 	want := cachedCollection(t, svc, colID).Clone()
 
 	got := svc.GetCollections()
@@ -2021,7 +2033,7 @@ func TestCollectionService_GetCollections_ReturnsDeepCopy(t *testing.T) {
 }
 
 func TestCollectionService_GetRootItems_ReturnsDeepCopy(t *testing.T) {
-	svc, _ := newSvcWithNestedRequest(t, domain.RootCollectionID)
+	svc, _, _ := newSvcWithNestedRequest(t, domain.RootCollectionID)
 	want := cachedCollection(t, svc, domain.RootCollectionID).Clone()
 
 	scribbleItems(svc.GetRootItems())
@@ -2081,10 +2093,11 @@ func TestCollectionService_AddRequest_DoesNotRetainArgument(t *testing.T) {
 
 func TestCollectionService_UpdateRequest_DoesNotRetainArgument(t *testing.T) {
 	svc := newSvc(t)
-	if _, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{ID: "r1"}); err != nil {
+	item, err := svc.AddRequest(domain.RootCollectionID, "", domain.HTTPRequest{})
+	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
-	req := richRequest("r1")
+	req := richRequest(item.ID)
 	if err := svc.UpdateRequest(domain.RootCollectionID, req); err != nil {
 		t.Fatalf("UpdateRequest: %v", err)
 	}
@@ -2098,15 +2111,16 @@ func TestCollectionService_UpdateRequest_DoesNotRetainArgument(t *testing.T) {
 // file キーの削除はキャッシュへ取り込むコピーにだけ行い、呼び出し側の map は書き換えない。
 func TestCollectionService_AddRequest_DoesNotMutateArgument(t *testing.T) {
 	svc := newSvc(t)
-	req := domain.HTTPRequest{ID: "r1", Method: http.MethodPost, Body: fileBody()}
-	if _, err := svc.AddRequest(domain.RootCollectionID, "", req); err != nil {
+	req := domain.HTTPRequest{Method: http.MethodPost, Body: fileBody()}
+	item, err := svc.AddRequest(domain.RootCollectionID, "", req)
+	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
 	if _, ok := req.Body.Contents[domain.BodyTypeFile]; !ok {
 		t.Errorf("AddRequest removed the file key from the caller's contents: %v", req.Body.Contents)
 	}
 
-	req = domain.HTTPRequest{ID: "r1", Method: http.MethodPost, Body: fileBody()}
+	req = domain.HTTPRequest{ID: item.ID, Method: http.MethodPost, Body: fileBody()}
 	if err := svc.UpdateRequest(domain.RootCollectionID, req); err != nil {
 		t.Fatalf("UpdateRequest: %v", err)
 	}
@@ -2121,10 +2135,12 @@ func TestCollectionService_AddRequest_DoesNotMutateArgument(t *testing.T) {
 // 触れて検出される。copy-on-write が崩れてキャッシュを直接書き換えた場合も、
 // 書き手と JSON 化の組み合わせで検出される。
 func TestCollectionService_ConcurrentMarshalAndUpdate(t *testing.T) {
-	svc, colID := newSvcWithNestedRequest(t, "")
-	if _, err := svc.AddRequest(domain.RootCollectionID, "", richRequest("r2")); err != nil {
+	svc, colID, r1 := newSvcWithNestedRequest(t, "")
+	r2Item, err := svc.AddRequest(domain.RootCollectionID, "", richRequest(""))
+	if err != nil {
 		t.Fatalf("AddRequest: %v", err)
 	}
+	r2 := r2Item.ID
 	rootFolder, err := svc.AddFolder(domain.RootCollectionID, "", "RF")
 	if err != nil {
 		t.Fatalf("AddFolder: %v", err)
@@ -2150,10 +2166,10 @@ func TestCollectionService_ConcurrentMarshalAndUpdate(t *testing.T) {
 	// 書き手: 各種の変更系メソッドを呼ぶ。
 	wg.Go(func() {
 		for i := range iterations {
-			if err := svc.UpdateRequest(colID, richRequest("r1")); err != nil {
+			if err := svc.UpdateRequest(colID, richRequest(r1)); err != nil {
 				t.Errorf("UpdateRequest: %v", err)
 			}
-			if err := svc.RenameItem(colID, "r1", fmt.Sprintf("r1-%d", i)); err != nil {
+			if err := svc.RenameItem(colID, r1, fmt.Sprintf("r1-%d", i)); err != nil {
 				t.Errorf("RenameItem: %v", err)
 			}
 		}
@@ -2168,7 +2184,7 @@ func TestCollectionService_ConcurrentMarshalAndUpdate(t *testing.T) {
 			if i%2 == 0 {
 				parentID = rootFolder.ID
 			}
-			if err := svc.MoveItem(domain.RootCollectionID, "r2", domain.RootCollectionID, parentID, -1); err != nil {
+			if err := svc.MoveItem(domain.RootCollectionID, r2, domain.RootCollectionID, parentID, -1); err != nil {
 				t.Errorf("MoveItem: %v", err)
 			}
 		}

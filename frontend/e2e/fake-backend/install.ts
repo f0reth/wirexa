@@ -331,7 +331,8 @@ const HttpHandler = {
   AddRequest: mutates(
     "AddRequest",
     (collectionId: string, parentId: string, req: HttpRequest) => {
-      const request: HttpRequest = { ...req, id: req.id || newId("req") };
+      // Go 側と同じく、呼び出し側の id は使わず常に採番する。
+      const request: HttpRequest = { ...req, id: newId("req") };
       const item: TreeItem = {
         type: "request",
         id: request.id,

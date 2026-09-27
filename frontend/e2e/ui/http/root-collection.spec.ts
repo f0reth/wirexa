@@ -34,12 +34,12 @@ test("fake backend rejects deleting and renaming the root collection", async ({
   fake,
 }) => {
   const added = await callHandler(page, "AddRequest", ROOT_COLLECTION_ID, "", {
-    id: "root-req",
+    id: "",
     name: "RootReq",
   });
   expect(added).toBeNull();
   const before = await fake.snapshot();
-  expect(before.rootItems.map((i) => i.id)).toEqual(["root-req"]);
+  expect(before.rootItems.map((i) => i.name)).toEqual(["RootReq"]);
 
   expect(
     await callHandler(page, "DeleteCollection", ROOT_COLLECTION_ID),
