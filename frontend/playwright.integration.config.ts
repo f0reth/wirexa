@@ -3,6 +3,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
 import { appDataDir } from "./e2e/fixtures/app-data-dir";
+import {
+  mqttBrokerControlPort,
+  mqttBrokerControlUrl,
+  mqttBrokerPort,
+} from "./e2e/fixtures/mqtt-broker";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -85,6 +90,16 @@ export default defineConfig({
       command: `wails dev -s -noreload -nogorebuild -frontenddevserverurl ${previewUrl}`,
       url: wailsDevUrl,
       env: { APPDATA: appDataDir },
+      // Go のコンパイルを含むため長めのタイムアウトを設定
+      timeout: 120 * 1000,
+      reuseExistingServer,
+    },
+    {
+      // MQTT の spec が接続するブローカー (e2e/fixtures/mqtt-broker.ts)。実行ごとに起動し直すので
+      // retained メッセージが次の実行に残らない。
+      cwd: repoRoot,
+      command: `go run ./tools/e2e-broker -mqtt 127.0.0.1:${mqttBrokerPort} -http 127.0.0.1:${mqttBrokerControlPort}`,
+      url: `${mqttBrokerControlUrl}/healthz`,
       // Go のコンパイルを含むため長めのタイムアウトを設定
       timeout: 120 * 1000,
       reuseExistingServer,

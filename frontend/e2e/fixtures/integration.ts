@@ -13,7 +13,8 @@ export { App } from "./app";
  * 保存先は playwright.integration.config.ts が APPDATA を一時ディレクトリへ向けて隔離するので、
  * 前回実行の残骸を UI 越しに消して回る afterEach は不要。
  * ただし Go 側のメモリにだけある状態 (UDP リスナーなど) はページを読み直しても消えず、次のテストの
- * 読み込み時に復元される。これは spec の afterEach で下の掃除ヘルパーを呼んで止める。
+ * 読み込み時に復元される。これは spec の afterEach で下の掃除ヘルパーを呼んで止める
+ * (UDP リスナーは stopUdpListeners、MQTT 接続は disconnectMqttConnections)。
  */
 export const test = base.extend<{ app: App }>({
   page: async ({ page }, use) => {
@@ -124,4 +125,23 @@ export async function stopUdpListeners(page: Page): Promise<void> {
     const sessions = await udp.GetListeners();
     await Promise.all(sessions.map((s) => udp.StopListen(s.id)));
   });
+}
+
+/**
+ * Go 側に残っている MQTT 接続をすべて切る。接続と購読はページを読み直しても残り、次のテストの
+ * 読み込み時にオンラインのタブとして復元されるので、UI の Disconnect に頼らずに切る。
+ */
+export async function disconnectMqttConnections(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const mqtt = (window as unknown as { go: WailsGo }).go.adapters.MQTTHandler;
+    const conns = await mqtt.GetConnections();
+    await Promise.all(conns.map((c) => mqtt.Disconnect(c.id)));
+  });
+}
+
+/** Go 側の MQTT 接続の状態 (GetConnections) を返す。 */
+export async function mqttConnections(page: Page) {
+  return page.evaluate(() =>
+    (window as unknown as { go: WailsGo }).go.adapters.MQTTHandler.GetConnections(),
+  );
 }
