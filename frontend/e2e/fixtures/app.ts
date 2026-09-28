@@ -201,6 +201,30 @@ export class App {
     await expect(this.page.getByText(name, { exact: true }).first()).toBeVisible();
   }
 
+  // ── OpenAPI ─────────────────────────────────────────────────────────────────
+
+  /** OpenAPI エディタ (CodeMirror) の編集領域。CodeMirror の内部クラスへの依存をここに閉じ込める。 */
+  get openApiEditor(): Locator {
+    return this.page.locator(".cm-content");
+  }
+
+  /** OpenAPI エディタの内容を text で置き換える。 */
+  async fillOpenApiEditor(text: string): Promise<void> {
+    await this.page.locator(".cm-editor").click();
+    await this.page.evaluate((t) => {
+      const el = document.querySelector(".cm-content") as HTMLElement | null;
+      if (!el) return;
+      el.focus();
+      document.execCommand("selectAll");
+      document.execCommand("insertText", false, t);
+    }, text);
+  }
+
+  /** サイドバーの New で無題文書を作る (未保存の文書があれば確認ダイアログが出る)。 */
+  async newOpenApiDocument(): Promise<void> {
+    await this.page.getByRole("button", { name: "New (paste a spec)" }).click();
+  }
+
   // ── MQTT ────────────────────────────────────────────────────────────────────
 
   async createBrokerProfile(name: string): Promise<void> {

@@ -1,4 +1,3 @@
-import type { Page } from "@playwright/test";
 import { expect, test } from "../../fixtures/ui";
 
 const VALID_YAML = [
@@ -9,17 +8,6 @@ const VALID_YAML = [
   "paths: {}",
 ].join("\n");
 
-async function fillEditor(page: Page, content: string) {
-  await page.locator(".cm-editor").click();
-  await page.evaluate((text) => {
-    const el = document.querySelector(".cm-content") as HTMLElement | null;
-    if (!el) return;
-    el.focus();
-    document.execCommand("selectAll");
-    document.execCommand("insertText", false, text);
-  }, content);
-}
-
 test.beforeEach(async ({ page }) => {
   await page.getByRole("button", { name: "OpenAPI", exact: true }).click();
   await expect(page.locator(".cm-editor")).toBeVisible();
@@ -29,12 +17,13 @@ test.beforeEach(async ({ page }) => {
 
 test("editing openapi yaml in editor updates the preview panel", async ({
   page,
+  app,
 }) => {
   // 初期状態: 空のエディタ → プレビューに "No valid OpenAPI spec" が表示
   await expect(page.getByText("No valid OpenAPI spec")).toBeVisible();
 
   // 有効な YAML を入力
-  await fillEditor(page, VALID_YAML);
+  await app.fillOpenApiEditor(VALID_YAML);
 
   // デバウンス後にパースが完了し、プレビューが更新される
   await expect(page.getByText("No valid OpenAPI spec")).not.toBeVisible();
@@ -43,9 +32,10 @@ test("editing openapi yaml in editor updates the preview panel", async ({
 
 test("clearing editor content shows no valid spec message in preview", async ({
   page,
+  app,
 }) => {
   // 有効な YAML を入力してプレビューを表示
-  await fillEditor(page, VALID_YAML);
+  await app.fillOpenApiEditor(VALID_YAML);
   await expect(page.getByText("No valid OpenAPI spec")).not.toBeVisible();
 
   // エディタをクリア → プレビューが "No valid OpenAPI spec" に戻る
@@ -58,9 +48,9 @@ test("clearing editor content shows no valid spec message in preview", async ({
 
 // ── 観点K-3: 無効なYAML/JSONを入力したときのエラー表示 ──────────────────────────
 
-test("invalid yaml in editor shows parse error", async ({ page }) => {
+test("invalid yaml in editor shows parse error", async ({ page, app }) => {
   // 不正な YAML（閉じられていないブラケット）を入力
-  await fillEditor(page, "key: [unclosed bracket");
+  await app.fillOpenApiEditor("key: [unclosed bracket");
 
   // パースエラーのためプレビューに "No valid OpenAPI spec" が表示される
   await expect(page.getByText("No valid OpenAPI spec")).toBeVisible();
