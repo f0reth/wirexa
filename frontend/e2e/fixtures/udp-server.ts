@@ -26,6 +26,25 @@ export async function startUdpServer(): Promise<UdpServer> {
   };
 }
 
+export interface OccupiedUdpPort {
+  port: number;
+  close(): Promise<void>;
+}
+
+/**
+ * アプリが bind できないように UDP ポートを塞ぐ。Go のリスナー (net_socket.go) は全インターフェース
+ * (":port") へ bind するので、同じく全インターフェースへ bind して確実に衝突させる。
+ */
+export async function occupyUdpPort(): Promise<OccupiedUdpPort> {
+  const socket = dgram.createSocket("udp4");
+  await new Promise<void>((resolve) => socket.bind(0, "0.0.0.0", resolve));
+
+  return {
+    port: (socket.address() as AddressInfo).port,
+    close: () => new Promise<void>((resolve) => socket.close(() => resolve())),
+  };
+}
+
 /**
  * アプリ側が bind するためのポート番号を確保する。
  * 一度 bind して番号を読み、閉じてから返す。閉じてからアプリが bind するまでの隙間は
