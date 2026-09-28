@@ -37,12 +37,8 @@ test("editing openapi yaml in editor updates the preview panel", async ({
   await fillEditor(page, VALID_YAML);
 
   // デバウンス後にパースが完了し、プレビューが更新される
-  await expect(page.getByText("No valid OpenAPI spec")).not.toBeVisible({
-    timeout: 3000,
-  });
-  await expect(page.getByTestId("openapi-preview")).toBeAttached({
-    timeout: 3000,
-  });
+  await expect(page.getByText("No valid OpenAPI spec")).not.toBeVisible();
+  await expect(page.getByTestId("openapi-preview")).toBeAttached();
 });
 
 test("clearing editor content shows no valid spec message in preview", async ({
@@ -50,18 +46,14 @@ test("clearing editor content shows no valid spec message in preview", async ({
 }) => {
   // 有効な YAML を入力してプレビューを表示
   await fillEditor(page, VALID_YAML);
-  await expect(page.getByText("No valid OpenAPI spec")).not.toBeVisible({
-    timeout: 3000,
-  });
+  await expect(page.getByText("No valid OpenAPI spec")).not.toBeVisible();
 
   // エディタをクリア → プレビューが "No valid OpenAPI spec" に戻る
   await page.locator(".cm-content").click();
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.press("Backspace");
 
-  await expect(page.getByText("No valid OpenAPI spec")).toBeVisible({
-    timeout: 3000,
-  });
+  await expect(page.getByText("No valid OpenAPI spec")).toBeVisible();
 });
 
 // ── 観点K-3: 無効なYAML/JSONを入力したときのエラー表示 ──────────────────────────
@@ -71,14 +63,10 @@ test("invalid yaml in editor shows parse error", async ({ page }) => {
   await fillEditor(page, "key: [unclosed bracket");
 
   // パースエラーのためプレビューに "No valid OpenAPI spec" が表示される
-  await expect(page.getByText("No valid OpenAPI spec")).toBeVisible({
-    timeout: 3000,
-  });
+  await expect(page.getByText("No valid OpenAPI spec")).toBeVisible();
 
   // CodeMirror linter がエラー位置をマークする（点エラーまたは範囲エラー）
   await expect(
     page.locator(".cm-lintPoint-error, .cm-lintRange-error"),
-  ).toBeAttached({
-    timeout: 3000,
-  });
+  ).toBeAttached();
 });
