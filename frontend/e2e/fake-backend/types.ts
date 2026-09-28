@@ -42,6 +42,8 @@ export interface FakeSeed {
   httpResponseDelayMs?: number;
   /** SendRequest を必ず失敗させる (接続エラーの検証に使う)。 */
   httpError?: string;
+  /** UpdateRequest を必ず失敗させる (自動保存の失敗バナーの検証に使う)。 */
+  updateRequestError?: string;
   /** SaveResponseBody を必ず失敗させる (回収済み一時ファイルの検証に使う)。 */
   saveResponseError?: string;
   /** StartListen を検証のあとで必ず失敗させる (使用中ポートなど、ソケットを開けない場合を模す)。 */

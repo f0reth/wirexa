@@ -362,6 +362,8 @@ const HttpHandler = {
   UpdateRequest: mutates(
     "UpdateRequest",
     (collectionId: string, req: HttpRequest) => {
+      // seed.updateRequestError で書き込みの失敗 (ディスクの I/O エラーなど) を模す。
+      if (seed.updateRequestError) throw new Error(seed.updateRequestError);
       const node = findNode(collection(collectionId), req.id);
       if (!node) return;
       // Go 側と同じく、名前はツリー側が正 (リネームは RenameItem 経由)。

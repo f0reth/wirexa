@@ -275,6 +275,25 @@ export class App {
     await panel.getByPlaceholder("Value").last().fill(value);
   }
 
+  // ── HTTP: レスポンス表示エリア ──────────────────────────────────────────────
+
+  /** レスポンス表示エリア。見出し "Response" → 見出し行 → パネル、と上がる。 */
+  get responseViewer(): Locator {
+    return this.page
+      .getByText("Response", { exact: true })
+      .locator("xpath=../..");
+  }
+
+  /**
+   * レスポンス表示エリアのタブ (Body / Headers / Timing) を開き、その内容の領域を返す。
+   * "Body" / "Headers" はリクエスト編集エリアにもあるので、レスポンス表示エリアでスコープする。
+   */
+  async openResponseTab(name: "Body" | "Headers" | "Timing"): Promise<Locator> {
+    const viewer = this.responseViewer;
+    await viewer.getByRole("tab", { name, exact: true }).click();
+    return viewer.getByTestId("response-body");
+  }
+
   // ── ブローカー・ターゲットの一覧 (profile-list.tsx) ─────────────────────────
 
   /**
