@@ -1,9 +1,12 @@
 import { test as base, expect } from "@playwright/test";
+import { WailsEvents } from "../../src/shared/wails-events";
 import type { FakeBackend, FakeSeed } from "../fake-backend/types";
 import { App } from "./app";
 
-export { expect };
+export { expect, WailsEvents };
 export { App } from "./app";
+
+type WailsEventName = (typeof WailsEvents)[keyof typeof WailsEvents];
 
 interface Fixtures {
   /** test.use({ seed: {...} }) で仕込む初期状態。ページ読み込み前に注入される。 */
@@ -42,6 +45,21 @@ export class FakeControl {
     await expect
       .poll(() => this.calls(name), { message: `${name} calls >= ${atLeast}` })
       .toBeGreaterThanOrEqual(atLeast);
+  }
+
+  /**
+   * バックエンドがイベントを発火したことにする。name には WailsEvents の定数を使う。
+   * 購読者の呼び出しは evaluate の中で同期的に終わるので、戻ったあとは UI の反映を待てばよい。
+   */
+  async emit(name: WailsEventName, ...data: unknown[]): Promise<void> {
+    await this.app.page.evaluate(
+      ([n, d]) =>
+        (window as unknown as { __wirexaFake: FakeBackend }).__wirexaFake.emit(
+          n,
+          ...d,
+        ),
+      [name, data] as const,
+    );
   }
 
   /** 偽バックエンドが持っている状態のスナップショット。 */

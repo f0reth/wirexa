@@ -628,6 +628,44 @@ const LogHandler = { Log: counted("Log", async () => {}) };
 
 const App = { ConfirmQuit: counted("ConfirmQuit", async () => {}) };
 
+// ── イベント ──────────────────────────────────────────────────────────────────
+
+// Wails ランタイム (runtime/desktop/js の events.js) と同じ意味論で購読を持つ。
+// maxCallbacks が -1 なら無制限、正の数ならその回数だけ呼んだら外れる。
+// テストは window.__wirexaFake.emit で、バックエンドが発火したイベントを模す。
+interface EventListener {
+  callback: (...data: unknown[]) => void;
+  remaining: number;
+}
+
+const eventListeners = new Map<string, EventListener[]>();
+
+function eventsOnMultiple(
+  name: string,
+  callback: (...data: unknown[]) => void,
+  maxCallbacks: number,
+): () => void {
+  const listener: EventListener = { callback, remaining: maxCallbacks };
+  eventListeners.set(name, [...(eventListeners.get(name) ?? []), listener]);
+  return () => {
+    const rest = (eventListeners.get(name) ?? []).filter((l) => l !== listener);
+    if (rest.length > 0) eventListeners.set(name, rest);
+    else eventListeners.delete(name);
+  };
+}
+
+function emitEvent(name: string, ...data: unknown[]): void {
+  const listeners = eventListeners.get(name);
+  if (!listeners) return;
+  // 呼び出し中の購読・解除の影響を受けないよう、先に残る購読を確定させてから呼ぶ。
+  const rest = listeners.filter(
+    (l) => l.remaining === -1 || --l.remaining > 0,
+  );
+  if (rest.length > 0) eventListeners.set(name, rest);
+  else eventListeners.delete(name);
+  for (const l of listeners) l.callback(...clone(data));
+}
+
 // ── window への設置 ───────────────────────────────────────────────────────────
 
 const noop = () => {};
@@ -636,11 +674,15 @@ const noop = () => {};
 const w = window as any;
 
 w.runtime = {
-  EventsOnMultiple: () => noop,
-  EventsOn: () => noop,
-  EventsOff: noop,
-  EventsOffAll: noop,
-  EventsEmit: noop,
+  EventsOnMultiple: eventsOnMultiple,
+  EventsOn: (name: string, callback: (...data: unknown[]) => void) =>
+    eventsOnMultiple(name, callback, -1),
+  EventsOff: (...names: string[]) => {
+    for (const name of names) eventListeners.delete(name);
+  },
+  EventsOffAll: () => eventListeners.clear(),
+  // 実際の Wails もフロントエンドからの発火を同じウィンドウの購読者に届ける。
+  EventsEmit: emitEvent,
   LogPrint: noop,
   LogTrace: noop,
   LogDebug: noop,
@@ -667,6 +709,7 @@ w.go = {
 window.__wirexaFake = {
   calls,
   args,
+  emit: emitEvent,
   snapshot: () => ({
     collections: clone(
       db.collections.filter((c) => c.id !== ROOT_COLLECTION_ID),

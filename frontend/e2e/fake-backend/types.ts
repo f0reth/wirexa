@@ -50,6 +50,8 @@ export interface FakeBackend {
   calls: Record<string, number>;
   /** バインディング名 → 呼び出しごとの引数。RPC 境界に何が渡ったかを検証する。 */
   args: Record<string, unknown[][]>;
+  /** バックエンドからのイベント発火を模し、EventsOn の購読者に data を渡す。 */
+  emit(name: string, ...data: unknown[]): void;
   /** 現在の状態のスナップショット (構造化クローン可能な形)。 */
   snapshot(): {
     collections: Collection[];
