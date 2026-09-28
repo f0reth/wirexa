@@ -56,6 +56,7 @@ export function RequestEditor() {
         tabs={TABS}
         activeTab={requestTab()}
         onTabChange={setRequestTab}
+        idPrefix="request"
         class={styles.editorTabBar}
       />
 
@@ -63,6 +64,7 @@ export function RequestEditor() {
         <TabPanel
           value="params"
           active={requestTab()}
+          idPrefix="request"
           class={styles.scrollTabPanel}
         >
           <KeyValueEditor
@@ -76,6 +78,7 @@ export function RequestEditor() {
         <TabPanel
           value="headers"
           active={requestTab()}
+          idPrefix="request"
           class={styles.scrollTabPanel}
         >
           <KeyValueEditor
@@ -89,6 +92,7 @@ export function RequestEditor() {
         <TabPanel
           value="body"
           active={requestTab()}
+          idPrefix="request"
           class={styles.bodyTabPanel}
         >
           <div class={styles.bodySection}>
@@ -152,6 +156,7 @@ export function RequestEditor() {
         <TabPanel
           value="auth"
           active={requestTab()}
+          idPrefix="request"
           class={styles.scrollTabPanel}
         >
           <div class={styles.authSection}>
@@ -210,12 +215,18 @@ export function RequestEditor() {
         <TabPanel
           value="settings"
           active={requestTab()}
+          idPrefix="request"
           class={styles.scrollTabPanel}
         >
           <RequestSettingsPanel />
         </TabPanel>
 
-        <TabPanel value="doc" active={requestTab()} class={styles.bodyTabPanel}>
+        <TabPanel
+          value="doc"
+          active={requestTab()}
+          idPrefix="request"
+          class={styles.bodyTabPanel}
+        >
           <DocEditor value={doc()} onChange={(v) => setDoc(v)} />
         </TabPanel>
       </div>

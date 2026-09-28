@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
-import { createSignal, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
+import { tabId, tabPanelId } from "../../../components/ui/tabs";
 import { useUdpSend } from "../../providers/udp-provider";
 import { ListenForm } from "./listen-form";
 import { MessageLog } from "./message-log";
@@ -7,6 +8,11 @@ import { SendForm } from "./send-form";
 import styles from "./udp.module.css";
 
 type Tab = "send" | "listen";
+
+const TABS: { value: Tab; label: string }[] = [
+  { value: "send", label: "Send" },
+  { value: "listen", label: "Listen" },
+];
 
 export function UdpClient() {
   const [tab, setTab] = createSignal<Tab>("send");
@@ -24,36 +30,41 @@ export function UdpClient() {
           </div>
         }
       >
-        <div class={styles.tabBar}>
-          <button
-            type="button"
-            class={clsx(
-              styles.tabButton,
-              tab() === "send" && styles.tabButtonActive,
+        <div role="tablist" class={styles.tabBar}>
+          <For each={TABS}>
+            {(t) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab() === t.value}
+                aria-controls={tabPanelId("udp", t.value)}
+                id={tabId("udp", t.value)}
+                class={clsx(
+                  styles.tabButton,
+                  tab() === t.value && styles.tabButtonActive,
+                )}
+                onClick={() => setTab(t.value)}
+              >
+                {t.label}
+              </button>
             )}
-            onClick={() => setTab("send")}
-          >
-            Send
-          </button>
-          <button
-            type="button"
-            class={clsx(
-              styles.tabButton,
-              tab() === "listen" && styles.tabButtonActive,
-            )}
-            onClick={() => setTab("listen")}
-          >
-            Listen
-          </button>
+          </For>
         </div>
-        {tab() === "send" ? (
-          <SendForm />
-        ) : (
-          <>
-            <ListenForm />
-            <MessageLog />
-          </>
-        )}
+        <div
+          role="tabpanel"
+          id={tabPanelId("udp", tab())}
+          aria-labelledby={tabId("udp", tab())}
+          class={styles.tabPanel}
+        >
+          {tab() === "send" ? (
+            <SendForm />
+          ) : (
+            <>
+              <ListenForm />
+              <MessageLog />
+            </>
+          )}
+        </div>
       </Show>
     </div>
   );

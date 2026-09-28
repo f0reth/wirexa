@@ -3,7 +3,7 @@ import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import { createCopyButton } from "../../../components/ui/copy-button";
 import { ScrollArea } from "../../../components/ui/scroll-area";
-import { TabList } from "../../../components/ui/tabs";
+import { TabList, tabId, tabPanelId } from "../../../components/ui/tabs";
 import { useHttpRequest } from "../../providers/http-provider";
 import { formatJson } from "../../utils/format";
 import { highlightJson } from "../../utils/json-highlight";
@@ -157,10 +157,17 @@ export function ResponseViewer() {
                   tabs={TABS}
                   activeTab={responseTab()}
                   onTabChange={setResponseTab}
+                  idPrefix="response"
                   class={styles.editorTabBar}
                 />
 
-                <div class={styles.responseContent} data-testid="response-body">
+                <div
+                  role="tabpanel"
+                  id={tabPanelId("response", responseTab())}
+                  aria-labelledby={tabId("response", responseTab())}
+                  class={styles.responseContent}
+                  data-testid="response-body"
+                >
                   <Show when={responseTab() === "body"}>
                     <ScrollArea class={styles.responseScrollArea}>
                       <Show

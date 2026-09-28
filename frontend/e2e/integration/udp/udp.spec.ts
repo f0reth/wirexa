@@ -27,14 +27,14 @@ async function selectTarget(page: Page, name: string) {
   await expect(row).toBeVisible();
   await row.focus();
   await page.keyboard.press("Enter");
-  // Listen ボタンが表示されれば選択完了（UdpClient がタブバーを表示している）
+  // Listen タブが表示されれば選択完了（UdpClient がタブバーを表示している）
   await expect(
-    page.getByRole("button", { name: "Listen", exact: true }),
+    page.getByRole("tab", { name: "Listen", exact: true }),
   ).toBeVisible();
 }
 
 async function startListen(page: Page, listenPort: number) {
-  await page.getByRole("button", { name: "Listen", exact: true }).click();
+  await page.getByRole("tab", { name: "Listen", exact: true }).click();
   await page.getByPlaceholder("12345").fill(String(listenPort));
   await page.getByRole("button", { name: "Start", exact: true }).click();
   await expect(page.getByText(`Listening :${listenPort} (text)`)).toBeVisible();
@@ -190,7 +190,7 @@ test("listening on a port already in use shows an error", async ({
   try {
     await app.createUdpTarget(name, "127.0.0.1", occupied.port);
     await selectTarget(page, name);
-    await page.getByRole("button", { name: "Listen", exact: true }).click();
+    await page.getByRole("tab", { name: "Listen", exact: true }).click();
     await page.getByPlaceholder("12345").fill(String(occupied.port));
     const start = page.getByRole("button", { name: "Start", exact: true });
     await start.click();

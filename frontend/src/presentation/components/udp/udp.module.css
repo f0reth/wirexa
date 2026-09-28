@@ -328,6 +328,14 @@
   border-bottom-color: var(--color-primary);
 }
 
+/* Send / Listen の中身。タブを挟む前と同じく、残りの高さを縦に埋める。 */
+.tabPanel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 /* ── Listen form ───────────────────────────────────────── */
 .listenForm {
   display: flex;

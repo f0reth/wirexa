@@ -327,24 +327,21 @@ export class App {
     await row.focus();
     await row.press("Enter");
     await expect(
-      this.page.getByRole("button", { name: "Listen", exact: true }),
+      this.page.getByRole("tab", { name: "Listen", exact: true }),
     ).toBeVisible();
   }
 
-  /**
-   * Send / Listen タブを開く。タブは role="tab" ではない素のボタンで、Send タブは送信ボタンと
-   * 同名になる。タブバーは送信フォームより前にあるので先頭を取る。
-   */
+  /** Send / Listen タブを開く。 */
   async openUdpTab(name: "Send" | "Listen"): Promise<void> {
-    await this.page.getByRole("button", { name, exact: true }).first().click();
+    await this.page.getByRole("tab", { name, exact: true }).click();
   }
 
   /**
-   * 送信フォームの送信ボタン。Send タブと同名なので末尾を取る。送信中は "Sending..." に
-   * 変わるので、このロケーターでは取れない。
+   * 送信フォームの送信ボタン。Send タブは role="tab" なので同名でも当たらない。
+   * 送信中は "Sending..." に変わるので、このロケーターでは取れない。
    */
   get udpSendButton(): Locator {
-    return this.page.getByRole("button", { name: "Send", exact: true }).last();
+    return this.page.getByRole("button", { name: "Send", exact: true });
   }
 
   /** 固定長ペイロードの index 番目 (0 始まり) のフィールド。Name / Type / Length / Value とバイト数を含む。 */

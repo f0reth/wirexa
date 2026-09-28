@@ -49,7 +49,7 @@ test("can add and remove rows in key-value editor (Params tab)", async ({
   page,
 }) => {
   // Params タブはデフォルトでアクティブ
-  const paramsPanel = page.locator("#tabpanel-params");
+  const paramsPanel = page.locator("#request-tabpanel-params");
   const addButton = paramsPanel.getByRole("button", { name: "Add" });
   const paramInputs = paramsPanel.getByPlaceholder("Parameter");
 
@@ -73,7 +73,7 @@ test("can add and remove rows in key-value editor (Headers tab)", async ({
 }) => {
   await page.getByRole("tab", { name: "Headers" }).click();
 
-  const headersPanel = page.locator("#tabpanel-headers");
+  const headersPanel = page.locator("#request-tabpanel-headers");
   const addButton = headersPanel.getByRole("button", { name: "Add" });
   const headerInputs = headersPanel.getByPlaceholder("Header");
 
@@ -92,7 +92,7 @@ test("can add and remove rows in key-value editor (Headers tab)", async ({
 // ── 観点D-5: key-valueエディタの enabled トグル ───────────────────────────────
 
 test("can toggle enabled state of a key-value editor row", async ({ page }) => {
-  const paramsPanel = page.locator("#tabpanel-params");
+  const paramsPanel = page.locator("#request-tabpanel-params");
   await paramsPanel.getByRole("button", { name: "Add" }).click();
 
   // 新規行のチェックボックスはデフォルトで ON

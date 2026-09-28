@@ -18,7 +18,7 @@ test.beforeEach(async ({ app }) => {
 
 async function chooseBodyType(page: Page, label: string) {
   await page.getByRole("tab", { name: "Body" }).click();
-  const bodyPanel = page.locator("#tabpanel-body");
+  const bodyPanel = page.locator("#request-tabpanel-body");
   await bodyPanel.getByRole("button").first().click();
   await bodyPanel.getByRole("button", { name: label, exact: true }).click();
   return bodyPanel;
@@ -189,7 +189,7 @@ test.describe("saved file request", () => {
   test("asks to reselect the file after a restart", async ({ page, app }) => {
     await app.request(/Upload/).click();
     await page.getByRole("tab", { name: "Body" }).click();
-    const bodyPanel = page.locator("#tabpanel-body");
+    const bodyPanel = page.locator("#request-tabpanel-body");
 
     await expect(bodyPanel.getByText("Reselect file")).toBeVisible();
     await expect(bodyPanel.getByPlaceholder("No file selected")).toHaveValue(

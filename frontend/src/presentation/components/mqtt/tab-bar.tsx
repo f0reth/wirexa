@@ -17,6 +17,7 @@ export function TabBar() {
       tabs={TABS}
       activeTab={activeTab()}
       onTabChange={setActiveTab}
+      idPrefix="mqtt"
       class={styles.tabBar}
     />
   );

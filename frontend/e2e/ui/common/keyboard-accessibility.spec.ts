@@ -159,3 +159,68 @@ test.describe("selecting with the keyboard", () => {
     );
   });
 });
+
+// ── 観点G-2: タブの role と id ───────────────────────────────────────────────
+// HTTP ではリクエスト側とレスポンス側に同名のタブ (Body / Headers) が並ぶ。id が衝突すると
+// aria-controls / aria-labelledby の参照先が一意に決まらない。
+
+test("tab ids are unique on the http panel", async ({ page, app }) => {
+  await app.switchTo("HTTP");
+  await app.urlInput.fill("https://api.example.com/tabs");
+  await app.sendButton.click();
+  await expect(app.responseViewer.getByRole("tab")).not.toHaveCount(0);
+
+  const panel = page.getByTestId("http-panel");
+  const ids = await panel
+    .locator("[id]")
+    .evaluateAll((els) => els.map((el) => el.id));
+  expect(ids.length).toBeGreaterThan(0);
+  expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
+
+  // どちらの表示中のパネルも、自分の側のタブの名前で引ける。
+  await expect(app.requestEditor.getByRole("tabpanel")).toHaveAccessibleName(
+    "Params",
+  );
+  await expect(app.responseViewer.getByRole("tabpanel")).toHaveAccessibleName(
+    "Body",
+  );
+  await app.openResponseTab("Headers");
+  await app.openRequestTab("Headers");
+  await expect(
+    panel.getByRole("tabpanel", { name: "Headers", exact: true }),
+  ).toHaveCount(2);
+});
+
+test.describe("udp tabs", () => {
+  test.use({
+    seed: {
+      udpTargets: [
+        { id: "target-tabs", name: "Tabs", host: "127.0.0.1", port: 5000 },
+      ],
+    },
+  });
+
+  test("udp send and listen are exposed as tabs", async ({ page, app }) => {
+    await app.switchTo("UDP");
+    await app.selectUdpTarget("Tabs");
+
+    const sendTab = page.getByRole("tab", { name: "Send", exact: true });
+    const listenTab = page.getByRole("tab", { name: "Listen", exact: true });
+    await expect(sendTab).toHaveAttribute("aria-selected", "true");
+    // Send タブと送信ボタンは同名だが、role で区別できる。
+    await expect(
+      page
+        .getByRole("tabpanel", { name: "Send", exact: true })
+        .getByRole("button", { name: "Send", exact: true }),
+    ).toBeVisible();
+
+    await listenTab.click();
+    await expect(listenTab).toHaveAttribute("aria-selected", "true");
+    await expect(sendTab).toHaveAttribute("aria-selected", "false");
+    await expect(
+      page
+        .getByRole("tabpanel", { name: "Listen", exact: true })
+        .getByRole("button", { name: "Start", exact: true }),
+    ).toBeVisible();
+  });
+});

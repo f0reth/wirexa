@@ -44,7 +44,7 @@ test("can select different HTTP methods from dropdown", async ({ page }) => {
 test("switching body type to JSON shows CodeMirror editor", async ({ page }) => {
   await page.getByRole("tab", { name: "Body" }).click();
 
-  const bodyPanel = page.locator("#tabpanel-body");
+  const bodyPanel = page.locator("#request-tabpanel-body");
   const bodyTypeTrigger = bodyPanel.getByRole("button").first();
 
   await bodyTypeTrigger.click();
@@ -56,7 +56,7 @@ test("switching body type to JSON shows CodeMirror editor", async ({ page }) => 
 test("switching body type to Text shows textarea", async ({ page }) => {
   await page.getByRole("tab", { name: "Body" }).click();
 
-  const bodyPanel = page.locator("#tabpanel-body");
+  const bodyPanel = page.locator("#request-tabpanel-body");
   const bodyTypeTrigger = bodyPanel.getByRole("button").first();
 
   await bodyTypeTrigger.click();
@@ -70,7 +70,7 @@ test("switching body type to Form Data shows key-value editor", async ({
 }) => {
   await page.getByRole("tab", { name: "Body" }).click();
 
-  const bodyPanel = page.locator("#tabpanel-body");
+  const bodyPanel = page.locator("#request-tabpanel-body");
   const bodyTypeTrigger = bodyPanel.getByRole("button").first();
 
   await bodyTypeTrigger.click();
@@ -82,7 +82,7 @@ test("switching body type to Form Data shows key-value editor", async ({
 // ボディタイプを選択して Body タブの key-value エディタを開く。
 async function openFormBody(page: Page, bodyTypeLabel: string) {
   await page.getByRole("tab", { name: "Body" }).click();
-  const bodyPanel = page.locator("#tabpanel-body");
+  const bodyPanel = page.locator("#request-tabpanel-body");
   await bodyPanel.getByRole("button").first().click();
   await bodyPanel.getByRole("button", { name: bodyTypeLabel }).click();
   return bodyPanel;
@@ -253,7 +253,7 @@ test("Form URL Encoded rows offer no File kind and no Content-Type field", async
 test("switching body type back to none hides the editor", async ({ page }) => {
   await page.getByRole("tab", { name: "Body" }).click();
 
-  const bodyPanel = page.locator("#tabpanel-body");
+  const bodyPanel = page.locator("#request-tabpanel-body");
   const bodyTypeTrigger = bodyPanel.getByRole("button").first();
 
   // JSON を選択してエディタを表示
@@ -274,7 +274,7 @@ test("selecting Basic auth shows username and password fields", async ({
 }) => {
   await page.getByRole("tab", { name: "Auth" }).click();
 
-  const authPanel = page.locator("#tabpanel-auth");
+  const authPanel = page.locator("#request-tabpanel-auth");
   const authTypeTrigger = authPanel.getByRole("button").first();
 
   await authTypeTrigger.click();
@@ -287,7 +287,7 @@ test("selecting Basic auth shows username and password fields", async ({
 test("selecting Bearer auth shows token field", async ({ page }) => {
   await page.getByRole("tab", { name: "Auth" }).click();
 
-  const authPanel = page.locator("#tabpanel-auth");
+  const authPanel = page.locator("#request-tabpanel-auth");
   const authTypeTrigger = authPanel.getByRole("button").first();
 
   await authTypeTrigger.click();
@@ -299,7 +299,7 @@ test("selecting Bearer auth shows token field", async ({ page }) => {
 test("switching back to no auth hides credential fields", async ({ page }) => {
   await page.getByRole("tab", { name: "Auth" }).click();
 
-  const authPanel = page.locator("#tabpanel-auth");
+  const authPanel = page.locator("#request-tabpanel-auth");
   const authTypeTrigger = authPanel.getByRole("button").first();
 
   // Basic Auth を選択
@@ -319,7 +319,7 @@ test("switching back to no auth hides credential fields", async ({ page }) => {
 test("can configure timeout in settings tab", async ({ page }) => {
   await page.getByRole("tab", { name: "Settings" }).click();
 
-  const settingsPanel = page.locator("#tabpanel-settings");
+  const settingsPanel = page.locator("#request-tabpanel-settings");
   const timeoutInput = settingsPanel.getByLabel("Timeout (s)");
 
   await expect(timeoutInput).toBeVisible();
@@ -330,7 +330,7 @@ test("can configure timeout in settings tab", async ({ page }) => {
 test("selecting custom proxy mode shows proxy URL field", async ({ page }) => {
   await page.getByRole("tab", { name: "Settings" }).click();
 
-  const settingsPanel = page.locator("#tabpanel-settings");
+  const settingsPanel = page.locator("#request-tabpanel-settings");
 
   // proxy ドロップダウンを開いて Custom を選択
   const proxyTrigger = settingsPanel.getByRole("button").first();
@@ -349,7 +349,7 @@ test("selecting custom proxy mode shows proxy URL field", async ({ page }) => {
 test("settings tab shows TLS and redirect checkboxes", async ({ page }) => {
   await page.getByRole("tab", { name: "Settings" }).click();
 
-  const settingsPanel = page.locator("#tabpanel-settings");
+  const settingsPanel = page.locator("#request-tabpanel-settings");
 
   await expect(
     settingsPanel.getByLabel("Verify TLS certificate"),
@@ -362,7 +362,7 @@ test("settings tab shows TLS and redirect checkboxes", async ({ page }) => {
 test("can add custom headers to HTTP request", async ({ page }) => {
   await page.getByRole("tab", { name: "Headers" }).click();
 
-  const headersPanel = page.locator("#tabpanel-headers");
+  const headersPanel = page.locator("#request-tabpanel-headers");
 
   // 行を追加
   await headersPanel.getByRole("button", { name: "Add" }).click();
@@ -382,7 +382,7 @@ test("can add custom headers to HTTP request", async ({ page }) => {
 test("can add multiple headers to HTTP request", async ({ page }) => {
   await page.getByRole("tab", { name: "Headers" }).click();
 
-  const headersPanel = page.locator("#tabpanel-headers");
+  const headersPanel = page.locator("#request-tabpanel-headers");
   const addButton = headersPanel.getByRole("button", { name: "Add" });
 
   // 2 行追加

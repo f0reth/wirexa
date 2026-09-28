@@ -133,7 +133,7 @@ test("form-data rows are sent as multipart parts and a typed file path is not up
 
   await app.urlInput.fill(echoUrl());
   await page.getByRole("tab", { name: "Body" }).click();
-  const bodyPanel = page.locator("#tabpanel-body");
+  const bodyPanel = page.locator("#request-tabpanel-body");
   await bodyPanel.getByRole("button").first().click();
   await bodyPanel.getByRole("button", { name: "Form Data" }).click();
 

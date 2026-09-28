@@ -1,4 +1,5 @@
 import { Show } from "solid-js";
+import { tabId, tabPanelId } from "../../../components/ui/tabs";
 import { useMqttConnection } from "../../providers/mqtt-provider";
 import { BrokerManager } from "./broker-manager";
 import styles from "./mqtt.module.css";
@@ -26,6 +27,9 @@ export function MqttClient() {
         <TabBar />
 
         <div
+          role="tabpanel"
+          id={tabPanelId("mqtt", "subscribe")}
+          aria-labelledby={tabId("mqtt", "subscribe")}
           class={styles.mainContent}
           style={{ display: activeTab() === "subscribe" ? "flex" : "none" }}
         >
@@ -33,6 +37,9 @@ export function MqttClient() {
         </div>
 
         <div
+          role="tabpanel"
+          id={tabPanelId("mqtt", "publish")}
+          aria-labelledby={tabId("mqtt", "publish")}
           class={styles.mainContent}
           style={{ display: activeTab() === "publish" ? "flex" : "none" }}
         >
