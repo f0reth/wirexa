@@ -233,6 +233,7 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
 - **最初に決めること**: ブローカーの実装
   - A. mochi-mqtt を起動する `tools/e2e-broker/` を作り、`playwright.integration.config.ts` の webServer に足す（Go 側の統合テストと実装が揃う。依存追加なし）
   - B. Node の組み込みブローカー（aedes など）を `e2e/fixtures/mqtt-broker.ts` にする（`http-server.ts` と同じ形。依存が増える）
+  - **A を採用した。** アプリ以外のクライアントからの publish は、同じプロセスが開く操作用 HTTP（`POST /publish` → mochi のインラインクライアント）で行う。ポートと呼び出しは `e2e/fixtures/mqtt-broker.ts` にまとめた
 - `e2e/fixtures/integration.ts` に MQTT 接続の掃除（`afterEach` で `Disconnect`）を追加
 - 新規 `e2e/integration/mqtt/mqtt.spec.ts`
   - `connects to a local broker and shows Connected` / `disconnect returns the tab to Disconnected` / Save & Connect
@@ -241,7 +242,7 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
   - `subscribing to 'a/#/b' shows a validation error toast`
   - `switching brokers keeps each broker's subscriptions separate`
   - Broker Topics のスキャン
-  - 余力があれば 5000 件上限（Step 10 で UI 側は検証済みなので低優先）
+  - 余力があれば 5000 件上限（Step 10 で UI 側は検証済みなので低優先）。見送った
 
 **完了条件**: `task frontend:test:e2e:fullstack` が Windows ローカルで通り、2 回続けて実行しても状態が漏れない。
 
@@ -372,7 +373,7 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
 - [x] Step 8: 偽バックエンドのイベント注入口
 - [x] Step 9: MQTT UI（未接続）
 - [x] Step 10: MQTT UI（接続済み・受信）
-- [ ] Step 11: フルスタック MQTT
+- [x] Step 11: フルスタック MQTT
 - [x] Step 12: フルスタック永続化
 - [ ] Step 13: フルスタック エラー表示・UDP 上限・echo
 - [ ] Step 14: HTTP レスポンス表示ほか
