@@ -484,13 +484,25 @@ function validPort(port: number): boolean {
   return Number.isInteger(port) && port >= 1 && port <= 65535;
 }
 
-// Go の UDPTarget.Validate (internal/domain/udp/types.go) と同じ規則。空白だけのホストは
-// Go 側も通すので、ここでも trim しない。
-function validateTarget(target: UdpTarget): void {
-  if (target.host === "") throw validationError("host", "is required");
-  if (!validPort(target.port)) {
-    throw validationError("port", "must be 1-65535");
+// Go の UDPTarget.Validate / UDPSendRequest.Validate (internal/domain/udp/types.go) と同じ
+// host/port 規則。空白だけのホストは Go 側も通すので、ここでも trim しない。
+function validateHostPort(host: string, port: number): void {
+  if (host === "") throw validationError("host", "is required");
+  if (!validPort(port)) throw validationError("port", "must be 1-65535");
+}
+
+function isValidJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
   }
+}
+
+/** seed の遅延 (ms)。未設定なら待たない。 */
+function delay(ms: number | undefined): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms ?? 0));
 }
 
 const UdpHandler = {
@@ -498,7 +510,7 @@ const UdpHandler = {
 
   SaveTarget: mutates("SaveTarget", (target: UdpTarget) => {
     // Go の TargetService.SaveTarget と同じく、保存より先に検証する。
-    validateTarget(target);
+    validateHostPort(target.host, target.port);
     const index = db.udpTargets.findIndex((t) => t.id === target.id);
     // Go 側と同じく、未知の非空 ID は新規作成として受理しない。
     if (target.id && index < 0) throw new Error(`target not found: ${target.id}`);
@@ -516,34 +528,50 @@ const UdpHandler = {
 
   // Go の UDPListenerService.StartListen (internal/application/udp/listener_service.go) と
   // 同じ順に、ポート範囲・エンコーディング・同じポートのセッションの有無を検証する。
-  // seed.startListenError はそのあとのソケットを開く段階の失敗 (使用中のポートなど) を模す。
-  StartListen: mutates("StartListen", (port: number, encoding: string) => {
-    if (!validPort(port)) throw validationError("port", "must be 1-65535");
-    if (!["text", "json", "fixed"].includes(encoding)) {
-      throw validationError("encoding", `unknown: ${encoding}`);
-    }
-    if (db.listeners.some((l) => l.port === port)) {
-      throw validationError("port", `port ${port} is already listening`);
-    }
-    if (seed.startListenError) throw new Error(seed.startListenError);
-    const session = {
-      id: newId("listener"),
-      port,
-      encoding,
-    } as UdpListenSession;
-    db.listeners.push(session);
-    return clone(session);
-  }),
+  // seed.startListenDelayMs と seed.startListenError はそのあとのソケットを開く段階を模す
+  // (開くまでの時間と、使用中のポートなどでの失敗)。待つ間に状態を書き戻さないよう、
+  // mutates ではなく自分で save する。
+  StartListen: counted(
+    "StartListen",
+    async (port: number, encoding: string): Promise<UdpListenSession> => {
+      if (!validPort(port)) throw validationError("port", "must be 1-65535");
+      if (!["text", "json", "fixed"].includes(encoding)) {
+        throw validationError("encoding", `unknown: ${encoding}`);
+      }
+      if (db.listeners.some((l) => l.port === port)) {
+        throw validationError("port", `port ${port} is already listening`);
+      }
+      await delay(seed.startListenDelayMs);
+      if (seed.startListenError) throw new Error(seed.startListenError);
+      const session = {
+        id: newId("listener"),
+        port,
+        encoding,
+      } as UdpListenSession;
+      db.listeners.push(session);
+      save();
+      return clone(session);
+    },
+  ),
 
   StopListen: mutates("StopListen", (id: string) => {
     db.listeners = db.listeners.filter((l) => l.id !== id);
   }),
 
+  // Go の UDPSendService.Send (internal/application/udp/send_service.go) のうち、
+  // UDPSendRequest.Validate と json エンコーディングの JSON 検証 (DecodePayload) までを模す。
+  // 固定長ペイロードの組み立て (DecodeFixedLengthPayload) の検証は再現しない。
+  // seed.udpSendDelayMs はソケットへの送信にかかる時間を模す。
   Send: counted(
     "Send",
-    async (req: UdpSendRequest): Promise<UdpSendResult> => ({
-      bytesSent: req.payload.length,
-    }),
+    async (req: UdpSendRequest): Promise<UdpSendResult> => {
+      validateHostPort(req.host, req.port);
+      if (req.encoding === "json" && !isValidJson(req.payload)) {
+        throw validationError("payload", "invalid JSON");
+      }
+      await delay(seed.udpSendDelayMs);
+      return { bytesSent: req.payload.length };
+    },
   ),
 };
 

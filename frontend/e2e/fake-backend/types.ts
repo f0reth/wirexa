@@ -38,6 +38,10 @@ export interface FakeSeed {
   saveResponseError?: string;
   /** StartListen を検証のあとで必ず失敗させる (使用中ポートなど、ソケットを開けない場合を模す)。 */
   startListenError?: string;
+  /** StartListen が検証のあと解決するまでの遅延 (ms)。"Starting..." 表示の検証に使う。 */
+  startListenDelayMs?: number;
+  /** UDP の Send が検証のあと解決するまでの遅延 (ms)。"Sending..." 表示の検証に使う。 */
+  udpSendDelayMs?: number;
 }
 
 /** window に生える、偽バックエンドのテスト用操作面。 */

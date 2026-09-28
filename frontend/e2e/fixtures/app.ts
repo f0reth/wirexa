@@ -312,6 +312,31 @@ export class App {
     ).toBeVisible();
   }
 
+  /**
+   * Send / Listen タブを開く。タブは role="tab" ではない素のボタンで、Send タブは送信ボタンと
+   * 同名になる。タブバーは送信フォームより前にあるので先頭を取る。
+   */
+  async openUdpTab(name: "Send" | "Listen"): Promise<void> {
+    await this.page.getByRole("button", { name, exact: true }).first().click();
+  }
+
+  /**
+   * 送信フォームの送信ボタン。Send タブと同名なので末尾を取る。送信中は "Sending..." に
+   * 変わるので、このロケーターでは取れない。
+   */
+  get udpSendButton(): Locator {
+    return this.page.getByRole("button", { name: "Send", exact: true }).last();
+  }
+
+  /** 固定長ペイロードの index 番目 (0 始まり) のフィールド。Name / Type / Length / Value とバイト数を含む。 */
+  udpFixedField(index: number): Locator {
+    // Name 欄から、Value 欄まで含む最も近い祖先 (フィールド 1 件分の枠) へ上がる。
+    return this.page
+      .getByLabel("Field name")
+      .nth(index)
+      .locator("xpath=ancestor::div[.//*[@aria-label='Field value']][1]");
+  }
+
   async createUdpTarget(
     name: string,
     host: string,
