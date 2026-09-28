@@ -270,6 +270,8 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
   - `listening on a port already in use shows an error`（Node 側でポートを塞ぐ）
   - `udp log shows newest first and drops msg-0 at the cap`（既存の 500 件テストを拡張）
 - `e2e/fixtures/http-server.ts` の `/echo` が受信ヘッダー・クエリを返すようにし、`e2e/integration/http/http.spec.ts` に headers / params / auth がワイヤに載ることの検証を追加
+  - `/echo` のハンドラは spec 内にあったので、リクエスト行・ヘッダー・ボディをテキストで返す `echoRequest` として `http-server.ts` に移した
+  - ポートを塞ぐ側は Go のリスナーと同じく全インターフェースへ bind する（`udp-server.ts` の `occupyUdpPort`）。bind 失敗の文言は OS ごとに違うので、Go が付ける `failed to listen on port N` までを見る
 
 **完了条件**: `task frontend:test:e2e:fullstack` が通る。
 
@@ -375,7 +377,7 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
 - [x] Step 10: MQTT UI（接続済み・受信）
 - [x] Step 11: フルスタック MQTT
 - [x] Step 12: フルスタック永続化
-- [ ] Step 13: フルスタック エラー表示・UDP 上限・echo
+- [x] Step 13: フルスタック エラー表示・UDP 上限・echo
 - [ ] Step 14: HTTP レスポンス表示ほか
 - [ ] Step 15: OpenAPI 保存・D&D・最近のファイル
 - [ ] Step 16: 共通 UI・アクセシビリティ
