@@ -19,6 +19,7 @@ import type {
   BrokerProfile,
   ConnectionStatus,
 } from "../../src/domain/mqtt/types";
+import type { OpenApiFile } from "../../src/domain/openapi/types";
 import type {
   UdpListenSession,
   UdpSendRequest,
@@ -43,7 +44,10 @@ interface Db {
   mqttProfiles: BrokerProfile[];
   /** バックエンドが持つ MQTT 接続。Go と同じくページのリロードを跨いで残る。 */
   mqttConnections: ConnectionStatus[];
+  /** OpenAPI のファイルパス → 内容。ディスク上のファイルを模す。 */
   files: Record<string, string>;
+  /** OpenAPI の最近使ったファイル。Go の FileService と同じく order 昇順で持つ。 */
+  openApiRecents: OpenApiFile[];
 }
 
 function newId(prefix: string): string {
@@ -77,6 +81,7 @@ function seeded(seed: FakeSeed): Db {
     mqttProfiles: [],
     mqttConnections: [],
     files: {},
+    openApiRecents: [],
   };
   db = fresh;
 
@@ -113,6 +118,10 @@ function seeded(seed: FakeSeed): Db {
       password: "",
       useTls: false,
     });
+  }
+  for (const f of seed.openApiFiles ?? []) {
+    fresh.files[f.path] = f.content;
+    addOpenApiRecent(f.path);
   }
   return fresh;
 }
@@ -744,16 +753,79 @@ const MqttHandler = {
 
 // ── OpenAPIHandler / LogHandler / App ─────────────────────────────────────────
 
+// Go の FileService (internal/application/openapi/file_service.go) に合わせる。
+// 許可リストは recents に載っているパスで代用する (Go は recents の保存に失敗したときだけ
+// 一覧に無いパスの許可を残すが、偽バックエンドの保存は失敗しない)。パスの正規化
+// (filepath.Clean) と 50 件の上限は省く。
+
+function basename(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
+
+function reindexOpenApiRecents(): void {
+  db.openApiRecents.forEach((r, i) => {
+    r.order = i;
+  });
+}
+
+/** Go の addRecentLocked: 既存なら lastOpenedAt だけ更新し、無ければ末尾に足す。 */
+function addOpenApiRecent(path: string): void {
+  const now = new Date().toISOString();
+  const existing = db.openApiRecents.find((r) => r.path === path);
+  if (existing) {
+    existing.lastOpenedAt = now;
+    return;
+  }
+  db.openApiRecents.push({
+    path,
+    name: basename(path),
+    order: db.openApiRecents.length,
+    lastOpenedAt: now,
+  });
+}
+
+function checkOpenApiGranted(path: string): void {
+  if (!db.openApiRecents.some((r) => r.path === path)) {
+    throw new Error("access denied: path was not granted via a file dialog");
+  }
+}
+
 const OpenAPIHandler = {
   OpenFilePicker: counted("OpenAPI.OpenFilePicker", async () => ""),
-  ReadFile: counted("ReadFile", async (path: string) => db.files[path] ?? ""),
+  ReadFile: counted("ReadFile", async (path: string) => {
+    checkOpenApiGranted(path);
+    const content = db.files[path];
+    if (content === undefined) throw new Error("file does not exist");
+    return content;
+  }),
   WriteFile: mutates("WriteFile", (path: string, content: string) => {
+    checkOpenApiGranted(path);
     db.files[path] = content;
   }),
-  SaveFileAs: counted("SaveFileAs", async () => ""),
-  GetRecents: counted("GetRecents", async () => []),
-  RemoveRecent: counted("RemoveRecent", async () => {}),
-  MoveRecent: counted("MoveRecent", async () => {}),
+  // 保存ダイアログで seed.saveFileAsPath が選ばれたものとして書き込み、recents に載せる
+  // (未設定ならキャンセルとして空文字を返す)。
+  SaveFileAs: mutates("SaveFileAs", (_defaultName: string, content: string) => {
+    const path = seed.saveFileAsPath;
+    if (!path) return "";
+    db.files[path] = content;
+    addOpenApiRecent(path);
+    return path;
+  }),
+  GetRecents: counted("GetRecents", async () => clone(db.openApiRecents)),
+  RemoveRecent: mutates("RemoveRecent", (path: string) => {
+    db.openApiRecents = db.openApiRecents.filter((r) => r.path !== path);
+    reindexOpenApiRecents();
+  }),
+  // index は移動前の一覧に対する挿入先で、負または範囲外なら末尾へ移す (Go の MoveRecent)。
+  MoveRecent: mutates("MoveRecent", (path: string, index: number) => {
+    const from = db.openApiRecents.findIndex((r) => r.path === path);
+    if (from === -1) return;
+    const [item] = db.openApiRecents.splice(from, 1);
+    const to = from < index ? index - 1 : index;
+    if (to < 0 || to > db.openApiRecents.length) db.openApiRecents.push(item);
+    else db.openApiRecents.splice(to, 0, item);
+    reindexOpenApiRecents();
+  }),
 };
 
 const LogHandler = { Log: counted("Log", async () => {}) };
@@ -851,5 +923,6 @@ window.__wirexaFake = {
     udpTargets: clone(db.udpTargets),
     mqttProfiles: clone(db.mqttProfiles),
     mqttConnections: clone(db.mqttConnections),
+    openApiRecents: clone(db.openApiRecents),
   }),
 };

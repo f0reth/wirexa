@@ -10,8 +10,8 @@ import {
 // 観点K: 未保存の文書から別の文書へ切り替えるとき・ウィンドウを閉じるときの確認ダイアログ。
 // 切り替えの操作には、偽バックエンドの seed が要らない New（無題文書の作成）を使う。
 // 閉じる操作は、Go の beforeClose が発火する app:before-close を偽バックエンドから流して模す。
-// Save & continue で実際に保存して切り替える流れは SaveFileAs が保存先を返す seed が要るので
-// Step 15 で扱う。ここでは保存ダイアログをキャンセルした場合だけを確かめる。
+// Save & continue は、seed.saveFileAsPath が無ければ保存ダイアログのキャンセル、あれば
+// そのパスが選ばれたものとして扱う。
 
 const VALID_YAML = [
   "openapi: 3.0.0",
@@ -119,6 +119,32 @@ test("Save & continue keeps the document when the save dialog is cancelled", asy
   ).toBeVisible();
 });
 
+test.describe("with a save destination", () => {
+  test.use({ seed: { saveFileAsPath: "C:\\specs\\petstore.yaml" } });
+
+  test("Save & continue saves the document and then creates the new one", async ({
+    app,
+    fake,
+  }) => {
+    await createUnsavedUntitled(app);
+
+    const dialog = await requestNewDocument(app);
+    await dialog.getByRole("button", { name: "Save & continue" }).click();
+
+    await expect(dialog).toBeHidden();
+    await fake.waitForCalls("SaveFileAs");
+    expect(await fake.args("SaveFileAs")).toEqual([
+      ["untitled.yaml", VALID_YAML],
+    ]);
+    // 保存してから新しい空の無題文書に切り替わる。保存したファイルは最近使ったファイルに残る
+    await expect(app.openApiEditor).toHaveText("");
+    await expect(
+      app.page.getByText("untitled.yaml (untitled)", { exact: true }),
+    ).toBeVisible();
+    await expect(app.openApiFiles).toHaveText(["petstore.yaml"]);
+  });
+});
+
 // ── ウィンドウを閉じるとき (app:before-close) ─────────────────────────────────
 // Go 側は閉じる操作を一旦止めてイベントを発火し、ConfirmQuit が呼ばれたときだけ終了する。
 // 「終了しない」は ConfirmQuit が呼ばれないことで確かめる。
@@ -189,4 +215,24 @@ test("Save & continue on before-close does not quit when the save dialog is canc
   await expect(
     app.page.getByText("untitled.yaml (untitled) *", { exact: true }),
   ).toBeVisible();
+});
+
+test.describe("before-close with a save destination", () => {
+  test.use({ seed: { saveFileAsPath: "C:\specs\petstore.yaml" } });
+
+  test("Save & continue on before-close saves and then quits", async ({
+    app,
+    fake,
+  }) => {
+    await createUnsavedUntitled(app);
+
+    const dialog = await requestClose(app, fake);
+    await dialog.getByRole("button", { name: "Save & continue" }).click();
+
+    await expect(dialog).toBeHidden();
+    await fake.waitForCalls("ConfirmQuit");
+    expect(await fake.args("SaveFileAs")).toEqual([
+      ["untitled.yaml", VALID_YAML],
+    ]);
+  });
 });

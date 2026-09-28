@@ -11,6 +11,7 @@ import type {
   BrokerProfile,
   ConnectionStatus,
 } from "../../src/domain/mqtt/types";
+import type { OpenApiFile } from "../../src/domain/openapi/types";
 import type { UdpTarget } from "../../src/domain/udp/types";
 
 /** テストが addInitScript で仕込む初期状態。すべて任意。 */
@@ -52,6 +53,13 @@ export interface FakeSeed {
   startListenDelayMs?: number;
   /** UDP の Send が検証のあと解決するまでの遅延 (ms)。"Sending..." 表示の検証に使う。 */
   udpSendDelayMs?: number;
+  /**
+   * OpenAPI の最近使ったファイル (この順で並ぶ) とその内容。ダイアログで開いたことがあり、
+   * ReadFile / WriteFile で読み書きできる状態から始める。
+   */
+  openApiFiles?: Array<{ path: string; content: string }>;
+  /** OpenAPI の SaveFileAs (保存ダイアログ) で選ばれたことにするパス。未設定ならキャンセル。 */
+  saveFileAsPath?: string;
 }
 
 /** window に生える、偽バックエンドのテスト用操作面。 */
@@ -70,6 +78,7 @@ export interface FakeBackend {
     udpTargets: UdpTarget[];
     mqttProfiles: BrokerProfile[];
     mqttConnections: ConnectionStatus[];
+    openApiRecents: OpenApiFile[];
   };
 }
 

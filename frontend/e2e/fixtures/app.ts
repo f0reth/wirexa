@@ -396,6 +396,63 @@ export class App {
     await this.page.getByRole("button", { name: "New (paste a spec)" }).click();
   }
 
+  /** 最近使ったファイル一覧の、名前が name のファイルを選ぶボタン。 */
+  openApiFile(name: string): Locator {
+    return this.page.getByRole("button", { name, exact: true });
+  }
+
+  /**
+   * 最近使ったファイル一覧の、ファイルを選ぶボタンすべて (表示順)。一覧は挿入ゾーンとファイル行が
+   * 交互に並び、行の先頭のボタンが選択ボタン (2 つ目は Remove from history)。
+   */
+  get openApiFiles(): Locator {
+    return this.page.locator(
+      "[data-openapi-drop-zone] + div > button:first-child",
+    );
+  }
+
+  /** 最近使ったファイル行の Remove from history ボタン。行ごとにあるので name の行でスコープする。 */
+  removeOpenApiFileButton(name: string): Locator {
+    return this.openApiFile(name)
+      .locator("xpath=..")
+      .getByRole("button", { name: "Remove from history" });
+  }
+
+  /**
+   * 最近使ったファイル一覧の挿入ゾーン。index は移動前の一覧に対する挿入位置で、
+   * ファイル数と同じ値なら末尾。ドラッグ中だけ高さを持つので dragTreeNode の target に使う。
+   */
+  openApiDropZone(index: number): Locator {
+    return this.page.locator(
+      `[data-openapi-drop-zone][data-openapi-drop-index="${index}"]`,
+    );
+  }
+
+  /**
+   * OS からのファイル D&D を模して、name・content のファイルを target に落とす。
+   * target は OpenAPI パネルの中なら何でもよい (drop はパネル全体で受ける)。ただし
+   * CodeMirror はエディタへのファイルのドロップを自前で挿入するので、エディタは避ける。
+   * dragover が受理された (preventDefault された) かを返す。
+   */
+  async dropOpenApiFile(
+    target: Locator,
+    name: string,
+    content: string,
+  ): Promise<boolean> {
+    return target.evaluate(
+      (el, [n, c]) => {
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(new File([c], n, { type: "application/yaml" }));
+        const init = { bubbles: true, cancelable: true, dataTransfer };
+        const dragOver = new DragEvent("dragover", init);
+        el.dispatchEvent(dragOver);
+        el.dispatchEvent(new DragEvent("drop", init));
+        return dragOver.defaultPrevented;
+      },
+      [name, content] as const,
+    );
+  }
+
   // ── MQTT ────────────────────────────────────────────────────────────────────
 
   async createBrokerProfile(name: string): Promise<void> {
