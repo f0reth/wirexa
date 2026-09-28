@@ -387,4 +387,61 @@ export class App {
     await dialog.getByRole("button", { name: "Save", exact: true }).click();
     await expect(dialog).toBeHidden();
   }
+
+  /** サイドバーのブローカー行。行には名前とブローカー URL が並ぶ。 */
+  broker(name: string): Locator {
+    return this.page
+      .getByRole("button")
+      .filter({ has: this.page.getByText(name, { exact: true }) });
+  }
+
+  /**
+   * ブローカーを選んで Connect を押し、Connected になるまで待つ。行をクリックすると、
+   * ホバーで出る Edit / Delete ボタンに当たることがあるので、フォーカスして Enter で選ぶ。
+   */
+  async connectBroker(name: string): Promise<void> {
+    const row = this.broker(name);
+    await row.focus();
+    await row.press("Enter");
+    await this.page
+      .getByRole("button", { name: "Connect", exact: true })
+      .click();
+    await expect(
+      this.page.getByText("Connected", { exact: true }),
+    ).toBeVisible();
+  }
+
+  /**
+   * 見出し (Subscriptions / Messages / Publish など) を持つ MQTT のパネル。
+   * 見出し → 見出し行 → パネル、と上がる。非表示のタブの見出しは getByRole が拾わないので、
+   * Publish タブにも同名の "Messages" があっても表示中のタブの方だけが当たる。
+   */
+  mqttSection(title: string): Locator {
+    return this.page
+      .getByRole("heading", { name: title, exact: true })
+      .locator("xpath=ancestor::div[2]");
+  }
+
+  /** Subscriptions パネルの購読 1 件分の行。Mute / Unmute ボタンを持つ最も近い祖先を取る。 */
+  mqttSubscription(topic: string): Locator {
+    return this.mqttSection("Subscriptions")
+      .getByText(topic, { exact: true })
+      .locator(
+        "xpath=ancestor::div[.//button[@title='Mute' or @title='Unmute']][1]",
+      );
+  }
+
+  /** Messages パネルの一覧の項目 (ボタン)。見出し行の Auto / Clear は除く。 */
+  get mqttMessages(): Locator {
+    return this.mqttSection("Messages")
+      .getByRole("button")
+      .filter({ hasNotText: /^(Auto|Clear)$/ });
+  }
+
+  /** ペイロードが payload の、Messages パネルの一覧の項目。 */
+  mqttMessage(payload: string): Locator {
+    return this.mqttMessages.filter({
+      has: this.page.getByText(payload, { exact: true }),
+    });
+  }
 }

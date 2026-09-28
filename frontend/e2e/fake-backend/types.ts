@@ -7,7 +7,10 @@ import type {
   SidebarEntry,
   TreeItem,
 } from "../../src/domain/http/types";
-import type { BrokerProfile } from "../../src/domain/mqtt/types";
+import type {
+  BrokerProfile,
+  ConnectionStatus,
+} from "../../src/domain/mqtt/types";
 import type { UdpTarget } from "../../src/domain/udp/types";
 
 /** テストが addInitScript で仕込む初期状態。すべて任意。 */
@@ -28,6 +31,11 @@ export interface FakeSeed {
   pickedFile?: { token: string; name: string; contentType: string };
   udpTargets?: Array<{ id?: string; name: string; host: string; port: number }>;
   mqttProfiles?: Array<{ id?: string; name: string; broker?: string }>;
+  /**
+   * "ok" なら MQTT の Connect を成功させ、続けて mqtt:connected を発火する。
+   * 未設定なら Connect は必ず失敗する (繋がるブローカーが無い状態)。
+   */
+  mqttConnect?: "ok";
   /** SendRequest が返すレスポンス (既定値に対する上書き)。 */
   httpResponse?: Partial<HttpResponse>;
   /** SendRequest が解決するまでの遅延 (ms)。ローディング状態の検証に使う。 */
@@ -59,6 +67,7 @@ export interface FakeBackend {
     sidebar: SidebarEntry[];
     udpTargets: UdpTarget[];
     mqttProfiles: BrokerProfile[];
+    mqttConnections: ConnectionStatus[];
   };
 }
 

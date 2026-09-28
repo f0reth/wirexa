@@ -15,13 +15,17 @@ import {
   type SidebarEntry,
   type TreeItem,
 } from "../../src/domain/http/types";
-import type { BrokerProfile } from "../../src/domain/mqtt/types";
+import type {
+  BrokerProfile,
+  ConnectionStatus,
+} from "../../src/domain/mqtt/types";
 import type {
   UdpListenSession,
   UdpSendRequest,
   UdpSendResult,
   UdpTarget,
 } from "../../src/domain/udp/types";
+import { WailsEvents } from "../../src/shared/wails-events";
 import type { FakeSeed } from "./types";
 
 const clone = <T>(v: T): T => structuredClone(v);
@@ -37,6 +41,8 @@ interface Db {
   udpTargets: UdpTarget[];
   listeners: UdpListenSession[];
   mqttProfiles: BrokerProfile[];
+  /** バックエンドが持つ MQTT 接続。Go と同じくページのリロードを跨いで残る。 */
+  mqttConnections: ConnectionStatus[];
   files: Record<string, string>;
 }
 
@@ -69,6 +75,7 @@ function seeded(seed: FakeSeed): Db {
     udpTargets: [],
     listeners: [],
     mqttProfiles: [],
+    mqttConnections: [],
     files: {},
   };
   db = fresh;
@@ -577,6 +584,52 @@ const UdpHandler = {
 
 // ── MqttHandler ───────────────────────────────────────────────────────────────
 
+// Go のトピック検証 (internal/domain/mqtt/topic.go) と同じ規則。
+const MAX_TOPIC_BYTES = 65535;
+
+function validateTopicString(topic: string): void {
+  if (topic === "") throw validationError("topic", "is required");
+  if (new TextEncoder().encode(topic).length > MAX_TOPIC_BYTES) {
+    throw validationError("topic", "must be at most 65535 bytes");
+  }
+  if (topic.includes("\0")) {
+    throw validationError("topic", "must not contain the null character");
+  }
+}
+
+/** Publish のトピック名 (ValidateTopicName)。ワイルドカードを含めない。 */
+function validateTopicName(topic: string): void {
+  validateTopicString(topic);
+  if (/[+#]/.test(topic)) {
+    throw validationError("topic", "must not contain wildcards (+ or #)");
+  }
+}
+
+/** Subscribe / Unsubscribe のトピックフィルター (ValidateTopicFilter)。 */
+function validateTopicFilter(filter: string): void {
+  validateTopicString(filter);
+  const levels = filter.split("/");
+  levels.forEach((level, i) => {
+    if (level.includes("#") && (level !== "#" || i !== levels.length - 1)) {
+      throw validationError("topic", "# must occupy the last level entirely");
+    }
+    if (level.includes("+") && level !== "+") {
+      throw validationError("topic", "+ must occupy an entire level");
+    }
+  });
+}
+
+function validateQos(qos: number): void {
+  if (qos > 2) throw validationError("qos", "must be 0, 1, or 2");
+}
+
+/** Go の withConn と同じく、無い接続への操作は NotFoundError の文言で失敗させる。 */
+function mqttConnection(id: string): ConnectionStatus {
+  const conn = db.mqttConnections.find((c) => c.id === id);
+  if (!conn) throw new Error(`connection not found: ${id}`);
+  return conn;
+}
+
 const MqttHandler = {
   GetProfiles: counted("GetProfiles", async () => clone(db.mqttProfiles)),
 
@@ -599,15 +652,92 @@ const MqttHandler = {
     db.mqttProfiles = db.mqttProfiles.filter((p) => p.id !== id);
   }),
 
-  // 接続系は実ブローカーが要るので繋がらないままにする (UI は offline 状態を描く)。
-  GetConnections: counted("GetConnections", async () => []),
-  Connect: counted("Connect", async () => {
-    throw new Error("connection refused");
+  GetConnections: counted("GetConnections", async () =>
+    clone(db.mqttConnections),
+  ),
+
+  // 既定では繋がるブローカーが無いものとして失敗させる (UI は offline 状態を描く)。
+  // seed.mqttConnect が "ok" なら、Go の MQTTService.Connect
+  // (internal/application/mqtt/service.go) と同じく接続 ID を先に返し、確立はあとから
+  // mqtt:connected で知らせる。UI は戻り値で接続を作ってからイベントを受けるので、
+  // 戻り値が届いたあと (次のタスク) に発火する。
+  Connect: counted(
+    "Connect",
+    async (config: {
+      name: string;
+      broker: string;
+      profileId: string;
+    }): Promise<string> => {
+      if (seed.mqttConnect !== "ok") throw new Error("connection refused");
+      if (config.broker === "") {
+        throw validationError("broker URL", "is required");
+      }
+      const conn: ConnectionStatus = {
+        id: newId("conn"),
+        name: config.name,
+        broker: config.broker,
+        connected: false,
+        profileId: config.profileId,
+        subscriptions: [],
+      };
+      db.mqttConnections.push(conn);
+      save();
+      setTimeout(() => {
+        // 確立より先に切断された接続はイベントを出さない (Go の onConnected と同じ)。
+        const live = db.mqttConnections.find((c) => c.id === conn.id);
+        if (!live) return;
+        live.connected = true;
+        save();
+        emitEvent(WailsEvents.mqttConnected, { connectionId: conn.id });
+      });
+      return conn.id;
+    },
+  ),
+
+  Disconnect: mutates("Disconnect", (connectionId: string) => {
+    mqttConnection(connectionId);
+    db.mqttConnections = db.mqttConnections.filter(
+      (c) => c.id !== connectionId,
+    );
+    emitEvent(WailsEvents.mqttDisconnected, { connectionId });
   }),
-  Disconnect: counted("Disconnect", async () => {}),
-  Subscribe: counted("Subscribe", async () => {}),
-  Unsubscribe: counted("Unsubscribe", async () => {}),
-  Publish: counted("Publish", async () => {}),
+
+  // ブローカーが無いのでメッセージは届かない。受信はテストが mqtt:message を emit して模す。
+  Subscribe: mutates(
+    "Subscribe",
+    (connectionId: string, topic: string, qos: number) => {
+      validateTopicFilter(topic);
+      validateQos(qos);
+      const conn = mqttConnection(connectionId);
+      // Go は購読を topic → qos の map で持つので、同じトピックは QoS を上書きする。
+      conn.subscriptions = [
+        ...conn.subscriptions.filter((s) => s.topic !== topic),
+        { topic, qos },
+      ];
+    },
+  ),
+
+  Unsubscribe: mutates("Unsubscribe", (connectionId: string, topic: string) => {
+    validateTopicFilter(topic);
+    const conn = mqttConnection(connectionId);
+    conn.subscriptions = conn.subscriptions.filter((s) => s.topic !== topic);
+  }),
+
+  // ループバックはしない。送った内容は fake.args("Publish") で確かめる。
+  Publish: counted(
+    "Publish",
+    async (
+      connectionId: string,
+      topic: string,
+      _payload: string,
+      qos: number,
+      _retain: boolean,
+    ) => {
+      validateTopicName(topic);
+      validateQos(qos);
+      mqttConnection(connectionId);
+    },
+  ),
 };
 
 // ── OpenAPIHandler / LogHandler / App ─────────────────────────────────────────
@@ -718,5 +848,6 @@ window.__wirexaFake = {
     sidebar: clone(db.sidebar),
     udpTargets: clone(db.udpTargets),
     mqttProfiles: clone(db.mqttProfiles),
+    mqttConnections: clone(db.mqttConnections),
   }),
 };

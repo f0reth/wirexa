@@ -62,6 +62,21 @@ export class FakeControl {
     );
   }
 
+  /**
+   * payloads の各要素を 1 回ずつ name で発火する。1 回の evaluate の中で同期的に流すので、
+   * 間に描画 (requestAnimationFrame) を挟まず、すべてが同じフレームに届く。
+   */
+  async emitAll(name: WailsEventName, payloads: unknown[]): Promise<void> {
+    await this.app.page.evaluate(
+      ([n, ps]) => {
+        const fake = (window as unknown as { __wirexaFake: FakeBackend })
+          .__wirexaFake;
+        for (const p of ps) fake.emit(n, p);
+      },
+      [name, payloads] as const,
+    );
+  }
+
   /** 偽バックエンドが持っている状態のスナップショット。 */
   snapshot(): Promise<ReturnType<FakeBackend["snapshot"]>> {
     return this.app.page.evaluate(() =>
