@@ -147,7 +147,11 @@ function counted<A extends unknown[], R>(
   return (...callArgs: A) => {
     calls[name] = (calls[name] ?? 0) + 1;
     (args[name] ??= []).push(snapshotArgs(callArgs));
-    return fn(...callArgs);
+    // 本体にも JSON を通した複製を渡す。実際の Wails も引数を JSON で送るので、呼び出し側の
+    // proxy を状態に取り込むと (UpdateRequest で保存した request など)、以降の clone が
+    // DataCloneError で落ちて一覧の再取得が失敗する。記録とは別の複製にして、本体が状態を
+    // 書き換えても記録済みの引数は変わらないようにする。
+    return fn(...(snapshotArgs(callArgs) as A));
   };
 }
 
