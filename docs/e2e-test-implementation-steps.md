@@ -357,15 +357,23 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
 振る舞いを変えないリファクタリングだけのステップ。
 
 - `e2e/fixtures/app.ts` に `editor()`（CodeMirror の内部クラス依存をここに集約）、リクエスト編集エリア／レスポンスエリアでスコープしたタブ取得を追加
+  - `app.editor(scope?)` は `CodeMirrorEditor`（`root` / `content` / `lintErrors` / `fill`）を返す。HTTP の Body / Doc のように画面に複数ありうるので、パネルでスコープして使う。`openApiEditor` / `fillOpenApiEditor` はこれを使う形に直した
+  - リクエスト側は `app.requestTabPanel(name)` を足し、`openRequestTab` はそれを返す。レスポンス側の `openResponseTab` も `getByTestId("response-body")` ではなく名前付きの `tabpanel` を返すようにした（Step 16 で `aria-labelledby` がタブを指すようになったので、パネルをタブ名で引ける）
 - 置き換え
   - `locator("#tabpanel-*")` → パネルでスコープした `getByRole("tabpanel")`
   - `locator("span").filter({ hasText: /^New Collection$/ })` → `app.collection(name).getByText(name)`
+    - 既存の `app.startRename(node, name)` がこの形なので、それを使った
   - `locator("#broker-*")` → `getByLabel`
+    - ラベルを持つのは Name だけで、ホストとポートは "Broker URL" の行にラベル無しで並ぶ。付けるのは本体修正なので、`profiles.spec.ts` と同じく placeholder で取った。スキームの `locator("select")` は `getByRole("combobox")` にした
   - `locator('[aria-label="Add"]')` → `getByRole("button", { name: "Add" })`
+    - リクエスト編集エリアの key-value エディタにも "Add" があるので、見出し "Collections" の行でスコープした。同じ行の中で取ることで、作成済みのコレクションと同名のメニュー項目 "New Collection" の `.first()` も外れた
   - `locator('input[type="checkbox"]')` → `getByRole("checkbox")`
   - `.cm-*` の直接参照 → `app.editor()`
   - `integration/udp/udp.spec.ts` の `.last()`、`integration/http/http.spec.ts:107,122` の `.nth(1)` → Step 16 の修正を使ってスコープ指定
+    - UDP は spec 内の `selectTarget`（`[role="button"]` と `.first()`）ごと `app.selectUdpTarget` / `app.udpSendButton` に置き換えた。HTTP は `app.openResponseTab("Headers")` で開き、ヘッダーの確認もそのパネルでスコープした
+  - 一覧に無かったが同じ種類のもの: `backend-integration.spec.ts` の `locator('[role="button"]')` と `.first()` を `app.broker` / `app.udpTarget` / `app.createBrokerProfile` に、`sidebar-operations.spec.ts` の `Delete collection` の `.first()` を `app.rowAction` にした
 - `rg '\.nth\(|\.last\(\)|locator\("[#.]' frontend/e2e` で残りを確認し、残すものは理由をコメントに書く
+  - 残したもの: `app.ts` の `CodeMirrorEditor`（集約先）、`app.addKeyValue` の `.last()`・`app.udpFixedField` の `.nth()`（既存のコメントあり）、名前を持たない key-value / form の行を足した順で取る `.nth()`、アクセシブル名の無い購読の削除ボタンの `.last()`、並び順そのものを見る MQTT メッセージ一覧の `.last()`、足したばかりの行のチェックボックスの `.last()`（既存のコメントあり）。コメントの無かったものには理由を書いた
 
 **完了条件**: `task frontend:ci`、`task frontend:test:e2e`、`task frontend:test:e2e:fullstack` が通る。
 
@@ -398,4 +406,4 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
 - [x] Step 14: HTTP レスポンス表示ほか
 - [x] Step 15: OpenAPI 保存・D&D・最近のファイル
 - [x] Step 16: 共通 UI・アクセシビリティ
-- [ ] Step 17: セレクタ整理
+- [x] Step 17: セレクタ整理
