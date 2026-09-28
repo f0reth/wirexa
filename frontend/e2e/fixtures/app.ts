@@ -2,6 +2,13 @@ import { type Locator, type Page, expect } from "@playwright/test";
 
 export type Protocol = "MQTT" | "HTTP" | "UDP" | "OpenAPI";
 
+/** 要素の中心のビューポート座標。表示されていなければ (display: none など) 失敗させる。 */
+async function centerOf(locator: Locator): Promise<{ x: number; y: number }> {
+  const box = await locator.boundingBox();
+  if (!box) throw new Error(`element is not visible: ${locator}`);
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
 /**
  * アプリ操作のページオブジェクト。UI モック版 (e2e/ui) と実バックエンド版 (e2e/integration) の
  * 両方から使う。ここに集約する前は同じヘルパーが 6 ファイルにコピペされていた。
@@ -143,6 +150,41 @@ export class App {
     } else {
       await this.confirmRename(name);
     }
+  }
+
+  /**
+   * サイドバー最上位 (コレクションとルートのアイテムの並び) の挿入ゾーン。
+   * position はサイドバーレイアウト上の挿入位置。
+   */
+  sidebarDropZone(position: number): Locator {
+    return this.page.locator(
+      `[data-drop-zone][data-drop-kind="sidebar"][data-drop-position="${position}"]`,
+    );
+  }
+
+  /** コレクションかフォルダ (node) の子の末尾にある挿入ゾーン。node が開いているときだけある。 */
+  childrenEndDropZone(node: Locator): Locator {
+    // 見出し行 (node の親) の次の兄弟が子の一覧で、その最後の挿入ゾーンが末尾。
+    return node.locator(
+      "xpath=../following-sibling::div[1]/div[@data-drop-zone][last()]",
+    );
+  }
+
+  /**
+   * ツリーのマウス方式 D&D (use-long-press-drag.ts → use-tree-drag-drop.ts) で source を
+   * target の中心へ落とす。HTML5 DnD ではないので locator.dragTo() は使えない。
+   * 5px を超えて動かした時点でドラッグが始まり、挿入ゾーンが広がって行の位置がずれるので、
+   * ドロップ先の座標はドラッグを始めてから取る。
+   */
+  async dragTreeNode(source: Locator, target: Locator): Promise<void> {
+    const mouse = this.page.mouse;
+    const from = await centerOf(source);
+    await mouse.move(from.x, from.y);
+    await mouse.down();
+    await mouse.move(from.x, from.y + 6);
+    const to = await centerOf(target);
+    await mouse.move(to.x, to.y, { steps: 5 });
+    await mouse.up();
   }
 
   async deleteCollection(name: string): Promise<void> {
