@@ -15,11 +15,7 @@ test("can rename collection with double-click then Enter", async ({
 }) => {
   await app.createCollection();
 
-  await page
-    .locator("span")
-    .filter({ hasText: /^New Collection$/ })
-    .first()
-    .dblclick();
+  await app.startRename(app.collection("New Collection"), "New Collection");
   await app.confirmRename("Renamed Collection");
 
   await expect(page.getByText("Renamed Collection")).toBeVisible();
@@ -28,11 +24,7 @@ test("can rename collection with double-click then Enter", async ({
 test("rename is cancelled on Escape", async ({ page, app }) => {
   await app.createCollection();
 
-  await page
-    .locator("span")
-    .filter({ hasText: /^New Collection$/ })
-    .first()
-    .dblclick();
+  await app.startRename(app.collection("New Collection"), "New Collection");
 
   const input = app.renameInput;
   await expect(input).toBeVisible();
@@ -49,8 +41,9 @@ test("delete collection shows confirm dialog and removes on confirm", async ({
 }) => {
   await app.createCollection();
 
-  await app.collection("New Collection").hover();
-  await page.getByRole("button", { name: "Delete collection" }).first().click();
+  await app
+    .rowAction(app.collection("New Collection"), "Delete collection")
+    .click();
 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();

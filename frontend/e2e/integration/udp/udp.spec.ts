@@ -19,20 +19,6 @@ import {
 // リスナーだけは Go 側に残り、次のテストの読み込み時に復元されて Start を無効にするので、
 // afterEach でバックエンドから直接止める。
 
-// ターゲット選択: role="button" 属性を持つ外側 div をフォーカス+Enter で選択する。
-// span への click() を使うと CSS :hover でアクションボタンが出現し
-// stopPropagation が発火して loadTarget に届かないケースがある。
-async function selectTarget(page: Page, name: string) {
-  const row = page.locator('[role="button"]').filter({ hasText: name }).first();
-  await expect(row).toBeVisible();
-  await row.focus();
-  await page.keyboard.press("Enter");
-  // Listen タブが表示されれば選択完了（UdpClient がタブバーを表示している）
-  await expect(
-    page.getByRole("tab", { name: "Listen", exact: true }),
-  ).toBeVisible();
-}
-
 async function startListen(page: Page, listenPort: number) {
   await page.getByRole("tab", { name: "Listen", exact: true }).click();
   await page.getByPlaceholder("12345").fill(String(listenPort));
@@ -56,12 +42,10 @@ test("can fill udp send form and click send", async ({ page, app }) => {
 
   try {
     await app.createUdpTarget(name, "127.0.0.1", server.port);
-    await selectTarget(page, name);
+    await app.selectUdpTarget(name);
 
     await page.getByPlaceholder("Enter payload...").fill("E2E-UDP-HELLO");
-    const sendButton = page
-      .getByRole("button", { name: "Send", exact: true })
-      .last();
+    const sendButton = app.udpSendButton;
     await sendButton.click();
     await expect(sendButton).toBeEnabled();
 
@@ -78,7 +62,7 @@ test("can start and stop UDP listening", async ({ page, app }) => {
   const listenPort = await reserveUdpPort();
 
   await app.createUdpTarget(name, "127.0.0.1", listenPort);
-  await selectTarget(page, name);
+  await app.selectUdpTarget(name);
   await startListen(page, listenPort);
 
   await expect(
@@ -100,7 +84,7 @@ test("received udp messages appear in the message log", async ({ page, app }) =>
   const listenPort = await reserveUdpPort();
 
   await app.createUdpTarget(name, "127.0.0.1", listenPort);
-  await selectTarget(page, name);
+  await app.selectUdpTarget(name);
   await startListen(page, listenPort);
 
   const payload = "E2E-UDP-RECEIVED-TEST";
@@ -122,7 +106,7 @@ test("udp log shows newest first and drops msg-0 at the cap", async ({
   const listenPort = await reserveUdpPort();
 
   await app.createUdpTarget(name, "127.0.0.1", listenPort);
-  await selectTarget(page, name);
+  await app.selectUdpTarget(name);
   await startListen(page, listenPort);
 
   const client = dgram.createSocket("udp4");
@@ -189,7 +173,7 @@ test("listening on a port already in use shows an error", async ({
 
   try {
     await app.createUdpTarget(name, "127.0.0.1", occupied.port);
-    await selectTarget(page, name);
+    await app.selectUdpTarget(name);
     await page.getByRole("tab", { name: "Listen", exact: true }).click();
     await page.getByPlaceholder("12345").fill(String(occupied.port));
     const start = page.getByRole("button", { name: "Start", exact: true });
@@ -227,7 +211,7 @@ test("udp message log newest message is visible after receiving multiple message
   const listenPort = await reserveUdpPort();
 
   await app.createUdpTarget(name, "127.0.0.1", listenPort);
-  await selectTarget(page, name);
+  await app.selectUdpTarget(name);
   await startListen(page, listenPort);
 
   const newest = "E2E-UDP-NEWEST-MESSAGE";

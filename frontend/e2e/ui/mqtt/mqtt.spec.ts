@@ -32,10 +32,11 @@ test("new broker dialog rejects a port or host that cannot be read back", async 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   const save = dialog.getByRole("button", { name: "Save", exact: true });
-  const host = dialog.locator("#broker-host");
-  const port = dialog.locator("#broker-port");
+  // ホストとポートは "Broker URL" の行にまとめて並び、個別のラベルを持たないので placeholder で取る。
+  const host = dialog.getByPlaceholder("localhost");
+  const port = dialog.getByPlaceholder("1883");
 
-  await dialog.locator("#broker-name").fill("Validation Broker");
+  await dialog.getByLabel("Name", { exact: true }).fill("Validation Broker");
   await host.fill("localhost");
   await port.fill("1883");
   await expect(save).toBeEnabled();

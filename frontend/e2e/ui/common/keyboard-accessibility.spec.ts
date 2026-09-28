@@ -88,6 +88,7 @@ test("Tab cycles focus inside the broker dialog", async ({ page }) => {
   await expect(name).toBeFocused();
 
   // 一周しても、フォーカスはダイアログの外へ出ない。
+  // role では「フォーカスできる要素」を表せないので、要素の種類で数える。
   const focusable = await dialog
     .locator("input:not([disabled]), select:not([disabled]), button:not([disabled])")
     .count();

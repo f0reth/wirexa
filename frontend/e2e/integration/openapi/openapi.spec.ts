@@ -18,6 +18,7 @@ test.beforeEach(async ({ page }) => {
 
 test("pasting a spec into a new document renders the preview", async ({
   page,
+  app,
   context,
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -30,11 +31,11 @@ test("pasting a spec into a new document renders the preview", async ({
     (text) => navigator.clipboard.writeText(text),
     VALID_YAML,
   );
-  await page.locator(".cm-content").click();
+  await app.editor().content.click();
   await page.keyboard.press("ControlOrMeta+V");
 
   // エディタに YAML 内容が表示される
-  await expect(page.locator(".cm-editor")).toContainText("Test API", {
+  await expect(app.editor().content).toContainText("Test API", {
     timeout: 5000,
   });
 

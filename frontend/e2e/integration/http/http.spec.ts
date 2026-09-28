@@ -95,10 +95,10 @@ test("response viewer headers tab shows response headers", async ({
 
   await expect(page.getByText("200", { exact: true })).toBeVisible();
 
-  await page.getByRole("tab", { name: "Headers" }).nth(1).click();
+  const headers = await app.openResponseTab("Headers");
 
-  await expect(page.getByText("content-type")).toBeVisible();
-  await expect(page.getByText("x-custom-header")).toBeVisible();
+  await expect(headers.getByText("content-type")).toBeVisible();
+  await expect(headers.getByText("x-custom-header")).toBeVisible();
 });
 
 test("response viewer headers tab shows every value of a multi-value header", async ({
@@ -110,12 +110,12 @@ test("response viewer headers tab shows every value of a multi-value header", as
 
   await expect(page.getByText("200", { exact: true })).toBeVisible();
 
-  await page.getByRole("tab", { name: "Headers" }).nth(1).click();
+  const headers = await app.openResponseTab("Headers");
 
   // Set-Cookie は値ごとに 1 行ずつ描画される
-  await expect(page.getByText("set-cookie")).toHaveCount(2);
-  await expect(page.getByText("a=1; Path=/")).toBeVisible();
-  await expect(page.getByText("b=2; Path=/")).toBeVisible();
+  await expect(headers.getByText("set-cookie")).toHaveCount(2);
+  await expect(headers.getByText("a=1; Path=/")).toBeVisible();
+  await expect(headers.getByText("b=2; Path=/")).toBeVisible();
 });
 
 // ── form-data の行種別（text / json / file）────────────────────────────────
@@ -132,8 +132,7 @@ test("form-data rows are sent as multipart parts and a typed file path is not up
   await writeFile(filePath, '{"from":"file"}');
 
   await app.urlInput.fill(echoUrl());
-  await page.getByRole("tab", { name: "Body" }).click();
-  const bodyPanel = page.locator("#request-tabpanel-body");
+  const bodyPanel = await app.openRequestTab("Body");
   await bodyPanel.getByRole("button").first().click();
   await bodyPanel.getByRole("button", { name: "Form Data" }).click();
 
@@ -143,6 +142,7 @@ test("form-data rows are sent as multipart parts and a typed file path is not up
   await bodyPanel.getByPlaceholder("Value").fill("text value");
 
   // file 行: パスを入力しただけでは未確定のままで、送信は止まる
+  // 行は名前を持たないので、file 行は 2 行目 (nth(1)) として位置で取る。
   await bodyPanel.getByRole("button", { name: "Add" }).click();
   await bodyPanel.getByPlaceholder("Field").nth(1).fill("doc");
   const kindSelect = bodyPanel.getByTestId("form-kind-select").nth(1);

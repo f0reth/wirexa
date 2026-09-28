@@ -82,7 +82,8 @@ test.describe("editing a broker", () => {
     const dialog = page.getByRole("dialog", { name: "Edit Profile" });
     const name = dialog.getByLabel("Name", { exact: true });
     await expect(name).toHaveValue(ALPHA.name);
-    await expect(dialog.locator("select")).toHaveValue("tcp");
+    // スキームはダイアログで唯一のネイティブ select。
+    await expect(dialog.getByRole("combobox")).toHaveValue("tcp");
     await expect(dialog.getByPlaceholder("localhost")).toHaveValue(
       "alpha.local",
     );

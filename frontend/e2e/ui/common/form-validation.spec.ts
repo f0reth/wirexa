@@ -46,10 +46,10 @@ test("send button is re-disabled after clearing a valid URL", async ({
 // ── 観点D-4: key-valueエディタの行追加・削除 ─────────────────────────────────
 
 test("can add and remove rows in key-value editor (Params tab)", async ({
-  page,
+  app,
 }) => {
   // Params タブはデフォルトでアクティブ
-  const paramsPanel = page.locator("#request-tabpanel-params");
+  const paramsPanel = app.requestTabPanel("Params");
   const addButton = paramsPanel.getByRole("button", { name: "Add" });
   const paramInputs = paramsPanel.getByPlaceholder("Parameter");
 
@@ -69,11 +69,9 @@ test("can add and remove rows in key-value editor (Params tab)", async ({
 });
 
 test("can add and remove rows in key-value editor (Headers tab)", async ({
-  page,
+  app,
 }) => {
-  await page.getByRole("tab", { name: "Headers" }).click();
-
-  const headersPanel = page.locator("#request-tabpanel-headers");
+  const headersPanel = await app.openRequestTab("Headers");
   const addButton = headersPanel.getByRole("button", { name: "Add" });
   const headerInputs = headersPanel.getByPlaceholder("Header");
 
@@ -91,12 +89,13 @@ test("can add and remove rows in key-value editor (Headers tab)", async ({
 
 // ── 観点D-5: key-valueエディタの enabled トグル ───────────────────────────────
 
-test("can toggle enabled state of a key-value editor row", async ({ page }) => {
-  const paramsPanel = page.locator("#request-tabpanel-params");
+test("can toggle enabled state of a key-value editor row", async ({ app }) => {
+  // Params タブはデフォルトでアクティブ
+  const paramsPanel = app.requestTabPanel("Params");
   await paramsPanel.getByRole("button", { name: "Add" }).click();
 
   // 新規行のチェックボックスはデフォルトで ON
-  const checkbox = paramsPanel.locator('input[type="checkbox"]').first();
+  const checkbox = paramsPanel.getByRole("checkbox");
   await expect(checkbox).toBeChecked();
 
   await checkbox.uncheck();
@@ -109,17 +108,12 @@ test("can toggle enabled state of a key-value editor row", async ({ page }) => {
 // ── 観点D-8: 空白のみの入力でリネームがキャンセルされる ───────────────────────
 
 test("rename input with whitespace-only value keeps original name", async ({
-  page,
   app,
 }) => {
   await app.createCollection();
 
   // ダブルクリックでリネームモードへ入り、空白のみを入力して確定する
-  await page
-    .locator("span")
-    .filter({ hasText: /^New Collection$/ })
-    .first()
-    .dblclick();
+  await app.startRename(app.collection("New Collection"), "New Collection");
   await app.confirmRename("   ");
 
   await expect(app.collection("New Collection")).toBeVisible();

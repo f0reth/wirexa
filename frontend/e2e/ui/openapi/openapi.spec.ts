@@ -8,9 +8,9 @@ const VALID_YAML = [
   "paths: {}",
 ].join("\n");
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, app }) => {
   await page.getByRole("button", { name: "OpenAPI", exact: true }).click();
-  await expect(page.locator(".cm-editor")).toBeVisible();
+  await expect(app.editor().root).toBeVisible();
 });
 
 // ── 観点K-2: エディタでの編集とプレビュー反映 ────────────────────────────────────
@@ -39,7 +39,7 @@ test("clearing editor content shows no valid spec message in preview", async ({
   await expect(page.getByText("No valid OpenAPI spec")).not.toBeVisible();
 
   // エディタをクリア → プレビューが "No valid OpenAPI spec" に戻る
-  await page.locator(".cm-content").click();
+  await app.editor().content.click();
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.press("Backspace");
 
@@ -56,7 +56,5 @@ test("invalid yaml in editor shows parse error", async ({ page, app }) => {
   await expect(page.getByText("No valid OpenAPI spec")).toBeVisible();
 
   // CodeMirror linter がエラー位置をマークする（点エラーまたは範囲エラー）
-  await expect(
-    page.locator(".cm-lintPoint-error, .cm-lintRange-error"),
-  ).toBeAttached();
+  await expect(app.editor().lintErrors).toBeAttached();
 });

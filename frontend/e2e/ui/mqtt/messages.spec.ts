@@ -299,6 +299,7 @@ test.describe("message cap", () => {
       .click();
     const last = app.mqttMessage(`msg-${MAX_MESSAGES - 1}`);
     await expect(last).toBeInViewport();
+    // 一覧の並び順そのものを確かめるので、末尾の項目を位置で取る。
     await expect(app.mqttMessages.last()).toHaveText(
       new RegExp(`msg-${MAX_MESSAGES - 1}$`),
     );

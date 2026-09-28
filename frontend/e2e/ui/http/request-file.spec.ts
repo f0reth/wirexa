@@ -1,6 +1,5 @@
-import type { Page } from "@playwright/test";
 import type { HttpRequest } from "../../../src/domain/http/types";
-import { expect, type FakeControl, test } from "../../fixtures/ui";
+import { type App, expect, type FakeControl, test } from "../../fixtures/ui";
 
 // request file は入力欄のパスでは許可にならず、ファイルダイアログ (OpenFilePicker) で
 // 確定したものだけが token 付きで送られる。偽バックエンドの OpenFilePicker は
@@ -16,9 +15,8 @@ test.beforeEach(async ({ app }) => {
   await app.switchTo("HTTP");
 });
 
-async function chooseBodyType(page: Page, label: string) {
-  await page.getByRole("tab", { name: "Body" }).click();
-  const bodyPanel = page.locator("#request-tabpanel-body");
+async function chooseBodyType(app: App, label: string) {
+  const bodyPanel = await app.openRequestTab("Body");
   await bodyPanel.getByRole("button").first().click();
   await bodyPanel.getByRole("button", { name: label, exact: true }).click();
   return bodyPanel;
@@ -39,7 +37,7 @@ test.describe("file body", () => {
     fake,
   }) => {
     await app.urlInput.fill("https://example.com/upload");
-    const bodyPanel = await chooseBodyType(page, "File");
+    const bodyPanel = await chooseBodyType(app, "File");
     await bodyPanel.getByPlaceholder("No file selected").fill("/tmp/upload.json");
 
     await expect(bodyPanel.getByText("Not confirmed")).toBeVisible();
@@ -49,12 +47,11 @@ test.describe("file body", () => {
   });
 
   test("Browse confirms the file and uses the typed path only as a hint", async ({
-    page,
     app,
     fake,
   }) => {
     await app.urlInput.fill("https://example.com/upload");
-    const bodyPanel = await chooseBodyType(page, "File");
+    const bodyPanel = await chooseBodyType(app, "File");
     const input = bodyPanel.getByPlaceholder("No file selected");
     await input.fill("/tmp/upload.json");
     await bodyPanel.getByRole("button", { name: "Browse..." }).click();
@@ -76,7 +73,7 @@ test.describe("file body", () => {
     fake,
   }) => {
     await app.urlInput.fill("https://example.com/upload");
-    const bodyPanel = await chooseBodyType(page, "File");
+    const bodyPanel = await chooseBodyType(app, "File");
     await bodyPanel.getByRole("button", { name: "Browse..." }).click();
     await expect(bodyPanel.getByText("Selected", { exact: true })).toBeVisible();
 
@@ -88,10 +85,10 @@ test.describe("file body", () => {
   });
 
   test("pressing Enter in the path field opens the file picker", async ({
-    page,
+    app,
     fake,
   }) => {
-    const bodyPanel = await chooseBodyType(page, "File");
+    const bodyPanel = await chooseBodyType(app, "File");
     const input = bodyPanel.getByPlaceholder("No file selected");
     await input.fill("/tmp/upload.json");
     await input.press("Enter");
@@ -108,8 +105,8 @@ test.describe("form-data file row", () => {
     },
   });
 
-  async function addFileRow(page: Page) {
-    const bodyPanel = await chooseBodyType(page, "Form Data");
+  async function addFileRow(app: App) {
+    const bodyPanel = await chooseBodyType(app, "Form Data");
     await bodyPanel.getByRole("button", { name: "Add" }).click();
     await bodyPanel.getByPlaceholder("Field").fill("doc");
     const kindSelect = bodyPanel.getByTestId("form-kind-select");
@@ -124,7 +121,7 @@ test.describe("form-data file row", () => {
     fake,
   }) => {
     await app.urlInput.fill("https://example.com/upload");
-    const bodyPanel = await addFileRow(page);
+    const bodyPanel = await addFileRow(app);
     await bodyPanel.getByPlaceholder("No file selected").fill("/tmp/a.png");
 
     await expect(bodyPanel.getByText("Not confirmed")).toBeVisible();
@@ -135,9 +132,9 @@ test.describe("form-data file row", () => {
 
   // Content-Type 未指定のときは、実際に送信される選択時の判定値をヒントとして出す。
   test("expanding a confirmed file row shows the Content-Type from the selection", async ({
-    page,
+    app,
   }) => {
-    const bodyPanel = await addFileRow(page);
+    const bodyPanel = await addFileRow(app);
     await bodyPanel.getByRole("button", { name: "Browse..." }).click();
 
     await bodyPanel.getByRole("button", { name: "Expand row" }).click();
@@ -149,12 +146,11 @@ test.describe("form-data file row", () => {
   });
 
   test("a confirmed file row is sent with its token", async ({
-    page,
     app,
     fake,
   }) => {
     await app.urlInput.fill("https://example.com/upload");
-    const bodyPanel = await addFileRow(page);
+    const bodyPanel = await addFileRow(app);
     await bodyPanel.getByRole("button", { name: "Browse..." }).click();
     await expect(bodyPanel.getByText("Selected", { exact: true })).toBeVisible();
 
@@ -186,10 +182,9 @@ test.describe("saved file request", () => {
     },
   });
 
-  test("asks to reselect the file after a restart", async ({ page, app }) => {
+  test("asks to reselect the file after a restart", async ({ app }) => {
     await app.request(/Upload/).click();
-    await page.getByRole("tab", { name: "Body" }).click();
-    const bodyPanel = page.locator("#request-tabpanel-body");
+    const bodyPanel = await app.openRequestTab("Body");
 
     await expect(bodyPanel.getByText("Reselect file")).toBeVisible();
     await expect(bodyPanel.getByPlaceholder("No file selected")).toHaveValue(

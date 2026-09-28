@@ -10,6 +10,39 @@ async function centerOf(locator: Locator): Promise<{ x: number; y: number }> {
 }
 
 /**
+ * CodeMirror のエディタ (App.editor で取る)。CodeMirror の内部クラス (.cm-*) には
+ * アクセシブルな代わりが無いので、その依存をここに閉じ込める。
+ */
+export class CodeMirrorEditor {
+  constructor(private readonly scope: Locator | Page) {}
+
+  /** エディタ全体。表示の有無を見るときに使う。 */
+  get root(): Locator {
+    return this.scope.locator(".cm-editor");
+  }
+
+  /** 編集領域。クリックしてフォーカスを移し、内容を toHaveText などで見る。 */
+  get content(): Locator {
+    return this.root.locator(".cm-content");
+  }
+
+  /** linter がエラーとして付けた印 (位置のエラーと範囲のエラー)。 */
+  get lintErrors(): Locator {
+    return this.root.locator(".cm-lintPoint-error, .cm-lintRange-error");
+  }
+
+  /** 内容を text で置き換える。 */
+  async fill(text: string): Promise<void> {
+    await this.root.click();
+    await this.content.evaluate((el, t) => {
+      (el as HTMLElement).focus();
+      document.execCommand("selectAll");
+      document.execCommand("insertText", false, t);
+    }, text);
+  }
+}
+
+/**
  * アプリ操作のページオブジェクト。UI モック版 (e2e/ui) と実バックエンド版 (e2e/integration) の
  * 両方から使う。ここに集約する前は同じヘルパーが 6 ファイルにコピペされていた。
  */
@@ -34,6 +67,14 @@ export class App {
     await expect(
       this.page.getByText(heading[protocol], { exact: protocol !== "OpenAPI" }),
     ).toBeVisible();
+  }
+
+  /**
+   * CodeMirror のエディタ。HTTP の Body / Doc パネルのように画面に複数ありうるので、
+   * 使う側のパネル (scope) でスコープする。OpenAPI パネルのエディタは 1 つなので省いてよい。
+   */
+  editor(scope: Locator | Page = this.page): CodeMirrorEditor {
+    return new CodeMirrorEditor(scope);
   }
 
   /** 確認ダイアログの Delete を押す。 */
@@ -89,8 +130,21 @@ export class App {
     await expect(this.renameInput).toBeVisible();
   }
 
+  /**
+   * サイドバーの見出し "Collections" の行。Add ボタンとそのドロップダウンを含む。
+   * リクエスト編集エリアの key-value エディタにも同名の "Add" ボタンがあり、
+   * 作成済みのコレクション "New Collection" はメニュー項目と同名なので、この行でスコープする。
+   */
+  private get collectionsHeader(): Locator {
+    return this.page
+      .getByText("Collections", { exact: true })
+      .locator("xpath=..");
+  }
+
   private async openAddMenu(): Promise<void> {
-    await this.page.locator('[aria-label="Add"]').click();
+    await this.collectionsHeader
+      .getByRole("button", { name: "Add", exact: true })
+      .click();
   }
 
   /**
@@ -99,9 +153,8 @@ export class App {
    */
   async createCollection(name?: string): Promise<Locator> {
     await this.openAddMenu();
-    await this.page
-      .getByRole("button", { name: "New Collection" })
-      .first()
+    await this.collectionsHeader
+      .getByRole("button", { name: "New Collection", exact: true })
       .click();
     await expect(this.renameInput).toBeVisible();
     if (name === undefined) {
@@ -117,7 +170,7 @@ export class App {
   /** Add ドロップダウンの New Request で、どのコレクションにも属さないリクエストを作る。 */
   async createRootRequest(name: string): Promise<Locator> {
     await this.openAddMenu();
-    await this.page
+    await this.collectionsHeader
       .getByRole("button", { name: "New Request", exact: true })
       .click();
     await this.confirmRename(name);
@@ -242,11 +295,18 @@ export class App {
       .locator("xpath=..");
   }
 
+  /**
+   * リクエスト編集エリアの、タブ name のパネル。表示中のタブのパネルだけが DOM にあるので、
+   * タブを開かずに使うのは既定の Params か、開いてあるタブのときだけ。
+   */
+  requestTabPanel(name: string): Locator {
+    return this.requestEditor.getByRole("tabpanel", { name, exact: true });
+  }
+
   /** リクエスト編集エリアのタブを開き、そのパネルを返す。 */
   async openRequestTab(name: string): Promise<Locator> {
-    const editor = this.requestEditor;
-    await editor.getByRole("tab", { name, exact: true }).click();
-    return editor.getByRole("tabpanel");
+    await this.requestEditor.getByRole("tab", { name, exact: true }).click();
+    return this.requestTabPanel(name);
   }
 
   /**
@@ -291,7 +351,7 @@ export class App {
   async openResponseTab(name: "Body" | "Headers" | "Timing"): Promise<Locator> {
     const viewer = this.responseViewer;
     await viewer.getByRole("tab", { name, exact: true }).click();
-    return viewer.getByTestId("response-body");
+    return viewer.getByRole("tabpanel", { name, exact: true });
   }
 
   // ── ブローカー・ターゲットの一覧 (profile-list.tsx) ─────────────────────────
@@ -371,21 +431,14 @@ export class App {
 
   // ── OpenAPI ─────────────────────────────────────────────────────────────────
 
-  /** OpenAPI エディタ (CodeMirror) の編集領域。CodeMirror の内部クラスへの依存をここに閉じ込める。 */
+  /** OpenAPI エディタ (CodeMirror) の編集領域。 */
   get openApiEditor(): Locator {
-    return this.page.locator(".cm-content");
+    return this.editor().content;
   }
 
   /** OpenAPI エディタの内容を text で置き換える。 */
   async fillOpenApiEditor(text: string): Promise<void> {
-    await this.page.locator(".cm-editor").click();
-    await this.page.evaluate((t) => {
-      const el = document.querySelector(".cm-content") as HTMLElement | null;
-      if (!el) return;
-      el.focus();
-      document.execCommand("selectAll");
-      document.execCommand("insertText", false, t);
-    }, text);
+    await this.editor().fill(text);
   }
 
   /** サイドバーの New で無題文書を作る (未保存の文書があれば確認ダイアログが出る)。 */

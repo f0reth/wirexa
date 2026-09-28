@@ -1,4 +1,3 @@
-import type { Page } from "@playwright/test";
 import {
   expect,
   readGolden,
@@ -28,19 +27,6 @@ function storedEntity<T>(entry: { file: string; data: T } | undefined): {
   return entry;
 }
 
-const brokerRow = (page: Page, name: string | RegExp) =>
-  page.locator('[role="button"]').filter({ hasText: name });
-
-const createBrokerProfile = async (page: Page, name: string) => {
-  await page.getByRole("button", { name: "New Broker", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toBeVisible();
-  await dialog.getByLabel("Name", { exact: true }).fill(name);
-  await dialog.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(dialog).toBeHidden();
-  await expect(brokerRow(page, name).first()).toBeVisible();
-};
-
 // ── 観点M-1: Wails バインディングがバックエンドのデータを返す ──────────────────
 // UI を通さずバインディングで直接作った項目が、リロード後の一覧取得 (GetCollections /
 // GetProfiles / GetTargets) で画面に出ることを確かめる。見出しは静的文字列なので、
@@ -65,6 +51,7 @@ test.describe("M-1: Wails binding calls return backend data", () => {
 
   test("broker profile saved in the backend is listed by GetProfiles", async ({
     page,
+    app,
   }) => {
     const name = "E2E Binding Seeded Broker";
     await page.evaluate(async (n) => {
@@ -83,7 +70,7 @@ test.describe("M-1: Wails binding calls return backend data", () => {
 
     await page.reload();
     await expect(page.getByText("Brokers", { exact: true })).toBeVisible();
-    await expect(brokerRow(page, name).first()).toBeVisible();
+    await expect(app.broker(name)).toBeVisible();
   });
 
   test("udp target saved in the backend is listed by GetTargets", async ({
@@ -104,7 +91,7 @@ test.describe("M-1: Wails binding calls return backend data", () => {
 
     await page.reload();
     await app.switchTo("UDP");
-    await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
+    await expect(app.udpTarget(name)).toBeVisible();
   });
 });
 
@@ -159,19 +146,19 @@ test.describe("M-2: Collection persistence", () => {
 test.describe("M-3: MQTT broker profile persistence", () => {
   const NAME = "E2E Backend Integration Broker";
 
-  test("mqtt broker profile persists after page reload", async ({ page }) => {
-    await createBrokerProfile(page, NAME);
+  test("mqtt broker profile persists after page reload", async ({ page, app }) => {
+    await app.createBrokerProfile(NAME);
 
     await page.reload();
     await expect(page.getByText("Brokers", { exact: true })).toBeVisible();
-    await expect(brokerRow(page, NAME).first()).toBeVisible();
+    await expect(app.broker(NAME)).toBeVisible();
   });
 
   test("saved broker profile is written under APPDATA/Wirexa/mqtt-profiles", async ({
-    page,
+    app,
   }) => {
     const name = "E2E Disk Broker";
-    await createBrokerProfile(page, name);
+    await app.createBrokerProfile(name);
 
     const find = () => findStored<{ id: string; name: string }>(
       "mqtt-profiles",
@@ -203,7 +190,7 @@ test.describe("M-4: UDP target persistence", () => {
 
     await page.reload();
     await app.switchTo("UDP");
-    await expect(page.getByText(NAME, { exact: true }).first()).toBeVisible();
+    await expect(app.udpTarget(NAME)).toBeVisible();
   });
 
   test("saved udp target is written under APPDATA/Wirexa/udp-targets", async ({
