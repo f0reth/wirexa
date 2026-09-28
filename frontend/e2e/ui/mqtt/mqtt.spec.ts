@@ -150,3 +150,41 @@ test("can toggle the retain flag and it is stored on the selected preset", async
   await expect(retain).not.toBeChecked();
   await expect(page.getByText("Retained")).toBeHidden();
 });
+
+// ── 観点F: ブローカーの並び順 (localStorage の mqtt:profileOrder) ────────────
+// 並びはバックエンドではなく localStorage に保存される。偽バックエンドは seed の順
+// (Alpha, Beta) で返すので、リロード後に Beta が先なら保存した並びが使われている。
+
+test.describe("broker order", () => {
+  const ALPHA = { id: "profile-alpha", name: "Broker Alpha" };
+  const BETA = { id: "profile-beta", name: "Broker Beta" };
+
+  test.use({ seed: { mqttProfiles: [ALPHA, BETA] } });
+
+  test("reordered brokers are kept in mqtt:profileOrder after reload", async ({
+    page,
+  }) => {
+    const row = (name: string) =>
+      page.getByRole("button").filter({ hasText: name });
+    const rows = page.getByRole("button").filter({ hasText: /^Broker / });
+    await expect(rows).toHaveText([/Broker Alpha/, /Broker Beta/]);
+
+    // HTML5 DnD (list-reorder.tsx)。行の上半分に落とすとその行の前に入る。
+    // ドラッグが始まると挿入ゾーンが広がって行が下へずれるので、上端から少し離して落とす。
+    const target = row(ALPHA.name);
+    const box = await target.boundingBox();
+    if (!box) throw new Error("broker row is not visible");
+    await row(BETA.name).dragTo(target, {
+      targetPosition: { x: box.width / 2, y: box.height / 3 },
+    });
+
+    await expect(rows).toHaveText([/Broker Beta/, /Broker Alpha/]);
+    const stored = await page.evaluate(() =>
+      localStorage.getItem("mqtt:profileOrder"),
+    );
+    expect(JSON.parse(stored ?? "null")).toEqual([BETA.id, ALPHA.id]);
+
+    await page.reload();
+    await expect(rows).toHaveText([/Broker Beta/, /Broker Alpha/]);
+  });
+});

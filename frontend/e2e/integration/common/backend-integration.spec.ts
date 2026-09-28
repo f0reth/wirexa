@@ -1,6 +1,10 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import {
   expect,
+  readGolden,
+  readStoredEntities,
+  readStoredFile,
+  shapeOf,
   test,
   type WailsGo,
 } from "../../fixtures/integration";
@@ -8,19 +12,21 @@ import {
 // 実 Go バックエンド (wails dev) に対する疎通と永続化の確認。保存先は playwright.integration.
 // config.ts が APPDATA を一時ディレクトリへ向けて隔離しているので、実行のたびにまっさらな状態から
 // 始まる。前回の残骸を UI 越しに消して回る beforeEach/afterEach はもう要らない。
+// ディスクへの保存は APPDATA/Wirexa 配下の JSON を直接読み、各リポジトリの
+// testdata/*.golden.json と同じ形で書かれていることまで確かめる。
 
-// HTML5 ネイティブ drag-and-drop で並び替えをトリガーする。
-// Playwright の locator.dragTo() も Chromium ではネイティブ DnD イベントを発火するが、ドロップ位置が
-// target の中央になり、上下どちらの半分に落ちるかで挿入位置が変わる。ここでは共有 DataTransfer
-// オブジェクトで dragstart → dragover → drop を手動 dispatch する。dispatchEvent では clientY が 0 に
-// なるため、常にドロップ先の行の上半分に落ちる扱いになり、source は target の直前（＝上）に挿入される。
-const dragRowOnto = async (page: Page, source: Locator, target: Locator) => {
-  const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
-  await source.dispatchEvent("dragstart", { dataTransfer });
-  await target.dispatchEvent("dragover", { dataTransfer });
-  await target.dispatchEvent("drop", { dataTransfer });
-  await source.dispatchEvent("dragend", { dataTransfer });
-};
+/** 保存ディレクトリ (collections など) から名前でエンティティを探す。 */
+const findStored = <T extends { name: string }>(dir: string, name: string) =>
+  readStoredEntities<T>(dir).find((e) => e.data.name === name);
+
+/** expect.poll で書き込みを待ったあとの findStored の結果。無ければ失敗させる。 */
+function storedEntity<T>(entry: { file: string; data: T } | undefined): {
+  file: string;
+  data: T;
+} {
+  if (!entry) throw new Error("stored entity disappeared after polling");
+  return entry;
+}
 
 const brokerRow = (page: Page, name: string | RegExp) =>
   page.locator('[role="button"]').filter({ hasText: name });
@@ -104,6 +110,12 @@ test.describe("M-1: Wails binding calls return backend data", () => {
 
 // ── 観点M-2: コレクションの永続化 ────────────────────────────────────────────
 
+interface StoredCollection {
+  id: string;
+  name: string;
+  items: Array<{ name: string }>;
+}
+
 test.describe("M-2: Collection persistence", () => {
   const NAME = "E2E Backend Integration Collection";
 
@@ -114,6 +126,31 @@ test.describe("M-2: Collection persistence", () => {
     await page.reload();
     await app.switchTo("HTTP");
     await expect(app.collection(NAME)).toBeVisible();
+  });
+
+  test("created collection is written under APPDATA/Wirexa/collections", async ({
+    app,
+  }) => {
+    const name = "E2E Disk Collection";
+    await app.switchTo("HTTP");
+    await app.createCollection(name);
+    await app.addRequest(name, "E2E Disk Request");
+
+    // 作成時は既定名で書かれ、リネームとリクエストの追加で書き直される
+    const find = () => findStored<StoredCollection>("collections", name);
+    await expect
+      .poll(() => find()?.data.items.map((i) => i.name))
+      .toEqual(["E2E Disk Request"]);
+
+    const stored = storedEntity(find());
+    expect(stored.file).toBe(`${stored.data.id}.json`);
+    // golden は items の先頭がフォルダなので、トップレベルのキーと、リクエストの
+    // アイテム (golden の "Minimal") の形とを分けて比べる。
+    const golden = readGolden<StoredCollection>("http", "collection");
+    expect(Object.keys(stored.data).sort()).toEqual(
+      Object.keys(golden).sort(),
+    );
+    expect(shapeOf(stored.data.items[0])).toEqual(shapeOf(golden.items[1]));
   });
 });
 
@@ -128,6 +165,30 @@ test.describe("M-3: MQTT broker profile persistence", () => {
     await page.reload();
     await expect(page.getByText("Brokers", { exact: true })).toBeVisible();
     await expect(brokerRow(page, NAME).first()).toBeVisible();
+  });
+
+  test("saved broker profile is written under APPDATA/Wirexa/mqtt-profiles", async ({
+    page,
+  }) => {
+    const name = "E2E Disk Broker";
+    await createBrokerProfile(page, name);
+
+    const find = () => findStored<{ id: string; name: string }>(
+      "mqtt-profiles",
+      name,
+    );
+    await expect.poll(() => find()?.data.name).toBe(name);
+
+    const stored = storedEntity(find());
+    expect(stored.file).toBe(`${stored.data.id}.json`);
+    // ダイアログの既定値 (mqtt://localhost:1883) で作っている
+    expect(stored.data).toMatchObject({
+      name,
+      broker: "mqtt://localhost:1883",
+    });
+    expect(shapeOf(stored.data)).toEqual(
+      shapeOf(readGolden("mqtt", "profile")),
+    );
   });
 });
 
@@ -144,40 +205,87 @@ test.describe("M-4: UDP target persistence", () => {
     await app.switchTo("UDP");
     await expect(page.getByText(NAME, { exact: true }).first()).toBeVisible();
   });
+
+  test("saved udp target is written under APPDATA/Wirexa/udp-targets", async ({
+    app,
+  }) => {
+    const name = "E2E Disk Target";
+    await app.switchTo("UDP");
+    await app.createUdpTarget(name, "127.0.0.1", 9998);
+
+    const find = () => findStored<{ id: string; name: string }>(
+      "udp-targets",
+      name,
+    );
+    await expect.poll(() => find()?.data.name).toBe(name);
+
+    const stored = storedEntity(find());
+    expect(stored.file).toBe(`${stored.data.id}.json`);
+    expect(stored.data).toEqual({
+      id: expect.any(String),
+      name,
+      host: "127.0.0.1",
+      port: 9998,
+    });
+    expect(shapeOf(stored.data)).toEqual(shapeOf(readGolden("udp", "target")));
+  });
 });
 
 // ── 観点M-8: サイドバーレイアウトの永続化 ────────────────────────────────────
-// ブローカーの drag-and-drop による順序変更がリロード後も保持される
+// HTTP のコレクションとルート直下アイテムの並び (sidebar_layout.json)。ブローカーの並びは
+// localStorage (mqtt:profileOrder) に保存されるので、UI モードの e2e/ui/mqtt で確かめる。
 
 test.describe("M-8: Sidebar layout persistence", () => {
-  const ALPHA = "E2E Broker Alpha";
-  const BETA = "E2E Broker Beta";
+  const FIRST = "E2E Layout First";
+  const SECOND = "E2E Layout Second";
 
-  test("broker profile order persists after reorder and page reload", async ({
+  test("reordering collections persists sidebar_layout.json", async ({
     page,
+    app,
   }) => {
-    await createBrokerProfile(page, ALPHA);
-    await createBrokerProfile(page, BETA);
+    await app.switchTo("HTTP");
+    await app.createCollection(FIRST);
+    await app.createCollection(SECOND);
+    const rows = page.getByRole("button", {
+      name: /^E2E Layout (First|Second)$/,
+    });
+    await expect(rows).toHaveText([FIRST, SECOND]);
 
-    const rows = brokerRow(page, /E2E Broker (Alpha|Beta)/);
-    await expect(rows.first()).toContainText(ALPHA);
-    await expect(rows.nth(1)).toContainText(BETA);
+    const idOf = (name: string) => () =>
+      findStored<StoredCollection>("collections", name)?.data.id;
+    await expect.poll(idOf(FIRST)).toBeDefined();
+    await expect.poll(idOf(SECOND)).toBeDefined();
+    const firstId = idOf(FIRST)();
+    const secondId = idOf(SECOND)();
 
-    // Beta を Alpha の上にドラッグして順序を入れ替える
-    await dragRowOnto(
-      page,
-      brokerRow(page, BETA).first(),
-      brokerRow(page, ALPHA).first(),
+    // 前のテストのコレクションも並んでいるので、位置ではなく First の直前のゾーンに落とす
+    await app.dragTreeNode(
+      app.collection(SECOND),
+      app.dropZoneBefore(app.collection(FIRST)),
+    );
+    await expect(rows).toHaveText([SECOND, FIRST]);
+
+    const layout = () =>
+      readStoredFile<Array<{ kind: string; id: string }>>(
+        "sidebar_layout.json",
+      ) ?? [];
+    await expect
+      .poll(() =>
+        layout()
+          .filter((e) => e.id === firstId || e.id === secondId)
+          .map((e) => [e.kind, e.id]),
+      )
+      .toEqual([
+        ["collection", secondId],
+        ["collection", firstId],
+      ]);
+    expect(shapeOf(layout())).toEqual(
+      shapeOf(readGolden("http", "sidebar_layout")),
     );
 
-    await expect(rows.first()).toContainText(BETA);
-    await expect(rows.nth(1)).toContainText(ALPHA);
-
-    // ページリロード後も順序が保持される
+    // アプリが保存した並びを読み直しても保たれる
     await page.reload();
-    await expect(page.getByText("Brokers", { exact: true })).toBeVisible();
-    const reloaded = brokerRow(page, /E2E Broker (Alpha|Beta)/);
-    await expect(reloaded.first()).toContainText(BETA);
-    await expect(reloaded.nth(1)).toContainText(ALPHA);
+    await app.switchTo("HTTP");
+    await expect(rows).toHaveText([SECOND, FIRST]);
   });
 });

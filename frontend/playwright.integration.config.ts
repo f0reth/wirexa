@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
+import { appDataDir } from "./e2e/fixtures/app-data-dir";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -24,12 +24,11 @@ const previewUrl = `http://localhost:${previewPort}`;
 // %APPDATA% を読む。子プロセス (wails dev → アプリ) にだけ一時ディレクトリを渡すことで、
 // 本番コードを変えずにテストデータを実ユーザーの AppData から切り離せる。
 // これがあるので、前回実行の残骸を UI 越しに消して回る afterEach は要らない。
-// 固定パスを使い、実行の「開始時」に消す。終了時に消そうとすると、まだ生きている WebView2 が
+// 固定パス (e2e/fixtures/app-data-dir.ts) を使い、実行の「開始時」に消す。終了時に消そうとすると、まだ生きている WebView2 が
 // ロックを握っていて EBUSY になる。開始時なら前回のプロセスは終わっているので確実に消せるし、
 // 一時ディレクトリが溜まっていくこともない。
 // この config はワーカープロセスでも読み込まれる。掃除はランナー (ワーカーでない側) でだけ行う。
 // ワーカーが読み込む頃にはアプリが起動していて、消そうとすると EPERM になる。
-const appDataDir = path.join(os.tmpdir(), "wirexa-e2e-appdata");
 if (process.env.TEST_WORKER_INDEX === undefined) {
   fs.rmSync(appDataDir, { recursive: true, force: true });
   fs.mkdirSync(appDataDir, { recursive: true });

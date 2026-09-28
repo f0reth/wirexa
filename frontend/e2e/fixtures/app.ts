@@ -162,6 +162,17 @@ export class App {
     );
   }
 
+  /**
+   * コレクションかフォルダ (node) の直前にある挿入ゾーン。レイアウト上の位置が分からない
+   * (前のテストの残りがある fullstack など) ときに sidebarDropZone の代わりに使う。
+   */
+  dropZoneBefore(node: Locator): Locator {
+    // node → 見出し行 → ノード全体、の直前の兄弟が挿入ゾーン。
+    return node.locator(
+      "xpath=../../preceding-sibling::div[1][@data-drop-zone]",
+    );
+  }
+
   /** コレクションかフォルダ (node) の子の末尾にある挿入ゾーン。node が開いているときだけある。 */
   childrenEndDropZone(node: Locator): Locator {
     // 見出し行 (node の親) の次の兄弟が子の一覧で、その最後の挿入ゾーンが末尾。
@@ -178,10 +189,12 @@ export class App {
    */
   async dragTreeNode(source: Locator, target: Locator): Promise<void> {
     const mouse = this.page.mouse;
+    await source.scrollIntoViewIfNeeded();
     const from = await centerOf(source);
     await mouse.move(from.x, from.y);
     await mouse.down();
     await mouse.move(from.x, from.y + 6);
+    await target.scrollIntoViewIfNeeded();
     const to = await centerOf(target);
     await mouse.move(to.x, to.y, { steps: 5 });
     await mouse.up();
