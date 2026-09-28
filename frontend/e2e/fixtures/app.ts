@@ -275,7 +275,42 @@ export class App {
     await panel.getByPlaceholder("Value").last().fill(value);
   }
 
+  // ── ブローカー・ターゲットの一覧 (profile-list.tsx) ─────────────────────────
+
+  /**
+   * 一覧の行 (role="button" の div) を HTML5 DnD (list-reorder.tsx) で target の前へ動かす。
+   * 行の上半分に落とすとその行の前に入る。ドラッグが始まると挿入ゾーンが広がって行が下へ
+   * ずれるので、上端から少し離して落とす。
+   */
+  async dragListRowBefore(source: Locator, target: Locator): Promise<void> {
+    const box = await target.boundingBox();
+    if (!box) throw new Error(`element is not visible: ${target}`);
+    await source.dragTo(target, {
+      targetPosition: { x: box.width / 2, y: box.height / 3 },
+    });
+  }
+
   // ── UDP ─────────────────────────────────────────────────────────────────────
+
+  /** サイドバーのターゲット行。行には名前と host:port が並ぶ。 */
+  udpTarget(name: string): Locator {
+    return this.page
+      .getByRole("button")
+      .filter({ has: this.page.getByText(name, { exact: true }) });
+  }
+
+  /**
+   * ターゲットを選んで送信フォームに読み込む。行をクリックすると、ホバーで出る Edit / Delete
+   * ボタンに当たることがあるので、フォーカスして Enter で選ぶ。
+   */
+  async selectUdpTarget(name: string): Promise<void> {
+    const row = this.udpTarget(name);
+    await row.focus();
+    await row.press("Enter");
+    await expect(
+      this.page.getByRole("button", { name: "Listen", exact: true }),
+    ).toBeVisible();
+  }
 
   async createUdpTarget(
     name: string,

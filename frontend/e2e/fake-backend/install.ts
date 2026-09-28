@@ -475,10 +475,30 @@ const HttpHandler = {
 
 // ── UdpHandler ────────────────────────────────────────────────────────────────
 
+// Go の ValidationError.Error() と同じ "invalid <field>: <message>" の形で失敗させる。
+function validationError(field: string, message: string): Error {
+  return new Error(`invalid ${field}: ${message}`);
+}
+
+function validPort(port: number): boolean {
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
+// Go の UDPTarget.Validate (internal/domain/udp/types.go) と同じ規則。空白だけのホストは
+// Go 側も通すので、ここでも trim しない。
+function validateTarget(target: UdpTarget): void {
+  if (target.host === "") throw validationError("host", "is required");
+  if (!validPort(target.port)) {
+    throw validationError("port", "must be 1-65535");
+  }
+}
+
 const UdpHandler = {
   GetTargets: counted("GetTargets", async () => clone(db.udpTargets)),
 
   SaveTarget: mutates("SaveTarget", (target: UdpTarget) => {
+    // Go の TargetService.SaveTarget と同じく、保存より先に検証する。
+    validateTarget(target);
     const index = db.udpTargets.findIndex((t) => t.id === target.id);
     // Go 側と同じく、未知の非空 ID は新規作成として受理しない。
     if (target.id && index < 0) throw new Error(`target not found: ${target.id}`);
@@ -494,11 +514,18 @@ const UdpHandler = {
 
   GetListeners: counted("GetListeners", async () => clone(db.listeners)),
 
+  // Go の UDPListenerService.StartListen (internal/application/udp/listener_service.go) と
+  // 同じ順に、ポート範囲・エンコーディング・同じポートのセッションの有無を検証する。
+  // seed.startListenError はそのあとのソケットを開く段階の失敗 (使用中のポートなど) を模す。
   StartListen: mutates("StartListen", (port: number, encoding: string) => {
-    // Go 側と同じく、未知のエンコーディングは拒否する。
+    if (!validPort(port)) throw validationError("port", "must be 1-65535");
     if (!["text", "json", "fixed"].includes(encoding)) {
-      throw new Error(`unknown encoding: ${encoding}`);
+      throw validationError("encoding", `unknown: ${encoding}`);
     }
+    if (db.listeners.some((l) => l.port === port)) {
+      throw validationError("port", `port ${port} is already listening`);
+    }
+    if (seed.startListenError) throw new Error(seed.startListenError);
     const session = {
       id: newId("listener"),
       port,

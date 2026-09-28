@@ -163,20 +163,14 @@ test.describe("broker order", () => {
 
   test("reordered brokers are kept in mqtt:profileOrder after reload", async ({
     page,
+    app,
   }) => {
     const row = (name: string) =>
       page.getByRole("button").filter({ hasText: name });
     const rows = page.getByRole("button").filter({ hasText: /^Broker / });
     await expect(rows).toHaveText([/Broker Alpha/, /Broker Beta/]);
 
-    // HTML5 DnD (list-reorder.tsx)。行の上半分に落とすとその行の前に入る。
-    // ドラッグが始まると挿入ゾーンが広がって行が下へずれるので、上端から少し離して落とす。
-    const target = row(ALPHA.name);
-    const box = await target.boundingBox();
-    if (!box) throw new Error("broker row is not visible");
-    await row(BETA.name).dragTo(target, {
-      targetPosition: { x: box.width / 2, y: box.height / 3 },
-    });
+    await app.dragListRowBefore(row(BETA.name), row(ALPHA.name));
 
     await expect(rows).toHaveText([/Broker Beta/, /Broker Alpha/]);
     const stored = await page.evaluate(() =>

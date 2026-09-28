@@ -36,6 +36,8 @@ export interface FakeSeed {
   httpError?: string;
   /** SaveResponseBody を必ず失敗させる (回収済み一時ファイルの検証に使う)。 */
   saveResponseError?: string;
+  /** StartListen を検証のあとで必ず失敗させる (使用中ポートなど、ソケットを開けない場合を模す)。 */
+  startListenError?: string;
 }
 
 /** window に生える、偽バックエンドのテスト用操作面。 */

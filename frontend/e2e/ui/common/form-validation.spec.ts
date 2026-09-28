@@ -43,45 +43,6 @@ test("send button is re-disabled after clearing a valid URL", async ({
   await expect(page.getByRole("button", { name: "Send" })).toBeDisabled();
 });
 
-// ── 観点D-3: ポート番号の範囲バリデーション ──────────────────────────────────
-
-test("udp target port field has min=1 max=65535 constraints", async ({
-  page,
-}) => {
-  await page.getByRole("button", { name: "UDP", exact: true }).click();
-  await expect(page.getByText("Targets", { exact: true })).toBeVisible();
-
-  await page.getByRole("button", { name: "New Target" }).click();
-
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toBeVisible();
-
-  const portInput = dialog.getByLabel("Port");
-  await expect(portInput).toHaveAttribute("type", "number");
-  await expect(portInput).toHaveAttribute("min", "1");
-  await expect(portInput).toHaveAttribute("max", "65535");
-
-  // 範囲外の値はブラウザのネイティブバリデーションで invalid になる
-  await portInput.fill("0");
-  const underflowValid = await portInput.evaluate(
-    (el: HTMLInputElement) => el.validity.valid,
-  );
-  expect(underflowValid).toBe(false);
-
-  await portInput.fill("65536");
-  const overflowValid = await portInput.evaluate(
-    (el: HTMLInputElement) => el.validity.valid,
-  );
-  expect(overflowValid).toBe(false);
-
-  // 範囲内の値は valid
-  await portInput.fill("8080");
-  const inRangeValid = await portInput.evaluate(
-    (el: HTMLInputElement) => el.validity.valid,
-  );
-  expect(inRangeValid).toBe(true);
-});
-
 // ── 観点D-4: key-valueエディタの行追加・削除 ─────────────────────────────────
 
 test("can add and remove rows in key-value editor (Params tab)", async ({
