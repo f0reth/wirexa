@@ -884,6 +884,42 @@ describe("createConnectionsState tabs and profiles", () => {
     expect(h.persistence.removeLastProfileId).toHaveBeenCalled();
     h.dispose();
   });
+
+  it("keeps the saved profile until restore has read it", async () => {
+    // 実際の保存領域と同じく、消したら読めなくなる永続化。
+    let stored: string | null = "p2";
+    const persistence: ConnectionPersistence = {
+      loadLastProfileId: () => stored,
+      saveLastProfileId: (id) => {
+        stored = id;
+      },
+      removeLastProfileId: () => {
+        stored = null;
+      },
+    };
+    const { state, dispose } = createRoot((dispose) => ({
+      state: createConnectionsState(
+        makeApi(async () => []),
+        noopEvent,
+        persistence,
+        () => [makeProfile("p1"), makeProfile("p2")],
+        async (p) => p,
+        noopLogger,
+        makeNotifier(),
+        1000,
+        1000,
+      ),
+      dispose,
+    }));
+    // 起動直後はアクティブな接続が無いが、まだ復元していないので消さない。
+    expect(stored).toBe("p2");
+
+    await state.restore();
+
+    expect(state.activeConnectionId()).toBe("offline-p2");
+    expect(stored).toBe("p2");
+    dispose();
+  });
 });
 
 describe("createConnectionsState restore failures", () => {

@@ -313,6 +313,9 @@ export function createConnectionsState(
   // オフラインタブとして並べる。最後に使ったプロファイルをアクティブにする。
   // 呼び出し側 (provider) は loadProfiles() の完了後に一度だけ呼ぶ。
   let restored = false;
+  // restore() が保存済みのプロファイル ID を読み終えるまで、アクティブプロファイルを保存しない。
+  // 起動直後はアクティブな接続が無いので、先に保存すると読む前に消してしまう。
+  const [persistActive, setPersistActive] = createSignal(false);
   async function restore(): Promise<void> {
     if (restored) return;
     restored = true;
@@ -358,10 +361,12 @@ export function createConnectionsState(
         setActiveConnectionId(offlineId(savedProfileId));
       }
     }
+    setPersistActive(true);
   }
 
   // アクティブプロファイルを永続化
   createEffect(() => {
+    if (!persistActive()) return;
     const conn = activeConnection();
     if (conn) {
       persistence.saveLastProfileId(conn.profileId);
