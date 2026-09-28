@@ -1,15 +1,19 @@
 import type { Locator, Page } from "@playwright/test";
-import { expect, test } from "../../fixtures/integration";
+import {
+  expect,
+  test,
+  type WailsGo,
+} from "../../fixtures/integration";
 
 // 実 Go バックエンド (wails dev) に対する疎通と永続化の確認。保存先は playwright.integration.
 // config.ts が APPDATA を一時ディレクトリへ向けて隔離しているので、実行のたびにまっさらな状態から
 // 始まる。前回の残骸を UI 越しに消して回る beforeEach/afterEach はもう要らない。
 
 // HTML5 ネイティブ drag-and-drop で並び替えをトリガーする。
-// Playwright の dragTo はネイティブ DnD イベントを発火しないため、
-// 共有 DataTransfer オブジェクトで dragstart → dragover → drop を手動 dispatch する。
-// dispatchEvent では clientY が 0 になるため、ドロップ先の行の上半分に落ちる扱いになり、
-// source は target の直前（＝上）に挿入される。
+// Playwright の locator.dragTo() も Chromium ではネイティブ DnD イベントを発火するが、ドロップ位置が
+// target の中央になり、上下どちらの半分に落ちるかで挿入位置が変わる。ここでは共有 DataTransfer
+// オブジェクトで dragstart → dragover → drop を手動 dispatch する。dispatchEvent では clientY が 0 に
+// なるため、常にドロップ先の行の上半分に落ちる扱いになり、source は target の直前（＝上）に挿入される。
 const dragRowOnto = async (page: Page, source: Locator, target: Locator) => {
   const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
   await source.dispatchEvent("dragstart", { dataTransfer });
@@ -31,25 +35,70 @@ const createBrokerProfile = async (page: Page, name: string) => {
   await expect(brokerRow(page, name).first()).toBeVisible();
 };
 
-// ── 観点M-1: Wails バインディング呼び出しの成功確認 ───────────────────────────
+// ── 観点M-1: Wails バインディングがバックエンドのデータを返す ──────────────────
+// UI を通さずバインディングで直接作った項目が、リロード後の一覧取得 (GetCollections /
+// GetProfiles / GetTargets) で画面に出ることを確かめる。見出しは静的文字列なので、
+// バインディングが失敗しても表示されてしまい検証にならない。
 
-test.describe("M-1: Wails binding calls succeed", () => {
-  test("GetCollections wails binding returns data from backend", async ({
+test.describe("M-1: Wails binding calls return backend data", () => {
+  test("collection created in the backend is listed by GetCollections", async ({
+    page,
     app,
   }) => {
-    // Collections ヘッダーが表示されれば GetCollections バインディングが正常動作している
+    const name = "E2E Binding Seeded Collection";
+    await page.evaluate(async (n) => {
+      const { HTTPHandler } = (window as unknown as { go: WailsGo }).go
+        .adapters;
+      await HTTPHandler.CreateCollection(n);
+    }, name);
+
+    await page.reload();
     await app.switchTo("HTTP");
+    await expect(app.collection(name)).toBeVisible();
   });
 
-  test("GetBrokerProfiles wails binding returns data from backend", async ({
+  test("broker profile saved in the backend is listed by GetProfiles", async ({
     page,
   }) => {
-    // MQTT パネルが初期表示 — Brokers ヘッダーが表示されれば GetBrokerProfiles が正常動作
+    const name = "E2E Binding Seeded Broker";
+    await page.evaluate(async (n) => {
+      const { MQTTHandler } = (window as unknown as { go: WailsGo }).go
+        .adapters;
+      await MQTTHandler.SaveProfile({
+        id: "",
+        name: n,
+        broker: "tcp://127.0.0.1:1883",
+        clientId: "",
+        username: "",
+        password: "",
+        useTls: false,
+      });
+    }, name);
+
+    await page.reload();
     await expect(page.getByText("Brokers", { exact: true })).toBeVisible();
+    await expect(brokerRow(page, name).first()).toBeVisible();
   });
 
-  test("GetTargets wails binding returns data from backend", async ({ app }) => {
+  test("udp target saved in the backend is listed by GetTargets", async ({
+    page,
+    app,
+  }) => {
+    const name = "E2E Binding Seeded Target";
+    await page.evaluate(async (n) => {
+      const { UDPHandler } = (window as unknown as { go: WailsGo }).go
+        .adapters;
+      await UDPHandler.SaveTarget({
+        id: "",
+        name: n,
+        host: "127.0.0.1",
+        port: 9999,
+      });
+    }, name);
+
+    await page.reload();
     await app.switchTo("UDP");
+    await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
   });
 });
 
