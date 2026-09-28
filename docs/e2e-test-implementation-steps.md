@@ -329,14 +329,22 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
 - テストのみのコミット
   - `http form input survives a round trip through another protocol`
   - `clicking the active protocol toggles the sidebar`
+    - 閉じたサイドバーは幅 0 のパネルに `overflow: hidden` で切り取られるだけで、中身は大きさを持ったまま残る。`toBeHidden` では見分けられないので `toBeInViewport` で見る。閉じた状態で別のプロトコルを選ぶと開き直すことも足した
   - `each protocol shows its empty state on first launch`、`udp and openapi panels become visible when selected`
   - `Escape closes the confirm dialog without deleting`、`Tab cycles focus inside the broker dialog`
   - `Enter on a focused request selects it`（ブローカー・ターゲット・プリセットも）
+    - ターゲットは Space で選ぶ形にし、`profile-list.tsx` の Enter / Space の両方を通した。プリセットは Publish タブの準備がある `mqtt/publish.spec.ts` に置いた
   - エラートーストの Dismiss
+    - Step 7（`udp/listen.spec.ts`）と Step 9（`mqtt/profiles.spec.ts` の `the error toast can be dismissed`）で検証済みなので足していない
 - 本体修正のコミット（`fix(frontend): ...`）
   - `tabs.tsx:24` のタブ ID を一意にする（リクエスト側とレスポンス側の衝突解消）と `tab ids are unique on the http panel`
+    - `TabList` / `TabPanel` に必須の `idPrefix` を足し、id を `<prefix>-tab-<value>` / `<prefix>-tabpanel-<value>` にした（`request` / `response` / `mqtt` / `udp`）。`aria-controls` の参照先が無かったレスポンス側の内容の領域と MQTT の Subscribe / Publish の領域も `role="tabpanel"` にした
+    - 既存テストの `#tabpanel-*` は `#request-tabpanel-*` に置き換えただけで、`getByRole("tabpanel")` への書き換えは Step 17 で行う
   - UDP の Send / Listen タブを `role="tab"` にする（または送信ボタンに `data-testid`）
+    - `role="tab"` にし、内容を `role="tabpanel"` で包んだ（見た目は変えない）。`app.openUdpTab` / `app.udpSendButton` / `app.selectUdpTarget` と `integration/udp/udp.spec.ts` の Listen はタブとして取るように直した。`integration/udp/udp.spec.ts` の送信ボタンの `.last()` は一致が 1 件になっただけで動くので、Step 17 で外す
+    - 検証は `udp send and listen are exposed as tabs`
   - ユニットテスト（`task frontend:test`）への影響を確認する
+    - 影響なし（`tabs.tsx` を直接テストしているユニットテストは無い）
 
 **完了条件**: `task frontend:ci`、`task frontend:test`、`task frontend:test:e2e` が通る。
 
@@ -389,5 +397,5 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
 - [x] Step 13: フルスタック エラー表示・UDP 上限・echo
 - [x] Step 14: HTTP レスポンス表示ほか
 - [x] Step 15: OpenAPI 保存・D&D・最近のファイル
-- [ ] Step 16: 共通 UI・アクセシビリティ
+- [x] Step 16: 共通 UI・アクセシビリティ
 - [ ] Step 17: セレクタ整理
