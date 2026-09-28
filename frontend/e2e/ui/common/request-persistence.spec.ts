@@ -1,3 +1,4 @@
+import type { HttpRequest } from "../../../src/domain/http/types";
 import { expect, test } from "../../fixtures/ui";
 
 // 選択中リクエストとフォーム内容の自動保存・復元。フィクスチャは seed で用意するので、
@@ -59,4 +60,51 @@ test("http request form values are auto-saved and restored after reload", async 
   // 同じリクエストを明示的に開き直しても、保存された URL が入っている
   await app.request(/Saved Request/).click();
   await expect(app.urlInput).toHaveValue(SAVED_URL);
+});
+
+test("method, headers and body are restored after reload", async ({
+  page,
+  app,
+  fake,
+}) => {
+  await app.request(/Saved Request/).click();
+  await app.urlInput.fill(SAVED_URL);
+  await app.selectMethod("POST");
+
+  const headers = await app.openRequestTab("Headers");
+  await app.addKeyValue(headers, "Header", "X-Saved", "yes");
+
+  const body = await app.openRequestTab("Body");
+  await app.chooseOption(body, "none", "Text");
+  await body.getByPlaceholder("Enter body content...").fill("saved body");
+
+  // 入力の途中で自動保存が走ることがあるので、回数ではなく最後の保存内容が揃うまで待つ。
+  await expect
+    .poll(async () => {
+      const calls = await fake.args("UpdateRequest");
+      const req = calls[calls.length - 1]?.[1] as HttpRequest | undefined;
+      return req && { method: req.method, text: req.body.contents.text };
+    })
+    .toEqual({ method: "POST", text: "saved body" });
+
+  await page.reload();
+  await app.switchTo("HTTP");
+  await expect(app.request(/Saved Request/)).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+
+  await expect(page.getByTestId("method-select")).toContainText("POST");
+  const restoredHeaders = await app.openRequestTab("Headers");
+  await expect(restoredHeaders.getByPlaceholder("Header")).toHaveValue(
+    "X-Saved",
+  );
+  await expect(restoredHeaders.getByPlaceholder("Value")).toHaveValue("yes");
+  const restoredBody = await app.openRequestTab("Body");
+  await expect(
+    restoredBody.getByRole("button", { name: "text", exact: true }),
+  ).toBeVisible();
+  await expect(
+    restoredBody.getByPlaceholder("Enter body content..."),
+  ).toHaveValue("saved body");
 });
