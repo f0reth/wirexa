@@ -30,6 +30,7 @@ test.describe("while a request is in progress", () => {
   test("clicking cancel aborts the in-progress request", async ({
     page,
     app,
+    fake,
   }) => {
     await app.urlInput.fill("http://127.0.0.1:9999/slow");
     await app.sendButton.click();
@@ -41,6 +42,10 @@ test.describe("while a request is in progress", () => {
 
     await expect(app.sendButton).toBeVisible();
     await expect(page.getByText("Sending request...")).toBeHidden();
+
+    // backend は execution ID で送信中のリクエストを探すので、送信時と同じ ID で中断する。
+    const [[executionId]] = await fake.args("SendRequest");
+    expect(await fake.args("CancelRequest")).toEqual([[executionId]]);
   });
 });
 
