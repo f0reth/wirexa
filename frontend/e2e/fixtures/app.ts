@@ -51,12 +51,39 @@ export class App {
     await input.press("Enter");
   }
 
+  /** コレクションの開閉トグル (名前をクリックすると開閉する)。 */
   collection(name: string): Locator {
     return this.page.getByRole("button", { name, exact: true }).first();
   }
 
+  /** フォルダの開閉トグル。コレクションと同じ形のボタンなので、名前が重ならないようにして使う。 */
+  folder(name: string): Locator {
+    return this.page.getByRole("button", { name, exact: true }).first();
+  }
+
+  /** リクエストの選択ボタン。アクセシブル名はメソッド付き ("GET Name") なので正規表現で渡す。 */
   request(name: string | RegExp): Locator {
     return this.page.getByRole("button", { name }).first();
+  }
+
+  /**
+   * サイドバーの行アクション (Add folder / Add request / Delete ...) のボタン。
+   * 親子の行が同名のアクションを持つので、node (collection / folder / request の戻り値) の行でスコープする。
+   */
+  rowAction(node: Locator, action: string): Locator {
+    return node
+      .locator("xpath=..")
+      .getByRole("button", { name: action, exact: true });
+  }
+
+  /** 表示名をダブルクリックしてリネーム入力を開く。 */
+  async startRename(node: Locator, name: string): Promise<void> {
+    await node.getByText(name, { exact: true }).dblclick();
+    await expect(this.renameInput).toBeVisible();
+  }
+
+  private async openAddMenu(): Promise<void> {
+    await this.page.locator('[aria-label="Add"]').click();
   }
 
   /**
@@ -64,7 +91,7 @@ export class App {
    * name を省くと既定名 "New Collection" のまま確定する。
    */
   async createCollection(name?: string): Promise<Locator> {
-    await this.page.locator('[aria-label="Add"]').click();
+    await this.openAddMenu();
     await this.page
       .getByRole("button", { name: "New Collection" })
       .first()
@@ -80,15 +107,25 @@ export class App {
     return created;
   }
 
-  /** コレクションの行アクション（hover で現れる）を押す。 */
-  private async rowAction(collectionName: string, action: string): Promise<void> {
-    await this.collection(collectionName).hover();
-    await this.page.getByRole("button", { name: action }).first().click();
+  /** Add ドロップダウンの New Request で、どのコレクションにも属さないリクエストを作る。 */
+  async createRootRequest(name: string): Promise<Locator> {
+    await this.openAddMenu();
+    await this.page
+      .getByRole("button", { name: "New Request", exact: true })
+      .click();
+    await this.confirmRename(name);
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const created = this.request(new RegExp(` ${escaped}$`));
+    await expect(created).toBeVisible();
+    return created;
   }
 
-  /** コレクションにリクエストを追加する。name を省くと既定名のまま確定する。 */
-  async addRequest(collectionName: string, name?: string): Promise<void> {
-    await this.rowAction(collectionName, "Add request");
+  /**
+   * コレクションかフォルダにリクエストを追加する。name を省くと既定名のまま確定する。
+   * フォルダは既定で閉じており、閉じたフォルダに足すとリネーム入力が出ないので、先に開いておく。
+   */
+  async addRequest(parentName: string, name?: string): Promise<void> {
+    await this.rowAction(this.collection(parentName), "Add request").click();
     await expect(this.renameInput).toBeVisible();
     if (name === undefined) {
       await this.renameInput.press("Enter");
@@ -97,9 +134,9 @@ export class App {
     }
   }
 
-  /** コレクションにフォルダを追加する。name を省くと既定名のまま確定する。 */
-  async addFolder(collectionName: string, name?: string): Promise<void> {
-    await this.rowAction(collectionName, "Add folder");
+  /** コレクションかフォルダにフォルダを追加する。name を省くと既定名のまま確定する。 */
+  async addFolder(parentName: string, name?: string): Promise<void> {
+    await this.rowAction(this.collection(parentName), "Add folder").click();
     await expect(this.renameInput).toBeVisible();
     if (name === undefined) {
       await this.renameInput.press("Escape");
@@ -109,7 +146,7 @@ export class App {
   }
 
   async deleteCollection(name: string): Promise<void> {
-    await this.rowAction(name, "Delete collection");
+    await this.rowAction(this.collection(name), "Delete collection").click();
     await this.confirmDelete();
     await expect(this.collection(name)).toBeHidden();
   }

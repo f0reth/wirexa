@@ -74,7 +74,11 @@ test("clicking a request in sidebar opens it in the editor panel", async ({
   await expect(request).toHaveAttribute("aria-current", "true");
 });
 
-test("can expand and collapse folders in sidebar", async ({ page, app }) => {
+// フォルダ自体の開閉は http/tree.spec.ts の "expanding a folder reveals its children" で確かめる。
+test("clicking a collection collapses and expands its children", async ({
+  page,
+  app,
+}) => {
   await app.createCollection();
   await app.addFolder("New Collection"); // 既定名 "New Folder" のまま
   await expect(page.getByText("New Folder")).toBeVisible();
