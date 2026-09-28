@@ -359,7 +359,7 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
 
 - [x] Step 1: フルスタックの後始末と前提確認
 - [x] Step 2: HTTP 送信値
-- [ ] Step 3: OpenAPI 未保存確認（切り替え時）
+- [x] Step 3: OpenAPI 未保存確認（切り替え時）
 - [ ] Step 4: HTTP ツリー操作
 - [ ] Step 5: HTTP ツリー D&D
 - [ ] Step 6: UDP UI（ターゲット管理）
