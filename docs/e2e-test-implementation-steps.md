@@ -365,7 +365,7 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
 - [x] Step 5: HTTP ツリー D&D
 - [x] Step 6: UDP UI（ターゲット管理）
 - [x] Step 7: UDP UI（送信・リスン）
-- [ ] Step 8: 偽バックエンドのイベント注入口
+- [x] Step 8: 偽バックエンドのイベント注入口
 - [ ] Step 9: MQTT UI（未接続）
 - [ ] Step 10: MQTT UI（接続済み・受信）
 - [ ] Step 11: フルスタック MQTT
