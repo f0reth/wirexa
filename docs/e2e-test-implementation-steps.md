@@ -307,11 +307,15 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
 **観点**: [K] 保存・Ctrl+S・dirty 表示・プレビュー切替（中）・ファイル D&D（中）・最近のファイル（低）、[C] OpenAPI ファイルの並び替え（低）　**モード**: UI　**本体修正**: なし
 
 - `e2e/fake-backend/install.ts` に `SaveFileAs` が返すパス（Step 3 で入れていなければ）、`GetRecents` / `ReadFile` の seed を追加
+  - seed は `saveFileAsPath`（保存ダイアログで選ばれるパス）と `openApiFiles`（最近使ったファイルとその内容）にした。`RemoveRecent` / `MoveRecent` も Go の `FileService` と同じ意味論で状態を変える
+  - 許可リストは recents に載っているパスで代用し、`ReadFile` / `WriteFile` は載っていないパスを拒否する。パスの正規化と 50 件の上限は省いた
 - `e2e/ui/openapi/` に追加
-  - `Ctrl+S on an untitled doc opens save-as and clears the dirty marker`、Save ボタン、プレビュー表示の切り替え
-  - Step 3 で保留した Save & continue
+  - `Ctrl+S on an untitled doc opens save-as and clears the dirty marker`、Save ボタン、プレビュー表示の切り替え（`save.spec.ts`）
+  - Step 3 で保留した Save & continue（`unsaved-changes.spec.ts`。New と before-close の両方）
   - `dropping a yaml file opens it as an untitled document`（`DataTransfer` に `File` を入れて `drop` を dispatch）
-  - `removing a recent file clears the editor when it was active`、最近のファイルの選択・並び替え（マウス方式。Step 5 のヘルパーを流用）
+    - CodeMirror はエディタに落とされたファイルを自前で挿入するので、エディタ以外（上部のファイル名表示）に落とす。ヘルパーは `app.dropOpenApiFile`
+  - `removing a recent file clears the editor when it was active`、最近のファイルの選択・並び替え（マウス方式。Step 5 のヘルパーを流用）（`recents.spec.ts`）
+    - 実際の挙動はアクティブな文書を閉じる（ファイル名表示が "No file opened" に戻り Save ボタンが消える）だけで、エディタの内容は残る。テストはこの挙動を `removing a recent file closes it when it was active` として確かめ、本体は変えていない
   - 空状態 "No files opened yet"
 
 **完了条件**: `task frontend:test:e2e` が通る。
@@ -384,6 +388,6 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
 - [x] Step 12: フルスタック永続化
 - [x] Step 13: フルスタック エラー表示・UDP 上限・echo
 - [x] Step 14: HTTP レスポンス表示ほか
-- [ ] Step 15: OpenAPI 保存・D&D・最近のファイル
+- [x] Step 15: OpenAPI 保存・D&D・最近のファイル
 - [ ] Step 16: 共通 UI・アクセシビリティ
 - [ ] Step 17: セレクタ整理
