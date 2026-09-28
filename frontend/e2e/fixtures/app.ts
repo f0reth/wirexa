@@ -396,16 +396,25 @@ export class App {
   }
 
   /**
-   * ブローカーを選んで Connect を押し、Connected になるまで待つ。行をクリックすると、
+   * 未接続のブローカーを選び、接続バーに Connect が出るまで待つ。行をクリックすると、
    * ホバーで出る Edit / Delete ボタンに当たることがあるので、フォーカスして Enter で選ぶ。
    */
-  async connectBroker(name: string): Promise<void> {
+  async selectBroker(name: string): Promise<void> {
     const row = this.broker(name);
     await row.focus();
     await row.press("Enter");
-    await this.page
-      .getByRole("button", { name: "Connect", exact: true })
-      .click();
+    await expect(this.brokerConnectButton).toBeVisible();
+  }
+
+  /** 接続バーの Connect ボタン。未接続のブローカーを選んでいるときだけ出る。 */
+  get brokerConnectButton(): Locator {
+    return this.page.getByRole("button", { name: "Connect", exact: true });
+  }
+
+  /** ブローカーを選んで Connect を押し、Connected になるまで待つ。 */
+  async connectBroker(name: string): Promise<void> {
+    await this.selectBroker(name);
+    await this.brokerConnectButton.click();
     await expect(
       this.page.getByText("Connected", { exact: true }),
     ).toBeVisible();
@@ -442,6 +451,26 @@ export class App {
   mqttMessage(payload: string): Locator {
     return this.mqttMessages.filter({
       has: this.page.getByText(payload, { exact: true }),
+    });
+  }
+
+  /**
+   * Publish タブのプリセット一覧の行 (role="button" の div)。行は QoS バッジを持つので、
+   * 見出し行の追加ボタンや行内の削除ボタンと区別できる。
+   */
+  get mqttPresets(): Locator {
+    return this.mqttSection("Messages")
+      .getByRole("button")
+      .filter({ hasText: /QoS [0-2]/ });
+  }
+
+  /**
+   * トピックが topic のプリセット行。選択中の行は名前を入力欄に出す (テキストにならない) ので、
+   * 名前ではなくトピックで引く。
+   */
+  mqttPreset(topic: string): Locator {
+    return this.mqttPresets.filter({
+      has: this.page.getByText(topic, { exact: true }),
     });
   }
 }
