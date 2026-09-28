@@ -1,6 +1,10 @@
 import * as dgram from "node:dgram";
 import type { Page } from "@playwright/test";
-import { expect, test } from "../../fixtures/integration";
+import {
+  expect,
+  stopUdpListeners,
+  test,
+} from "../../fixtures/integration";
 import {
   reserveUdpPort,
   sendUdpPacket,
@@ -8,7 +12,9 @@ import {
 } from "../../fixtures/udp-server";
 
 // 実 Go バックエンド越しに実 UDP パケットを送受信する。ターゲット名はテストごとに変えてあるので、
-// 1 回の実行の中で名前が衝突しない。保存先も一時 APPDATA へ隔離済みなので後始末は不要。
+// 1 回の実行の中で名前が衝突しない。保存先も一時 APPDATA へ隔離済みなのでターゲットの後始末は不要。
+// リスナーだけは Go 側に残り、次のテストの読み込み時に復元されて Start を無効にするので、
+// afterEach でバックエンドから直接止める。
 
 // ターゲット選択: role="button" 属性を持つ外側 div をフォーカス+Enter で選択する。
 // span への click() を使うと CSS :hover でアクションボタンが出現し
@@ -33,6 +39,10 @@ async function startListen(page: Page, listenPort: number) {
 
 test.beforeEach(async ({ app }) => {
   await app.switchTo("UDP");
+});
+
+test.afterEach(async ({ page }) => {
+  await stopUdpListeners(page);
 });
 
 // ── 観点J-1: 送信フォームへの入力と送信 ──────────────────────────────────────
@@ -95,8 +105,6 @@ test("received udp messages appear in the message log", async ({ page, app }) =>
 
   await expect(page.getByText(payload)).toBeVisible();
   await expect(page.getByText("Received (1)")).toBeVisible();
-
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
 });
 
 // ── 観点J-4: メッセージ上限（500件）到達時の挙動 ────────────────────────────
@@ -127,8 +135,6 @@ test("udp message log discards oldest when 501st message arrives", async ({
     timeout: 20_000,
   });
   await expect(page.getByText("Received (501)")).toBeHidden();
-
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
 });
 
 // ── 観点J-5: 新着メッセージへのオートスクロール ──────────────────────────────
@@ -152,6 +158,4 @@ test("udp message log newest message is visible after receiving multiple message
   // 最新メッセージ（リストの先頭）がビューポートに表示される
   await expect(page.getByText(newest)).toBeVisible();
   await expect(page.getByText("Received (10)")).toBeVisible();
-
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
 });

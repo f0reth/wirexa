@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
 import { startTestServer, type TestServer } from "../../fixtures/http-server";
-import { expect, test } from "../../fixtures/integration";
+import { expect, test, type WailsGo } from "../../fixtures/integration";
 
 // 実 Go バックエンドから実サーバーへ HTTP を投げる。保存先は一時 APPDATA へ隔離済みなので
 // コレクションの後始末は不要。
@@ -48,17 +48,8 @@ const echoUrl = () => `http://127.0.0.1:${server.port}/echo`;
 /** バックエンドに保存されているリクエストの URL を読む (自動保存の完了判定に使う)。 */
 const savedUrl = (page: Page, requestName: RegExp) =>
   page.evaluate(async (name) => {
-    // Wails が window.go へ注入するバインディング。生成された .d.ts から型を借りることで、
-    // Go 側の rename に追従できていない場合は tsc で落ちる。
-    const handler = (
-      window as unknown as {
-        go: {
-          adapters: {
-            HTTPHandler: typeof import("../../../wailsjs/go/adapters/HTTPHandler");
-          };
-        };
-      }
-    ).go.adapters.HTTPHandler;
+    const handler = (window as unknown as { go: WailsGo }).go.adapters
+      .HTTPHandler;
     const collections = await handler.GetCollections();
     for (const c of collections) {
       for (const item of c.items ?? []) {
