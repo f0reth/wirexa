@@ -288,10 +288,15 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
   - `show truncated body reveals the partial body with a warning`
   - `json response containing html is rendered as text`
   - `copy button writes response body to clipboard`（`integration/http/http.spec.ts:216` から移す、または複製）
+    - 複製にした。フルスタック側は実サーバーの JSON を整形してコピーする経路の確認として残す
 - `e2e/ui/http/http.spec.ts` などに追加
   - `auto-save failure shows a dismissible banner`
   - `response of a request sent before switching is not shown`（切り詰めボディなら `DiscardResponseBody` が呼ばれる）
+    - 応答が切り替えより先に届くと、切り替え時のクリアだけで通ってしまう。切り替えたあとも "Sending request..." が出ていることを確かめてから応答を待つ
   - Doc タブ、レスポンスパネルの表示切替
+    - 表示切替は Hide / Show response panel のボタンと、隠した状態で送信すると開き直すこと。Body / Headers / Timing のタブ切替は `response-viewer.spec.ts` で見る
+- レスポンス側の Body / Headers タブはリクエスト側と同名なので、`e2e/fixtures/app.ts` に `responseViewer` / `openResponseTab` を足してスコープした
+- 自動保存失敗バナーの Dismiss（"✕"）はアクセシブル名を持たないため、バナーの行でスコープして押している。名前を付けるのは本体修正なので、このステップでは直していない
 
 **完了条件**: `task frontend:test:e2e` が通る。
 
@@ -378,7 +383,7 @@ New → 入力 → New をもう一度、の操作で UI モードのまま書�
 - [x] Step 11: フルスタック MQTT
 - [x] Step 12: フルスタック永続化
 - [x] Step 13: フルスタック エラー表示・UDP 上限・echo
-- [ ] Step 14: HTTP レスポンス表示ほか
+- [x] Step 14: HTTP レスポンス表示ほか
 - [ ] Step 15: OpenAPI 保存・D&D・最近のファイル
 - [ ] Step 16: 共通 UI・アクセシビリティ
 - [ ] Step 17: セレクタ整理
