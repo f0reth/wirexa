@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { Wifi, WifiOff, Zap } from "lucide-solid";
-import { createSignal, Show } from "solid-js";
+import { createEffect, createSignal, on, Show } from "solid-js";
 import {
   composeBrokerUrl,
   defaultPort,
@@ -27,6 +27,24 @@ export function BrokerManager() {
         const [scheme, setScheme] = createSignal(initial.scheme);
         const [host, setHost] = createSignal(initial.host);
         const [port, setPort] = createSignal(initial.port);
+
+        // Show は接続を切り替えても作り直さないので、別のブローカーへの切り替えやダイアログでの
+        // 編集で broker URL が外から変わったら入力欄を読み直す。読み直さないと、前のブローカーの
+        // 値のまま編集して、切り替え先のプロファイルを上書き保存してしまう。入力中は入力欄から
+        // 組み立てた URL がそのまま書き戻されるので読み直さない (途中の空欄を既定値で埋めない)。
+        createEffect(
+          on(
+            () => conn().profile.broker,
+            (broker) => {
+              if (broker === composeBrokerUrl(scheme(), host(), port())) return;
+              const parts = parseBrokerUrl(broker);
+              setScheme(parts.scheme);
+              setHost(parts.host);
+              setPort(parts.port);
+            },
+            { defer: true },
+          ),
+        );
 
         const handleSchemeChange = (s: string) => {
           const p = defaultPort(s);
