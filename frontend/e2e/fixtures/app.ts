@@ -128,6 +128,61 @@ export class App {
     return this.page.getByRole("button", { name: "Cancel", exact: true });
   }
 
+  /** リクエストのメソッド選択。 */
+  async selectMethod(method: string): Promise<void> {
+    const methodSelect = this.page.getByTestId("method-select");
+    await methodSelect.getByRole("button").first().click();
+    await methodSelect.getByRole("button", { name: method, exact: true }).click();
+  }
+
+  // ── HTTP: リクエスト編集エリア ──────────────────────────────────────────────
+
+  /**
+   * リクエスト編集エリア (Params〜Doc のタブとそのパネル)。"Body" / "Headers" タブは
+   * レスポンス側と同名で tabpanel の id も衝突するため、Params タブを持つタブ列の親でスコープする。
+   */
+  get requestEditor(): Locator {
+    return this.page
+      .getByRole("tablist")
+      .filter({
+        has: this.page.getByRole("tab", { name: "Params", exact: true }),
+      })
+      .locator("xpath=..");
+  }
+
+  /** リクエスト編集エリアのタブを開き、そのパネルを返す。 */
+  async openRequestTab(name: string): Promise<Locator> {
+    const editor = this.requestEditor;
+    await editor.getByRole("tab", { name, exact: true }).click();
+    return editor.getByRole("tabpanel");
+  }
+
+  /**
+   * パネル内の Select で項目を選ぶ。トリガーには現在の値がそのまま表示されるので
+   * current で指定する (例: Body の種別なら "none")。
+   */
+  async chooseOption(
+    panel: Locator,
+    current: string,
+    label: string,
+  ): Promise<void> {
+    await panel.getByRole("button", { name: current, exact: true }).click();
+    await panel.getByRole("button", { name: label, exact: true }).click();
+  }
+
+  /** Headers / Params のキー・値の行を 1 行足して埋める。 */
+  async addKeyValue(
+    panel: Locator,
+    keyPlaceholder: string,
+    key: string,
+    value: string,
+  ): Promise<void> {
+    await panel.getByRole("button", { name: "Add", exact: true }).click();
+    // Add は末尾に行を足すので、最後の行が今足した行。
+    await panel.getByPlaceholder(keyPlaceholder).last().fill(key);
+    await panel.getByPlaceholder("Value").last().fill(value);
+  }
+
   // ── UDP ─────────────────────────────────────────────────────────────────────
 
   async createUdpTarget(
