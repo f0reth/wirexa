@@ -1,6 +1,10 @@
 import { writeFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
-import { startTestServer, type TestServer } from "../../fixtures/http-server";
+import {
+  echoRequest,
+  startTestServer,
+  type TestServer,
+} from "../../fixtures/http-server";
 import { expect, test, type WailsGo } from "../../fixtures/integration";
 
 // 実 Go バックエンドから実サーバーへ HTTP を投げる。保存先は一時 APPDATA へ隔離済みなので
@@ -10,22 +14,18 @@ let server: TestServer;
 
 test.beforeAll(async () => {
   server = await startTestServer((req, res) => {
-    if (req.url === "/json") {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (pathname === "/json") {
       res.writeHead(200, {
         "Content-Type": "application/json",
         "X-Custom-Header": "test-value",
       });
       res.end(JSON.stringify({ message: "hello", status: "ok" }));
-    } else if (req.url === "/echo") {
-      // 受け取ったボディをそのまま返す。multipart のワイヤ形式を
+    } else if (pathname === "/echo") {
+      // 受け取ったリクエスト行・ヘッダー・ボディをそのまま返す。ワイヤ形式を
       // レスポンスビューアで直接検証するため、解析はしない。
-      const chunks: Buffer[] = [];
-      req.on("data", (c: Buffer) => chunks.push(c));
-      req.on("end", () => {
-        res.writeHead(200, { "Content-Type": "text/plain" });
-        res.end(Buffer.concat(chunks));
-      });
-    } else if (req.url === "/multi-header") {
+      echoRequest(req, res);
+    } else if (pathname === "/multi-header") {
       res.writeHead(200, {
         "Content-Type": "text/plain",
         "Set-Cookie": ["a=1; Path=/", "b=2; Path=/"],
@@ -172,6 +172,65 @@ test("form-data rows are sent as multipart parts and a typed file path is not up
   // 入力しただけのパスのファイルは送られていない。
   await expect(responseBody).not.toContainText('name="doc"');
   await expect(responseBody).not.toContainText('{"from":"file"}');
+});
+
+// ── 観点I: 入力値のワイヤ形式 ────────────────────────────────────────────────
+// SendRequest の引数に載ることは UI モード (e2e/ui/http/request-send.spec.ts) で確かめている。
+// ここでは Go の NetClient がそれをクエリ文字列・ヘッダーに組み立てた結果を /echo で見る。
+
+test("headers, query params and bearer token are sent on the wire", async ({
+  page,
+  app,
+}) => {
+  await app.urlInput.fill(echoUrl());
+
+  const params = await app.openRequestTab("Params");
+  await app.addKeyValue(params, "Parameter", "page", "2");
+  await app.addKeyValue(params, "Parameter", "q", "a b");
+
+  const headers = await app.openRequestTab("Headers");
+  await app.addKeyValue(headers, "Header", "X-Trace", "abc");
+  await app.addKeyValue(headers, "Header", "X-Disabled", "off");
+  // Add は末尾に行を足すので、最後のチェックボックスが今足した X-Disabled の行。
+  await headers.getByRole("checkbox").last().uncheck();
+  await app.addKeyValue(headers, "Header", "Authorization", "from-headers");
+
+  const auth = await app.openRequestTab("Auth");
+  await app.chooseOption(auth, "none", "Bearer Token");
+  await auth.getByPlaceholder("Token").fill("secret-token");
+
+  await app.sendButton.click();
+  await expect(page.getByText("200", { exact: true })).toBeVisible();
+
+  const echoed = page.getByTestId("response-body");
+  // クエリは url.Values.Encode でキー順に並び、空白は + になる。
+  await expect(echoed).toContainText("GET /echo?page=2&q=a+b");
+  await expect(echoed).toContainText("x-trace: abc");
+  // 無効にした行は送らない。
+  await expect(echoed).not.toContainText("x-disabled");
+  // 認証の設定は Headers タブの Authorization より優先する。
+  await expect(echoed).toContainText("authorization: Bearer secret-token");
+  await expect(echoed).not.toContainText("from-headers");
+});
+
+test("basic auth credentials are sent as an Authorization header", async ({
+  page,
+  app,
+}) => {
+  await app.urlInput.fill(echoUrl());
+
+  const auth = await app.openRequestTab("Auth");
+  await app.chooseOption(auth, "none", "Basic Auth");
+  await auth.getByPlaceholder("Username").fill("alice");
+  await auth.getByPlaceholder("Password").fill("p@ss");
+
+  await app.sendButton.click();
+  await expect(page.getByText("200", { exact: true })).toBeVisible();
+
+  const credentials = Buffer.from("alice:p@ss").toString("base64");
+  await expect(page.getByTestId("response-body")).toContainText(
+    `authorization: Basic ${credentials}`,
+  );
 });
 
 // ── 観点I-6: コレクションへの保存・読み込み ──────────────────────────────────
