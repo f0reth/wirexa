@@ -27,3 +27,43 @@ test("dark theme is restored from localStorage on reload", async ({ page }) => {
   const themeButton = page.getByRole("button", { name: "Switch to light mode" });
   await expect(themeButton).toBeVisible();
 });
+
+// ── 観点A: 各プロトコルの空状態とパネルの表示 ────────────────────────────────
+
+test("each protocol shows its empty state on first launch", async ({
+  page,
+  app,
+}) => {
+  await expect(page.getByText("No brokers yet")).toBeVisible();
+  await expect(
+    page.getByText(
+      "No active connection. Select a broker from the sidebar to connect.",
+    ),
+  ).toBeVisible();
+
+  await app.switchTo("HTTP");
+  await expect(page.getByText("No collections yet")).toBeVisible();
+  await expect(
+    page.getByText("Send a request to see the response"),
+  ).toBeVisible();
+
+  await app.switchTo("UDP");
+  await expect(page.getByText("No targets yet")).toBeVisible();
+  await expect(page.getByText("ターゲットを選択してください")).toBeVisible();
+
+  await app.switchTo("OpenAPI");
+  await expect(page.getByText("No files opened yet")).toBeVisible();
+  await expect(page.getByText(/^No file opened/)).toBeVisible();
+});
+
+test("udp and openapi panels become visible when selected", async ({
+  page,
+  app,
+}) => {
+  await app.switchTo("UDP");
+  await expect(page.getByTestId("udp-panel")).toHaveCSS("display", "flex");
+
+  await app.switchTo("OpenAPI");
+  await expect(page.getByTestId("openapi-panel")).toHaveCSS("display", "flex");
+  await expect(page.getByTestId("udp-panel")).toHaveCSS("display", "none");
+});

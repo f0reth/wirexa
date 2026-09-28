@@ -167,3 +167,22 @@ test("publish presets survive a reload", async ({ page, app }) => {
   await expect(payload).toHaveValue("payload-b");
   await expect(retain).toBeChecked();
 });
+
+// ── 観点G: キーボードでのプリセット選択 ──────────────────────────────────────
+
+test("Enter on a focused preset selects it", async ({ page, app }) => {
+  const { topic } = publishForm(app);
+  await topic.fill("sensors/a");
+  await addPresetButton(page).click();
+  await expect(app.mqttPresets).toHaveCount(2);
+  await topic.fill("sensors/b");
+
+  const presetA = app.mqttPreset("sensors/a");
+  await presetA.focus();
+  await presetA.press("Enter");
+
+  await expect(topic).toHaveValue("sensors/a");
+  // 選択中のプリセットは名前を入力欄で出す。
+  await expect(presetA.getByRole("textbox")).toBeVisible();
+  await expect(app.mqttPreset("sensors/b").getByRole("textbox")).toHaveCount(0);
+});
