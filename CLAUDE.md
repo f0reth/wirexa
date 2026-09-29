@@ -74,7 +74,7 @@ Both sides follow the same layered (ports & adapters) structure.
 
 - `domain/` — types, output port interfaces (repositories, transports, emitter, …), event name constants, errors. No dependencies on other layers. Subpackages per protocol: `http/`, `mqtt/`, `udp/`, `openapi/`.
 - `application/` — services implementing use cases (`http/`, `mqtt/`, `udp/`, `openapi/`, `store/`). Depend only on domain ports.
-- `infrastructure/` — port implementations: `JSONStore[T]` (generic per-entity JSON file persistence with atomic writes) wrapped by repositories that own the persistence DTOs, paho MQTT client factory + embedded mochi broker, HTTP `NetClient`, UDP socket, `WailsEmitter` (domain events → Wails runtime events), file logger (lumberjack), window state manager.
+- `infrastructure/` — port implementations: `JSONStore[T]` (generic per-entity JSON file persistence with atomic writes) wrapped by repositories that own the persistence DTOs, paho MQTT client factory, HTTP `NetClient`, UDP socket, `WailsEmitter` (domain events → Wails runtime events), file logger (lumberjack), window state manager.
 - `adapters/` — Wails-bound handler structs (`MQTTHandler`, `HTTPHandler`, `UDPHandler`, `LogHandler`, `OpenAPIHandler`) and the use-case input port interfaces they depend on. These are the RPC surface exposed to the frontend.
 - `integration/` — cross-layer tests behind the `integration` build tag.
 
@@ -117,4 +117,4 @@ App shutdown is two-step: `beforeClose` emits `app:before-close` and blocks the 
 
 - Go & TS unit tests are colocated with the code (`*_test.go`, `*.test.ts`). Vitest runs in `node` env by default; add `// @vitest-environment jsdom` at the top of files that need DOM.
 - **UI e2e** (`e2e/ui`, `playwright.config.ts`): `vite.e2e.config.ts` injects `e2e/fake-backend/install.ts`, which replaces the Wails-injected `window.go`/`window.runtime` with an in-memory implementation (state in sessionStorage), mirroring Go service semantics (e.g. `__root__` reserved collection). Runs fully parallel, needs no Go. If you change a bound API's behavior, the fake backend likely needs the same change.
-- **Fullstack e2e** (`e2e/integration`, `playwright.integration.config.ts`): drives the real app via `wails dev` proxied to a `vite preview` of the built bundle (a dev-server proxy exhausts ephemeral ports on Windows). Isolates app data by overriding `APPDATA` to a temp dir. Sequential only (single app instance); Windows/local only, not in CI.
+- **Fullstack e2e** (`e2e/integration`, `playwright.integration.config.ts`): drives the real app via `wails dev` proxied to a `vite preview` of the built bundle (a dev-server proxy exhausts ephemeral ports on Windows). Isolates app data by overriding `APPDATA` to a temp dir. MQTT specs connect to a mochi-mqtt broker started from `tools/e2e-broker` (the same broker the Go integration tests in `internal/integration/` embed). Sequential only (single app instance); Windows/local only, not in CI.
