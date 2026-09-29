@@ -173,6 +173,37 @@ test("subscribing to 'a/#/b' shows a validation error toast", async ({
   expect(conn.subscriptions).toEqual([{ topic: "e2e/invalid/ok", qos: 0 }]);
 });
 
+// 手動の Disconnect → Connect は新しい接続を作り、残っている購読の行をその接続へ張り直す。
+// 購読の成立を画面から待てないので、切断中に retained メッセージを置き、購読と同時に届くようにする。
+test("reconnecting after Disconnect keeps receiving subscribed topics", async ({
+  page,
+  app,
+}) => {
+  const topic = "e2e/reconnect/retained";
+  const payload = "after-manual-reconnect";
+  await connectNewBroker(app, "E2E MQTT Manual Reconnect");
+  await subscribe(app, topic);
+  try {
+    await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+    await expect(app.brokerConnectButton).toBeVisible();
+    await expect(app.mqttSubscription(topic)).toBeVisible();
+    await publishFromBroker(topic, payload, { retain: true });
+
+    await app.brokerConnectButton.click();
+    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+
+    await expect(app.mqttMessage(payload).first()).toContainText(topic);
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Failed to re-subscribe" }),
+    ).toHaveCount(0);
+    const [conn] = await mqttConnections(page);
+    expect(conn.subscriptions).toEqual([{ topic, qos: 0 }]);
+  } finally {
+    // retain 付きの空ペイロードで retained メッセージを消し、後のテストに残さない。
+    await publishFromBroker(topic, "", { retain: true });
+  }
+});
+
 // ── 観点H: 複数ブローカーの購読の独立 ────────────────────────────────────────
 
 test("switching brokers keeps each broker's subscriptions separate", async ({
