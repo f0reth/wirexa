@@ -1090,6 +1090,95 @@ func TestMQTT_ConnectionLostAndReconnect(t *testing.T) {
 	}
 }
 
+// waitBrokerSubscriptions はブローカー側の購読数が n 以上になるまで待つ。
+// mqtt:connected も GetConnections の購読も SUBACK の完了を意味しないので、受信の検証の前に使う。
+func waitBrokerSubscriptions(t *testing.T, b *testBroker, n int64) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for atomic.LoadInt64(&b.Info.Subscriptions) < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("broker subscriptions = %d, want >= %d", atomic.LoadInt64(&b.Info.Subscriptions), n)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestMQTT_SubscribeBeforeConnected は、Connect の直後 (接続の確立を待たずに) 購読しても成功し、
+// 接続の確立時に購読されてメッセージが届くことを確認する。
+func TestMQTT_SubscribeBeforeConnected(t *testing.T) {
+	broker := startMQTTBroker(t, "127.0.0.1:0", nil)
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+
+	id, err := h.Connect(mqttdomain.ConnectionConfig{Name: "early", Broker: "tcp://" + broker.addr})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	const topic = "early/topic"
+	if err := h.Subscribe(id, topic, 1); err != nil {
+		t.Fatalf("Subscribe before connected: %v", err)
+	}
+
+	waitConnected(t, h, id, 5*time.Second)
+	waitBrokerSubscriptions(t, broker, 1)
+	if err := broker.Publish(topic, []byte("early"), false, 1); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if msg := emitter.receiveMessage(t, 5*time.Second); msg.ConnectionID != id || msg.Payload != "early" {
+		t.Errorf("message = %+v, want the one published on %s", msg, id)
+	}
+}
+
+// TestMQTT_ReconnectAfterDisconnect_Resubscribes は、フロントエンドの手動再接続と同じ順に
+// Disconnect → 新しい Connect → 直後に同じトピックを Subscribe すると、新しい接続でメッセージが届くことを確認する。
+func TestMQTT_ReconnectAfterDisconnect_Resubscribes(t *testing.T) {
+	broker := startMQTTBroker(t, "127.0.0.1:0", nil)
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+	config := mqttdomain.ConnectionConfig{Name: "manual-reconnect", Broker: "tcp://" + broker.addr}
+	const topic = "manual/reconnect"
+
+	oldID, err := h.Connect(config)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	waitConnected(t, h, oldID, 5*time.Second)
+	if err = h.Subscribe(oldID, topic, 1); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	waitBrokerSubscriptions(t, broker, 1)
+	if err = h.Disconnect(oldID); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	// 旧接続の購読が消えたのを見てから張り直す (残っていると購読数で新しい購読の成立を判定できない)。
+	deadline := time.Now().Add(5 * time.Second)
+	for atomic.LoadInt64(&broker.Info.Subscriptions) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the old connection's subscription was not removed from the broker")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	newID, err := h.Connect(config)
+	if err != nil {
+		t.Fatalf("Connect again: %v", err)
+	}
+	if err := h.Subscribe(newID, topic, 1); err != nil {
+		t.Fatalf("Subscribe right after reconnect: %v", err)
+	}
+
+	waitConnected(t, h, newID, 5*time.Second)
+	waitBrokerSubscriptions(t, broker, 1)
+	if err := broker.Publish(topic, []byte("after manual reconnect"), false, 1); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if msg := emitter.receiveMessage(t, 5*time.Second); msg.ConnectionID != newID || msg.Payload != "after manual reconnect" {
+		t.Errorf("message = %+v, want the one published on %s", msg, newID)
+	}
+}
+
 // TestMQTT_ConcurrentPublish は同じ接続から並行に QoS 1 で publish しても、全件がブローカーへ届き
 // 購読側で受信できることを確認する (client 操作は opMu で直列化される)。
 func TestMQTT_ConcurrentPublish(t *testing.T) {
