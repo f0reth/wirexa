@@ -450,10 +450,15 @@ export function createConnectionsState(
     });
   };
 
-  const handleReconnect = async (connectionId: string) => {
+  // profile を渡すと、タブが持つプロファイルの代わりにそれで接続し、タブのプロファイルも置き換える
+  // (編集して保存したプロファイルで張り直す「Save & Connect」)。
+  const handleReconnect = async (
+    connectionId: string,
+    newProfile?: BrokerProfile,
+  ) => {
     const conn = connections[connectionId];
     if (!conn) return;
-    const profile = conn.profile;
+    const profile = newProfile ? { ...newProfile } : conn.profile;
     if (conn.type === "online") {
       try {
         await api.disconnect(connectionId);
@@ -470,6 +475,7 @@ export function createConnectionsState(
             ...conn,
             type: "online" as const,
             connectionId: newConnId,
+            profile,
             connected: false,
           };
         }),

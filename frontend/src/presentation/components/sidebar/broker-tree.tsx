@@ -71,7 +71,8 @@ export function BrokerTree() {
     setEditingProfile(null);
     const existingConn = getConnectionForProfile(saved.id);
     if (existingConn) {
-      handleReconnect(existingConn.connectionId);
+      // タブが持つのは編集前のプロファイルなので、保存したもので張り直す。
+      handleReconnect(existingConn.connectionId, saved);
     } else {
       handleConnect(saved.id);
     }

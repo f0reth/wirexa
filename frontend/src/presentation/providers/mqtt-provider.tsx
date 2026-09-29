@@ -49,7 +49,10 @@ export interface ConnectionContextValue {
   createOfflineConnection: (profile: BrokerProfile) => void;
   handleConnect: (profileId: string) => Promise<void>;
   handleDisconnect: (connectionId?: string) => Promise<void>;
-  handleReconnect: (connectionId: string) => Promise<void>;
+  handleReconnect: (
+    connectionId: string,
+    profile?: BrokerProfile,
+  ) => Promise<void>;
   closeConnection: (connectionId: string) => void;
   switchConnection: (id: string) => void;
   updateConnectionBroker: (connectionId: string, broker: string) => void;

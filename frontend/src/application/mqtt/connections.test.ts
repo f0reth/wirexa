@@ -712,6 +712,23 @@ describe("createConnectionsState connection operations", () => {
     h.dispose();
   });
 
+  it("reconnects with the given profile and stores it on the new tab", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1", ["a"])] });
+    await h.state.restore();
+    const edited = { ...makeProfile("p1"), broker: "tcp://edited:1883" };
+
+    await h.state.handleReconnect("c1", edited);
+
+    expect(h.api.connect).toHaveBeenCalledWith(edited);
+    expect(h.state.connections["new-id"]).toMatchObject({
+      type: "online",
+      profileId: "p1",
+      profile: edited,
+    });
+    expect(h.api.subscribe).toHaveBeenCalledWith("new-id", "a", 0);
+    h.dispose();
+  });
+
   it("skips re-subscribing a topic removed while an earlier one was in flight", async () => {
     const h = harness({ live: [liveStatus("c1", "p1", ["a", "b"])] });
     await h.state.restore();
