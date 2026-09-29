@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -1594,6 +1595,245 @@ func TestMQTTService_Reconnect_ResubscribeFailures(t *testing.T) {
 	if subs := svc2.GetConnections()[0].Subscriptions; len(subs) != 1 {
 		t.Errorf("subscriptions after a transient failure = %v, want kept", subs)
 	}
+}
+
+// ------- 接続確立前の購読 -------
+
+// pendingConn は Connect を止めて stateConnecting に留めた接続と、client 操作の記録を持つ。
+type pendingConn struct {
+	svc *MQTTService
+	rec *callbackRecorder
+	// release に送った値を client.Connect が返す。送るまでは ctx の打ち切りでしか復帰しない。
+	release      chan error
+	id           string
+	subscribes   []subscribeCall
+	unsubscribes []string
+	mu           sync.Mutex
+}
+
+// newPendingConn は接続を開始し、確立前の状態で返す。onSubscribe は client.Subscribe の記録後に呼ばれる (nil 可)。
+func newPendingConn(t *testing.T, emitter cmn.Emitter, onSubscribe func(subscribeCall)) *pendingConn {
+	t.Helper()
+	p := &pendingConn{rec: &callbackRecorder{}, release: make(chan error)}
+	client := &mockBrokerClient{
+		connectFn: func(ctx context.Context) error {
+			select {
+			case err := <-p.release:
+				return err
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+		subscribeFn: func(topic string, qos byte, handler domain.MessageHandler) error {
+			call := subscribeCall{topic: topic, qos: qos}
+			p.mu.Lock()
+			p.subscribes = append(p.subscribes, call)
+			p.mu.Unlock()
+			if onSubscribe != nil {
+				onSubscribe(call)
+			}
+			return p.rec.subscribeFn(topic, qos, handler)
+		},
+		unsubscribeFn: func(topics ...string) error {
+			p.mu.Lock()
+			defer p.mu.Unlock()
+			p.unsubscribes = append(p.unsubscribes, topics...)
+			return nil
+		},
+	}
+	p.svc = newTestService(t, emitter, p.rec.factory(client))
+	id, err := p.svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	p.id = id
+	return p
+}
+
+func (p *pendingConn) subscribeCalls() []subscribeCall {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.subscribes)
+}
+
+func (p *pendingConn) unsubscribeCalls() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.unsubscribes)
+}
+
+// establish は paho と同じく onConnected を先に起動してから Connect を復帰させ、接続を確立させる。
+func (p *pendingConn) establish(t *testing.T) {
+	t.Helper()
+	p.rec.onConnected(0)()
+	p.release <- nil
+	waitEstablished(t, p.svc, 1)
+}
+
+// subscriptions は GetConnections が返す購読をトピック→QoS で返す。
+func (p *pendingConn) subscriptions(t *testing.T) map[string]byte {
+	t.Helper()
+	conns := p.svc.GetConnections()
+	if len(conns) != 1 {
+		t.Fatalf("connections = %d, want 1", len(conns))
+	}
+	subs := map[string]byte{}
+	for _, s := range conns[0].Subscriptions {
+		subs[s.Topic] = s.QoS
+	}
+	return subs
+}
+
+// 確立前の Subscribe は client を呼ばずに成功し、確立時に同じ QoS で 1 回購読されてメッセージが届く。
+func TestMQTTService_Subscribe_BeforeConnected_SubscribesOnConnected(t *testing.T) {
+	emitter := &mockEmitter{}
+	p := newPendingConn(t, emitter, nil)
+
+	if err := p.svc.Subscribe(p.id, "a/#", 1); err != nil {
+		t.Fatalf("Subscribe before connected: %v", err)
+	}
+	if got := p.subscribeCalls(); len(got) != 0 {
+		t.Errorf("client.Subscribe called with %v before connected, want no calls", got)
+	}
+	if conns := p.svc.GetConnections(); len(conns) != 1 || conns[0].Connected {
+		t.Fatalf("connections = %+v, want 1 not connected", conns)
+	}
+	if subs := p.subscriptions(t); !maps.Equal(subs, map[string]byte{"a/#": 1}) {
+		t.Errorf("subscriptions = %v, want the pending one", subs)
+	}
+
+	p.establish(t)
+
+	if got := p.subscribeCalls(); !slices.Equal(got, []subscribeCall{{"a/#", 1}}) {
+		t.Fatalf("subscribed on connected = %v, want [{a/# 1}]", got)
+	}
+	p.rec.handler(0)("a/x", []byte("1"), 1, false)
+	if n := emitter.count(cmn.EventMQTTMessage); n != 1 {
+		t.Errorf("mqtt:message emitted %d times, want 1", n)
+	}
+}
+
+// 確立前に同じトピックを購読し直すと、確立時には最後の QoS で 1 回だけ購読する。
+func TestMQTTService_Subscribe_BeforeConnected_UsesLatestQoS(t *testing.T) {
+	p := newPendingConn(t, &mockEmitter{}, nil)
+	for _, qos := range []byte{0, 1} {
+		if err := p.svc.Subscribe(p.id, "a/#", qos); err != nil {
+			t.Fatalf("Subscribe(qos=%d): %v", qos, err)
+		}
+	}
+
+	p.establish(t)
+
+	if got := p.subscribeCalls(); !slices.Equal(got, []subscribeCall{{"a/#", 1}}) {
+		t.Errorf("subscribed on connected = %v, want [{a/# 1}]", got)
+	}
+}
+
+// 確立前に購読して解除したトピックは、client を呼ばずに外れ、確立時にも購読しない。
+func TestMQTTService_Unsubscribe_BeforeConnected_DropsPending(t *testing.T) {
+	p := newPendingConn(t, &mockEmitter{}, nil)
+	if err := p.svc.Subscribe(p.id, "a/#", 0); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	if err := p.svc.Subscribe(p.id, "b/#", 0); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	if err := p.svc.Unsubscribe(p.id, "a/#"); err != nil {
+		t.Fatalf("Unsubscribe before connected: %v", err)
+	}
+	if got := p.unsubscribeCalls(); len(got) != 0 {
+		t.Errorf("client.Unsubscribe called with %v before connected, want no calls", got)
+	}
+	if subs := p.subscriptions(t); !maps.Equal(subs, map[string]byte{"b/#": 0}) {
+		t.Errorf("subscriptions = %v, want only b/#", subs)
+	}
+
+	p.establish(t)
+
+	if got := p.subscribeCalls(); !slices.Equal(got, []subscribeCall{{"b/#", 0}}) {
+		t.Errorf("subscribed on connected = %v, want only b/#", got)
+	}
+}
+
+// 確立前に購読して接続に失敗したら、client は購読せず、接続ごと一覧から消える。
+func TestMQTTService_Subscribe_BeforeConnected_DiscardedOnConnectFailure(t *testing.T) {
+	failed := make(chan struct{})
+	emitter := &mockEmitterWithChan{ch: failed, targetEvent: cmn.EventMQTTConnectionFailed}
+	p := newPendingConn(t, emitter, nil)
+	if err := p.svc.Subscribe(p.id, "a/#", 0); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	p.release <- errors.New("connection refused")
+	waitForEvent(t, failed, time.Second, "timeout waiting for connection-failed event")
+
+	if got := p.subscribeCalls(); len(got) != 0 {
+		t.Errorf("client.Subscribe called with %v, want no calls", got)
+	}
+	if conns := p.svc.GetConnections(); len(conns) != 0 {
+		t.Errorf("connections = %+v, want none", conns)
+	}
+}
+
+// 確立前に購読して Disconnect したら、後から onConnected が届いても購読しない。
+func TestMQTTService_Subscribe_BeforeConnected_DiscardedOnDisconnect(t *testing.T) {
+	p := newPendingConn(t, &mockEmitter{}, nil)
+	if err := p.svc.Subscribe(p.id, "a/#", 0); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	if err := p.svc.Disconnect(p.id); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	waitConnGoroutines(t, p.svc)
+	p.rec.onConnected(0)()
+
+	if got := p.subscribeCalls(); len(got) != 0 {
+		t.Errorf("client.Subscribe called with %v, want no calls", got)
+	}
+}
+
+// 確立時の張り直しの最中に届いた Subscribe は張り直しの完了を待ち、その後に自分の QoS で 1 回だけ購読する。
+func TestMQTTService_Subscribe_WaitsForResubscribeOnConnected(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var first sync.Once
+	p := newPendingConn(t, &mockEmitter{}, func(subscribeCall) {
+		first.Do(func() {
+			close(entered)
+			<-release
+		})
+	})
+	if err := p.svc.Subscribe(p.id, "a/#", 0); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	connected := make(chan struct{})
+	go func() {
+		p.rec.onConnected(0)()
+		close(connected)
+	}()
+	waitForEvent(t, entered, time.Second, "resubscribe did not start")
+
+	subscribed := make(chan error, 1)
+	go func() { subscribed <- p.svc.Subscribe(p.id, "a/#", 1) }()
+	assertBlocked(t, subscribed, "Subscribe returned while resubscribe was in flight")
+	if got := p.subscribeCalls(); !slices.Equal(got, []subscribeCall{{"a/#", 0}}) {
+		t.Errorf("client.Subscribe calls during resubscribe = %v, want only the resubscribe", got)
+	}
+	close(release)
+
+	if err := <-subscribed; err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	waitForEvent(t, connected, time.Second, "onConnected did not return")
+	if got := p.subscribeCalls(); !slices.Equal(got, []subscribeCall{{"a/#", 0}, {"a/#", 1}}) {
+		t.Errorf("client.Subscribe calls = %v, want the resubscribe and then qos 1", got)
+	}
+	if subs := p.subscriptions(t); !maps.Equal(subs, map[string]byte{"a/#": 1}) {
+		t.Errorf("subscriptions = %v, want a/# at qos 1", subs)
+	}
+	p.release <- nil
 }
 
 // 切断済みの接続と、購読解除した購読は張り直さない。

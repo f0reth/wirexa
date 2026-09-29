@@ -39,10 +39,11 @@ type connection struct {
 	client domain.BrokerClient
 	// cancel は進行中の Connect を打ち切る。生成時に確定し以後不変なのでロック無しで読める。
 	cancel context.CancelFunc
-	// subs は現在購読中のトピック→QoS。リロード後の状態復元のためサーバー側で保持する。
+	// subs は購読中のトピック→QoS。リロード後の状態復元と、接続確立時・再接続時の張り直しのために
+	// サーバー側で保持する。接続確立前に受け付けた購読 (確立時に購読する) も含む。
 	subs   map[string]byte
 	config domain.ConnectionConfig
-	// opMu は client 操作 (Publish / Subscribe / Unsubscribe / Disconnect) を直列化する。
+	// opMu は client 操作 (Publish / Subscribe / Unsubscribe / Disconnect と onConnected の張り直し) を直列化する。
 	// ネットワーク I/O を含むため長時間保持されうる。
 	opMu sync.Mutex
 	// stateMu は state・subs と、この接続に関するイベント発行を保護する。
@@ -170,15 +171,21 @@ func (s *MQTTService) runConnect(ctx context.Context, connID string, conn *conne
 		return
 	}
 	// paho は onConnected を Connect の復帰より先に起動し得るため、既に stateConnected なのが正常系。
+	// 逆に onConnected より先にここで遷移した場合、その間の Subscribe は client を直接呼び、
+	// onConnected が同じ購読をもう一度送る (QoS は揃うが、retained メッセージが重ねて届き得る)。
 	if conn.state == stateConnecting {
 		conn.state = stateConnected
 	}
 	conn.stateMu.Unlock()
 }
 
-// onConnected は接続確立 (自動再接続を含む) のたびに呼ばれる。
-// 購読は接続が確立してからしか登録できないので、購読を持っていれば再接続である。
+// onConnected は接続確立 (自動再接続を含む) のたびに呼ばれ、subs の購読を張り直す。
+// 初回の確立では、確立前に受け付けた購読をここで初めて購読する。
+// 状態遷移から張り直しの完了まで opMu を保持し、Subscribe / Unsubscribe と直列化する。
+// 間に Subscribe が割り込むと、複製した古い QoS で張り直したり、同じ購読を重ねて送ったりするため。
 func (s *MQTTService) onConnected(connID string, conn *connection) {
+	conn.opMu.Lock()
+	defer conn.opMu.Unlock()
 	conn.stateMu.Lock()
 	if conn.terminal() {
 		conn.stateMu.Unlock()
@@ -293,7 +300,7 @@ func (s *MQTTService) Publish(connectionID, topic, payload string, qos byte, ret
 	})
 }
 
-// Subscribe は指定トピックの購読を開始する。
+// Subscribe は指定トピックの購読を開始する。接続の確立前なら登録だけ行い、確立時に購読する。
 func (s *MQTTService) Subscribe(connectionID, topic string, qos byte) error {
 	if err := domain.ValidateTopicFilter(fieldTopic, topic); err != nil {
 		return err
@@ -302,6 +309,9 @@ func (s *MQTTService) Subscribe(connectionID, topic string, qos byte) error {
 		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
 	}
 	return s.withConn(connectionID, func(conn *connection) error {
+		if conn.updatePendingSubs(func() { conn.subs[topic] = qos }) {
+			return nil
+		}
 		if err := conn.client.Subscribe(topic, qos, s.messageHandler(connectionID, conn)); err != nil {
 			return fmt.Errorf("failed to subscribe: %w", err)
 		}
@@ -310,6 +320,20 @@ func (s *MQTTService) Subscribe(connectionID, topic string, qos byte) error {
 		conn.stateMu.Unlock()
 		return nil
 	})
+}
+
+// updatePendingSubs は接続の確立前 (stateConnecting) なら client を呼ばずに update で subs だけを変え、
+// true を返す。確立前の client は購読を受け付けない (paho は ErrNotConnected を返す) ので、
+// 実際の購読・解除は onConnected の張り直しに任せる。確立済みなら何もせず false を返す。
+// opMu の保持中 (withConn の中) に呼ぶ。
+func (c *connection) updatePendingSubs(update func()) bool {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.state != stateConnecting {
+		return false
+	}
+	update()
+	return true
 }
 
 // messageHandler は受信したメッセージを mqtt:message イベントとして発行するハンドラを返す。
@@ -336,15 +360,14 @@ func (s *MQTTService) messageHandler(connectionID string, conn *connection) doma
 	}
 }
 
-// resubscribe は再接続後に購読を張り直す。client は CleanSession で接続するので、
+// resubscribe は接続の確立後に subs の購読を張り直す。client は CleanSession で接続するので、
 // 再接続したブローカー側には前回の購読が残っていない。張り直さないと、GetConnections は
-// 購読中と返し続けるのにメッセージが届かなくなる。
-// onConnected (client のコールバック用 goroutine) から呼ぶ。client 操作なので opMu を取る。
+// 購読中と返し続けるのにメッセージが届かなくなる。確立前に受け付けた購読もここで購読する。
+// onConnected (client のコールバック用 goroutine) から、opMu を保持したまま呼ぶ。
 func (s *MQTTService) resubscribe(connID string, conn *connection, subs map[string]byte) {
-	conn.opMu.Lock()
-	defer conn.opMu.Unlock()
 	for topic, qos := range subs {
-		// 待つ間に切断された接続と、Unsubscribe で外された購読は張り直さない。
+		// 途中で切断された接続 (Disconnect の detach は opMu を取らずに遷移させる) と、
+		// Unsubscribe で外された購読は張り直さない。
 		conn.stateMu.RLock()
 		_, still := conn.subs[topic]
 		closed := conn.terminal()
@@ -369,12 +392,15 @@ func (s *MQTTService) resubscribe(connID string, conn *connection, subs map[stri
 	}
 }
 
-// Unsubscribe は指定トピックの購読を解除する。
+// Unsubscribe は指定トピックの購読を解除する。接続の確立前なら登録を外すだけで client は呼ばない。
 func (s *MQTTService) Unsubscribe(connectionID, topic string) error {
 	if err := domain.ValidateTopicFilter(fieldTopic, topic); err != nil {
 		return err
 	}
 	return s.withConn(connectionID, func(conn *connection) error {
+		if conn.updatePendingSubs(func() { delete(conn.subs, topic) }) {
+			return nil
+		}
 		if err := conn.client.Unsubscribe(topic); err != nil {
 			return fmt.Errorf("failed to unsubscribe: %w", err)
 		}
@@ -386,6 +412,7 @@ func (s *MQTTService) Unsubscribe(connectionID, topic string) error {
 }
 
 // GetConnections は全接続の現在状態を返す。切断が確定した接続は含めない。
+// Subscriptions には接続確立前に受け付けた購読 (確立時に購読する) も含む。
 // opMu を取らないので、実行中の client 操作があっても待たされない。
 func (s *MQTTService) GetConnections() []domain.ConnectionStatus {
 	s.mu.RLock()
