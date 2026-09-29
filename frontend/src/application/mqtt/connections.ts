@@ -477,7 +477,13 @@ export function createConnectionsState(
       if (activeConnectionId() === connectionId) {
         setActiveConnectionId(newConnId);
       }
+      // バックエンドは確立前の購読を受け付けて確立時に購読するので、確立を待たずに送る。
       for (const sub of conn.subscriptions) {
+        // 前の購読を送っている間に、タブが閉じられたか購読が外されていたら送らない。
+        // 送ると、UI に無い購読がバックエンドに残って確立時に購読される。
+        const current = connections[newConnId];
+        if (!current) break;
+        if (!current.subscriptions.some((s) => s.id === sub.id)) continue;
         await api
           .subscribe(newConnId, sub.topic, sub.qos)
           .catch((err) =>

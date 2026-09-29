@@ -70,7 +70,10 @@ export function createSubscriptionsState(
     if (!connId) return;
     const sub = conn?.subscriptions.find((s) => s.id === id);
     if (!sub) return;
-    if (conn?.type === "online" && conn.connected) {
+    // 確立待ちのオンラインタブにも送る。バックエンドは確立前の購読を保持して確立時に購読するので、
+    // 送らないと外した購読が確立時に購読されてしまう。
+    if (conn?.type === "online") {
+      const connected = conn.connected;
       try {
         await api.unsubscribe(connId, sub.topic);
         logger.info("MQTT unsubscribed", {
@@ -83,10 +86,13 @@ export function createSubscriptionsState(
           topic: sub.topic,
           error: String(err),
         });
-        notifier.error(
-          `Failed to unsubscribe from ${sub.topic}`,
-          errorMessage(err),
-        );
+        // 未接続での失敗 (接続が失敗して既に無い、自動再接続中) は行を外せば足りるので通知しない。
+        if (connected) {
+          notifier.error(
+            `Failed to unsubscribe from ${sub.topic}`,
+            errorMessage(err),
+          );
+        }
       }
     }
     updateConnection(connId, (state) => ({

@@ -712,6 +712,53 @@ describe("createConnectionsState connection operations", () => {
     h.dispose();
   });
 
+  it("skips re-subscribing a topic removed while an earlier one was in flight", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1", ["a", "b"])] });
+    await h.state.restore();
+    let resolveFirst = () => {};
+    h.api.subscribe = vi.fn(
+      (_id: string, topic: string) =>
+        new Promise<void>((resolve) => {
+          if (topic === "a") resolveFirst = resolve;
+          else resolve();
+        }),
+    );
+
+    const reconnecting = h.state.handleReconnect("c1");
+    await vi.waitFor(() => expect(h.api.subscribe).toHaveBeenCalledTimes(1));
+    h.state.updateConnection("new-id", (s) => ({
+      ...s,
+      subscriptions: s.subscriptions.filter((sub) => sub.topic !== "b"),
+    }));
+    resolveFirst();
+    await reconnecting;
+
+    expect(h.api.subscribe).toHaveBeenCalledTimes(1);
+    expect(h.api.subscribe).toHaveBeenCalledWith("new-id", "a", 0);
+    h.dispose();
+  });
+
+  it("stops re-subscribing once the new tab is closed", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1", ["a", "b"])] });
+    await h.state.restore();
+    let resolveFirst = () => {};
+    h.api.subscribe = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+
+    const reconnecting = h.state.handleReconnect("c1");
+    await vi.waitFor(() => expect(h.api.subscribe).toHaveBeenCalledTimes(1));
+    h.state.closeConnection("new-id");
+    resolveFirst();
+    await reconnecting;
+
+    expect(h.api.subscribe).toHaveBeenCalledTimes(1);
+    h.dispose();
+  });
+
   it("reconnects an offline tab without disconnecting and keeps the active id", async () => {
     const h = harness({
       profiles: [makeProfile("p1"), makeProfile("p2")],
