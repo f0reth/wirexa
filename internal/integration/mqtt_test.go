@@ -93,14 +93,45 @@ func newMQTTMockEmitter() *mqttMockEmitter {
 	}
 }
 
-// eventConnID はライフサイクルイベント (connected など) のデータから connectionId を取り出す。
+// eventConnID はライフサイクルイベント (connected など) と mqtt:scan-topic のデータから
+// connectionId を取り出す。
 func eventConnID(data any) string {
-	if m, ok := data.(map[string]any); ok {
-		if id, ok := m["connectionId"].(string); ok {
+	switch d := data.(type) {
+	case map[string]any:
+		if id, ok := d["connectionId"].(string); ok {
 			return id
 		}
+	case mqttdomain.ScannedTopic:
+		return d.ConnectionID
 	}
 	return ""
+}
+
+// scanTopicCount は connID の mqtt:scan-topic のうち、topic のものの発行回数を返す。
+func (e *mqttMockEmitter) scanTopicCount(connID, topic string) int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	n := 0
+	for _, ev := range e.events {
+		if scanned, ok := ev.data.(mqttdomain.ScannedTopic); ok && ev.name == cmndomain.EventMQTTScanTopic &&
+			scanned.ConnectionID == connID && scanned.Topic == topic {
+			n++
+		}
+	}
+	return n
+}
+
+// waitScanTopic は connID のスキャンが topic を見つけるまで待つ。
+func (e *mqttMockEmitter) waitScanTopic(t *testing.T, connID, topic string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if e.scanTopicCount(connID, topic) > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timeout waiting for mqtt:scan-topic %s of %s", topic, connID)
 }
 
 // lifecycle は connID のライフサイクルイベント (mqtt:message 以外) の名前を発行順に返す。
@@ -1332,6 +1363,158 @@ func TestMQTT_OverlappingSubscriptions(t *testing.T) {
 	publishOnce("overlap/specific")
 	if err := h.Publish(pubID, "elsewhere", "x", 1, false); err != nil {
 		t.Fatalf("Publish(elsewhere): %v", err)
+	}
+	emitter.noMessage(t, 300*time.Millisecond)
+}
+
+// TestMQTT_TopicScan は、スキャンを始めると publish されたトピックが mqtt:scan-topic で届き、
+// スキャンが購読一覧に現れず mqtt:message も発行しないこと、止めると届かなくなることを確認する。
+func TestMQTT_TopicScan(t *testing.T) {
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+	id := connectBroker(t, h, "scan")
+	waitConnected(t, h, id, 5*time.Second)
+
+	if err := h.StartTopicScan(id); err != nil {
+		t.Fatalf("StartTopicScan: %v", err)
+	}
+	if status, _ := connectionStatus(h, id); !status.Scanning || len(status.Subscriptions) != 0 {
+		t.Errorf("status = %+v, want Scanning without subscriptions", status)
+	}
+	if err := h.Publish(id, "scan/found", "x", 0, false); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	emitter.waitScanTopic(t, id, "scan/found", 5*time.Second)
+	// スキャンはトピックを集めるだけで、購読していないトピックのメッセージは発行しない。
+	emitter.noMessage(t, 300*time.Millisecond)
+
+	if err := h.StopTopicScan(id); err != nil {
+		t.Fatalf("StopTopicScan: %v", err)
+	}
+	if status, _ := connectionStatus(h, id); status.Scanning {
+		t.Error("Scanning = true after StopTopicScan")
+	}
+	if err := h.Publish(id, "scan/after-stop", "x", 0, false); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if n := emitter.scanTopicCount(id, "scan/after-stop"); n != 0 {
+		t.Errorf("mqtt:scan-topic emitted %d times after StopTopicScan, want 0", n)
+	}
+	// 元の接続はスキャンを止めても続く。
+	if status, ok := connectionStatus(h, id); !ok || !status.Connected {
+		t.Errorf("status = %+v, want the connection kept", status)
+	}
+}
+
+// TestMQTT_TopicScan_ConnectionLost は、スキャン用の接続が切れると mqtt:scan-stopped を 1 回発行して
+// スキャンを終え、ブローカーが戻っても元の接続だけが再接続することを確認する。
+func TestMQTT_TopicScan_ConnectionLost(t *testing.T) {
+	broker := startMQTTBroker(t, "127.0.0.1:0", nil)
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+
+	id, err := h.Connect(mqttdomain.ConnectionConfig{Name: "scan-lost", Broker: "tcp://" + broker.addr})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	emitter.waitEvent(t, cmndomain.EventMQTTConnected, id, 1, 5*time.Second)
+	if err := h.StartTopicScan(id); err != nil {
+		t.Fatalf("StartTopicScan: %v", err)
+	}
+
+	broker.Close()
+	emitter.waitEvent(t, cmndomain.EventMQTTScanStopped, id, 1, 5*time.Second)
+	if status, _ := connectionStatus(h, id); status.Scanning {
+		t.Error("Scanning = true after the scan connection was lost")
+	}
+
+	restarted := startMQTTBroker(t, broker.addr, nil)
+	emitter.waitEvent(t, cmndomain.EventMQTTConnected, id, 2, 15*time.Second)
+	// スキャン用のクライアントが自動再接続していれば、ここで 2 本目が繋がる。
+	time.Sleep(2 * time.Second)
+	if n := atomic.LoadInt64(&restarted.Info.ClientsConnected); n != 1 {
+		t.Errorf("clients on the restarted broker = %d, want 1 (the scan client must not reconnect)", n)
+	}
+	if n := emitter.countEvent(cmndomain.EventMQTTScanStopped, id); n != 1 {
+		t.Errorf("mqtt:scan-stopped emitted %d times, want 1", n)
+	}
+}
+
+// connectDuplicatingBroker は、重なる購読ごとに PUBLISH を送るブローカーへ購読用と publish 用の
+// 接続を張り、確立を待つ。
+func connectDuplicatingBroker(t *testing.T, h *adapters.MQTTHandler) (subID, pubID string) {
+	t.Helper()
+	broker := testutil.StartDuplicatingBroker(t)
+	ids := make([]string, 0, 2)
+	for _, name := range []string{"sub", "pub"} {
+		id, err := h.Connect(mqttdomain.ConnectionConfig{Name: name, Broker: broker.URL()})
+		if err != nil {
+			t.Fatalf("Connect(%s): %v", name, err)
+		}
+		waitConnected(t, h, id, 5*time.Second)
+		ids = append(ids, id)
+	}
+	return ids[0], ids[1]
+}
+
+// TestMQTT_TopicScan_DuplicatingBroker_DeliversOnce は、重なる購読ごとに PUBLISH を送るブローカーでも、
+// スキャン中に 1 件 publish すると mqtt:message が 1 回だけ発行されることを確認する。
+// スキャンの # を同じ接続で購読すると、ユーザーの購読と重なって 2 件届く。
+func TestMQTT_TopicScan_DuplicatingBroker_DeliversOnce(t *testing.T) {
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+	subID, pubID := connectDuplicatingBroker(t, h)
+
+	const topic = "dup/topic"
+	if err := h.Subscribe(subID, topic, 0); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	if err := h.StartTopicScan(subID); err != nil {
+		t.Fatalf("StartTopicScan: %v", err)
+	}
+
+	if err := h.Publish(pubID, topic, "x", 0, false); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	if msg := emitter.receiveMessage(t, 5*time.Second); msg.Topic != topic || msg.ConnectionID != subID {
+		t.Fatalf("message = %+v, want %s on %s", msg, topic, subID)
+	}
+	emitter.waitScanTopic(t, subID, topic, 5*time.Second)
+	emitter.noMessage(t, 300*time.Millisecond)
+	if n := emitter.scanTopicCount(subID, topic); n != 1 {
+		t.Errorf("mqtt:scan-topic emitted %d times, want 1", n)
+	}
+}
+
+// TestMQTT_DuplicatingBroker_OverlappingUserSubscriptions は、ユーザーが同じ接続に重なる購読
+// (# と個別のトピック) を張ったときは、ブローカーが送った 2 件をそのまま発行することを確認する。
+// 偽ブローカーが実際に重複して送ることの確認と、重複排除をしないことの固定を兼ねる。
+func TestMQTT_DuplicatingBroker_OverlappingUserSubscriptions(t *testing.T) {
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+	subID, pubID := connectDuplicatingBroker(t, h)
+
+	const topic = "dup/topic"
+	for _, filter := range []string{topic, "#"} {
+		if err := h.Subscribe(subID, filter, 0); err != nil {
+			t.Fatalf("Subscribe(%s): %v", filter, err)
+		}
+	}
+
+	if err := h.Publish(pubID, topic, "x", 0, false); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	for range 2 {
+		if msg := emitter.receiveMessage(t, 5*time.Second); msg.Topic != topic || msg.ConnectionID != subID {
+			t.Fatalf("message = %+v, want %s on %s", msg, topic, subID)
+		}
 	}
 	emitter.noMessage(t, 300*time.Millisecond)
 }

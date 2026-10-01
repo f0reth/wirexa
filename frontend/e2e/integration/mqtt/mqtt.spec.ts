@@ -243,8 +243,9 @@ test("switching brokers keeps each broker's subscriptions separate", async ({
 });
 
 // ── 観点H: Broker Topics のスキャン ──────────────────────────────────────────
-// スキャンは "#" を購読し、届いたトピックを一覧にする。購読の完了を画面から待てないので、
-// 先に retained メッセージを置いておき、"#" の購読と同時に届くようにする。
+// スキャンは専用の接続で "#" を購読し、届いたトピックを一覧にする (元の接続の購読には現れない)。
+// 購読の完了を画面から待てないので、先に retained メッセージを置いておき、"#" の購読と同時に
+// 届くようにする。
 
 test("scanning lists broker topics and subscribes from the list", async ({
   page,
@@ -262,11 +263,15 @@ test("scanning lists broker topics and subscribes from the list", async ({
     await expect(panel.getByText(topic, { exact: true })).toBeVisible();
     // スキャンはトピックを集めるだけで、購読していないトピックのメッセージは一覧に出さない。
     await expect(app.mqttMessages).toHaveCount(0);
+    // スキャンの "#" は専用の接続が購読するので、この接続の購読には無い。
+    expect(await mqttConnections(page)).toEqual([
+      expect.objectContaining({ scanning: true, subscriptions: [] }),
+    ]);
 
     await panel.getByTitle("Subscribe").click();
     await expect(app.mqttSubscription(topic)).toBeVisible();
     await expect(panel.getByTitle("Already subscribed")).toBeDisabled();
-    // 購読した retained メッセージが届く。"#" の購読とも一致するが、受信 1 件につき 1 件だけ並ぶ。
+    // 購読した retained メッセージが届く。スキャンの "#" は別の接続なので、この接続には 1 件だけ届く。
     await expect(app.mqttMessage("kept")).toContainText(topic);
     await expect(app.mqttMessages).toHaveCount(1);
     await panel.getByRole("button", { name: "Stop", exact: true }).click();

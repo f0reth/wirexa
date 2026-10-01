@@ -371,8 +371,9 @@ func TestPahoClient_ConnectionLost_InvokesCallback(t *testing.T) {
 }
 
 // subscribingBroker は SUBSCRIBE / UNSUBSCRIBE に応答し、テストから PUBLISH を送れる偽ブローカー。
-// mochi ブローカーは重なる購読があっても PUBLISH を 1 件しか送らないので、購読ごとに 1 件ずつ送る
-// ブローカー (MQTT 3.1.1 3.3.5 が認める動作) の振る舞いをここで作る。
+// 購読の内容は見ず、テストが publish を呼んだ分だけ PUBLISH を送る (重なる購読があっても 1 件)。
+// 受信した 1 件の PUBLISH で pahoClient が handler を何回呼ぶかを確かめるために使う。
+// 重なる購読ごとに PUBLISH を 1 件ずつ送るブローカーの再現には testutil.DuplicatingBroker を使う。
 type subscribingBroker struct {
 	conn net.Conn
 	// writeMu は応答 (接続の goroutine) と publish (テストの goroutine) の書き込みを直列化する。
