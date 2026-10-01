@@ -9,6 +9,14 @@ import styles from "../messages.module.css";
 import base from "../mqtt.module.css";
 import { getTopicColor } from "../utils";
 
+/**
+ * 一覧の 1 行の高さ (px)。ペイロードのプレビューが 2 行の行の高さで、行間の余白を含む。
+ * 行の高さは計測せず、全行をこの高さに揃える。@tanstack/solid-virtual は件数が変わるたびに
+ * 計測結果を捨てるので、受信が続く一覧では計測した高さで並べ続けられない。
+ * 行の中の寸法 (messages.module.css、rem) はルートのフォントサイズ 16px でこの値になる。
+ */
+const MESSAGE_ROW_HEIGHT = 81;
+
 export function MessagesPanel() {
   const {
     visibleMessages,
@@ -29,11 +37,10 @@ export function MessagesPanel() {
       return visibleMessages().length;
     },
     getScrollElement: () => scrollRef,
-    estimateSize: () => 80,
+    estimateSize: () => MESSAGE_ROW_HEIGHT,
     overscan: 5,
     paddingStart: 10,
     paddingEnd: 10,
-    measureElement: (el) => el?.getBoundingClientRect().height ?? 80,
   });
 
   // 選択の追従は application 層 (createMessagesState) が行う。ここはスクロールだけを追従させる。
@@ -108,9 +115,11 @@ export function MessagesPanel() {
                 return (
                   <div
                     data-index={virtualItem.index}
-                    ref={(el) => virtualizer.measureElement(el)}
                     class={styles.messagesVirtualItem}
-                    style={{ transform: `translateY(${virtualItem.start}px)` }}
+                    style={{
+                      height: `${virtualItem.size}px`,
+                      transform: `translateY(${virtualItem.start}px)`,
+                    }}
                   >
                     {/* 一覧が縮むと (フィルターの切り替えなど)、範囲外になった行は For が
                         取り除く前に再描画されることがある。メッセージが無い行は中身を描かない。 */}

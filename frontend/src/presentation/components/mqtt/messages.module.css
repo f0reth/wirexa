@@ -68,6 +68,11 @@
   color: var(--color-foreground);
   font-family: inherit;
   box-shadow: var(--shadow-sm), var(--inner-glow);
+  /* 行の高さは仮想リストが決める (messages-panel.tsx の MESSAGE_ROW_HEIGHT)。ボタンをその
+   * 高さいっぱいに広げ、中身が収まらないときは切り落として次の行に重ならないようにする。 */
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .messageItem:hover {

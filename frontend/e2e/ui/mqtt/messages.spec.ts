@@ -260,6 +260,65 @@ test("topic filter narrows the list and Clear empties it", async ({
   await expect(app.mqttSubscription("sensors/#")).toBeVisible();
 });
 
+// ── 観点H: 一覧のレイアウト ──────────────────────────────────────────────────
+
+/**
+ * 一覧に描かれている行を index 順に並べ、隣り合う行の「上端 − 前の行の下端」を返す。
+ * 行が隙間なく並んでいればすべて 0 になる。
+ */
+function rowGaps(app: App): Promise<number[]> {
+  return app
+    .mqttSection("Messages")
+    .locator("[data-index]")
+    .evaluateAll((rows) => {
+      const rects = rows
+        .sort((a, b) => Number(a.dataset.index) - Number(b.dataset.index))
+        .map((el) => el.getBoundingClientRect());
+      return rects.slice(1).map((rect, i) => rect.top - rects[i].bottom);
+    });
+}
+
+/** 一覧の rows 件の行が、隙間も重なりもなく (±1px) 並ぶまで待つ。 */
+async function expectRowsContiguous(app: App, rows: number): Promise<void> {
+  await expect
+    .poll(async () => (await rowGaps(app)).map((gap) => Math.abs(gap) <= 1))
+    .toEqual(Array.from({ length: rows - 1 }, () => true));
+}
+
+test("message rows stay contiguous whatever the payload length", async ({
+  page,
+  app,
+  fake,
+}) => {
+  const pageErrors = collectPageErrors(page);
+  await subscribe(app, "sensors/#");
+  // プレビューが 1 行で収まるペイロードと、2 行に折り返して切り詰められるペイロード。
+  const long = "x".repeat(400);
+  await fake.emitAll(WailsEvents.mqttMessage, [
+    message("sensors/temp", "short-1"),
+    message("sensors/humidity", `${long}-1`),
+    message("sensors/temp", "short-2"),
+    message("sensors/humidity", `${long}-2`),
+  ]);
+  await expect(app.mqttMessages).toHaveCount(4);
+  await expectRowsContiguous(app, 4);
+
+  // 受信で件数が変わっても並びは崩れない。
+  await fake.emit(WailsEvents.mqttMessage, message("sensors/temp", "short-3"));
+  await expect(app.mqttMessages).toHaveCount(5);
+  await expectRowsContiguous(app, 5);
+
+  const filter = page.getByRole("combobox", { name: "Filter by topic" });
+  await filter.selectOption("sensors/temp");
+  await expect(app.mqttMessages).toHaveCount(3);
+  await expectRowsContiguous(app, 3);
+
+  await filter.selectOption("");
+  await expect(app.mqttMessages).toHaveCount(5);
+  await expectRowsContiguous(app, 5);
+  expect(pageErrors).toEqual([]);
+});
+
 // ── 観点H: Auto (最新メッセージへの追従) ─────────────────────────────────────
 
 test("with Auto enabled the newest message is scrolled into view", async ({
