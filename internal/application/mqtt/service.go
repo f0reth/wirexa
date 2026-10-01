@@ -388,6 +388,11 @@ func (s *MQTTService) resubscribe(connID string, conn *connection, subs map[stri
 			conn.stateMu.Lock()
 			delete(conn.subs, topic)
 			conn.stateMu.Unlock()
+			// client は張り直しの失敗では振り分け先を残すので、解除して片付ける。
+			// 失敗しても (直後にまた切断した等) 表示からは外したままにする。
+			if err := conn.client.Unsubscribe(topic); err != nil {
+				s.logger.Error("MQTT unsubscribe of a rejected subscription failed", "source", "mqtt", "connection_id", connID, "topic", topic, "error", err)
+			}
 		}
 	}
 }

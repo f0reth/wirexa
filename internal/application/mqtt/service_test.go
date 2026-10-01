@@ -1577,23 +1577,86 @@ func TestMQTTService_Connected_WithoutSubscriptions_DoesNotSubscribe(t *testing.
 	}
 }
 
-// 張り直しでブローカーに拒否された購読は表示から外し、それ以外の失敗では残して次の再接続に任せる。
+// 張り直しでブローカーに拒否された購読は表示から外して client からも解除し、
+// それ以外の失敗では残して次の再接続に任せる。
 func TestMQTTService_Reconnect_ResubscribeFailures(t *testing.T) {
-	svc, _, rec, _, subscribeErr := newResubscribeService(t, &mockEmitter{}, map[string]byte{"a/#": 0})
-
-	rejected := domain.ErrSubscriptionRejected
-	subscribeErr.Store(&rejected)
-	rec.onConnected(0)()
-	if subs := svc.GetConnections()[0].Subscriptions; len(subs) != 0 {
-		t.Errorf("subscriptions after rejection = %v, want none", subs)
+	tests := []struct {
+		subscribeErr     error
+		unsubscribeErr   error
+		name             string
+		wantSubs         []string
+		wantUnsubscribed []string
+	}{
+		{
+			name:             "rejected",
+			subscribeErr:     domain.ErrSubscriptionRejected,
+			wantSubs:         []string{"b/#"},
+			wantUnsubscribed: []string{"a/#"},
+		},
+		{
+			// 解除に失敗しても (直後にまた切断した等)、表示からは外す。
+			name:             "rejected and unsubscribe fails",
+			subscribeErr:     domain.ErrSubscriptionRejected,
+			unsubscribeErr:   errors.New("not connected"),
+			wantSubs:         []string{"b/#"},
+			wantUnsubscribed: []string{"a/#"},
+		},
+		{
+			name:         "transient failure",
+			subscribeErr: errors.New("not connected"),
+			wantSubs:     []string{"a/#", "b/#"},
+		},
 	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &callbackRecorder{}
+			var failing atomic.Bool
+			var mu sync.Mutex
+			var unsubscribed []string
+			client := &mockBrokerClient{
+				// 張り直しでは a/# だけ失敗させる。
+				subscribeFn: func(topic string, _ byte, _ domain.MessageHandler) error {
+					if failing.Load() && topic == "a/#" {
+						return tc.subscribeErr
+					}
+					return nil
+				},
+				unsubscribeFn: func(topics ...string) error {
+					mu.Lock()
+					defer mu.Unlock()
+					unsubscribed = append(unsubscribed, topics...)
+					return tc.unsubscribeErr
+				},
+			}
+			svc := newTestService(t, &mockEmitter{}, rec.factory(client))
+			id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+			if err != nil {
+				t.Fatalf("Connect: %v", err)
+			}
+			waitEstablished(t, svc, 1)
+			for _, topic := range []string{"a/#", "b/#"} {
+				if err := svc.Subscribe(id, topic, 0); err != nil {
+					t.Fatalf("Subscribe(%s): %v", topic, err)
+				}
+			}
 
-	svc2, _, rec2, _, subscribeErr2 := newResubscribeService(t, &mockEmitter{}, map[string]byte{"a/#": 0})
-	lostAgain := errors.New("not connected")
-	subscribeErr2.Store(&lostAgain)
-	rec2.onConnected(0)()
-	if subs := svc2.GetConnections()[0].Subscriptions; len(subs) != 1 {
-		t.Errorf("subscriptions after a transient failure = %v, want kept", subs)
+			failing.Store(true)
+			rec.onConnected(0)()
+
+			var subs []string
+			for _, s := range svc.GetConnections()[0].Subscriptions {
+				subs = append(subs, s.Topic)
+			}
+			slices.Sort(subs)
+			if !slices.Equal(subs, tc.wantSubs) {
+				t.Errorf("subscriptions = %v, want %v", subs, tc.wantSubs)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if !slices.Equal(unsubscribed, tc.wantUnsubscribed) {
+				t.Errorf("client.Unsubscribe called with %v, want %v", unsubscribed, tc.wantUnsubscribed)
+			}
+		})
 	}
 }
 

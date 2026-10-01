@@ -240,7 +240,9 @@ func (p *pahoClient) Subscribe(topic string, qos byte, handler domain.MessageHan
 	// SUBACK の直後に届くメッセージ (retained など) を取りこぼさないよう、送信前に登録する。
 	replaced := p.setRoute(topic, handler)
 	err := p.subscribe(topic, qos)
-	// 新しく足した購読が成立しなかったら登録を外す。張り直しの失敗では、成立済みの購読を残す。
+	// 新しく足した購読が成立しなかったら登録を外す。登録済みのフィルターの張り直しが失敗したときは
+	// 登録を残す (接続中の QoS 変更が拒否された場合、元の購読は続いているため)。
+	// 再接続時の張り直しを拒否された購読の後始末は、呼び出し側が Unsubscribe で行う。
 	if err != nil && !replaced {
 		p.removeRoutes(topic)
 	}
