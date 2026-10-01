@@ -2,10 +2,11 @@
 package mqttapp
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
-	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -53,8 +54,13 @@ type connection struct {
 	cancel context.CancelFunc
 	// subs は購読中のトピック→QoS。リロード後の状態復元と、接続確立時・再接続時の張り直しのために
 	// サーバー側で保持する。接続確立前に受け付けた購読 (確立時に購読する) も含む。
-	subs   map[string]byte
-	config domain.ConnectionConfig
+	subs map[string]byte
+	// subOrder は subs のトピックを購読した順に並べたもの。GetConnections と張り直しの順序を決める
+	// (map の反復順に任せると、リロードのたびに購読一覧の並びが変わる)。subs と一緒に setSub / deleteSub で変える。
+	subOrder []string
+	config   domain.ConnectionConfig
+	// seq は接続の作成順。登録時に確定し以後不変なのでロック無しで読める。
+	seq uint64
 	// opMu は client 操作 (Publish / Subscribe / Unsubscribe / Disconnect と onConnected の張り直し) を直列化する。
 	// ネットワーク I/O を含むため長時間保持されうる。
 	opMu sync.Mutex
@@ -113,6 +119,33 @@ func disconnectScan(client domain.BrokerClient) {
 	}
 }
 
+// setSub は購読を登録する (stateMu 保持中に呼ぶ)。新しいトピックは購読順の末尾に足し、
+// 購読中のトピックは QoS だけを変えて位置を保つ。
+func (c *connection) setSub(topic string, qos byte) {
+	if _, ok := c.subs[topic]; !ok {
+		c.subOrder = append(c.subOrder, topic)
+	}
+	c.subs[topic] = qos
+}
+
+// deleteSub は購読を外す (stateMu 保持中に呼ぶ)。
+func (c *connection) deleteSub(topic string) {
+	if _, ok := c.subs[topic]; !ok {
+		return
+	}
+	delete(c.subs, topic)
+	c.subOrder = slices.DeleteFunc(c.subOrder, func(t string) bool { return t == topic })
+}
+
+// orderedSubs は購読を購読した順に複製して返す (stateMu 保持中に呼ぶ)。
+func (c *connection) orderedSubs() []domain.SubscriptionInfo {
+	subs := make([]domain.SubscriptionInfo, 0, len(c.subOrder))
+	for _, topic := range c.subOrder {
+		subs = append(subs, domain.SubscriptionInfo{Topic: topic, QoS: c.subs[topic]})
+	}
+	return subs
+}
+
 // terminal は切断が確定済みかを返す (stateMu 保持中に呼ぶ)。
 func (c *connection) terminal() bool {
 	return c.state == stateDisconnecting || c.state == stateClosed
@@ -135,7 +168,9 @@ type MQTTService struct {
 	// connWg は接続 goroutine とスキャンの開始 (= paho 側の接続試行) の生存を追跡する。
 	connWg sync.WaitGroup
 	mu     sync.RWMutex
-	closed bool
+	// nextSeq は次に登録する接続の作成順 (mu で保護)。
+	nextSeq uint64
+	closed  bool
 }
 
 // NewMQTTService は MQTTService を生成する。
@@ -187,6 +222,8 @@ func (s *MQTTService) Connect(config domain.ConnectionConfig) (string, error) {
 		cancel()
 		return "", errShuttingDown
 	}
+	conn.seq = s.nextSeq
+	s.nextSeq++
 	s.conns[connID] = conn
 	// 登録と connWg への計上を同じ区間で行う。分けると、Shutdown が map を空にして
 	// Wait した後に接続 goroutine が走り出す窓ができる。
@@ -260,7 +297,7 @@ func (s *MQTTService) onConnected(connID string, conn *connection) {
 	s.emitter.Emit(cmn.EventMQTTConnected, map[string]any{
 		keyConnectionID: connID,
 	})
-	subs := maps.Clone(conn.subs)
+	subs := conn.orderedSubs()
 	conn.stateMu.Unlock()
 
 	// stateMu を放してから張り直す (stateMu の保持中は client 操作をしない)。
@@ -376,14 +413,14 @@ func (s *MQTTService) Subscribe(connectionID, topic string, qos byte) error {
 		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
 	}
 	return s.withConn(connectionID, func(conn *connection) error {
-		if conn.updatePendingSubs(func() { conn.subs[topic] = qos }) {
+		if conn.updatePendingSubs(func() { conn.setSub(topic, qos) }) {
 			return nil
 		}
 		if err := conn.client.Subscribe(topic, qos, s.messageHandler(connectionID, conn)); err != nil {
 			return fmt.Errorf("failed to subscribe: %w", err)
 		}
 		conn.stateMu.Lock()
-		conn.subs[topic] = qos
+		conn.setSub(topic, qos)
 		conn.stateMu.Unlock()
 		return nil
 	})
@@ -427,12 +464,13 @@ func (s *MQTTService) messageHandler(connectionID string, conn *connection) doma
 	}
 }
 
-// resubscribe は接続の確立後に subs の購読を張り直す。client は CleanSession で接続するので、
+// resubscribe は接続の確立後に subs の購読を購読した順に張り直す。client は CleanSession で接続するので、
 // 再接続したブローカー側には前回の購読が残っていない。張り直さないと、GetConnections は
 // 購読中と返し続けるのにメッセージが届かなくなる。確立前に受け付けた購読もここで購読する。
 // onConnected (client のコールバック用 goroutine) から、opMu を保持したまま呼ぶ。
-func (s *MQTTService) resubscribe(connID string, conn *connection, subs map[string]byte) {
-	for topic, qos := range subs {
+func (s *MQTTService) resubscribe(connID string, conn *connection, subs []domain.SubscriptionInfo) {
+	for _, sub := range subs {
+		topic, qos := sub.Topic, sub.QoS
 		// 途中で切断された接続 (Disconnect の detach は opMu を取らずに遷移させる) と、
 		// Unsubscribe で外された購読は張り直さない。
 		conn.stateMu.RLock()
@@ -453,7 +491,7 @@ func (s *MQTTService) resubscribe(connID string, conn *connection, subs map[stri
 		// ブローカーが拒否した購読は表示から外す。それ以外 (再び切断した等) は次の再接続で張り直す。
 		if errors.Is(err, domain.ErrSubscriptionRejected) {
 			conn.stateMu.Lock()
-			delete(conn.subs, topic)
+			conn.deleteSub(topic)
 			conn.stateMu.Unlock()
 			// client は張り直しの失敗では振り分け先を残すので、解除して片付ける。
 			// 失敗しても (直後にまた切断した等) 表示からは外したままにする。
@@ -470,14 +508,14 @@ func (s *MQTTService) Unsubscribe(connectionID, topic string) error {
 		return err
 	}
 	return s.withConn(connectionID, func(conn *connection) error {
-		if conn.updatePendingSubs(func() { delete(conn.subs, topic) }) {
+		if conn.updatePendingSubs(func() { conn.deleteSub(topic) }) {
 			return nil
 		}
 		if err := conn.client.Unsubscribe(topic); err != nil {
 			return fmt.Errorf("failed to unsubscribe: %w", err)
 		}
 		conn.stateMu.Lock()
-		delete(conn.subs, topic)
+		conn.deleteSub(topic)
 		conn.stateMu.Unlock()
 		return nil
 	})
@@ -641,22 +679,27 @@ func (s *MQTTService) onScanConnectionLost(connID string, conn *connection, scan
 	scan.client.Disconnect(0)
 }
 
-// GetConnections は全接続の現在状態を返す。切断が確定した接続は含めない。
+// GetConnections は全接続の現在状態を、接続は作成順、購読は購読した順で返す。
+// 切断が確定した接続は含めない。
 // Subscriptions には接続確立前に受け付けた購読 (確立時に購読する) も含む。
 // Scanning はスキャンが稼働中のときだけ true (開始中は false)。
 // opMu を取らないので、実行中の client 操作があっても待たされない。
 func (s *MQTTService) GetConnections() []domain.ConnectionStatus {
+	type entry struct {
+		conn *connection
+		id   string
+	}
 	s.mu.RLock()
-	ids := make([]string, 0, len(s.conns))
-	conns := make([]*connection, 0, len(s.conns))
+	entries := make([]entry, 0, len(s.conns))
 	for id, conn := range s.conns {
-		ids = append(ids, id)
-		conns = append(conns, conn)
+		entries = append(entries, entry{conn: conn, id: id})
 	}
 	s.mu.RUnlock()
+	slices.SortFunc(entries, func(a, b entry) int { return cmp.Compare(a.conn.seq, b.conn.seq) })
 
-	statuses := make([]domain.ConnectionStatus, 0, len(conns))
-	for i, conn := range conns {
+	statuses := make([]domain.ConnectionStatus, 0, len(entries))
+	for _, e := range entries {
+		conn := e.conn
 		conn.stateMu.RLock()
 		if conn.terminal() {
 			conn.stateMu.RUnlock()
@@ -664,13 +707,10 @@ func (s *MQTTService) GetConnections() []domain.ConnectionStatus {
 		}
 		established := conn.state == stateConnected
 		scanning := conn.scan != nil && conn.scan.started
-		subs := make([]domain.SubscriptionInfo, 0, len(conn.subs))
-		for topic, qos := range conn.subs {
-			subs = append(subs, domain.SubscriptionInfo{Topic: topic, QoS: qos})
-		}
+		subs := conn.orderedSubs()
 		conn.stateMu.RUnlock()
 		statuses = append(statuses, domain.ConnectionStatus{
-			ID:            ids[i],
+			ID:            e.id,
 			Name:          conn.config.Name,
 			Broker:        conn.config.Broker,
 			Connected:     established && conn.client.IsConnected(),

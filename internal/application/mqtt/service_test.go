@@ -690,6 +690,75 @@ func TestMQTTService_GetConnections_TracksProfileIDAndSubscriptions(t *testing.T
 	}
 }
 
+// GetConnections は接続を作成順、購読を購読した順で返す (map の反復順に依らない)。
+// フロントは返った順のまま購読一覧を描くので、順序が不定だとリロードのたびに並びが変わる。
+func TestMQTTService_GetConnections_StableOrder(t *testing.T) {
+	svc := newTestService(t, &mockEmitter{}, factoryWith(&mockBrokerClient{}))
+	names := []string{"e", "a", "d", "b", "c"}
+	ids := make([]string, 0, len(names))
+	for _, name := range names {
+		id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883", Name: name})
+		if err != nil {
+			t.Fatalf("Connect(%s): %v", name, err)
+		}
+		ids = append(ids, id)
+	}
+	waitEstablished(t, svc, len(names))
+
+	const target = 2
+	subscribe := func(topic string, qos byte) {
+		t.Helper()
+		if err := svc.Subscribe(ids[target], topic, qos); err != nil {
+			t.Fatalf("Subscribe(%s): %v", topic, err)
+		}
+	}
+	// 名前順とも逆順とも異なる順で購読する。
+	topics := []string{"h/1", "b/1", "g/1", "a/1", "f/1", "c/1", "e/1", "d/1"}
+	for _, topic := range topics {
+		subscribe(topic, 0)
+	}
+
+	assertOrder := func(want []domain.SubscriptionInfo) {
+		t.Helper()
+		for range 50 {
+			conns := svc.GetConnections()
+			gotIDs := make([]string, 0, len(conns))
+			for i := range conns {
+				gotIDs = append(gotIDs, conns[i].ID)
+			}
+			if !slices.Equal(gotIDs, ids) {
+				t.Fatalf("connection order = %v, want creation order %v", gotIDs, ids)
+			}
+			if got := conns[target].Subscriptions; !slices.Equal(got, want) {
+				t.Fatalf("subscription order = %v, want %v", got, want)
+			}
+		}
+	}
+	want := make([]domain.SubscriptionInfo, 0, len(topics))
+	for _, topic := range topics {
+		want = append(want, domain.SubscriptionInfo{Topic: topic})
+	}
+	assertOrder(want)
+
+	// 途中の購読を解除して別の購読を足すと、残りの順序はそのままで末尾に足される。
+	if err := svc.Unsubscribe(ids[target], "g/1"); err != nil {
+		t.Fatalf("Unsubscribe: %v", err)
+	}
+	subscribe("z/1", 1)
+	// 購読中のトピックの QoS を変えても位置は変わらない。
+	subscribe("a/1", 2)
+	assertOrder([]domain.SubscriptionInfo{
+		{Topic: "h/1"},
+		{Topic: "b/1"},
+		{Topic: "a/1", QoS: 2},
+		{Topic: "f/1"},
+		{Topic: "c/1"},
+		{Topic: "e/1"},
+		{Topic: "d/1"},
+		{Topic: "z/1", QoS: 1},
+	})
+}
+
 // ------- Shutdown -------
 
 func TestMQTTService_Shutdown_DisconnectsAll(t *testing.T) {
@@ -1541,9 +1610,9 @@ type subscribeCall struct {
 	qos   byte
 }
 
-// newResubscribeService は Subscribe の呼び出しを記録する接続を 1 本張り、topics を購読する。
+// newResubscribeService は Subscribe の呼び出しを記録する接続を 1 本張り、topics を順に購読する。
 // subscribeErr を差し替えると、それ以降の Subscribe の結果を変えられる。
-func newResubscribeService(t *testing.T, emitter cmn.Emitter, topics map[string]byte) (svc *MQTTService, id string, rec *callbackRecorder, calls func() []subscribeCall, subscribeErr *atomic.Pointer[error]) {
+func newResubscribeService(t *testing.T, emitter cmn.Emitter, topics []subscribeCall) (svc *MQTTService, id string, rec *callbackRecorder, calls func() []subscribeCall, subscribeErr *atomic.Pointer[error]) {
 	t.Helper()
 	rec = &callbackRecorder{}
 	var mu sync.Mutex
@@ -1564,9 +1633,9 @@ func newResubscribeService(t *testing.T, emitter cmn.Emitter, topics map[string]
 		t.Fatalf("Connect: %v", err)
 	}
 	waitEstablished(t, svc, 1)
-	for topic, qos := range topics {
-		if err := svc.Subscribe(id, topic, qos); err != nil {
-			t.Fatalf("Subscribe(%s): %v", topic, err)
+	for _, sub := range topics {
+		if err := svc.Subscribe(id, sub.topic, sub.qos); err != nil {
+			t.Fatalf("Subscribe(%s): %v", sub.topic, err)
 		}
 	}
 	calls = func() []subscribeCall {
@@ -1580,13 +1649,12 @@ func newResubscribeService(t *testing.T, emitter cmn.Emitter, topics map[string]
 // 再接続 (2 回目以降の onConnected) では、同じ QoS で全購読を張り直し、メッセージが届く。
 func TestMQTTService_Reconnect_Resubscribes(t *testing.T) {
 	emitter := &mockEmitter{}
-	svc, _, rec, calls, _ := newResubscribeService(t, emitter, map[string]byte{"a/#": 1, "b/+": 2})
+	svc, _, rec, calls, _ := newResubscribeService(t, emitter, []subscribeCall{{"a/#", 1}, {"b/+", 2}})
 
 	rec.onConnectionLost(0)(errors.New("lost"))
 	rec.onConnected(0)()
 
 	got := calls()[2:]
-	slices.SortFunc(got, func(x, y subscribeCall) int { return strings.Compare(x.topic, y.topic) })
 	if want := []subscribeCall{{"a/#", 1}, {"b/+", 2}}; !slices.Equal(got, want) {
 		t.Fatalf("resubscribed = %v, want %v", got, want)
 	}
@@ -1597,6 +1665,18 @@ func TestMQTTService_Reconnect_Resubscribes(t *testing.T) {
 	}
 	if subs := svc.GetConnections()[0].Subscriptions; len(subs) != 2 {
 		t.Errorf("subscriptions = %v, want both kept", subs)
+	}
+}
+
+// 再接続では購読した順に張り直す (map の反復順に依らない)。
+func TestMQTTService_Reconnect_ResubscribesInOrder(t *testing.T) {
+	topics := []subscribeCall{{"h/1", 0}, {"b/1", 1}, {"g/1", 2}, {"a/1", 0}, {"f/1", 1}, {"c/1", 2}, {"e/1", 0}, {"d/1", 1}}
+	_, _, rec, calls, _ := newResubscribeService(t, &mockEmitter{}, topics)
+
+	rec.onConnected(0)()
+
+	if got := calls()[len(topics):]; !slices.Equal(got, topics) {
+		t.Errorf("resubscribed = %v, want the subscription order %v", got, topics)
 	}
 }
 
@@ -1933,7 +2013,7 @@ func TestMQTTService_Subscribe_WaitsForResubscribeOnConnected(t *testing.T) {
 
 // 切断済みの接続と、購読解除した購読は張り直さない。
 func TestMQTTService_Reconnect_SkipsUnsubscribedAndClosed(t *testing.T) {
-	svc, id, rec, calls, _ := newResubscribeService(t, &mockEmitter{}, map[string]byte{"a/#": 0, "b/#": 0})
+	svc, id, rec, calls, _ := newResubscribeService(t, &mockEmitter{}, []subscribeCall{{"a/#", 0}, {"b/#", 0}})
 	if err := svc.Unsubscribe(id, "b/#"); err != nil {
 		t.Fatalf("Unsubscribe: %v", err)
 	}
