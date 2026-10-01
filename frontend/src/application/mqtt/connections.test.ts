@@ -1,4 +1,4 @@
-import { createRoot } from "solid-js";
+import { createEffect, createRoot } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionPersistence } from "../../domain/mqtt/ports";
 import type { BrokerProfile, ConnectionStatus } from "../../domain/mqtt/types";
@@ -1123,6 +1123,52 @@ describe("createConnectionsState tabs and profiles", () => {
     expect(state.activeConnectionId()).toBe("offline-p2");
     expect(stored).toBe("p2");
     dispose();
+  });
+});
+
+describe("createConnectionsState updateConnection", () => {
+  /** updateConnection を呼ぶ effect を作り、実行回数を数える。 */
+  function trackEffect(run: () => void) {
+    const runs = vi.fn(run);
+    const dispose = createRoot((dispose) => {
+      createEffect(() => runs());
+      return dispose;
+    });
+    return { runs, dispose };
+  }
+
+  it("does not make the calling effect depend on the connection", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1")] });
+    await h.state.restore();
+    // updater は store プロキシをスプレッドするので、追跡すると接続全体に依存が付く。
+    const effect = trackEffect(() =>
+      h.state.updateConnection("c1", (s) => ({ ...s, selectedMessage: null })),
+    );
+    expect(effect.runs).toHaveBeenCalledTimes(1);
+
+    h.state.updateConnection("c1", (s) => ({ ...s, isScanning: true }));
+
+    expect(effect.runs).toHaveBeenCalledTimes(1);
+    effect.dispose();
+    h.dispose();
+  });
+
+  it("does not make the calling effect depend on the set of connections", async () => {
+    const h = harness({ profiles: [makeProfile("p1")] });
+    await h.state.restore();
+    // まだ無い接続と、あとで閉じる接続を書き換える。
+    const effect = trackEffect(() => {
+      h.state.updateConnection("offline-p2", (s) => ({ ...s }));
+      h.state.updateConnection("offline-p1", (s) => ({ ...s }));
+    });
+    expect(effect.runs).toHaveBeenCalledTimes(1);
+
+    h.state.createOfflineConnection(makeProfile("p2"));
+    h.state.closeConnection("offline-p1");
+
+    expect(effect.runs).toHaveBeenCalledTimes(1);
+    effect.dispose();
+    h.dispose();
   });
 });
 

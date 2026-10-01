@@ -1,4 +1,10 @@
-import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  untrack,
+} from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import type { Logger } from "../../application/logger";
 import type { ConnectionPersistence } from "../../domain/mqtt/ports";
@@ -154,9 +160,14 @@ export function createConnectionsState(
     connId: string,
     updater: (state: ConnectionStateExt) => ConnectionStateExt,
   ) {
-    const existing = connections[connId];
-    if (!existing) return;
-    setConnections(connId, updater(existing));
+    // updateConnection は書き込みなので、呼び出し元の effect に依存を足さない。
+    // updater は store プロキシをスプレッドすることが多く、追跡したままだと接続全体への
+    // 依存が付いて、無関係なプロパティの変更でも effect が再実行されてしまう。
+    untrack(() => {
+      const existing = connections[connId];
+      if (!existing) return;
+      setConnections(connId, updater(existing));
+    });
   }
 
   // Micro-batch: buffer incoming messages and flush once per animation frame.
