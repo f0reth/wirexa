@@ -157,6 +157,9 @@ func (s *MQTTService) Connect(config domain.ConnectionConfig) (string, error) {
 	if config.Broker == "" {
 		return "", &cmn.ValidationError{Field: "broker URL", Message: cmn.MsgRequired}
 	}
+	if err := domain.ValidateBrokerScheme(config.Broker, config.UseTLS); err != nil {
+		return "", err
+	}
 
 	connID := uuid.NewString()
 

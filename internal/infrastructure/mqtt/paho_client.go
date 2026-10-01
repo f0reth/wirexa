@@ -133,14 +133,24 @@ func (p *pahoClient) dispatch(msg pahomqtt.Message) {
 }
 
 // applyTLSScheme は UseTLS=true の場合、Broker URL のスキームを TLS 対応のものに変換する。
+// paho はスキームを小文字にして解釈し、スキーム無しには tcp:// を補うので、大文字を含むスキームと
+// スキーム無しをそのまま渡すと平文で接続する。照合は大文字小文字を区別せず、スキーム無しには ssl:// を補う。
+// TLS にできないスキームはそのまま返す (MQTTService.Connect が domain.ValidateBrokerScheme で先に拒否する)。
 func applyTLSScheme(broker string) string {
-	switch {
-	case strings.HasPrefix(broker, "tcp://"):
-		return "ssl://" + broker[len("tcp://"):]
-	case strings.HasPrefix(broker, "mqtt://"):
-		return "mqtts://" + broker[len("mqtt://"):]
-	case strings.HasPrefix(broker, "ws://"):
-		return "wss://" + broker[len("ws://"):]
+	if broker == "" {
+		return broker
+	}
+	scheme, rest, ok := strings.Cut(broker, "://")
+	if !ok {
+		return "ssl://" + broker
+	}
+	switch strings.ToLower(scheme) {
+	case "tcp":
+		return "ssl://" + rest
+	case "mqtt":
+		return "mqtts://" + rest
+	case "ws":
+		return "wss://" + rest
 	}
 	return broker
 }

@@ -282,7 +282,15 @@ func TestApplyTLSScheme(t *testing.T) {
 		{"ssl://broker:8883", "ssl://broker:8883"},
 		{"mqtts://broker:8883", "mqtts://broker:8883"},
 		{"wss://broker:443/mqtt", "wss://broker:443/mqtt"},
-		{"broker:1883", "broker:1883"},
+		{"tls://broker:8883", "tls://broker:8883"},
+		// スキームの大文字小文字は区別しない (paho はスキームを小文字にして平文で接続する)。
+		{"TCP://broker:1883", "ssl://broker:1883"},
+		{"Mqtt://broker:1883", "mqtts://broker:1883"},
+		{"WS://broker:8080/mqtt", "wss://broker:8080/mqtt"},
+		// スキーム無しは paho が tcp:// を補うので、TLS のスキームを補う。
+		{"broker:1883", "ssl://broker:1883"},
+		// TLS にできないスキームはそのまま返す (MQTTService.Connect が先に拒否する)。
+		{"http://broker:1883", "http://broker:1883"},
 		{"", ""},
 	}
 	for _, tc := range tests {
@@ -309,15 +317,20 @@ func newFactoryClient(t *testing.T, config domain.ConnectionConfig, onLost func(
 
 // UseTLS なら Broker のスキームを TLS 用に変え、TLS 1.2 以上の TLSConfig を設定する。
 func TestNewPahoClientFactory_UseTLS(t *testing.T) {
-	p := newFactoryClient(t, domain.ConnectionConfig{Broker: "tcp://broker:1883", ClientID: "c", UseTLS: true}, func(error) {})
+	// スキーム無しや大文字のスキームでも、平文の tcp ではなく ssl で接続する。
+	for _, broker := range []string{"tcp://broker:1883", "TCP://broker:1883", "broker:1883"} {
+		t.Run(broker, func(t *testing.T) {
+			p := newFactoryClient(t, domain.ConnectionConfig{Broker: broker, ClientID: "c", UseTLS: true}, func(error) {})
 
-	opts := p.client.OptionsReader()
-	servers := opts.Servers()
-	if len(servers) != 1 || servers[0].Scheme != "ssl" || servers[0].Host != "broker:1883" {
-		t.Fatalf("servers = %v, want ssl://broker:1883", servers)
-	}
-	if cfg := opts.TLSConfig(); cfg == nil || cfg.MinVersion != tls.VersionTLS12 {
-		t.Fatalf("TLSConfig = %+v, want MinVersion TLS1.2", cfg)
+			opts := p.client.OptionsReader()
+			servers := opts.Servers()
+			if len(servers) != 1 || servers[0].Scheme != "ssl" || servers[0].Host != "broker:1883" {
+				t.Fatalf("servers = %v, want ssl://broker:1883", servers)
+			}
+			if cfg := opts.TLSConfig(); cfg == nil || cfg.MinVersion != tls.VersionTLS12 {
+				t.Fatalf("TLSConfig = %+v, want MinVersion TLS1.2", cfg)
+			}
+		})
 	}
 }
 

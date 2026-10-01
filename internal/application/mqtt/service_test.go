@@ -155,6 +155,29 @@ func TestMQTTService_Connect_EmptyBroker(t *testing.T) {
 	}
 }
 
+// UseTLS で TLS にできないスキームの Broker は、client を作る前に拒否する
+// (そのまま渡すと平文で繋がるか、接続失敗のイベントでしか分からない)。
+func TestMQTTService_Connect_UseTLS_RejectsUnsupportedScheme(t *testing.T) {
+	var factoryCalls atomic.Int32
+	factory := func(domain.ConnectionConfig, func(), func(error)) domain.BrokerClient {
+		factoryCalls.Add(1)
+		return &mockBrokerClient{}
+	}
+	svc := newTestService(t, &mockEmitter{}, factory)
+
+	_, err := svc.Connect(domain.ConnectionConfig{Broker: "http://localhost:1883", UseTLS: true})
+
+	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
+		t.Fatalf("err = %v, want ValidationError", err)
+	}
+	if n := factoryCalls.Load(); n != 0 {
+		t.Errorf("factory called %d times, want 0", n)
+	}
+	if conns := svc.GetConnections(); len(conns) != 0 {
+		t.Errorf("connections = %v, want none", conns)
+	}
+}
+
 func TestMQTTService_Connect_ReturnsNonEmptyID(t *testing.T) {
 	done := make(chan struct{})
 	client := &mockBrokerClient{

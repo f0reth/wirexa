@@ -630,6 +630,17 @@ function validateTopicFilter(filter: string): void {
   });
 }
 
+/** UseTLS のときに TLS で接続できるスキームか (Go の ValidateBrokerScheme と同じ規則)。 */
+function validateBrokerScheme(broker: string, useTLS: boolean): void {
+  if (!useTLS) return;
+  const index = broker.indexOf("://");
+  if (index < 0) return;
+  const scheme = broker.slice(0, index).toLowerCase();
+  if (!["tcp", "mqtt", "ws", "ssl", "tls", "mqtts", "wss"].includes(scheme)) {
+    throw validationError("broker URL", "scheme cannot be used with TLS");
+  }
+}
+
 function validateQos(qos: number): void {
   if (qos > 2) throw validationError("qos", "must be 0, 1, or 2");
 }
@@ -678,11 +689,13 @@ const MqttHandler = {
       name: string;
       broker: string;
       profileId: string;
+      useTLS: boolean;
     }): Promise<string> => {
       if (seed.mqttConnect !== "ok") throw new Error("connection refused");
       if (config.broker === "") {
         throw validationError("broker URL", "is required");
       }
+      validateBrokerScheme(config.broker, config.useTLS);
       const conn: ConnectionStatus = {
         id: newId("conn"),
         name: config.name,
