@@ -28,6 +28,8 @@ var events = []eventPair{
 	{"mqttConnectionLost", domain.EventMQTTConnectionLost},
 	{"mqttConnectionFailed", domain.EventMQTTConnectionFailed},
 	{"mqttMessage", domain.EventMQTTMessage},
+	{"mqttScanTopic", domain.EventMQTTScanTopic},
+	{"mqttScanStopped", domain.EventMQTTScanStopped},
 	{"udpMessage", domain.EventUDPMessage},
 	{"appBeforeClose", domain.EventAppBeforeClose},
 }

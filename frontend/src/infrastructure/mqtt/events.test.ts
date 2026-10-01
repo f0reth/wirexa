@@ -15,7 +15,7 @@ const MQTT_EVENTS = Object.values(WailsEvents).filter((e): e is MqttEventName =>
 );
 
 it("covers every generated MQTT event", () => {
-  expect(MQTT_EVENTS).toHaveLength(5);
+  expect(MQTT_EVENTS).toHaveLength(7);
 });
 
 beforeEach(() => {

@@ -20,8 +20,20 @@ const (
 	fieldTopic      = "topic"
 )
 
+const (
+	// scanFilter は Broker Topics のスキャンが購読するフィルター。
+	scanFilter = "#"
+	// scanClientIDPrefix はスキャン用クライアントのクライアント ID の接頭辞。
+	scanClientIDPrefix = "wirexa-scan-"
+	// scanQuiesce はスキャン用クライアントを切断するときの待機時間 (ms)。
+	scanQuiesce = 250
+)
+
 // errShuttingDown は終了処理の開始後に接続しようとした場合に返す。
 var errShuttingDown = errors.New("application is shutting down")
+
+// errScanStopped は、開始の途中で止められたスキャン (StopTopicScan・切断・終了処理) の開始が返す。
+var errScanStopped = errors.New("topic scan was stopped")
 
 // connState は接続のライフサイクル状態。フロントエンドには公開せず、
 // ConnectionStatus.Connected の導出とイベント発行の判定にだけ使う。
@@ -52,6 +64,53 @@ type connection struct {
 	// 保持中に client 操作 (ネットワーク I/O) を行ってはならない。
 	stateMu sync.RWMutex
 	state   connState
+	// scan は Broker Topics のスキャン。nil はスキャンなし、非 nil は開始中か稼働中 (topicScan.started)。
+	// stateMu で保護する。終端状態の接続では常に nil。
+	scan *topicScan
+}
+
+// topicScan は Broker Topics のスキャン 1 回分。元の接続とは別のクライアント (別のクライアント ID) で
+// # を購読する。同じ接続で購読すると全ての購読と重なり、重なる購読ごとに PUBLISH を送る
+// ブローカーではメッセージが重複して届く。
+type topicScan struct {
+	// client は開始した goroutine が I/O の前に入れる。他の goroutine は started が true の間だけ触る。
+	client domain.BrokerClient
+	// cancel は進行中の Connect を打ち切る。
+	cancel context.CancelFunc
+	// done は開始 (接続と購読) の完了で閉じる。err はその結果で、done を閉じた後にだけ読む。
+	done chan struct{}
+	err  error
+	// lostErr は開始中に接続が切れたときの原因 (stateMu で保護)。
+	lostErr error
+	// pending は開始中に届いたトピック。稼働中になったときに発行する (stateMu の保持中に pendingMu を取る)。
+	pending   []string
+	pendingMu sync.Mutex
+	// started は稼働中 (接続と購読が済んだ) かを表す (stateMu で保護)。
+	started bool
+}
+
+// detachScan はスキャンを外して進行中の接続を打ち切り、切断が要るクライアントを返す (stateMu 保持中に呼ぶ)。
+// 稼働中だったらそのクライアントを返し、呼び出し元が stateMu を放してから切断する。
+// 開始中だったら nil を返す。接続試行の途中のクライアントは別の goroutine から切断せず、
+// StartTopicScan が conn.scan から外されたのを見て自分で切断する。
+func (c *connection) detachScan() domain.BrokerClient {
+	scan := c.scan
+	if scan == nil {
+		return nil
+	}
+	c.scan = nil
+	scan.cancel()
+	if !scan.started {
+		return nil
+	}
+	return scan.client
+}
+
+// disconnectScan は detachScan が返したスキャン用クライアントを切断する。nil なら何もしない。
+func disconnectScan(client domain.BrokerClient) {
+	if client != nil {
+		client.Disconnect(scanQuiesce)
+	}
 }
 
 // terminal は切断が確定済みかを返す (stateMu 保持中に呼ぶ)。
@@ -73,7 +132,7 @@ type MQTTService struct {
 	// conns と closed は mu で保護する。closed は mu 配下以外で読まない
 	// (shutdown は各接続の terminal 状態として観測する)。
 	conns map[string]*connection
-	// connWg は接続 goroutine (= paho 側の接続試行) の生存を追跡する。
+	// connWg は接続 goroutine とスキャンの開始 (= paho 側の接続試行) の生存を追跡する。
 	connWg sync.WaitGroup
 	mu     sync.RWMutex
 	closed bool
@@ -156,12 +215,14 @@ func (s *MQTTService) runConnect(ctx context.Context, connID string, conn *conne
 	}
 	if err != nil {
 		conn.state = stateClosed
+		scanClient := conn.detachScan()
 		s.logger.Error("MQTT connection failed", "source", "mqtt", "connection_id", connID, "error", err)
 		s.emitter.Emit(cmn.EventMQTTConnectionFailed, map[string]any{
 			keyConnectionID: connID,
 			"error":         err.Error(),
 		})
 		conn.stateMu.Unlock()
+		disconnectScan(scanClient)
 
 		s.mu.Lock()
 		if s.conns[connID] == conn {
@@ -221,12 +282,13 @@ func (s *MQTTService) onConnectionLost(connID string, conn *connection, err erro
 
 // Disconnect は指定した接続を切断する。実行中の client 操作があれば、その完了を待ってから切断する。
 func (s *MQTTService) Disconnect(connectionID string) error {
-	conn, err := s.detach(connectionID)
+	conn, scanClient, err := s.detach(connectionID)
 	if err != nil {
 		return err
 	}
 	// 進行中の Connect を打ち切る。接続 goroutine の完了は待たない。
 	conn.cancel()
+	disconnectScan(scanClient)
 
 	conn.opMu.Lock()
 	defer conn.opMu.Unlock()
@@ -245,22 +307,24 @@ func (s *MQTTService) Disconnect(connectionID string) error {
 // detach は接続を map から外し、同じ区間で stateDisconnecting へ遷移させる。
 // 遷移を opMu の取得より前に行うことで、opMu 待ちの操作は状態を見て即座に弾かれ、
 // Disconnect が待つのは実行中の 1 操作だけになる。
-func (s *MQTTService) detach(id string) (*connection, error) {
+// スキャンも同じ区間で外し、切断が要るスキャン用クライアントを返す (無ければ nil)。
+func (s *MQTTService) detach(id string) (*connection, domain.BrokerClient, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	conn, ok := s.conns[id]
 	if !ok {
-		return nil, &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: id}
+		return nil, nil, &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: id}
 	}
 	conn.stateMu.Lock()
 	defer conn.stateMu.Unlock()
 	// 接続失敗経路が stateClosed にしてから map から外すまでの隙間。
 	if conn.terminal() {
-		return nil, &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: id}
+		return nil, nil, &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: id}
 	}
 	conn.state = stateDisconnecting
+	scanClient := conn.detachScan()
 	delete(s.conns, id)
-	return conn, nil
+	return conn, scanClient, nil
 }
 
 // withConn は接続を引いて opMu を取り、切断が確定していないことを確認してから fn を呼ぶ。
@@ -416,8 +480,167 @@ func (s *MQTTService) Unsubscribe(connectionID, topic string) error {
 	})
 }
 
+// StartTopicScan は Broker Topics のスキャンを始める。専用のクライアントで接続して # を購読し、
+// 受信したトピックを mqtt:scan-topic で発行する。接続と購読が済んでから返る。
+// 元の接続が確立前でも始められる (スキャン用の接続は独立している)。
+// 既にスキャンがあれば (開始中・稼働中) クライアントを増やさず、その開始の結果を返す。
+// opMu は取らないので、スキャンの接続待ちが Publish / Subscribe を止めない。
+func (s *MQTTService) StartTopicScan(connectionID string) error {
+	conn, scan, ctx, err := s.reserveScan(connectionID)
+	if err != nil {
+		return err
+	}
+	if ctx == nil {
+		<-scan.done
+		return scan.err
+	}
+	defer s.connWg.Done()
+
+	// 同じクライアント ID で接続すると、ブローカーが元の接続を切る。
+	cfg := conn.config
+	cfg.ClientID = scanClientIDPrefix + uuid.NewString()[:8]
+	// スキャン用クライアントは張り直しをしないので、onConnected では何もしない。
+	scan.client = s.clientFactory(
+		cfg,
+		func() {},
+		func(err error) { s.onScanConnectionLost(connectionID, conn, scan, err) },
+	)
+	err = scan.client.Connect(ctx)
+	// Connect 復帰後は ctx を使わないので、ここで資源を解放する。
+	scan.cancel()
+	if err != nil {
+		err = fmt.Errorf("failed to connect for topic scan: %w", err)
+	} else if subErr := scan.client.Subscribe(scanFilter, 0, s.scanHandler(connectionID, conn, scan)); subErr != nil {
+		err = fmt.Errorf("failed to subscribe for topic scan: %w", subErr)
+	}
+
+	conn.stateMu.Lock()
+	switch {
+	case conn.scan != scan:
+		// StopTopicScan・切断・終了処理が外した。I/O が成功していても捨てる。
+		err = errScanStopped
+	case err == nil && scan.lostErr != nil:
+		err = fmt.Errorf("topic scan connection lost: %w", scan.lostErr)
+	}
+	if err == nil {
+		scan.started = true
+		s.logger.Info("MQTT topic scan started", "source", "mqtt", "connection_id", connectionID)
+		// 開始中に届いたトピック (SUBACK の直後に届く retained メッセージなど) を発行する。
+		for _, topic := range scan.pending {
+			s.emitter.Emit(cmn.EventMQTTScanTopic, domain.ScannedTopic{ConnectionID: connectionID, Topic: topic})
+		}
+	} else if conn.scan == scan {
+		conn.scan = nil
+	}
+	scan.pending = nil
+	conn.stateMu.Unlock()
+
+	if err != nil {
+		s.logger.Error("MQTT topic scan failed to start", "source", "mqtt", "connection_id", connectionID, "error", err)
+		scan.client.Disconnect(0)
+	}
+	scan.err = err
+	close(scan.done)
+	return err
+}
+
+// reserveScan は I/O の前にスキャンを予約する。予約できたら Connect 用の ctx を返し、connWg に計上する
+// (呼び出し元が Done する)。既にスキャンがあればそれを返し、ctx は nil。
+// 予約と connWg への計上は、Connect と同じく mu の保持中に closed を確かめてから行う。
+// 分けると、Shutdown が Wait した後に計上する窓ができる。
+func (s *MQTTService) reserveScan(connectionID string) (*connection, *topicScan, context.Context, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.closed {
+		return nil, nil, nil, errShuttingDown
+	}
+	conn, ok := s.conns[connectionID]
+	if !ok {
+		return nil, nil, nil, &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: connectionID}
+	}
+	conn.stateMu.Lock()
+	defer conn.stateMu.Unlock()
+	if conn.terminal() {
+		return nil, nil, nil, &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: connectionID}
+	}
+	if conn.scan != nil {
+		return conn, conn.scan, nil, nil
+	}
+	ctx, cancel := context.WithCancel(s.root)
+	scan := &topicScan{cancel: cancel, done: make(chan struct{})}
+	conn.scan = scan
+	s.connWg.Add(1)
+	return conn, scan, ctx, nil
+}
+
+// StopTopicScan は Broker Topics のスキャンを止める。スキャンしていなければ何もしない。
+// 開始中のスキャンは打ち切り、その StartTopicScan はエラーを返す。
+func (s *MQTTService) StopTopicScan(connectionID string) error {
+	s.mu.RLock()
+	conn, ok := s.conns[connectionID]
+	s.mu.RUnlock()
+	if !ok {
+		return &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: connectionID}
+	}
+	conn.stateMu.Lock()
+	stopped := conn.scan != nil
+	scanClient := conn.detachScan()
+	conn.stateMu.Unlock()
+	if stopped {
+		s.logger.Info("MQTT topic scan stopped", "source", "mqtt", "connection_id", connectionID)
+	}
+	disconnectScan(scanClient)
+	return nil
+}
+
+// scanHandler はスキャン用クライアントが受信したメッセージのトピックを mqtt:scan-topic として発行する
+// ハンドラを返す。ペイロードは運ばない。止めた後 (StopTopicScan・切断・終了処理) は発行しない。
+func (s *MQTTService) scanHandler(connectionID string, conn *connection, scan *topicScan) domain.MessageHandler {
+	return func(msgTopic string, _ []byte, _ byte, _ bool) {
+		conn.stateMu.RLock()
+		defer conn.stateMu.RUnlock()
+		if conn.scan != scan || conn.terminal() {
+			return
+		}
+		if !scan.started {
+			// 開始が確定するまでは発行しない。稼働中になったときに StartTopicScan が発行する。
+			scan.pendingMu.Lock()
+			scan.pending = append(scan.pending, msgTopic)
+			scan.pendingMu.Unlock()
+			return
+		}
+		s.emitter.Emit(cmn.EventMQTTScanTopic, domain.ScannedTopic{ConnectionID: connectionID, Topic: msgTopic})
+	}
+}
+
+// onScanConnectionLost はスキャン用の接続が切れたときに呼ばれ、スキャンを終える (自動では再開しない)。
+// client は自動再接続を始めるので、Disconnect して止める。
+func (s *MQTTService) onScanConnectionLost(connID string, conn *connection, scan *topicScan, err error) {
+	conn.stateMu.Lock()
+	if conn.scan != scan {
+		// 止めた後 (StopTopicScan・切断・終了処理)。切断は止めた側が行う。
+		conn.stateMu.Unlock()
+		return
+	}
+	if !scan.started {
+		// 開始中。イベントは出さず、StartTopicScan が失敗として扱って切断する。
+		scan.lostErr = err
+		conn.stateMu.Unlock()
+		return
+	}
+	conn.scan = nil
+	s.logger.Error("MQTT topic scan connection lost", "source", "mqtt", "connection_id", connID, "error", err)
+	s.emitter.Emit(cmn.EventMQTTScanStopped, map[string]any{
+		keyConnectionID: connID,
+		"error":         err.Error(),
+	})
+	conn.stateMu.Unlock()
+	scan.client.Disconnect(0)
+}
+
 // GetConnections は全接続の現在状態を返す。切断が確定した接続は含めない。
 // Subscriptions には接続確立前に受け付けた購読 (確立時に購読する) も含む。
+// Scanning はスキャンが稼働中のときだけ true (開始中は false)。
 // opMu を取らないので、実行中の client 操作があっても待たされない。
 func (s *MQTTService) GetConnections() []domain.ConnectionStatus {
 	s.mu.RLock()
@@ -437,6 +660,7 @@ func (s *MQTTService) GetConnections() []domain.ConnectionStatus {
 			continue
 		}
 		established := conn.state == stateConnected
+		scanning := conn.scan != nil && conn.scan.started
 		subs := make([]domain.SubscriptionInfo, 0, len(conn.subs))
 		for topic, qos := range conn.subs {
 			subs = append(subs, domain.SubscriptionInfo{Topic: topic, QoS: qos})
@@ -449,6 +673,7 @@ func (s *MQTTService) GetConnections() []domain.ConnectionStatus {
 			Connected:     established && conn.client.IsConnected(),
 			ProfileID:     conn.config.ProfileID,
 			Subscriptions: subs,
+			Scanning:      scanning,
 		})
 	}
 	return statuses
@@ -470,11 +695,15 @@ func (s *MQTTService) Shutdown(timeout time.Duration) bool {
 	// map から外すのと terminal への遷移を同じ区間で行う。遷移の Lock は実行中のイベント発行の
 	// 完了を待つので、この区間を抜けた後はこの service からイベントは発行されない。
 	conns := make([]*connection, 0, len(s.conns))
+	var scanClients []domain.BrokerClient
 	for _, conn := range s.conns {
 		conn.stateMu.Lock()
 		if !conn.terminal() {
 			conn.state = stateDisconnecting
 			conns = append(conns, conn)
+			if scanClient := conn.detachScan(); scanClient != nil {
+				scanClients = append(scanClients, scanClient)
+			}
 		}
 		conn.stateMu.Unlock()
 	}
@@ -497,8 +726,11 @@ func (s *MQTTService) Shutdown(timeout time.Duration) bool {
 				conn.stateMu.Unlock()
 			})
 		}
+		for _, scanClient := range scanClients {
+			wg.Go(func() { disconnectScan(scanClient) })
+		}
 		wg.Wait()
-		// 接続 goroutine は paho の接続試行の終了まで復帰しないので、
+		// 接続 goroutine とスキャンの開始は paho の接続試行の終了まで復帰しないので、
 		// これが「paho 側に接続試行が残っていない」ことの根拠になる。
 		s.connWg.Wait()
 		close(done)

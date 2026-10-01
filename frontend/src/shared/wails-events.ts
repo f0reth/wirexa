@@ -6,6 +6,8 @@ export const WailsEvents = {
   mqttConnectionLost: "mqtt:connection-lost",
   mqttConnectionFailed: "mqtt:connection-failed",
   mqttMessage: "mqtt:message",
+  mqttScanTopic: "mqtt:scan-topic",
+  mqttScanStopped: "mqtt:scan-stopped",
   udpMessage: "udp:message",
   appBeforeClose: "app:before-close",
 } as const;
@@ -15,4 +17,6 @@ export type MqttEventName =
   | "mqtt:disconnected"
   | "mqtt:connection-lost"
   | "mqtt:connection-failed"
-  | "mqtt:message";
+  | "mqtt:message"
+  | "mqtt:scan-topic"
+  | "mqtt:scan-stopped";

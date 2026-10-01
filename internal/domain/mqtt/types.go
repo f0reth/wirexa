@@ -47,6 +47,15 @@ type ConnectionStatus struct {
 	ProfileID     string             `json:"profileId"`
 	Subscriptions []SubscriptionInfo `json:"subscriptions"`
 	Connected     bool               `json:"connected"`
+	// Scanning は Broker Topics のスキャンが稼働中かを表す。スキャンは専用の接続で行うので、
+	// Subscriptions には現れない。
+	Scanning bool `json:"scanning"`
+}
+
+// ScannedTopic は Broker Topics のスキャンで見つかったトピックを表す (mqtt:scan-topic のペイロード)。
+type ScannedTopic struct {
+	ConnectionID string `json:"connectionId"`
+	Topic        string `json:"topic"`
 }
 
 // BrokerProfile は MQTT ブローカーへの接続プロファイルを表す。

@@ -30,6 +30,14 @@ export function SaveProfile(arg1) {
   return window['go']['adapters']['MQTTHandler']['SaveProfile'](arg1);
 }
 
+export function StartTopicScan(arg1) {
+  return window['go']['adapters']['MQTTHandler']['StartTopicScan'](arg1);
+}
+
+export function StopTopicScan(arg1) {
+  return window['go']['adapters']['MQTTHandler']['StopTopicScan'](arg1);
+}
+
 export function Subscribe(arg1, arg2, arg3) {
   return window['go']['adapters']['MQTTHandler']['Subscribe'](arg1, arg2, arg3);
 }

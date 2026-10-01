@@ -36,7 +36,8 @@ type BrokerClient interface {
 // BrokerClientFactory は ConnectionConfig からブローカークライアントを生成するファクトリ。
 // onConnected は接続確立（自動再接続を含む）のたびに呼ばれる。client の操作 (Subscribe など) の
 // 完了を待ってよい goroutine から呼び、Connect の呼び出し元の goroutine では呼ばない。
-// onConnectionLost は確立済み接続が予期せず切れたときに呼ばれる。
+// onConnectionLost は確立済み接続が予期せず切れたときに呼ばれる。onConnectionLost から client の
+// Disconnect を呼んでよく、呼ぶと自動再接続は止まる。
 type BrokerClientFactory func(
 	config ConnectionConfig,
 	onConnected func(),

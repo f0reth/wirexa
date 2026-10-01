@@ -12,6 +12,8 @@ const (
 	EventMQTTConnectionLost   = "mqtt:connection-lost"
 	EventMQTTConnectionFailed = "mqtt:connection-failed"
 	EventMQTTMessage          = "mqtt:message"
+	EventMQTTScanTopic        = "mqtt:scan-topic"
+	EventMQTTScanStopped      = "mqtt:scan-stopped"
 	EventUDPMessage           = "udp:message"
 	EventAppBeforeClose       = "app:before-close"
 )

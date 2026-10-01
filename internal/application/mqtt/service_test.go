@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -864,6 +865,8 @@ func eventConnID(ev emittedEvent) string {
 		return id
 	case domain.MQTTMessage:
 		return data.ConnectionID
+	case domain.ScannedTopic:
+		return data.ConnectionID
 	}
 	return ""
 }
@@ -1401,6 +1404,12 @@ func TestMQTTService_ConcurrentOperations(t *testing.T) {
 		})
 		wg.Go(func() {
 			for range 20 {
+				_ = svc.StartTopicScan(id)
+				_ = svc.StopTopicScan(id)
+			}
+		})
+		wg.Go(func() {
+			for range 20 {
 				rec.fireAll()
 			}
 		})
@@ -1917,5 +1926,634 @@ func TestMQTTService_Reconnect_SkipsUnsubscribedAndClosed(t *testing.T) {
 	rec.onConnected(0)()
 	if n := len(calls()); n != before {
 		t.Errorf("Subscribe called %d times after Disconnect", n-before)
+	}
+}
+
+// ------- Broker Topics のスキャン -------
+
+// recordedClient は clientRecorder が作ったクライアント 1 つ分の記録。
+type recordedClient struct {
+	lost        func(error)
+	config      domain.ConnectionConfig
+	subscribes  []subscribeCall
+	handlers    []domain.MessageHandler
+	disconnects atomic.Int32
+	mu          sync.Mutex
+}
+
+func (c *recordedClient) subscribeCalls() []subscribeCall {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.subscribes)
+}
+
+// handler は i 番目の Subscribe に渡されたハンドラを返す。
+func (c *recordedClient) handler(i int) domain.MessageHandler {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.handlers[i]
+}
+
+// clientRecorder は factory の呼び出しごとに別のクライアントを作って記録する。
+// 0 番目は元の接続、1 番目以降はスキャン用のクライアント。
+type clientRecorder struct {
+	// prepare はクライアントを作るたびに呼ばれ、i 番目のクライアントの振る舞いを決める (nil 可)。
+	prepare func(i int, rc *recordedClient, client *mockBrokerClient)
+	clients []*recordedClient
+	mu      sync.Mutex
+}
+
+func (r *clientRecorder) factory(cfg domain.ConnectionConfig, _ func(), onConnectionLost func(error)) domain.BrokerClient {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rc := &recordedClient{config: cfg, lost: onConnectionLost}
+	client := &mockBrokerClient{}
+	if r.prepare != nil {
+		r.prepare(len(r.clients), rc, client)
+	}
+	subscribeFn := client.subscribeFn
+	client.subscribeFn = func(topic string, qos byte, handler domain.MessageHandler) error {
+		rc.mu.Lock()
+		rc.subscribes = append(rc.subscribes, subscribeCall{topic: topic, qos: qos})
+		rc.handlers = append(rc.handlers, handler)
+		rc.mu.Unlock()
+		if subscribeFn != nil {
+			return subscribeFn(topic, qos, handler)
+		}
+		return nil
+	}
+	disconnectFn := client.disconnectFn
+	client.disconnectFn = func(quiesce uint) {
+		rc.disconnects.Add(1)
+		if disconnectFn != nil {
+			disconnectFn(quiesce)
+		}
+	}
+	r.clients = append(r.clients, rc)
+	return client
+}
+
+func (r *clientRecorder) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.clients)
+}
+
+func (r *clientRecorder) client(t *testing.T, i int) *recordedClient {
+	t.Helper()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if i >= len(r.clients) {
+		t.Fatalf("client #%d was not created (%d clients)", i, len(r.clients))
+	}
+	return r.clients[i]
+}
+
+// newScanService は接続を 1 本確立し、クライアントを記録する clientRecorder と一緒に返す。
+func newScanService(t *testing.T, emitter cmn.Emitter, prepare func(i int, rc *recordedClient, client *mockBrokerClient)) (*MQTTService, string, *clientRecorder) {
+	t.Helper()
+	rec := &clientRecorder{prepare: prepare}
+	svc := newTestService(t, emitter, rec.factory)
+	id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883", ClientID: "my-client"})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	waitEstablished(t, svc, 1)
+	return svc, id, rec
+}
+
+// scanning は唯一の接続の Scanning を返す。
+func scanning(t *testing.T, svc *MQTTService) bool {
+	t.Helper()
+	conns := svc.GetConnections()
+	if len(conns) != 1 {
+		t.Fatalf("connections = %d, want 1", len(conns))
+	}
+	return conns[0].Scanning
+}
+
+// assertNoScanEvents は mqtt:scan-topic と mqtt:scan-stopped が発行されていないことを確認する。
+func assertNoScanEvents(t *testing.T, emitter *mockEmitter) {
+	t.Helper()
+	for _, event := range []string{cmn.EventMQTTScanTopic, cmn.EventMQTTScanStopped} {
+		if n := emitter.count(event); n != 0 {
+			t.Errorf("%s emitted %d times, want 0", event, n)
+		}
+	}
+}
+
+// スキャンは別のクライアント ID のクライアントで # を QoS 0 で購読し、元の接続では購読しない。
+func TestMQTTService_StartTopicScan_UsesSeparateClient(t *testing.T) {
+	svc, id, rec := newScanService(t, &mockEmitter{}, nil)
+
+	if err := svc.StartTopicScan(id); err != nil {
+		t.Fatalf("StartTopicScan: %v", err)
+	}
+
+	if n := rec.count(); n != 2 {
+		t.Fatalf("clients = %d, want 2 (connection + scan)", n)
+	}
+	original, scan := rec.client(t, 0), rec.client(t, 1)
+	if got := scan.config.ClientID; !strings.HasPrefix(got, scanClientIDPrefix) || len(got) != 20 || got == original.config.ClientID {
+		t.Errorf("scan client ID = %q, want a 20-character ID starting with %q", got, scanClientIDPrefix)
+	}
+	if scan.config.Broker != original.config.Broker {
+		t.Errorf("scan broker = %q, want %q", scan.config.Broker, original.config.Broker)
+	}
+	if got := scan.subscribeCalls(); !slices.Equal(got, []subscribeCall{{"#", 0}}) {
+		t.Errorf("scan client subscribed %v, want [{# 0}]", got)
+	}
+	if got := original.subscribeCalls(); len(got) != 0 {
+		t.Errorf("the connection's client subscribed %v, want no calls", got)
+	}
+	conns := svc.GetConnections()
+	if !conns[0].Scanning || len(conns[0].Subscriptions) != 0 {
+		t.Errorf("status = %+v, want Scanning without subscriptions", conns[0])
+	}
+}
+
+// スキャン用クライアントが受信したら mqtt:scan-topic を発行し、mqtt:message は発行しない。
+func TestMQTTService_TopicScan_EmitsScanTopic(t *testing.T) {
+	emitter := &mockEmitter{}
+	svc, id, rec := newScanService(t, emitter, nil)
+	if err := svc.StartTopicScan(id); err != nil {
+		t.Fatalf("StartTopicScan: %v", err)
+	}
+
+	rec.client(t, 1).handler(0)("sensors/temp", []byte("25.5"), 0, false)
+
+	if n := emitter.count(cmn.EventMQTTMessage); n != 0 {
+		t.Errorf("mqtt:message emitted %d times, want 0", n)
+	}
+	var got []any
+	for _, ev := range emitter.snapshot() {
+		if ev.event == cmn.EventMQTTScanTopic {
+			got = append(got, ev.data)
+		}
+	}
+	if want := []any{domain.ScannedTopic{ConnectionID: id, Topic: "sensors/temp"}}; !slices.Equal(got, want) {
+		t.Errorf("mqtt:scan-topic = %v, want %v", got, want)
+	}
+}
+
+// 購読の完了前に届いたトピック (SUBACK の直後に届く retained メッセージなど) は、開始が確定してから発行する。
+func TestMQTTService_TopicScan_EmitsTopicsReceivedWhileStarting(t *testing.T) {
+	emitter := &mockEmitter{}
+	duringStart := -1
+	svc, id, _ := newScanService(t, emitter, func(i int, _ *recordedClient, client *mockBrokerClient) {
+		if i == 0 {
+			return
+		}
+		client.subscribeFn = func(_ string, _ byte, handler domain.MessageHandler) error {
+			handler("retained/topic", []byte("kept"), 0, true)
+			duringStart = emitter.count(cmn.EventMQTTScanTopic)
+			return nil
+		}
+	})
+
+	if err := svc.StartTopicScan(id); err != nil {
+		t.Fatalf("StartTopicScan: %v", err)
+	}
+
+	if duringStart != 0 {
+		t.Errorf("mqtt:scan-topic emitted %d times before the scan started, want 0", duringStart)
+	}
+	if n := emitter.count(cmn.EventMQTTScanTopic); n != 1 {
+		t.Errorf("mqtt:scan-topic emitted %d times, want 1", n)
+	}
+}
+
+// 接続または購読に失敗したらエラーを返し、スキャン用クライアントを切断して残さない。
+func TestMQTTService_StartTopicScan_Failure(t *testing.T) {
+	failure := errors.New("refused")
+	tests := []struct {
+		prepare func(client *mockBrokerClient)
+		name    string
+	}{
+		{name: "connect", prepare: func(client *mockBrokerClient) {
+			client.connectFn = func(context.Context) error { return failure }
+		}},
+		{name: "subscribe", prepare: func(client *mockBrokerClient) {
+			client.subscribeFn = func(string, byte, domain.MessageHandler) error { return failure }
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			emitter := &mockEmitter{}
+			svc, id, rec := newScanService(t, emitter, func(i int, _ *recordedClient, client *mockBrokerClient) {
+				if i == 1 {
+					tc.prepare(client)
+				}
+			})
+
+			if err := svc.StartTopicScan(id); !errors.Is(err, failure) {
+				t.Fatalf("StartTopicScan error = %v, want %v", err, failure)
+			}
+
+			if n := rec.client(t, 1).disconnects.Load(); n != 1 {
+				t.Errorf("scan client disconnected %d times, want 1", n)
+			}
+			if scanning(t, svc) {
+				t.Error("Scanning = true after a failed start")
+			}
+			assertNoScanEvents(t, emitter)
+			// 失敗したスキャンは残らないので、次の開始は新しいクライアントで始まる。
+			if err := svc.StartTopicScan(id); err != nil {
+				t.Fatalf("StartTopicScan after a failure: %v", err)
+			}
+			if n := rec.count(); n != 3 {
+				t.Errorf("clients = %d, want 3", n)
+			}
+		})
+	}
+}
+
+// 稼働中の二重の開始はクライアントを増やさず、止めたら切断し、次の開始は新しいクライアントで始まる。
+func TestMQTTService_TopicScan_StartTwiceStopAndRestart(t *testing.T) {
+	svc, id, rec := newScanService(t, &mockEmitter{}, nil)
+	for range 2 {
+		if err := svc.StartTopicScan(id); err != nil {
+			t.Fatalf("StartTopicScan: %v", err)
+		}
+	}
+	if n := rec.count(); n != 2 {
+		t.Fatalf("clients = %d, want 2 (a second start must not add a client)", n)
+	}
+
+	// 2 回目の停止はスキャンが無いので何もしない。
+	for range 2 {
+		if err := svc.StopTopicScan(id); err != nil {
+			t.Fatalf("StopTopicScan: %v", err)
+		}
+	}
+	if n := rec.client(t, 1).disconnects.Load(); n != 1 {
+		t.Errorf("scan client disconnected %d times, want 1", n)
+	}
+	if n := rec.client(t, 0).disconnects.Load(); n != 0 {
+		t.Errorf("the connection's client disconnected %d times, want 0", n)
+	}
+	if scanning(t, svc) {
+		t.Error("Scanning = true after StopTopicScan")
+	}
+
+	if err := svc.StartTopicScan(id); err != nil {
+		t.Fatalf("StartTopicScan after stop: %v", err)
+	}
+	if n := rec.count(); n != 3 {
+		t.Errorf("clients = %d, want 3 (a new scan client)", n)
+	}
+	if !scanning(t, svc) {
+		t.Error("Scanning = false after restarting")
+	}
+}
+
+func TestMQTTService_TopicScan_UnknownConnection(t *testing.T) {
+	svc := newTestService(t, &mockEmitter{}, factoryWith(&mockBrokerClient{}))
+	for name, op := range map[string]func(string) error{"StartTopicScan": svc.StartTopicScan, "StopTopicScan": svc.StopTopicScan} {
+		if _, ok := errors.AsType[*cmn.NotFoundError](op("nonexistent")); !ok {
+			t.Errorf("%s: expected NotFoundError", name)
+		}
+	}
+}
+
+// 止めた後にスキャン用クライアントの接続断やメッセージが届いても、イベントを発行しない。
+func TestMQTTService_TopicScan_NoEventsAfterStop(t *testing.T) {
+	emitter := &mockEmitter{}
+	svc, id, rec := newScanService(t, emitter, nil)
+	if err := svc.StartTopicScan(id); err != nil {
+		t.Fatalf("StartTopicScan: %v", err)
+	}
+	if err := svc.StopTopicScan(id); err != nil {
+		t.Fatalf("StopTopicScan: %v", err)
+	}
+
+	scan := rec.client(t, 1)
+	scan.handler(0)("sensors/temp", []byte("1"), 0, false)
+	scan.lost(errors.New("lost"))
+
+	assertNoScanEvents(t, emitter)
+	if n := scan.disconnects.Load(); n != 1 {
+		t.Errorf("scan client disconnected %d times, want 1", n)
+	}
+}
+
+// 元の接続が終端状態になる経路 (Disconnect・Shutdown・接続失敗) は、どれもスキャン用クライアントを切断する。
+func TestMQTTService_TopicScan_StoppedWhenConnectionEnds(t *testing.T) {
+	tests := []struct {
+		end  func(t *testing.T, svc *MQTTService, id string, release chan<- error)
+		name string
+	}{
+		{name: "Disconnect", end: func(t *testing.T, svc *MQTTService, id string, _ chan<- error) {
+			t.Helper()
+			if err := svc.Disconnect(id); err != nil {
+				t.Fatalf("Disconnect: %v", err)
+			}
+		}},
+		{name: "Shutdown", end: func(t *testing.T, svc *MQTTService, _ string, _ chan<- error) {
+			t.Helper()
+			if !svc.Shutdown(time.Second) {
+				t.Fatal("expected Shutdown to drain within timeout")
+			}
+		}},
+		{name: "connection failure", end: func(t *testing.T, svc *MQTTService, _ string, release chan<- error) {
+			t.Helper()
+			release <- errors.New("connection refused")
+			waitConnGoroutines(t, svc)
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			emitter := &mockEmitter{}
+			release := make(chan error)
+			rec := &clientRecorder{prepare: func(i int, _ *recordedClient, client *mockBrokerClient) {
+				if i != 0 {
+					return
+				}
+				// 元の接続は確立前のまま留める。
+				client.connectFn = func(ctx context.Context) error {
+					select {
+					case err := <-release:
+						return err
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				}
+			}}
+			svc := newTestService(t, emitter, rec.factory)
+			id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+			if err != nil {
+				t.Fatalf("Connect: %v", err)
+			}
+			// スキャンは元の接続の確立前でも始められる。
+			if err := svc.StartTopicScan(id); err != nil {
+				t.Fatalf("StartTopicScan before connected: %v", err)
+			}
+
+			tc.end(t, svc, id, release)
+
+			scan := rec.client(t, 1)
+			if n := scan.disconnects.Load(); n != 1 {
+				t.Errorf("scan client disconnected %d times, want 1", n)
+			}
+			scan.handler(0)("sensors/temp", []byte("1"), 0, false)
+			scan.lost(errors.New("lost"))
+			assertNoScanEvents(t, emitter)
+		})
+	}
+}
+
+// startingScan は、スキャン用クライアントの Connect を止めて開始中に留めたスキャン。
+type startingScan struct {
+	svc     *MQTTService
+	rec     *clientRecorder
+	emitter *mockEmitter
+	// connecting はスキャン用クライアントの Connect が始まると閉じる。
+	connecting chan struct{}
+	// release に送った値をスキャン用クライアントの Connect が返す。
+	release chan error
+	// result は StartTopicScan の結果を受け取る。
+	result chan error
+	id     string
+}
+
+// newStartingScan は StartTopicScan を別の goroutine で呼び、スキャン用クライアントの Connect の途中で返す。
+// ignoreCtx が true なら Connect は打ち切りを無視し、release でしか復帰しない (打ち切りと行き違いで成功する接続)。
+func newStartingScan(t *testing.T, ignoreCtx bool, prepareScan func(rc *recordedClient, client *mockBrokerClient)) *startingScan {
+	t.Helper()
+	p := &startingScan{
+		emitter:    &mockEmitter{},
+		connecting: make(chan struct{}),
+		release:    make(chan error),
+		result:     make(chan error, 1),
+	}
+	p.svc, p.id, p.rec = newScanService(t, p.emitter, func(i int, rc *recordedClient, client *mockBrokerClient) {
+		if i != 1 {
+			return
+		}
+		client.connectFn = func(ctx context.Context) error {
+			close(p.connecting)
+			done := ctx.Done()
+			if ignoreCtx {
+				done = nil
+			}
+			select {
+			case err := <-p.release:
+				return err
+			case <-done:
+				return ctx.Err()
+			}
+		}
+		if prepareScan != nil {
+			prepareScan(rc, client)
+		}
+	})
+	go func() { p.result <- p.svc.StartTopicScan(p.id) }()
+	waitForEvent(t, p.connecting, time.Second, "scan client did not start connecting")
+	return p
+}
+
+// wait は StartTopicScan の結果を返す。
+func (p *startingScan) wait(t *testing.T) error {
+	t.Helper()
+	select {
+	case err := <-p.result:
+		return err
+	case <-time.After(2 * time.Second):
+		t.Fatal("StartTopicScan did not return")
+		return nil
+	}
+}
+
+// 開始中は Scanning を返さない。
+func TestMQTTService_TopicScan_NotScanningWhileStarting(t *testing.T) {
+	p := newStartingScan(t, false, nil)
+	if scanning(t, p.svc) {
+		t.Error("Scanning = true while the scan is still starting")
+	}
+	p.release <- nil
+	if err := p.wait(t); err != nil {
+		t.Fatalf("StartTopicScan: %v", err)
+	}
+	if !scanning(t, p.svc) {
+		t.Error("Scanning = false after the scan started")
+	}
+}
+
+// 開始の途中で止められたら (StopTopicScan・Disconnect・Shutdown)、StartTopicScan はエラーを返し、
+// 接続が成功していても捨て、以後イベントを発行しない。
+func TestMQTTService_TopicScan_StoppedWhileStarting(t *testing.T) {
+	tests := []struct {
+		stop func(t *testing.T, p *startingScan)
+		name string
+		// lateSuccess は、止めた後にスキャン用クライアントの接続が成功する場合。
+		lateSuccess bool
+	}{
+		{name: "StopTopicScan", stop: func(t *testing.T, p *startingScan) {
+			t.Helper()
+			if err := p.svc.StopTopicScan(p.id); err != nil {
+				t.Fatalf("StopTopicScan: %v", err)
+			}
+		}},
+		{name: "StopTopicScan then late success", lateSuccess: true, stop: func(t *testing.T, p *startingScan) {
+			t.Helper()
+			if err := p.svc.StopTopicScan(p.id); err != nil {
+				t.Fatalf("StopTopicScan: %v", err)
+			}
+		}},
+		{name: "Disconnect then late success", lateSuccess: true, stop: func(t *testing.T, p *startingScan) {
+			t.Helper()
+			if err := p.svc.Disconnect(p.id); err != nil {
+				t.Fatalf("Disconnect: %v", err)
+			}
+		}},
+		{name: "Shutdown", stop: func(t *testing.T, p *startingScan) {
+			t.Helper()
+			// Shutdown はスキャンの開始が復帰するのを待つ。
+			if !p.svc.Shutdown(time.Second) {
+				t.Fatal("expected Shutdown to drain within timeout")
+			}
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newStartingScan(t, tc.lateSuccess, nil)
+
+			tc.stop(t, p)
+			if tc.lateSuccess {
+				p.release <- nil
+			}
+
+			if err := p.wait(t); !errors.Is(err, errScanStopped) {
+				t.Fatalf("StartTopicScan error = %v, want %v", err, errScanStopped)
+			}
+			scan := p.rec.client(t, 1)
+			if n := scan.disconnects.Load(); n != 1 {
+				t.Errorf("scan client disconnected %d times, want 1", n)
+			}
+			if conns := p.svc.GetConnections(); len(conns) == 1 && conns[0].Scanning {
+				t.Error("Scanning = true after the start was stopped")
+			}
+			if tc.lateSuccess {
+				scan.handler(0)("sensors/temp", []byte("1"), 0, false)
+			}
+			scan.lost(errors.New("lost"))
+			assertNoScanEvents(t, p.emitter)
+		})
+	}
+}
+
+// 開始の途中の 2 回目の StartTopicScan はクライアントを増やさず、1 回目と同じ結果を返す。
+func TestMQTTService_TopicScan_SecondStartJoinsTheFirst(t *testing.T) {
+	failure := errors.New("refused")
+	for _, connectErr := range []error{nil, failure} {
+		t.Run(fmt.Sprint(connectErr), func(t *testing.T) {
+			p := newStartingScan(t, false, nil)
+			second := make(chan error, 1)
+			go func() { second <- p.svc.StartTopicScan(p.id) }()
+			assertBlocked(t, second, "the second StartTopicScan returned before the first finished")
+
+			p.release <- connectErr
+
+			first := p.wait(t)
+			if !errors.Is(first, connectErr) {
+				t.Errorf("first StartTopicScan error = %v, want %v", first, connectErr)
+			}
+			select {
+			case err := <-second:
+				if !errors.Is(err, first) {
+					t.Errorf("second StartTopicScan error = %v, want the first result %v", err, first)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("the second StartTopicScan did not return")
+			}
+			if n := p.rec.count(); n != 2 {
+				t.Errorf("clients = %d, want 2", n)
+			}
+			if got := scanning(t, p.svc); got != (connectErr == nil) {
+				t.Errorf("Scanning = %v, want %v", got, connectErr == nil)
+			}
+		})
+	}
+}
+
+// スキャン用の接続が切れたら mqtt:scan-stopped を 1 回発行し、クライアントを切断して自動再接続を止める。
+func TestMQTTService_TopicScan_ConnectionLost_StopsScan(t *testing.T) {
+	emitter := &mockEmitter{}
+	svc, id, rec := newScanService(t, emitter, nil)
+	if err := svc.StartTopicScan(id); err != nil {
+		t.Fatalf("StartTopicScan: %v", err)
+	}
+	scan := rec.client(t, 1)
+
+	scan.lost(errors.New("broker went away"))
+	// 止まった後の接続断とメッセージは無視する。
+	scan.lost(errors.New("again"))
+	scan.handler(0)("sensors/temp", []byte("1"), 0, false)
+
+	var stopped []any
+	for _, ev := range emitter.snapshot() {
+		if ev.event == cmn.EventMQTTScanStopped {
+			stopped = append(stopped, ev.data)
+		}
+	}
+	if len(stopped) != 1 {
+		t.Fatalf("mqtt:scan-stopped emitted %d times, want 1", len(stopped))
+	}
+	data, ok := stopped[0].(map[string]any)
+	if !ok || data[keyConnectionID] != id || data["error"] != "broker went away" {
+		t.Errorf("event data = %v, want connectionId %s and error %q", stopped[0], id, "broker went away")
+	}
+	if n := emitter.count(cmn.EventMQTTScanTopic); n != 0 {
+		t.Errorf("mqtt:scan-topic emitted %d times after the scan stopped, want 0", n)
+	}
+	if n := scan.disconnects.Load(); n != 1 {
+		t.Errorf("scan client disconnected %d times, want 1", n)
+	}
+	if scanning(t, svc) {
+		t.Error("Scanning = true after the scan connection was lost")
+	}
+	// 元の接続はそのまま。
+	if n := emitter.count(cmn.EventMQTTConnectionLost); n != 0 {
+		t.Errorf("mqtt:connection-lost emitted %d times, want 0", n)
+	}
+}
+
+// 開始の途中でスキャン用の接続が切れたら、イベントは発行せず StartTopicScan がエラーを返す。
+func TestMQTTService_TopicScan_ConnectionLostWhileStarting(t *testing.T) {
+	lost := errors.New("broker went away")
+	p := newStartingScan(t, false, func(rc *recordedClient, client *mockBrokerClient) {
+		// 購読の完了前に接続が切れる。
+		client.subscribeFn = func(string, byte, domain.MessageHandler) error {
+			rc.lost(lost)
+			return nil
+		}
+	})
+
+	p.release <- nil
+
+	if err := p.wait(t); !errors.Is(err, lost) {
+		t.Fatalf("StartTopicScan error = %v, want %v", err, lost)
+	}
+	assertNoScanEvents(t, p.emitter)
+	if n := p.rec.client(t, 1).disconnects.Load(); n != 1 {
+		t.Errorf("scan client disconnected %d times, want 1", n)
+	}
+	if scanning(t, p.svc) {
+		t.Error("Scanning = true after the start failed")
+	}
+}
+
+// 終了処理の後は、スキャンを始めない。
+func TestMQTTService_StartTopicScan_AfterShutdown_Rejected(t *testing.T) {
+	svc, id, rec := newScanService(t, &mockEmitter{}, nil)
+	if !svc.Shutdown(time.Second) {
+		t.Fatal("expected Shutdown to drain within timeout")
+	}
+
+	if err := svc.StartTopicScan(id); !errors.Is(err, errShuttingDown) {
+		t.Errorf("err = %v, want errShuttingDown", err)
+	}
+	if n := rec.count(); n != 1 {
+		t.Errorf("clients = %d, want 1 (no scan client)", n)
 	}
 }

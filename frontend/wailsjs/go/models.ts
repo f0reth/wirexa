@@ -438,6 +438,7 @@ export namespace mqttdomain {
 	    profileId: string;
 	    subscriptions: SubscriptionInfo[];
 	    connected: boolean;
+	    scanning: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionStatus(source);
@@ -451,6 +452,7 @@ export namespace mqttdomain {
 	        this.profileId = source["profileId"];
 	        this.subscriptions = this.convertValues(source["subscriptions"], SubscriptionInfo);
 	        this.connected = source["connected"];
+	        this.scanning = source["scanning"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

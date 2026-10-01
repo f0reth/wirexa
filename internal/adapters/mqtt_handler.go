@@ -12,6 +12,8 @@ type MQTTConnectionUseCase interface {
 	Publish(connectionID, topic, payload string, qos byte, retain bool) error
 	Subscribe(connectionID, topic string, qos byte) error
 	Unsubscribe(connectionID, topic string) error
+	StartTopicScan(connectionID string) error
+	StopTopicScan(connectionID string) error
 	GetConnections() []mqttdomain.ConnectionStatus
 }
 
@@ -60,6 +62,16 @@ func (h *MQTTHandler) Subscribe(connectionID, topic string, qos byte) error {
 // Unsubscribe は指定トピックの購読を解除する。
 func (h *MQTTHandler) Unsubscribe(connectionID, topic string) error {
 	return h.svc.Unsubscribe(connectionID, topic)
+}
+
+// StartTopicScan は Broker Topics のスキャンを始める。スキャン用の接続と購読が済んでから返る。
+func (h *MQTTHandler) StartTopicScan(connectionID string) error {
+	return h.svc.StartTopicScan(connectionID)
+}
+
+// StopTopicScan は Broker Topics のスキャンを止める。
+func (h *MQTTHandler) StopTopicScan(connectionID string) error {
+	return h.svc.StopTopicScan(connectionID)
 }
 
 // GetConnections は全接続の現在状態を返す。
