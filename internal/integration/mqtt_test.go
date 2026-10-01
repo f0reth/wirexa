@@ -1293,8 +1293,9 @@ func TestMQTT_OperationsAfterDisconnectAndShutdown(t *testing.T) {
 }
 
 // TestMQTT_OverlappingSubscriptions は、同じ接続で重なる購読 (overlap/# と overlap/specific) が
-// あるときの mqtt:message の回数を固定する。ブローカーは接続ごとに 1 回配信するが、paho は
-// 一致する全ての購読のハンドラを呼ぶので、現状は一致した購読ごとに 1 回ずつ発行する。
+// あっても、受信した 1 件のメッセージで mqtt:message を 1 回だけ発行することを確認する。
+// Broker Topics のスキャンは # を購読するので、スキャン中は全ての購読がこれと重なる。
+// 一致した購読の数だけ発行すると、同じメッセージが重複して表示される。
 func TestMQTT_OverlappingSubscriptions(t *testing.T) {
 	emitter := newMQTTMockEmitter()
 	h, svc := newMQTTHandler(t, emitter)
@@ -1303,30 +1304,36 @@ func TestMQTT_OverlappingSubscriptions(t *testing.T) {
 	pubID := connectBroker(t, h, "pub")
 	waitConnected(t, h, subID, 5*time.Second)
 	waitConnected(t, h, pubID, 5*time.Second)
-	for _, filter := range []string{"overlap/#", "overlap/specific"} {
+	for _, filter := range []string{"#", "overlap/#", "overlap/+", "overlap/specific"} {
 		if err := h.Subscribe(subID, filter, 1); err != nil {
 			t.Fatalf("Subscribe(%s): %v", filter, err)
 		}
 	}
 
-	tests := []struct {
-		topic string
-		want  int
-	}{
-		{topic: "overlap/specific", want: 2},
-		{topic: "overlap/other", want: 1},
-	}
-	for _, tc := range tests {
-		if err := h.Publish(pubID, tc.topic, "x", 1, false); err != nil {
-			t.Fatalf("Publish(%s): %v", tc.topic, err)
+	publishOnce := func(topic string) {
+		t.Helper()
+		if err := h.Publish(pubID, topic, "x", 1, false); err != nil {
+			t.Fatalf("Publish(%s): %v", topic, err)
 		}
-		for range tc.want {
-			if msg := emitter.receiveMessage(t, 5*time.Second); msg.Topic != tc.topic {
-				t.Fatalf("topic = %s, want %s", msg.Topic, tc.topic)
-			}
+		if msg := emitter.receiveMessage(t, 5*time.Second); msg.Topic != topic || msg.ConnectionID != subID {
+			t.Fatalf("message = %+v, want %s on %s", msg, topic, subID)
 		}
 		emitter.noMessage(t, 300*time.Millisecond)
 	}
+	// 4 つ全て・2 つ (# と overlap/#)・1 つ (#) に一致するトピック。
+	for _, topic := range []string{"overlap/specific", "overlap/a/b", "elsewhere"} {
+		publishOnce(topic)
+	}
+
+	// スキャンを止めた (# を解除した) あとも、残りの購読で 1 回ずつ届く。
+	if err := h.Unsubscribe(subID, "#"); err != nil {
+		t.Fatalf("Unsubscribe(#): %v", err)
+	}
+	publishOnce("overlap/specific")
+	if err := h.Publish(pubID, "elsewhere", "x", 1, false); err != nil {
+		t.Fatalf("Publish(elsewhere): %v", err)
+	}
+	emitter.noMessage(t, 300*time.Millisecond)
 }
 
 // TestMQTT_CorruptProfileAmongValidOnes は、壊れたプロファイルだけを退避して正常なもので起動し、

@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -53,6 +55,80 @@ type pahoClient struct {
 	// aborting は Connect の打ち切りを開始したことを示す。
 	// 打ち切り後に確立した接続でも paho は OnConnect を起動するため、これを見て onConnected を呼ばない。
 	aborting atomic.Bool
+	// routes は購読中のフィルターとハンドラ (購読した順)。paho のルーターには登録せず、ここで振り分ける。
+	// paho は一致する全ての購読のハンドラを呼ぶので、重なる購読 (例: # と a/b) があると
+	// 1 件の受信が購読の数だけ届いてしまう。
+	routes   []route
+	routesMu sync.RWMutex
+}
+
+// route は購読中のフィルターとそのハンドラ。
+type route struct {
+	handler domain.MessageHandler
+	filter  string
+}
+
+// filterMatches は受信したトピックが購読のフィルターに一致するかを返す。
+// 共有購読の接頭辞 ($share/<group>/ と $queue/) は paho のルーターと同じく外して照合する。
+func filterMatches(filter, topic string) bool {
+	if strings.HasPrefix(filter, "$share/") {
+		if parts := strings.SplitN(filter, "/", 3); len(parts) == 3 {
+			filter = parts[2]
+		}
+	} else {
+		filter = strings.TrimPrefix(filter, "$queue/")
+	}
+	filterLevels := strings.Split(filter, "/")
+	topicLevels := strings.Split(topic, "/")
+	for i, f := range filterLevels {
+		// # は残りの階層すべてに一致する (a/# は a にも一致する)。
+		if f == "#" {
+			return true
+		}
+		if i >= len(topicLevels) || (f != "+" && f != topicLevels[i]) {
+			return false
+		}
+	}
+	return len(filterLevels) == len(topicLevels)
+}
+
+// setRoute は filter のハンドラを登録する。登録済みなら置き換えて true を返す。
+func (p *pahoClient) setRoute(filter string, handler domain.MessageHandler) (replaced bool) {
+	p.routesMu.Lock()
+	defer p.routesMu.Unlock()
+	for i := range p.routes {
+		if p.routes[i].filter == filter {
+			p.routes[i].handler = handler
+			return true
+		}
+	}
+	p.routes = append(p.routes, route{filter: filter, handler: handler})
+	return false
+}
+
+func (p *pahoClient) removeRoutes(filters ...string) {
+	p.routesMu.Lock()
+	defer p.routesMu.Unlock()
+	p.routes = slices.DeleteFunc(p.routes, func(r route) bool {
+		return slices.Contains(filters, r.filter)
+	})
+}
+
+// dispatch は受信した 1 件のメッセージを、一致する購読のうち最初に購読したもののハンドラへ 1 回だけ渡す。
+// 一致する購読が無いメッセージ (購読解除と行き違いで届いたもの) は捨てる。
+func (p *pahoClient) dispatch(msg pahomqtt.Message) {
+	var handler domain.MessageHandler
+	p.routesMu.RLock()
+	for _, r := range p.routes {
+		if filterMatches(r.filter, msg.Topic()) {
+			handler = r.handler
+			break
+		}
+	}
+	p.routesMu.RUnlock()
+	if handler != nil {
+		handler(msg.Topic(), msg.Payload(), msg.Qos(), msg.Retained())
+	}
 }
 
 // applyTLSScheme は UseTLS=true の場合、Broker URL のスキームを TLS 対応のものに変換する。
@@ -104,6 +180,10 @@ func NewPahoClientFactory(cfg MQTTClientConfig) domain.BrokerClientFactory {
 		})
 		opts.SetConnectionLostHandler(func(_ pahomqtt.Client, err error) {
 			onConnectionLost(err)
+		})
+		// 受信したメッセージは全てここに届く (Subscribe が paho のルーターに登録しないため)。
+		opts.SetDefaultPublishHandler(func(_ pahomqtt.Client, msg pahomqtt.Message) {
+			p.dispatch(msg)
 		})
 
 		p.client = pahomqtt.NewClient(opts)
@@ -157,10 +237,20 @@ func (p *pahoClient) Publish(topic string, qos byte, retained bool, payload stri
 }
 
 func (p *pahoClient) Subscribe(topic string, qos byte, handler domain.MessageHandler) error {
-	pahoHandler := func(_ pahomqtt.Client, msg pahomqtt.Message) {
-		handler(msg.Topic(), msg.Payload(), msg.Qos(), msg.Retained())
+	// SUBACK の直後に届くメッセージ (retained など) を取りこぼさないよう、送信前に登録する。
+	replaced := p.setRoute(topic, handler)
+	err := p.subscribe(topic, qos)
+	// 新しく足した購読が成立しなかったら登録を外す。張り直しの失敗では、成立済みの購読を残す。
+	if err != nil && !replaced {
+		p.removeRoutes(topic)
 	}
-	token := p.client.Subscribe(topic, qos, pahoHandler)
+	return err
+}
+
+// subscribe は SUBSCRIBE を送って SUBACK を待つ。callback を渡さないので paho のルーターには登録されず、
+// 受信したメッセージは既定ハンドラ (dispatch) に 1 回だけ届く。
+func (p *pahoClient) subscribe(topic string, qos byte) error {
+	token := p.client.Subscribe(topic, qos, nil)
 	if !token.WaitTimeout(p.tokenTimeout) {
 		return errors.New("subscribe timed out")
 	}
@@ -183,7 +273,11 @@ func (p *pahoClient) Unsubscribe(topics ...string) error {
 	if !token.WaitTimeout(p.tokenTimeout) {
 		return errors.New("unsubscribe timed out")
 	}
-	return token.Error()
+	if err := token.Error(); err != nil {
+		return err
+	}
+	p.removeRoutes(topics...)
+	return nil
 }
 
 // IsConnected は接続が開いているかを返す。paho の IsConnected は自動再接続中も true を返すので、

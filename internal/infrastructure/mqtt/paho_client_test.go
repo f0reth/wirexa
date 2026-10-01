@@ -7,6 +7,8 @@ import (
 	"io"
 	"net"
 	"os"
+	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -365,5 +367,252 @@ func TestPahoClient_ConnectionLost_InvokesCallback(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("onConnectionLost was not called after the broker closed the connection")
+	}
+}
+
+// subscribingBroker は SUBSCRIBE / UNSUBSCRIBE に応答し、テストから PUBLISH を送れる偽ブローカー。
+// mochi ブローカーは重なる購読があっても PUBLISH を 1 件しか送らないので、購読ごとに 1 件ずつ送る
+// ブローカー (MQTT 3.1.1 3.3.5 が認める動作) の振る舞いをここで作る。
+type subscribingBroker struct {
+	conn net.Conn
+	// writeMu は応答 (接続の goroutine) と publish (テストの goroutine) の書き込みを直列化する。
+	writeMu sync.Mutex
+}
+
+// newSubscribingBroker は偽ブローカーを起動して pahoClient を接続し、ブローカー側の接続を返す。
+func newSubscribingBroker(t *testing.T) (*subscribingBroker, *pahoClient) {
+	t.Helper()
+	b := &subscribingBroker{}
+	ready := make(chan struct{})
+	broker := newFakeBroker(t, func(conn net.Conn) {
+		defer conn.Close()
+		if readConnect(conn) != nil || writeConnack(conn) != nil {
+			return
+		}
+		b.conn = conn
+		close(ready)
+		for {
+			pkt, err := packets.ReadPacket(conn)
+			if err != nil {
+				return
+			}
+			if b.reply(pkt) != nil {
+				return
+			}
+		}
+	})
+	p, _ := newTestClient(broker.url(), MQTTClientConfig{ConnectTimeout: time.Second, TokenTimeout: time.Second})
+	if err := p.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { p.Disconnect(0) })
+	select {
+	case <-ready:
+	case <-time.After(time.Second):
+		t.Fatal("broker did not accept the connection")
+	}
+	return b, p
+}
+
+// reply は SUBSCRIBE と UNSUBSCRIBE に成功の応答を返す。それ以外のパケットは読み捨てる。
+func (b *subscribingBroker) reply(pkt packets.ControlPacket) error {
+	var ack packets.ControlPacket
+	switch req := pkt.(type) {
+	case *packets.SubscribePacket:
+		suback, ok := packets.NewControlPacket(packets.Suback).(*packets.SubackPacket)
+		if !ok {
+			return errors.New("unexpected packet type")
+		}
+		suback.MessageID = req.MessageID
+		suback.ReturnCodes = req.Qoss
+		ack = suback
+	case *packets.UnsubscribePacket:
+		unsuback, ok := packets.NewControlPacket(packets.Unsuback).(*packets.UnsubackPacket)
+		if !ok {
+			return errors.New("unexpected packet type")
+		}
+		unsuback.MessageID = req.MessageID
+		ack = unsuback
+	default:
+		return nil
+	}
+	b.writeMu.Lock()
+	defer b.writeMu.Unlock()
+	return ack.Write(b.conn)
+}
+
+// publish は QoS 0 の PUBLISH を 1 件送る。
+func (b *subscribingBroker) publish(t *testing.T, topic string) {
+	t.Helper()
+	pub, ok := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
+	if !ok {
+		t.Fatal("unexpected packet type")
+	}
+	pub.TopicName = topic
+	pub.Payload = []byte("x")
+	b.writeMu.Lock()
+	defer b.writeMu.Unlock()
+	if err := pub.Write(b.conn); err != nil {
+		t.Fatalf("publish %s: %v", topic, err)
+	}
+}
+
+// receivedTopics は、topics を順に publish して、handler が受け取ったトピックを届いた順に返す。
+// 最後に終端のトピックを送り、それが届くまで待つ (paho は受信した順に 1 件ずつ handler を呼ぶ)。
+func receivedTopics(t *testing.T, b *subscribingBroker, p *pahoClient, topics ...string) []string {
+	t.Helper()
+	const sentinel = "wirexa-test/end"
+	var (
+		mu   sync.Mutex
+		got  []string
+		done = make(chan struct{})
+		// closeDone は done を 1 回だけ閉じる。
+		closeDone sync.Once
+	)
+	if err := p.Subscribe(sentinel, 0, noopHandler); err != nil {
+		t.Fatalf("Subscribe(%s): %v", sentinel, err)
+	}
+	// 購読済みの全フィルターのハンドラを、受信を記録するものに置き換える。
+	// 終端のトピックは # などにも一致するので、どの購読に振り分けられても終端として扱う。
+	record := func(topic string, _ []byte, _ byte, _ bool) {
+		if topic == sentinel {
+			// 重複して届いても panic させず、記録した件数の比較で失敗させる。
+			closeDone.Do(func() { close(done) })
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, topic)
+	}
+	p.routesMu.Lock()
+	for i := range p.routes {
+		p.routes[i].handler = record
+	}
+	p.routesMu.Unlock()
+
+	for _, topic := range topics {
+		b.publish(t, topic)
+	}
+	b.publish(t, sentinel)
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the sentinel message was not delivered")
+	}
+	if err := p.Unsubscribe(sentinel); err != nil {
+		t.Fatalf("Unsubscribe(%s): %v", sentinel, err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	return got
+}
+
+func noopHandler(string, []byte, byte, bool) {}
+
+// 重なる購読 (Broker Topics のスキャンが張る # と、個別の購読) があっても、受信した 1 件のメッセージで
+// handler を呼ぶのは 1 回だけ。paho のルーターは一致する購読の数だけ呼ぶので、そのままでは
+// メッセージが購読の数だけ重複して表示される。
+func TestPahoClient_OverlappingSubscriptions_DeliverEachMessageOnce(t *testing.T) {
+	b, p := newSubscribingBroker(t)
+	for _, filter := range []string{"#", "sensors/#", "sensors/+", "sensors/temp"} {
+		if err := p.Subscribe(filter, 0, noopHandler); err != nil {
+			t.Fatalf("Subscribe(%s): %v", filter, err)
+		}
+	}
+
+	got := receivedTopics(t, b, p, "sensors/temp", "other/topic")
+
+	if want := []string{"sensors/temp", "other/topic"}; !slices.Equal(got, want) {
+		t.Errorf("received = %v, want %v (one call per message)", got, want)
+	}
+}
+
+// 同じフィルターを購読し直しても (再接続時の張り直し)、購読は増えず 1 回だけ届く。
+func TestPahoClient_Resubscribe_DeliversEachMessageOnce(t *testing.T) {
+	b, p := newSubscribingBroker(t)
+	for range 3 {
+		if err := p.Subscribe("sensors/temp", 1, noopHandler); err != nil {
+			t.Fatalf("Subscribe: %v", err)
+		}
+	}
+
+	got := receivedTopics(t, b, p, "sensors/temp")
+
+	if want := []string{"sensors/temp"}; !slices.Equal(got, want) {
+		t.Errorf("received = %v, want %v", got, want)
+	}
+}
+
+// 重なる購読の片方を解除しても残りの購読で 1 回届き、一致する購読が無くなれば届かない。
+func TestPahoClient_Unsubscribe_StopsDeliveryWhenNoFilterMatches(t *testing.T) {
+	b, p := newSubscribingBroker(t)
+	for _, filter := range []string{"#", "sensors/temp"} {
+		if err := p.Subscribe(filter, 0, noopHandler); err != nil {
+			t.Fatalf("Subscribe(%s): %v", filter, err)
+		}
+	}
+
+	if err := p.Unsubscribe("#"); err != nil {
+		t.Fatalf("Unsubscribe(#): %v", err)
+	}
+	if got, want := receivedTopics(t, b, p, "sensors/temp", "other/topic"), []string{"sensors/temp"}; !slices.Equal(got, want) {
+		t.Errorf("after Unsubscribe(#): received = %v, want %v", got, want)
+	}
+
+	if err := p.Unsubscribe("sensors/temp"); err != nil {
+		t.Fatalf("Unsubscribe(sensors/temp): %v", err)
+	}
+	if got := receivedTopics(t, b, p, "sensors/temp"); len(got) != 0 {
+		t.Errorf("after unsubscribing every filter: received = %v, want none", got)
+	}
+}
+
+// 購読が成立しなかったら、その購読を振り分け先に残さない。
+func TestPahoClient_FailedSubscription_IsNotRouted(t *testing.T) {
+	p, _ := newTestClient("tcp://127.0.0.1:1", MQTTClientConfig{ConnectTimeout: time.Second, TokenTimeout: time.Second})
+
+	// 未接続なので Subscribe は失敗する。
+	if err := p.Subscribe("sensors/temp", 0, noopHandler); err == nil {
+		t.Fatal("Subscribe on a disconnected client should fail")
+	}
+
+	p.routesMu.RLock()
+	defer p.routesMu.RUnlock()
+	if len(p.routes) != 0 {
+		t.Errorf("routes = %d, want none after a failed Subscribe", len(p.routes))
+	}
+}
+
+func TestFilterMatches(t *testing.T) {
+	tests := []struct {
+		filter string
+		topic  string
+		want   bool
+	}{
+		{"a/b", "a/b", true},
+		{"a/b", "a/b/c", false},
+		{"a/b/c", "a/b", false},
+		{"#", "a/b", true},
+		{"a/#", "a/b/c", true},
+		{"a/#", "a", true},
+		{"a/#", "b/a", false},
+		{"a/+", "a/b", true},
+		{"a/+", "a", false},
+		{"a/+", "a/b/c", false},
+		{"+/b", "a/b", true},
+		{"a/+/c", "a/b/c", true},
+		{"+", "a", true},
+		{"/a", "/a", true},
+		{"/a", "a", false},
+		{"$share/group/a/#", "a/b", true},
+		{"$share/group/a/#", "b/b", false},
+		{"$queue/a/b", "a/b", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.filter+" "+tc.topic, func(t *testing.T) {
+			if got := filterMatches(tc.filter, tc.topic); got != tc.want {
+				t.Errorf("filterMatches(%q, %q) = %v, want %v", tc.filter, tc.topic, got, tc.want)
+			}
+		})
 	}
 }

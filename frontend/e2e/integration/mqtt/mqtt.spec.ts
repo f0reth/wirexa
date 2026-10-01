@@ -266,9 +266,9 @@ test("scanning lists broker topics and subscribes from the list", async ({
     await panel.getByTitle("Subscribe").click();
     await expect(app.mqttSubscription(topic)).toBeVisible();
     await expect(panel.getByTitle("Already subscribed")).toBeDisabled();
-    // 購読した retained メッセージが届く。"#" の購読とも一致するので、paho は同じメッセージを
-    // 両方の購読のハンドラへ渡し、2 件並ぶ。
-    await expect(app.mqttMessage("kept").first()).toContainText(topic);
+    // 購読した retained メッセージが届く。"#" の購読とも一致するが、受信 1 件につき 1 件だけ並ぶ。
+    await expect(app.mqttMessage("kept")).toContainText(topic);
+    await expect(app.mqttMessages).toHaveCount(1);
     await panel.getByRole("button", { name: "Stop", exact: true }).click();
     await expect(
       panel.getByRole("button", { name: "Scan", exact: true }),
