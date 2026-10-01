@@ -272,7 +272,7 @@ func (p *pahoClient) Subscribe(topic string, qos byte, handler domain.MessageHan
 func (p *pahoClient) subscribe(topic string, qos byte) error {
 	token := p.client.Subscribe(topic, qos, nil)
 	if !token.WaitTimeout(p.tokenTimeout) {
-		return errors.New("subscribe timed out")
+		return fmt.Errorf("subscribe was not acknowledged in time: %w", domain.ErrAckTimeout)
 	}
 	if err := token.Error(); err != nil {
 		return err
@@ -291,7 +291,11 @@ func (p *pahoClient) subscribe(topic string, qos byte) error {
 func (p *pahoClient) Unsubscribe(topics ...string) error {
 	token := p.client.Unsubscribe(topics...)
 	if !token.WaitTimeout(p.tokenTimeout) {
-		return errors.New("unsubscribe timed out")
+		// ブローカーが解除したかどうかは分からない。解除していた場合に購読中のまま届かない状態を
+		// 残さないよう、解除した側に倒して振り分け先を外す。ブローカー側に購読が残っていても、
+		// 届いたメッセージは dispatch が捨てる。
+		p.removeRoutes(topics...)
+		return fmt.Errorf("unsubscribe was not acknowledged in time: %w", domain.ErrAckTimeout)
 	}
 	if err := token.Error(); err != nil {
 		return err

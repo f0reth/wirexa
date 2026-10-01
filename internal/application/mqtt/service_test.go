@@ -880,9 +880,64 @@ func TestMQTTService_Unsubscribe_ClientError(t *testing.T) {
 	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 	waitForEvent(t, done, time.Second, "connect goroutine timeout")
 
+	if err := svc.Subscribe(id, "topic", 0); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
 	err := svc.Unsubscribe(id, "topic")
 	if !errors.Is(err, wantErr) {
 		t.Errorf("expected unsubscribe error, got %v", err)
+	}
+	// 解除に失敗した購読は残す。
+	if subs := svc.GetConnections()[0].Subscriptions; !slices.Equal(subs, []domain.SubscriptionInfo{{Topic: "topic"}}) {
+		t.Errorf("subscriptions = %v, want topic kept", subs)
+	}
+}
+
+// ブローカーの応答を確認できなかった Unsubscribe はエラーを返すが、購読は外す。
+// client は振り分け先を外しているので、残すと購読中と表示されたままメッセージが届かない。
+func TestMQTTService_Unsubscribe_AckTimeout_RemovesSubscription(t *testing.T) {
+	client := &mockBrokerClient{
+		unsubscribeFn: func(...string) error { return fmt.Errorf("unsubscribe: %w", domain.ErrAckTimeout) },
+	}
+	svc := newTestService(t, &mockEmitter{}, factoryWith(client))
+	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	waitEstablished(t, svc, 1)
+	for _, topic := range []string{"a/#", "b/#"} {
+		if err := svc.Subscribe(id, topic, 0); err != nil {
+			t.Fatalf("Subscribe(%s): %v", topic, err)
+		}
+	}
+
+	err := svc.Unsubscribe(id, "a/#")
+
+	if !errors.Is(err, domain.ErrAckTimeout) {
+		t.Errorf("err = %v, want ErrAckTimeout", err)
+	}
+	if subs := svc.GetConnections()[0].Subscriptions; !slices.Equal(subs, []domain.SubscriptionInfo{{Topic: "b/#"}}) {
+		t.Errorf("subscriptions = %v, want only b/#", subs)
+	}
+}
+
+// ブローカーの応答を確認できなかった Subscribe は、購読として扱わない
+// (client も振り分け先に残さないので、表示と受信が一致する)。
+func TestMQTTService_Subscribe_AckTimeout_NotTracked(t *testing.T) {
+	client := &mockBrokerClient{
+		subscribeFn: func(string, byte, domain.MessageHandler) error {
+			return fmt.Errorf("subscribe: %w", domain.ErrAckTimeout)
+		},
+	}
+	svc := newTestService(t, &mockEmitter{}, factoryWith(client))
+	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	waitEstablished(t, svc, 1)
+
+	err := svc.Subscribe(id, "a/#", 0)
+
+	if !errors.Is(err, domain.ErrAckTimeout) {
+		t.Errorf("err = %v, want ErrAckTimeout", err)
+	}
+	if subs := svc.GetConnections()[0].Subscriptions; len(subs) != 0 {
+		t.Errorf("subscriptions = %v, want none", subs)
 	}
 }
 

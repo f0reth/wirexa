@@ -507,6 +507,7 @@ func (s *MQTTService) resubscribe(connID string, conn *connection, subs []domain
 }
 
 // Unsubscribe は指定トピックの購読を解除する。接続の確立前なら登録を外すだけで client は呼ばない。
+// ブローカーの応答を確認できなかった場合 (domain.ErrAckTimeout) はエラーを返すが、購読は外す。
 func (s *MQTTService) Unsubscribe(connectionID, topic string) error {
 	if err := domain.ValidateTopicFilter(fieldTopic, topic); err != nil {
 		return err
@@ -515,12 +516,17 @@ func (s *MQTTService) Unsubscribe(connectionID, topic string) error {
 		if conn.updatePendingSubs(func() { conn.deleteSub(topic) }) {
 			return nil
 		}
-		if err := conn.client.Unsubscribe(topic); err != nil {
+		err := conn.client.Unsubscribe(topic)
+		// 応答を確認できなかった解除は、client が振り分け先を外しているので購読も外す
+		// (残すと購読中と表示されたままメッセージが届かない)。それ以外の失敗では購読を残す。
+		if err == nil || errors.Is(err, domain.ErrAckTimeout) {
+			conn.stateMu.Lock()
+			conn.deleteSub(topic)
+			conn.stateMu.Unlock()
+		}
+		if err != nil {
 			return fmt.Errorf("failed to unsubscribe: %w", err)
 		}
-		conn.stateMu.Lock()
-		conn.deleteSub(topic)
-		conn.stateMu.Unlock()
 		return nil
 	})
 }

@@ -654,6 +654,61 @@ func TestPahoClient_Unsubscribe_StopsDeliveryWhenNoFilterMatches(t *testing.T) {
 	}
 }
 
+// routedFilters は振り分け先に登録されているフィルターを登録順に返す。
+func routedFilters(p *pahoClient) []string {
+	p.routesMu.RLock()
+	defer p.routesMu.RUnlock()
+	filters := make([]string, 0, len(p.routes))
+	for _, r := range p.routes {
+		filters = append(filters, r.filter)
+	}
+	return filters
+}
+
+// UNSUBACK を時間内に確認できなかったら ErrAckTimeout を返すが、振り分け先は外す。
+// ブローカーが解除していた場合に、購読中のままメッセージが届かない状態を残さない。
+// ブローカー側に購読が残っていても、届いたメッセージは捨てる。
+func TestPahoClient_Unsubscribe_AckTimeout_RemovesRoute(t *testing.T) {
+	b, p := newSubscribingBroker(t)
+	var received atomic.Int32
+	if err := p.Subscribe("sensors/temp", 0, func(string, []byte, byte, bool) { received.Add(1) }); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	b.silentUnsubscribe.Store(true)
+
+	err := p.Unsubscribe("sensors/temp")
+
+	if !errors.Is(err, domain.ErrAckTimeout) {
+		t.Errorf("err = %v, want ErrAckTimeout", err)
+	}
+	if got := routedFilters(p); len(got) != 0 {
+		t.Errorf("routes = %v, want none after Unsubscribe timed out", got)
+	}
+	b.silentUnsubscribe.Store(false)
+	// 終端のトピックが届くまでに sensors/temp のハンドラが呼ばれないこと。
+	if got := receivedTopics(t, b, p, "sensors/temp"); len(got) != 0 {
+		t.Errorf("received = %v, want none", got)
+	}
+	if n := received.Load(); n != 0 {
+		t.Errorf("handler called %d times after Unsubscribe timed out, want 0", n)
+	}
+}
+
+// SUBACK を時間内に確認できなかったら ErrAckTimeout を返し、その購読を振り分け先に残さない。
+func TestPahoClient_Subscribe_AckTimeout_IsNotRouted(t *testing.T) {
+	b, p := newSubscribingBroker(t)
+	b.silentSubscribe.Store(true)
+
+	err := p.Subscribe("sensors/temp", 0, noopHandler)
+
+	if !errors.Is(err, domain.ErrAckTimeout) {
+		t.Errorf("err = %v, want ErrAckTimeout", err)
+	}
+	if got := routedFilters(p); len(got) != 0 {
+		t.Errorf("routes = %v, want none after Subscribe timed out", got)
+	}
+}
+
 // 購読が成立しなかったら、その購読を振り分け先に残さない。
 func TestPahoClient_FailedSubscription_IsNotRouted(t *testing.T) {
 	p, _ := newTestClient("tcp://127.0.0.1:1", MQTTClientConfig{ConnectTimeout: time.Second, TokenTimeout: time.Second})
