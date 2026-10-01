@@ -8,6 +8,8 @@ import { makeSubscription } from "./subscription";
 export interface SubscriptionApi {
   subscribe(connectionId: string, topic: string, qos: number): Promise<void>;
   unsubscribe(connectionId: string, topic: string): Promise<void>;
+  startTopicScan(connectionId: string): Promise<void>;
+  stopTopicScan(connectionId: string): Promise<void>;
 }
 
 export function createSubscriptionsState(
@@ -101,6 +103,12 @@ export function createSubscriptionsState(
     }));
   };
 
+  // isScanning は RPC の完了前に切り替えるので、開始の完了前に Stop を押せる。
+  // scanSeq は接続ごとの連番で、setIsScanning を呼ぶたびに進める。開始の結果は、連番が呼び出し時の
+  // ままのときだけ反映する。scanRpcs は、その接続で送った開始・停止の RPC が全て終わると解決する。
+  const scanSeq = new Map<string, number>();
+  const scanRpcs = new Map<string, Promise<unknown>>();
+
   const setIsScanning = async (
     value: boolean | ((prev: boolean) => boolean),
   ) => {
@@ -109,6 +117,10 @@ export function createSubscriptionsState(
     if (!connId) return;
     const newValue =
       typeof value === "function" ? value(conn.isScanning) : value;
+    const seq = (scanSeq.get(connId) ?? 0) + 1;
+    scanSeq.set(connId, seq);
+    const superseded = () => scanSeq.get(connId) !== seq;
+    const previous = scanRpcs.get(connId) ?? Promise.resolve();
     if (newValue) {
       updateConnection(connId, (state) => ({
         ...state,
@@ -116,17 +128,44 @@ export function createSubscriptionsState(
         brokerTopics: [],
         brokerTopicsSet: new Set(),
       }));
-      try {
-        await api.subscribe(connId, "#", 0);
-      } catch (err) {
-        notifier.error("Failed to start topic scan", errorMessage(err));
-        updateConnection(connId, (state) => ({ ...state, isScanning: false }));
-      }
+      const starting = (async () => {
+        // 先に送った開始・停止が終わってから送る。待たずに送ると、バックエンドでは
+        // 打ち切られる前の開始に合流して、その失敗を受け取ってしまう。
+        await previous;
+        if (superseded()) return;
+        try {
+          await api.startTopicScan(connId);
+        } catch (err) {
+          // 停止で打ち切られた開始のエラーは通知しない。
+          if (superseded()) return;
+          logger.error("MQTT topic scan failed to start", {
+            connection_id: connId,
+            error: String(err),
+          });
+          notifier.error("Failed to start topic scan", errorMessage(err));
+          updateConnection(connId, (state) => ({
+            ...state,
+            isScanning: false,
+          }));
+          return;
+        }
+        // 開始の完了前に止められていた。停止が開始より先にバックエンドへ届いた場合に備えて、
+        // もう一度止める (スキャン用の接続を残さない)。
+        if (superseded()) await api.stopTopicScan(connId).catch(() => {});
+      })();
+      scanRpcs.set(connId, starting);
+      await starting;
     } else {
-      try {
-        await api.unsubscribe(connId, "#");
-      } catch {}
       updateConnection(connId, (state) => ({ ...state, isScanning: false }));
+      // 停止は待たずに送る。バックエンドは開始中のスキャンを打ち切る。
+      const stopping = api.stopTopicScan(connId).catch((err) => {
+        logger.error("MQTT topic scan failed to stop", {
+          connection_id: connId,
+          error: String(err),
+        });
+      });
+      scanRpcs.set(connId, Promise.all([previous, stopping]));
+      await stopping;
     }
   };
 

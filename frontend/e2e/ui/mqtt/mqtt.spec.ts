@@ -1,4 +1,4 @@
-import { expect, test } from "../../fixtures/ui";
+import { expect, test, WailsEvents } from "../../fixtures/ui";
 
 // MQTT パネルはデフォルトで表示される
 
@@ -181,5 +181,78 @@ test.describe("broker order", () => {
 
     await page.reload();
     await expect(rows).toHaveText([/Broker Beta/, /Broker Alpha/]);
+  });
+});
+
+// ── 観点H: Broker Topics のスキャン ──────────────────────────────────────────
+// スキャンは購読ではなく StartTopicScan / StopTopicScan で行う (Go は専用の接続で # を購読する)。
+// ブローカーは無いので、見つかったトピックは Go が発火する mqtt:scan-topic を、スキャン用の
+// 接続の切断は mqtt:scan-stopped を偽バックエンドから流して模す。
+
+test.describe("broker topics scan", () => {
+  const BROKER = { id: "profile-local", name: "Local Broker" };
+
+  test.use({ seed: { mqttProfiles: [BROKER], mqttConnect: "ok" } });
+
+  test("scan lists the topics found by the backend without subscribing", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.connectBroker(BROKER.name);
+    const connectionId = (await fake.snapshot()).mqttConnections[0].id;
+    const panel = app.mqttSection("Broker Topics");
+    const scan = panel.getByRole("button", { name: "Scan", exact: true });
+    const stop = panel.getByRole("button", { name: "Stop", exact: true });
+    await expect(panel.getByText("No topics found")).toBeVisible();
+
+    await scan.click();
+
+    await expect(stop).toBeVisible();
+    await fake.waitForCalls("StartTopicScan");
+    expect(await fake.args("StartTopicScan")).toEqual([[connectionId]]);
+    expect((await fake.snapshot()).mqttConnections[0]).toMatchObject({
+      scanning: true,
+      subscriptions: [],
+    });
+
+    await fake.emitAll(WailsEvents.mqttScanTopic, [
+      { connectionId, topic: "sensors/temp" },
+      { connectionId, topic: "sensors/humidity" },
+      { connectionId, topic: "sensors/temp" },
+    ]);
+
+    await expect(panel.getByText("sensors/temp", { exact: true })).toHaveCount(
+      1,
+    );
+    await expect(
+      panel.getByText("sensors/humidity", { exact: true }),
+    ).toBeVisible();
+    // スキャンはトピックを集めるだけで、購読もメッセージも増やさない。
+    await expect(app.mqttMessages).toHaveCount(0);
+    expect(await fake.calls("Subscribe")).toBe(0);
+
+    await stop.click();
+
+    await expect(scan).toBeVisible();
+    await fake.waitForCalls("StopTopicScan");
+    expect(await fake.args("StopTopicScan")).toEqual([[connectionId]]);
+    expect((await fake.snapshot()).mqttConnections[0].scanning).toBe(false);
+    expect(await fake.calls("Unsubscribe")).toBe(0);
+    // 止めても見つけたトピックは残る。
+    await expect(panel.getByText("sensors/temp", { exact: true })).toBeVisible();
+
+    // スキャン用の接続が切れたら、ボタンは Scan に戻って通知が出る。
+    await scan.click();
+    await expect(stop).toBeVisible();
+    await fake.emit(WailsEvents.mqttScanStopped, {
+      connectionId,
+      error: "EOF",
+    });
+
+    await expect(scan).toBeVisible();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "MQTT topic scan stopped" }),
+    ).toContainText("EOF");
   });
 });

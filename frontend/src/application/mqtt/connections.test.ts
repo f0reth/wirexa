@@ -44,6 +44,7 @@ function makeApi(
     disconnect: vi.fn(async () => {}),
     subscribe: vi.fn(async () => {}),
     unsubscribe: vi.fn(async () => {}),
+    stopTopicScan: vi.fn(async () => {}),
     getConnections: vi.fn(getConnections),
   };
 }
@@ -92,6 +93,7 @@ describe("createConnectionsState restore", () => {
             { topic: "sensors/temp", qos: 1 },
             { topic: "sensors/#", qos: 0 },
           ],
+          scanning: false,
         },
       ],
       [makeProfile("p1", "Broker A"), makeProfile("p2", "Broker B")],
@@ -133,6 +135,7 @@ describe("createConnectionsState restore", () => {
           connected: true,
           profileId: "p1",
           subscriptions: [],
+          scanning: false,
         },
       ],
       [makeProfile("p1"), makeProfile("p2")],
@@ -166,6 +169,7 @@ describe("createConnectionsState restore", () => {
           connected: false,
           profileId: "gone",
           subscriptions: [],
+          scanning: false,
         },
       ],
       [],
@@ -177,6 +181,34 @@ describe("createConnectionsState restore", () => {
     expect(conn.profile.name).toBe("Orphan");
     expect(conn.profile.broker).toBe("tcp://orphan:1883");
     dispose();
+  });
+
+  it("stops the scan of a connection that was scanning and restores it as not scanning", async () => {
+    const h = harness({
+      live: [
+        { ...liveStatus("c1", "p1"), scanning: true },
+        liveStatus("c2", "p2"),
+      ],
+      profiles: [makeProfile("p1"), makeProfile("p2")],
+    });
+    // 停止に失敗しても復元は続け、通知しない。
+    h.api.stopTopicScan = vi.fn(async () => {
+      throw new Error("timeout");
+    });
+
+    await h.state.restore();
+
+    expect(h.api.stopTopicScan).toHaveBeenCalledTimes(1);
+    expect(h.api.stopTopicScan).toHaveBeenCalledWith("c1");
+    expect(h.state.connections.c1.isScanning).toBe(false);
+    await vi.waitFor(() =>
+      expect(h.logger.error).toHaveBeenCalledWith(
+        "MQTT topic scan failed to stop",
+        { connection_id: "c1", error: "Error: timeout" },
+      ),
+    );
+    expect(h.notifier.error).not.toHaveBeenCalled();
+    h.dispose();
   });
 
   it("runs only once", async () => {
@@ -278,6 +310,7 @@ function liveStatus(
     connected,
     profileId,
     subscriptions: topics.map((topic) => ({ topic, qos: 0 })),
+    scanning: false,
   };
 }
 
@@ -438,26 +471,84 @@ describe("createConnectionsState incoming messages", () => {
     h.dispose();
   });
 
-  it("caps broker topics while scanning, dropping the oldest", async () => {
+  it("collects broker topics from scan-topic events, without duplicates", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1")] });
+    await h.state.restore();
+    h.state.updateConnection("c1", (s) => ({ ...s, isScanning: true }));
+
+    for (const topic of ["a", "b", "a"]) {
+      h.events.emit(WailsEvents.mqttScanTopic, { connectionId: "c1", topic });
+    }
+    h.events.emit(WailsEvents.mqttScanTopic, {
+      connectionId: "gone",
+      topic: "x",
+    });
+    expect(frames).toHaveLength(1);
+    expect(h.state.connections.c1.brokerTopics).toEqual([]);
+    runFrame();
+    expect(h.state.connections.c1.brokerTopics).toEqual(["a", "b"]);
+
+    // 次のフレームで既に一覧にあるトピックが届いても増えない。
+    h.events.emit(WailsEvents.mqttScanTopic, {
+      connectionId: "c1",
+      topic: "b",
+    });
+    h.events.emit(WailsEvents.mqttScanTopic, {
+      connectionId: "c1",
+      topic: "c",
+    });
+    runFrame();
+
+    const conn = h.state.connections.c1;
+    expect(conn.brokerTopics).toEqual(["a", "b", "c"]);
+    expect([...conn.brokerTopicsSet].sort()).toEqual(["a", "b", "c"]);
+    // スキャンのトピックはメッセージとしては追加しない。
+    expect(conn.messages).toEqual([]);
+    h.dispose();
+  });
+
+  it("caps broker topics, dropping the oldest", async () => {
     const h = harness({ live: [liveStatus("c1", "p1")], maxTopics: 2 });
     await h.state.restore();
-
-    // スキャン中でなければトピックを集めない。
-    h.events.emit(WailsEvents.mqttMessage, rawMessage("c1", "x"));
-    runFrame();
-    expect(h.state.connections.c1.brokerTopics).toEqual([]);
-
     h.state.updateConnection("c1", (s) => ({ ...s, isScanning: true }));
-    for (const t of ["a", "b", "a", "c"]) {
-      h.events.emit(WailsEvents.mqttMessage, rawMessage("c1", t));
+
+    for (const topic of ["a", "b", "a", "c"]) {
+      h.events.emit(WailsEvents.mqttScanTopic, { connectionId: "c1", topic });
     }
     runFrame();
 
     const conn = h.state.connections.c1;
     expect(conn.brokerTopics).toEqual(["b", "c"]);
     expect([...conn.brokerTopicsSet].sort()).toEqual(["b", "c"]);
-    // 購読していないトピックはメッセージとしては追加しない。
-    expect(conn.messages).toEqual([]);
+    h.dispose();
+  });
+
+  it("drops scan topics that arrive while not scanning", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1")] });
+    await h.state.restore();
+
+    // 停止と行き違いで届いたトピック。
+    h.events.emit(WailsEvents.mqttScanTopic, {
+      connectionId: "c1",
+      topic: "x",
+    });
+    runFrame();
+
+    expect(h.state.connections.c1.brokerTopics).toEqual([]);
+    h.dispose();
+  });
+
+  it("does not collect broker topics from received messages", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1", ["a"])] });
+    await h.state.restore();
+    h.state.updateConnection("c1", (s) => ({ ...s, isScanning: true }));
+
+    h.events.emit(WailsEvents.mqttMessage, rawMessage("c1", "a"));
+    runFrame();
+
+    const conn = h.state.connections.c1;
+    expect(conn.messages.map((m) => m.topic)).toEqual(["a"]);
+    expect(conn.brokerTopics).toEqual([]);
     h.dispose();
   });
 
@@ -573,15 +664,39 @@ describe("createConnectionsState lifecycle events", () => {
     h.dispose();
   });
 
+  it("stops scanning and notifies when the scan connection is lost", async () => {
+    const h = await setupOnlineAndOffline();
+    h.events.emit(WailsEvents.mqttConnected, { connectionId: "c1" });
+
+    h.events.emit(WailsEvents.mqttScanStopped, {
+      connectionId: "c1",
+      error: "EOF",
+    });
+
+    expect(h.notifier.error).toHaveBeenCalledWith(
+      "MQTT topic scan stopped",
+      "EOF",
+      { key: "c1" },
+    );
+    // 元の接続はそのまま。
+    expect(onlineState(h, "c1")).toMatchObject({
+      connected: true,
+      isScanning: false,
+    });
+    h.dispose();
+  });
+
   it("unsubscribes every event on dispose", () => {
     const h = harness();
-    expect(h.events.handlers.size).toBe(5);
+    expect(h.events.handlers.size).toBe(7);
 
     h.dispose();
 
     expect([...h.events.unsubscribed].sort()).toEqual(
       [
         WailsEvents.mqttMessage,
+        WailsEvents.mqttScanTopic,
+        WailsEvents.mqttScanStopped,
         WailsEvents.mqttConnected,
         WailsEvents.mqttDisconnected,
         WailsEvents.mqttConnectionLost,
@@ -669,7 +784,11 @@ describe("createConnectionsState connection operations", () => {
       lastProfileId: "p1",
     });
     await h.state.restore();
-    h.state.updateConnection("c1", (s) => ({ ...s, autoFollow: true }));
+    h.state.updateConnection("c1", (s) => ({
+      ...s,
+      autoFollow: true,
+      isScanning: true,
+    }));
     // 既に切断済みでも再接続は続ける。
     h.api.disconnect = vi.fn(async () => {
       throw new Error("already closed");
@@ -685,6 +804,8 @@ describe("createConnectionsState connection operations", () => {
       connectionId: "new-id",
       connected: false,
       autoFollow: true,
+      // スキャンは前の接続と一緒に止まっている。
+      isScanning: false,
     });
     expect(moved.subscriptions.map((s) => s.topic)).toEqual(["a", "b/#"]);
     expect(h.state.activeConnectionId()).toBe("new-id");
@@ -810,20 +931,39 @@ describe("createConnectionsState connection operations", () => {
     h.dispose();
   });
 
-  it("disconnects only a connected online tab when closing it", async () => {
+  it("disconnects an online tab when closing it, even before it is connected", async () => {
     const h = harness({
       live: [liveStatus("c1", "p1"), liveStatus("c2", "p2", [], false)],
       profiles: [makeProfile("p1"), makeProfile("p2"), makeProfile("p3")],
     });
     await h.state.restore();
 
-    h.state.closeConnection("c2");
     h.state.closeConnection("offline-p3");
     expect(h.api.disconnect).not.toHaveBeenCalled();
+
+    // 確立待ち・自動再接続中のタブも、バックエンドに接続を残さない。
+    h.state.closeConnection("c2");
+    expect(h.api.disconnect).toHaveBeenCalledWith("c2");
 
     h.state.closeConnection("c1");
     expect(h.api.disconnect).toHaveBeenCalledWith("c1");
     expect(Object.keys(h.state.connections)).toEqual([]);
+    h.dispose();
+  });
+
+  it("does not notify when disconnecting a closed tab that was not connected fails", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1", [], false)] });
+    await h.state.restore();
+    // 接続が失敗して既に無い場合。
+    h.api.disconnect = vi.fn(async () => {
+      throw new Error("connection not found");
+    });
+
+    h.state.closeConnection("c1");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(h.api.disconnect).toHaveBeenCalledWith("c1");
+    expect(h.notifier.error).not.toHaveBeenCalled();
     h.dispose();
   });
 

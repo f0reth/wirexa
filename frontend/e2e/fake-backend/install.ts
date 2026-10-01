@@ -690,6 +690,7 @@ const MqttHandler = {
         connected: false,
         profileId: config.profileId,
         subscriptions: [],
+        scanning: false,
       };
       db.mqttConnections.push(conn);
       save();
@@ -732,6 +733,18 @@ const MqttHandler = {
     validateTopicFilter(topic);
     const conn = mqttConnection(connectionId);
     conn.subscriptions = conn.subscriptions.filter((s) => s.topic !== topic);
+  }),
+
+  // Go はスキャン用の接続で # を購読するが、ここでは scanning を切り替えるだけ (購読は増えない)。
+  // 見つかったトピックはテストが mqtt:scan-topic を、スキャン用の接続の切断は mqtt:scan-stopped を
+  // emit して模す。
+  StartTopicScan: mutates("StartTopicScan", (connectionId: string) => {
+    mqttConnection(connectionId).scanning = true;
+  }),
+
+  // Go と同じく、スキャンしていなければ何もしない。
+  StopTopicScan: mutates("StopTopicScan", (connectionId: string) => {
+    mqttConnection(connectionId).scanning = false;
   }),
 
   // ループバックはしない。送った内容は fake.args("Publish") で確かめる。

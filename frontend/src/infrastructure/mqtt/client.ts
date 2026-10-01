@@ -6,6 +6,8 @@ import {
   GetProfiles,
   Publish,
   SaveProfile,
+  StartTopicScan,
+  StopTopicScan,
   Subscribe,
   Unsubscribe,
 } from "../../../wailsjs/go/adapters/MQTTHandler";
@@ -42,6 +44,14 @@ export function unsubscribe(
   topic: string,
 ): Promise<void> {
   return Unsubscribe(connectionId, topic) as Promise<void>;
+}
+
+export function startTopicScan(connectionId: string): Promise<void> {
+  return StartTopicScan(connectionId) as Promise<void>;
+}
+
+export function stopTopicScan(connectionId: string): Promise<void> {
+  return StopTopicScan(connectionId) as Promise<void>;
 }
 
 export function publish(

@@ -16,6 +16,8 @@ export interface ConnectionStatus {
   connected: boolean;
   profileId: string;
   subscriptions: SubscriptionInfo[];
+  /** Broker Topics のスキャンが稼働中か。スキャンは専用の接続で行うので subscriptions には現れない。 */
+  scanning: boolean;
 }
 
 export interface MqttMessage {

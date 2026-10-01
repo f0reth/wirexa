@@ -54,7 +54,13 @@ export interface MqttConnectionApi {
   disconnect(connectionId: string): Promise<void>;
   subscribe(connectionId: string, topic: string, qos: number): Promise<void>;
   unsubscribe(connectionId: string, topic: string): Promise<void>;
+  stopTopicScan(connectionId: string): Promise<void>;
   getConnections(): Promise<ConnectionStatus[]>;
+}
+
+interface ScannedTopic {
+  connectionId: string;
+  topic: string;
 }
 
 interface RawMessage {
@@ -155,10 +161,59 @@ export function createConnectionsState(
 
   // Micro-batch: buffer incoming messages and flush once per animation frame.
   const messageBuffer: RawMessage[] = [];
+  // スキャンで見つかったトピック (mqtt:scan-topic)。メッセージと同じフレームでまとめて反映する。
+  const topicBuffer: ScannedTopic[] = [];
   let flushScheduled = false;
 
+  function scheduleFlush() {
+    if (flushScheduled) return;
+    flushScheduled = true;
+    requestAnimationFrame(() => {
+      flushScheduled = false;
+      flushTopics();
+      flushMessages();
+    });
+  }
+
+  function flushTopics() {
+    if (topicBuffer.length === 0) return;
+
+    const grouped = new Map<string, string[]>();
+    for (const { connectionId, topic } of topicBuffer) {
+      let arr = grouped.get(connectionId);
+      if (!arr) {
+        arr = [];
+        grouped.set(connectionId, arr);
+      }
+      arr.push(topic);
+    }
+    topicBuffer.length = 0;
+
+    for (const [connId, topics] of grouped) {
+      updateConnection(connId, (state) => {
+        // 停止と行き違いで届いたトピックは捨てる。
+        if (!state.isScanning) return state;
+        const added = [
+          ...new Set(topics.filter((t) => !state.brokerTopicsSet.has(t))),
+        ];
+        if (added.length === 0) return state;
+
+        let brokerTopics = [...state.brokerTopics, ...added];
+        const brokerTopicsSet = new Set(state.brokerTopicsSet);
+        for (const t of added) brokerTopicsSet.add(t);
+        if (brokerTopics.length > maxTopics) {
+          const excess = brokerTopics.length - maxTopics;
+          for (const t of brokerTopics.slice(0, excess)) {
+            brokerTopicsSet.delete(t);
+          }
+          brokerTopics = brokerTopics.slice(excess);
+        }
+        return { ...state, brokerTopics, brokerTopicsSet };
+      });
+    }
+  }
+
   function flushMessages() {
-    flushScheduled = false;
     if (messageBuffer.length === 0) return;
 
     const grouped = new Map<string, RawMessage[]>();
@@ -174,19 +229,9 @@ export function createConnectionsState(
 
     for (const [connId, batch] of grouped) {
       updateConnection(connId, (state) => {
-        let newBrokerTopics = state.brokerTopics;
-        let newBrokerTopicsSet = state.brokerTopicsSet;
         const pendingMessages: MqttMessageView[] = [];
 
         for (const data of batch) {
-          if (state.isScanning && !newBrokerTopicsSet.has(data.topic)) {
-            if (newBrokerTopicsSet === state.brokerTopicsSet) {
-              newBrokerTopicsSet = new Set(state.brokerTopicsSet);
-            }
-            newBrokerTopicsSet.add(data.topic);
-            newBrokerTopics = [...newBrokerTopics, data.topic];
-          }
-
           const msgParts = data.topic.split("/");
           // 重なる購読（例: muted の sensors/# と sensors/temp）があれば、
           // muted でない購読が 1 つでも一致すれば表示する。
@@ -210,32 +255,12 @@ export function createConnectionsState(
           }
         }
 
-        if (newBrokerTopics.length > maxTopics) {
-          const removed = newBrokerTopics.slice(
-            0,
-            newBrokerTopics.length - maxTopics,
-          );
-          for (const t of removed) newBrokerTopicsSet.delete(t);
-          newBrokerTopics = newBrokerTopics.slice(
-            newBrokerTopics.length - maxTopics,
-          );
+        if (pendingMessages.length === 0) return state;
+        const combined = [...state.messages, ...pendingMessages];
+        if (combined.length > maxMessages) {
+          combined.splice(0, combined.length - maxMessages);
         }
-
-        let newMessages = state.messages;
-        if (pendingMessages.length > 0) {
-          const combined = [...state.messages, ...pendingMessages];
-          if (combined.length > maxMessages) {
-            combined.splice(0, combined.length - maxMessages);
-          }
-          newMessages = combined;
-        }
-
-        return {
-          ...state,
-          brokerTopics: newBrokerTopics,
-          brokerTopicsSet: newBrokerTopicsSet,
-          messages: newMessages,
-        };
+        return { ...state, messages: combined };
       });
     }
   }
@@ -245,10 +270,28 @@ export function createConnectionsState(
     if (messageBuffer.length < 5000) {
       messageBuffer.push(data as RawMessage);
     }
-    if (!flushScheduled) {
-      flushScheduled = true;
-      requestAnimationFrame(flushMessages);
+    scheduleFlush();
+  });
+
+  // Broker Topics の一覧はスキャン用の接続が見つけたトピックから作る (mqtt:message からは作らない)。
+  const cancelScanTopic = onEvent(WailsEvents.mqttScanTopic, (data) => {
+    if (topicBuffer.length < 5000) {
+      topicBuffer.push(data as ScannedTopic);
     }
+    scheduleFlush();
+  });
+
+  // スキャン用の接続が切れてスキャンが止まった (自動では再開しない)。
+  const cancelScanStopped = onEvent(WailsEvents.mqttScanStopped, (data) => {
+    const { connectionId, error } = data as {
+      connectionId: string;
+      error: string;
+    };
+    notifier.error("MQTT topic scan stopped", error, { key: connectionId });
+    updateConnection(connectionId, (state) => ({
+      ...state,
+      isScanning: false,
+    }));
   });
 
   const cancelConnected = onEvent(WailsEvents.mqttConnected, (data) => {
@@ -301,6 +344,8 @@ export function createConnectionsState(
 
   onCleanup(() => {
     cancelMessage();
+    cancelScanTopic();
+    cancelScanStopped();
     cancelConnected();
     cancelDisconnected();
     cancelConnectionLost();
@@ -325,6 +370,19 @@ export function createConnectionsState(
       live = await api.getConnections();
     } catch (err) {
       logger.error("MQTT restore failed", { error: String(err) });
+    }
+
+    // スキャン中だった接続のスキャンは止め、スキャン中としては復元しない。Broker Topics の一覧は
+    // フロントエンドだけが持つのでリロードで消え、スキャン用の接続が続いていても retained メッセージは
+    // 再送されない。復元すると、retained のトピックが欠けた一覧をスキャン中と表示してしまう。
+    for (const status of live) {
+      if (!status.scanning) continue;
+      api.stopTopicScan(status.id).catch((err) =>
+        logger.error("MQTT topic scan failed to stop", {
+          connection_id: status.id,
+          error: String(err),
+        }),
+      );
     }
 
     const ps = profiles();
@@ -477,6 +535,8 @@ export function createConnectionsState(
             connectionId: newConnId,
             profile,
             connected: false,
+            // スキャンは前の接続と一緒に止まっている。
+            isScanning: false,
           };
         }),
       );
@@ -506,12 +566,16 @@ export function createConnectionsState(
 
   const closeConnection = (connectionId: string) => {
     const conn = connections[connectionId];
-    if (conn?.type === "online" && conn.connected) {
-      api
-        .disconnect(connectionId)
-        .catch((err) =>
-          notifier.error("Failed to disconnect", errorMessage(err)),
-        );
+    // 確立待ち・自動再接続中のオンラインタブも切断する。切断しないと、バックエンドに接続と
+    // スキャン用の接続 (確立前でも始められる) が画面から見えないまま残る。
+    if (conn?.type === "online") {
+      const connected = conn.connected;
+      api.disconnect(connectionId).catch((err) => {
+        // 未接続での失敗 (接続が失敗して既に無い) は通知しない。
+        if (connected) {
+          notifier.error("Failed to disconnect", errorMessage(err));
+        }
+      });
     }
     setConnections(
       produce((s) => {
