@@ -1602,3 +1602,111 @@ func TestMQTT_LifecycleEvents(t *testing.T) {
 		t.Errorf("events = %v, want %v", got, want)
 	}
 }
+
+// TestMQTT_Publish_WhileReconnecting は、接続が切れて自動再接続している間の Publish がすぐエラーを返し、
+// 再接続後にも届かないことを確認する。paho は再接続中の QoS 0 を送らずに成功させ、QoS 1/2 を保存して
+// 再接続後に送るので、そのままでは返した結果と実際の送達が食い違う。
+func TestMQTT_Publish_WhileReconnecting(t *testing.T) {
+	broker := startMQTTBroker(t, "127.0.0.1:0", nil)
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+
+	id, err := h.Connect(mqttdomain.ConnectionConfig{Name: "publish-while-down", Broker: "tcp://" + broker.addr})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	emitter.waitEvent(t, cmndomain.EventMQTTConnected, id, 1, 5*time.Second)
+
+	broker.Close()
+	emitter.waitEvent(t, cmndomain.EventMQTTConnectionLost, id, 1, 5*time.Second)
+
+	const topic = "down/topic"
+	for _, qos := range []byte{0, 1} {
+		start := time.Now()
+		// retain を付けて送る。保存されて再接続後に送られていれば、後から購読しても届く。
+		if err := h.Publish(id, topic, "while down", qos, true); err == nil {
+			t.Errorf("Publish(qos %d) while the broker is down should fail", qos)
+		}
+		// TokenTimeout (既定 30 秒) まで待たない。
+		if elapsed := time.Since(start); elapsed > 2*time.Second {
+			t.Errorf("Publish(qos %d) took %v, want an immediate error", qos, elapsed)
+		}
+	}
+
+	restarted := startMQTTBroker(t, broker.addr, nil)
+	emitter.waitEvent(t, cmndomain.EventMQTTConnected, id, 2, 15*time.Second)
+	waitConnected(t, h, id, 5*time.Second)
+	if err := h.Subscribe(id, topic, 1); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	waitBrokerSubscriptions(t, restarted, 1)
+	emitter.noMessage(t, 500*time.Millisecond)
+
+	// 再接続後の Publish は届く。
+	if err := h.Publish(id, topic, "after reconnect", 1, false); err != nil {
+		t.Fatalf("Publish after reconnect: %v", err)
+	}
+	if msg := emitter.receiveMessage(t, 5*time.Second); msg.Payload != "after reconnect" {
+		t.Errorf("payload = %q, want after reconnect", msg.Payload)
+	}
+}
+
+// TestMQTT_GetConnections_Order は、GetConnections が接続を作成順、購読を購読した順で返すことを確認する。
+func TestMQTT_GetConnections_Order(t *testing.T) {
+	emitter := newMQTTMockEmitter()
+	h, svc := newMQTTHandler(t, emitter)
+	t.Cleanup(func() { svc.Shutdown(mqttShutdownTimeout) })
+
+	ids := make([]string, 0, 3)
+	for _, name := range []string{"c", "a", "b"} {
+		ids = append(ids, connectBroker(t, h, name))
+	}
+	for _, id := range ids {
+		waitConnected(t, h, id, 5*time.Second)
+	}
+	want := []mqttdomain.SubscriptionInfo{
+		{Topic: "order/h", QoS: 1},
+		{Topic: "order/b"},
+		{Topic: "order/g", QoS: 2},
+		{Topic: "order/a"},
+		{Topic: "order/f", QoS: 1},
+		{Topic: "order/c"},
+	}
+	for _, sub := range want {
+		if err := h.Subscribe(ids[1], sub.Topic, sub.QoS); err != nil {
+			t.Fatalf("Subscribe(%s): %v", sub.Topic, err)
+		}
+	}
+
+	for range 20 {
+		conns := h.GetConnections()
+		gotIDs := make([]string, 0, len(conns))
+		for i := range conns {
+			gotIDs = append(gotIDs, conns[i].ID)
+		}
+		if !slices.Equal(gotIDs, ids) {
+			t.Fatalf("connection order = %v, want creation order %v", gotIDs, ids)
+		}
+		if got := conns[1].Subscriptions; !slices.Equal(got, want) {
+			t.Fatalf("subscription order = %v, want %v", got, want)
+		}
+	}
+}
+
+// TestMQTT_Connect_UseTLS_UnsupportedScheme は、UseTLS で TLS にできないスキームの Broker を
+// Connect が ValidationError で拒否し、接続もイベントも作らないことを確認する。
+func TestMQTT_Connect_UseTLS_UnsupportedScheme(t *testing.T) {
+	emitter := newMQTTMockEmitter()
+	h, _ := newMQTTHandler(t, emitter)
+
+	_, err := h.Connect(mqttdomain.ConnectionConfig{Name: "tls", Broker: "http://127.0.0.1:1883", UseTLS: true})
+
+	if _, ok := errors.AsType[*cmndomain.ValidationError](err); !ok {
+		t.Fatalf("Connect: want ValidationError, got %v", err)
+	}
+	if conns := h.GetConnections(); len(conns) != 0 {
+		t.Errorf("connections = %v, want none", conns)
+	}
+	emitter.assertSilent(t, 200*time.Millisecond)
+}
