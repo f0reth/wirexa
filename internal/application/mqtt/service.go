@@ -488,15 +488,19 @@ func (s *MQTTService) resubscribe(connID string, conn *connection, subs []domain
 			continue
 		}
 		s.logger.Error("MQTT resubscribe failed", "source", "mqtt", "connection_id", connID, "topic", topic, "error", err)
-		// ブローカーが拒否した購読は表示から外す。それ以外 (再び切断した等) は次の再接続で張り直す。
-		if errors.Is(err, domain.ErrSubscriptionRejected) {
+		// ブローカーが拒否した購読と、接続が開いたまま失敗した購読 (SUBACK を時間内に確認できなかった等) は
+		// 表示から外す。後者は次の再接続が来ないので、残すと購読中と表示されたままメッセージが届かない。
+		// 接続が切れて失敗した購読は残し、次の再接続で張り直す。
+		if errors.Is(err, domain.ErrSubscriptionRejected) || conn.client.IsConnected() {
 			conn.stateMu.Lock()
 			conn.deleteSub(topic)
 			conn.stateMu.Unlock()
-			// client は張り直しの失敗では振り分け先を残すので、解除して片付ける。
-			// 失敗しても (直後にまた切断した等) 表示からは外したままにする。
+			// client は張り直しの失敗では振り分け先を残すので、解除して片付ける。ブローカーが購読を
+			// 受理していた場合も、これでブローカー側の購読が消える。
+			// 失敗しても (直後にまた切断した等) 表示からは外したままにする。振り分け先が無ければ
+			// 届いたメッセージは捨てられるので、表示とは食い違わない。
 			if err := conn.client.Unsubscribe(topic); err != nil {
-				s.logger.Error("MQTT unsubscribe of a rejected subscription failed", "source", "mqtt", "connection_id", connID, "topic", topic, "error", err)
+				s.logger.Error("MQTT unsubscribe of a failed subscription failed", "source", "mqtt", "connection_id", connID, "topic", topic, "error", err)
 			}
 		}
 	}

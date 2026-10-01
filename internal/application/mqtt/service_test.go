@@ -1689,15 +1689,18 @@ func TestMQTTService_Connected_WithoutSubscriptions_DoesNotSubscribe(t *testing.
 	}
 }
 
-// 張り直しでブローカーに拒否された購読は表示から外して client からも解除し、
-// それ以外の失敗では残して次の再接続に任せる。
+// 張り直しでブローカーに拒否された購読と、接続が開いたまま失敗した購読は、表示から外して
+// client からも解除する。接続が切れて失敗した購読は残して次の再接続に任せる。
 func TestMQTTService_Reconnect_ResubscribeFailures(t *testing.T) {
+	ackTimeout := fmt.Errorf("subscribe: %w", domain.ErrAckTimeout)
 	tests := []struct {
 		subscribeErr     error
 		unsubscribeErr   error
 		name             string
 		wantSubs         []string
 		wantUnsubscribed []string
+		// lost は、張り直しの失敗時に接続が切れている (IsConnected が false) ことを表す。
+		lost bool
 	}{
 		{
 			name:             "rejected",
@@ -1714,9 +1717,25 @@ func TestMQTTService_Reconnect_ResubscribeFailures(t *testing.T) {
 			wantUnsubscribed: []string{"a/#"},
 		},
 		{
-			name:         "transient failure",
+			// 接続が切れた失敗は、次の再接続で張り直す。
+			name:         "connection lost",
 			subscribeErr: errors.New("not connected"),
+			lost:         true,
 			wantSubs:     []string{"a/#", "b/#"},
+		},
+		{
+			// 接続が開いたままの失敗は次の再接続が来ないので、残すと購読中と表示されたまま届かない。
+			name:             "fails while connected",
+			subscribeErr:     ackTimeout,
+			wantSubs:         []string{"b/#"},
+			wantUnsubscribed: []string{"a/#"},
+		},
+		{
+			name:             "fails while connected and unsubscribe fails",
+			subscribeErr:     ackTimeout,
+			unsubscribeErr:   ackTimeout,
+			wantSubs:         []string{"b/#"},
+			wantUnsubscribed: []string{"a/#"},
 		},
 	}
 	for _, tc := range tests {
@@ -1739,6 +1758,7 @@ func TestMQTTService_Reconnect_ResubscribeFailures(t *testing.T) {
 					unsubscribed = append(unsubscribed, topics...)
 					return tc.unsubscribeErr
 				},
+				isConnectedFn: func() bool { return !failing.Load() || !tc.lost },
 			}
 			svc := newTestService(t, &mockEmitter{}, rec.factory(client))
 			id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
@@ -1779,11 +1799,13 @@ type pendingConn struct {
 	svc *MQTTService
 	rec *callbackRecorder
 	// release に送った値を client.Connect が返す。送るまでは ctx の打ち切りでしか復帰しない。
-	release      chan error
-	id           string
-	subscribes   []subscribeCall
-	unsubscribes []string
-	mu           sync.Mutex
+	release chan error
+	// subscribeErrs はトピックごとに client.Subscribe が返すエラー (mu で保護)。無ければ成功する。
+	subscribeErrs map[string]error
+	id            string
+	subscribes    []subscribeCall
+	unsubscribes  []string
+	mu            sync.Mutex
 }
 
 // newPendingConn は接続を開始し、確立前の状態で返す。onSubscribe は client.Subscribe の記録後に呼ばれる (nil 可)。
@@ -1803,9 +1825,13 @@ func newPendingConn(t *testing.T, emitter cmn.Emitter, onSubscribe func(subscrib
 			call := subscribeCall{topic: topic, qos: qos}
 			p.mu.Lock()
 			p.subscribes = append(p.subscribes, call)
+			err := p.subscribeErrs[topic]
 			p.mu.Unlock()
 			if onSubscribe != nil {
 				onSubscribe(call)
+			}
+			if err != nil {
+				return err
 			}
 			return p.rec.subscribeFn(topic, qos, handler)
 		},
@@ -1885,6 +1911,30 @@ func TestMQTTService_Subscribe_BeforeConnected_SubscribesOnConnected(t *testing.
 	p.rec.handler(0)("a/x", []byte("1"), 1, false)
 	if n := emitter.count(cmn.EventMQTTMessage); n != 1 {
 		t.Errorf("mqtt:message emitted %d times, want 1", n)
+	}
+}
+
+// 確立前に受け付けた購読が、確立時に接続が開いたまま失敗したら (SUBACK を時間内に確認できない等)、
+// 表示から外して client からも解除する。次の再接続が来ないので、残すと購読中と表示されたまま届かない。
+func TestMQTTService_Subscribe_BeforeConnected_FailsOnConnected(t *testing.T) {
+	p := newPendingConn(t, &mockEmitter{}, nil)
+	p.subscribeErrs = map[string]error{"a/#": fmt.Errorf("subscribe: %w", domain.ErrAckTimeout)}
+	for _, topic := range []string{"a/#", "b/#"} {
+		if err := p.svc.Subscribe(p.id, topic, 1); err != nil {
+			t.Fatalf("Subscribe(%s) before connected: %v", topic, err)
+		}
+	}
+
+	p.establish(t)
+
+	if got := p.subscribeCalls(); !slices.Equal(got, []subscribeCall{{"a/#", 1}, {"b/#", 1}}) {
+		t.Fatalf("subscribed on connected = %v, want both", got)
+	}
+	if subs := p.subscriptions(t); !maps.Equal(subs, map[string]byte{"b/#": 1}) {
+		t.Errorf("subscriptions = %v, want only b/#", subs)
+	}
+	if got := p.unsubscribeCalls(); !slices.Equal(got, []string{"a/#"}) {
+		t.Errorf("client.Unsubscribe called with %v, want [a/#]", got)
 	}
 }
 
