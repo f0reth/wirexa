@@ -709,6 +709,86 @@ func TestPahoClient_Subscribe_AckTimeout_IsNotRouted(t *testing.T) {
 	}
 }
 
+// SUBACK 待ち中に接続が切れても、再接続が確立すれば Subscribe は TokenTimeout を待たずに戻る。
+// paho は ResumeSubs のとき切断で token を完了させないが、再接続時に保存済みの SUBSCRIBE を
+// 同じメッセージ ID の新しい token で送り直し、そのときに元の token をエラー無しで完了させる。
+// 待ち続けると、呼び出し元 (MQTTService) が opMu を持ったままになり、再接続後の onConnected
+// (mqtt:connected の発行と張り直し) が TokenTimeout まで遅れる。
+func TestPahoClient_Subscribe_ConnectionLostWhileWaiting(t *testing.T) {
+	const tokenTimeout = 4 * time.Second
+	var accepted atomic.Int32
+	b := &subscribingBroker{published: make(chan string, 16)}
+	broker := newFakeBroker(t, func(conn net.Conn) {
+		defer conn.Close()
+		first := accepted.Add(1) == 1
+		if readConnect(conn) != nil || writeConnack(conn) != nil {
+			return
+		}
+		if !first {
+			b.conn = conn
+		}
+		for {
+			pkt, err := packets.ReadPacket(conn)
+			if err != nil {
+				return
+			}
+			if first {
+				// 1 本目は SUBSCRIBE を読んだら SUBACK を返さずに切る。
+				if _, ok := pkt.(*packets.SubscribePacket); ok {
+					return
+				}
+				continue
+			}
+			// 再接続した 2 本目は通常どおり応答する。
+			if b.reply(pkt) != nil {
+				return
+			}
+		}
+	})
+	connected := make(chan struct{}, 4)
+	c := NewPahoClientFactory(MQTTClientConfig{ConnectTimeout: time.Second, TokenTimeout: tokenTimeout})(
+		domain.ConnectionConfig{Broker: broker.url(), ClientID: "wirexa-test"},
+		func() { connected <- struct{}{} },
+		func(error) {},
+	)
+	p, ok := c.(*pahoClient)
+	if !ok {
+		t.Fatalf("factory returned %T, want *pahoClient", c)
+	}
+	if err := p.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { p.Disconnect(0) })
+	waitForSignal(t, connected, "onConnected was not called")
+
+	start := time.Now()
+	err := p.Subscribe("sensors/#", 1, noopHandler)
+	elapsed := time.Since(start)
+
+	waitForSignal(t, connected, "the client did not reconnect")
+	if elapsed > tokenTimeout/2 {
+		t.Errorf("Subscribe took %v, want it to return on reconnect instead of waiting for TokenTimeout (%v)", elapsed, tokenTimeout)
+	}
+	// 送り直した SUBSCRIBE の結果は確認できていないが、paho は成功として返す。
+	// MQTTService は再接続時の張り直しで同じ購読をもう一度送り、その結果を確かめる。
+	if err != nil {
+		t.Errorf("Subscribe: %v", err)
+	}
+	if got, want := routedFilters(p), []string{"sensors/#"}; !slices.Equal(got, want) {
+		t.Errorf("routes = %v, want %v", got, want)
+	}
+}
+
+// waitForSignal は ch に値が届くまで待つ。
+func waitForSignal(t *testing.T, ch <-chan struct{}, msg string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(3 * time.Second):
+		t.Fatal(msg)
+	}
+}
+
 // 購読が成立しなかったら、その購読を振り分け先に残さない。
 func TestPahoClient_FailedSubscription_IsNotRouted(t *testing.T) {
 	p, _ := newTestClient("tcp://127.0.0.1:1", MQTTClientConfig{ConnectTimeout: time.Second, TokenTimeout: time.Second})
