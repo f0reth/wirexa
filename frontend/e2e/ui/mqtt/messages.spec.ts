@@ -190,6 +190,32 @@ test("muted subscription hides its messages", async ({ app, fake }) => {
   await expect(app.mqttMessage("after-unmute")).toBeVisible();
 });
 
+test("topic filter can shorten a list that grew after it was first drawn", async ({
+  page,
+  app,
+  fake,
+}) => {
+  const pageErrors = collectPageErrors(page);
+  await subscribe(app, "sensors/#");
+  await fake.emitAll(WailsEvents.mqttMessage, [
+    message("sensors/temp", "t-1"),
+    message("sensors/humidity", "h-1"),
+    message("sensors/temp", "t-2"),
+    message("sensors/humidity", "h-2"),
+  ]);
+  await expect(app.mqttMessages).toHaveCount(4);
+  // 描画済みの一覧に 1 件足してから絞り込む。
+  await fake.emit(WailsEvents.mqttMessage, message("sensors/temp", "t-3"));
+  await expect(app.mqttMessages).toHaveCount(5);
+
+  await page
+    .getByRole("combobox", { name: "Filter by topic" })
+    .selectOption("sensors/temp");
+
+  await expect(app.mqttMessages).toHaveText([/t-1$/, /t-2$/, /t-3$/]);
+  expect(pageErrors).toEqual([]);
+});
+
 test("topic filter narrows the list and Clear empties it", async ({
   page,
   app,

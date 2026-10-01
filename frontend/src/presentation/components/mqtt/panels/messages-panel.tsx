@@ -105,7 +105,6 @@ export function MessagesPanel() {
           >
             <For each={virtualizer.getVirtualItems()}>
               {(virtualItem) => {
-                const msg = () => visibleMessages()[virtualItem.index];
                 return (
                   <div
                     data-index={virtualItem.index}
@@ -113,30 +112,41 @@ export function MessagesPanel() {
                     class={styles.messagesVirtualItem}
                     style={{ transform: `translateY(${virtualItem.start}px)` }}
                   >
-                    <button
-                      type="button"
-                      class={clsx(
-                        styles.messageItem,
-                        selectedMessage()?.id === msg().id &&
-                          styles.messageItemSelected,
+                    {/* 一覧が縮むと (フィルターの切り替えなど)、範囲外になった行は For が
+                        取り除く前に再描画されることがある。メッセージが無い行は中身を描かない。 */}
+                    <Show when={visibleMessages()[virtualItem.index]}>
+                      {(msg) => (
+                        <button
+                          type="button"
+                          class={clsx(
+                            styles.messageItem,
+                            selectedMessage()?.id === msg().id &&
+                              styles.messageItemSelected,
+                          )}
+                          onClick={() => setSelectedMessage(msg())}
+                        >
+                          <div class={styles.messageItemHeader}>
+                            <div class={styles.messageItemLeft}>
+                              <Radio
+                                size={14}
+                                color={getTopicColor(msg().topic)}
+                              />
+                              <span class={styles.messageTopic}>
+                                {msg().topic}
+                              </span>
+                            </div>
+                            <span class={styles.messageTime}>
+                              {formatTime(msg().timestamp)}
+                            </span>
+                          </div>
+                          <p class={styles.messagePayload}>
+                            {msg().payloadBase64
+                              ? `[binary ${base64ByteLength(msg().payload)} bytes]`
+                              : msg().payload}
+                          </p>
+                        </button>
                       )}
-                      onClick={() => setSelectedMessage(msg())}
-                    >
-                      <div class={styles.messageItemHeader}>
-                        <div class={styles.messageItemLeft}>
-                          <Radio size={14} color={getTopicColor(msg().topic)} />
-                          <span class={styles.messageTopic}>{msg().topic}</span>
-                        </div>
-                        <span class={styles.messageTime}>
-                          {formatTime(msg().timestamp)}
-                        </span>
-                      </div>
-                      <p class={styles.messagePayload}>
-                        {msg().payloadBase64
-                          ? `[binary ${base64ByteLength(msg().payload)} bytes]`
-                          : msg().payload}
-                      </p>
-                    </button>
+                    </Show>
                   </div>
                 );
               }}
