@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { type App, expect, test, WailsEvents } from "../../fixtures/ui";
 
 // 接続済みブローカーでの購読・受信・表示と Publish。偽バックエンドは seed.mqttConnect: "ok" で
@@ -37,6 +38,23 @@ function message(topic: string, payload: string, qos: 0 | 1 | 2 = 0) {
 function numbered(from: number, to: number) {
   return Array.from({ length: to - from }, (_, i) =>
     message("bulk/data", `msg-${from + i}`),
+  );
+}
+
+/** 以後に起きた未捕捉の例外のメッセージを集める。fixture は pageerror を検査しない。 */
+function collectPageErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  return errors;
+}
+
+/** 受信の反映 (requestAnimationFrame) とその後の描画が終わるまで待つ。 */
+async function nextFrames(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
   );
 }
 
@@ -247,6 +265,44 @@ test("with Auto enabled the newest message is scrolled into view", async ({
   await fake.emit(WailsEvents.mqttMessage, message("bulk/data", "msg-50"));
   await expect(app.mqttMessage("msg-50")).toBeInViewport();
   await expect(page.getByText("msg-50", { exact: true })).toHaveCount(2);
+});
+
+test("with Auto and a topic filter, a message outside the filter leaves the selection alone", async ({
+  page,
+  app,
+  fake,
+}) => {
+  const pageErrors = collectPageErrors(page);
+  await subscribe(app, "sensors/#");
+  await fake.emitAll(WailsEvents.mqttMessage, [
+    message("sensors/temp", "t-1"),
+    message("sensors/humidity", "h-1"),
+  ]);
+  await expect(app.mqttMessage("h-1")).toBeVisible();
+
+  await app
+    .mqttSection("Messages")
+    .getByRole("button", { name: "Auto", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Filter by topic" })
+    .selectOption("sensors/temp");
+
+  // フィルター後の末尾を選び、一覧と詳細の両方に出す。
+  await expect(app.mqttMessage("h-1")).toBeHidden();
+  await expect(page.getByText("t-1", { exact: true })).toHaveCount(2);
+
+  // フィルター外の受信は一覧にも詳細にも出ない。
+  await fake.emit(WailsEvents.mqttMessage, message("sensors/humidity", "h-2"));
+  await nextFrames(page);
+  await expect(page.getByText("h-2", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("t-1", { exact: true })).toHaveCount(2);
+
+  // フィルターに一致する受信には追従し続ける。
+  await fake.emit(WailsEvents.mqttMessage, message("sensors/temp", "t-2"));
+  await expect(page.getByText("t-2", { exact: true })).toHaveCount(2);
+  await expect(page.getByText("h-2", { exact: true })).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
 });
 
 // ── 観点D: 5000 件の上限 ─────────────────────────────────────────────────────

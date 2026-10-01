@@ -7,6 +7,7 @@ import {
   createMessagesState,
   filterMessagesByTopic,
 } from "./messages";
+import { makeSubscription } from "./subscription";
 
 function makeMessage(topic: string, id = topic): MqttMessageView {
   return {
@@ -250,6 +251,110 @@ describe("createMessagesState", () => {
     expect(h.state.messages()).toEqual([]);
     expect(h.state.selectedMessage()).toBeNull();
     expect(h.state.autoFollow()).toBe(false);
+    h.dispose();
+  });
+});
+
+describe("createMessagesState topic filter", () => {
+  /** sensors/# を購読し、temp と hum を 1 件ずつ受信済みの接続。 */
+  function setupSensors(over: Partial<ConnectionStateExt> = {}) {
+    return setupMessages([
+      makeConnection("c1", {
+        subscriptions: [makeSubscription("sensors/#", 0)],
+        messages: [
+          makeMessage("sensors/temp", "t1"),
+          makeMessage("sensors/hum", "h1"),
+        ],
+        ...over,
+      }),
+    ]);
+  }
+
+  it("lists subscribed topics and the concrete topics they matched", () => {
+    const h = setupSensors();
+
+    expect(h.state.filterTopics()).toEqual([
+      "sensors/#",
+      "sensors/hum",
+      "sensors/temp",
+    ]);
+    h.dispose();
+  });
+
+  it("returns the messages themselves while no filter is set", () => {
+    const h = setupSensors();
+
+    expect(h.state.visibleMessages()).toBe(h.state.messages());
+
+    h.state.setTopicFilter("sensors/temp");
+    expect(h.state.visibleMessages().map((m) => m.id)).toEqual(["t1"]);
+    h.dispose();
+  });
+
+  it("keeps the selection when a message outside the filter arrives", () => {
+    const h = setupSensors({ autoFollow: true });
+    h.state.setTopicFilter("sensors/temp");
+    expect(h.state.selectedMessage()?.id).toBe("t1");
+    h.updateConnection.mockClear();
+
+    // 追従先が全メッセージの末尾だと、ここで選択がフィルター外の h2 に移る。
+    expect(() => h.push("c1", makeMessage("sensors/hum", "h2"))).not.toThrow();
+
+    expect(h.state.selectedMessage()?.id).toBe("t1");
+    // push 自身の 1 回だけで、追従 effect は書き込まない。
+    expect(h.updateConnection).toHaveBeenCalledTimes(1);
+    h.dispose();
+  });
+
+  it("follows the newest message matching the filter", () => {
+    const h = setupSensors({ autoFollow: true });
+    h.state.setTopicFilter("sensors/temp");
+
+    h.push("c1", makeMessage("sensors/temp", "t2"));
+
+    expect(h.state.selectedMessage()?.id).toBe("t2");
+    h.dispose();
+  });
+
+  it("follows the newest message of all again once the filter is cleared", () => {
+    const h = setupSensors({ autoFollow: true });
+    h.state.setTopicFilter("sensors/temp");
+    expect(h.state.selectedMessage()?.id).toBe("t1");
+
+    h.state.setTopicFilter("");
+
+    expect(h.state.selectedMessage()?.id).toBe("h1");
+    h.dispose();
+  });
+
+  it("keeps the selection while no message matches the filter", () => {
+    const h = setupMessages([
+      makeConnection("c1", {
+        subscriptions: [
+          makeSubscription("sensors/#", 0),
+          makeSubscription("alerts/fire", 0),
+        ],
+        messages: [makeMessage("sensors/temp", "t1")],
+        autoFollow: true,
+      }),
+    ]);
+    expect(h.state.selectedMessage()?.id).toBe("t1");
+
+    h.state.setTopicFilter("alerts/fire");
+
+    expect(h.state.visibleMessages()).toEqual([]);
+    expect(h.state.selectedMessage()?.id).toBe("t1");
+    h.dispose();
+  });
+
+  it("clears a filter that is no longer among the choices", () => {
+    const h = setupSensors();
+    h.state.setTopicFilter("sensors/temp");
+
+    h.updateConnection("c1", (s) => ({ ...s, subscriptions: [] }));
+
+    expect(h.state.topicFilter()).toBe("");
+    expect(h.state.visibleMessages()).toBe(h.state.messages());
     h.dispose();
   });
 });

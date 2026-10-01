@@ -1,4 +1,4 @@
-import { createEffect, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, untrack } from "solid-js";
 import { topicMatches } from "../../domain/mqtt/topic";
 import type { ConnectionStateExt, MqttMessageView } from "./connections";
 
@@ -54,12 +54,30 @@ export function createMessagesState(
   const selectedMessage = () => activeConnection()?.selectedMessage ?? null;
   const autoFollow = () => activeConnection()?.autoFollow ?? false;
 
-  // autoFollow が true のとき selectedMessage を末尾に追従させる
+  // フィルターは接続ごとではなく、パネルで 1 つの値として持つ。
+  const [topicFilter, setTopicFilter] = createSignal("");
+  const filterTopics = createMemo(() =>
+    collectFilterTopics(activeConnection()?.subscriptions ?? [], messages()),
+  );
+  const visibleMessages = createMemo(() =>
+    filterMessagesByTopic(messages(), topicFilter()),
+  );
+
+  // 選択肢から消えたフィルターは解除する
   createEffect(() => {
-    const msgs = messages();
+    const filter = topicFilter();
+    if (filter && !filterTopics().includes(filter)) setTopicFilter("");
+  });
+
+  // autoFollow が true のとき selectedMessage を表示中の一覧の末尾に追従させる。
+  // 追従先を全メッセージの末尾にすると、フィルター中に一覧に無いメッセージを選んでしまう。
+  // 選択を書き換える effect はここだけにする（追従先の違う effect が他にあると、
+  // 互いに書き換え続けて止まらなくなる）。
+  createEffect(() => {
+    const visible = visibleMessages();
     const follow = autoFollow();
-    if (!follow || msgs.length === 0) return;
-    const lastMsg = msgs[msgs.length - 1];
+    if (!follow || visible.length === 0) return;
+    const lastMsg = visible[visible.length - 1];
     const connId = activeConnection()?.connectionId;
     if (!connId) return;
     // untrack で selectedMessage への依存を切り、追従後の再実行を防ぐ
@@ -96,6 +114,10 @@ export function createMessagesState(
 
   return {
     messages,
+    visibleMessages,
+    topicFilter,
+    setTopicFilter,
+    filterTopics,
     selectedMessage,
     autoFollow,
     setSelectedMessage,

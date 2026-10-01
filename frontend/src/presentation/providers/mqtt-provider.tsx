@@ -79,6 +79,11 @@ export interface SubscribeContextValue {
 // --- MqttMessagesContext ---
 export interface MessagesContextValue {
   messages: Accessor<MqttMessageView[]>;
+  /** トピックフィルターを通した、一覧に表示するメッセージ。 */
+  visibleMessages: Accessor<MqttMessageView[]>;
+  topicFilter: Accessor<string>;
+  setTopicFilter: Setter<string>;
+  filterTopics: Accessor<string[]>;
   selectedMessage: Accessor<MqttMessageView | null>;
   autoFollow: Accessor<boolean>;
   setSelectedMessage: (msg: MqttMessageView | null) => void;

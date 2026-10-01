@@ -1,15 +1,8 @@
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { clsx } from "clsx";
 import { Radio, X, Zap } from "lucide-solid";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import {
-  collectFilterTopics,
-  filterMessagesByTopic,
-} from "../../../../application/mqtt/messages";
-import {
-  useMqttMessages,
-  useMqttSubscribe,
-} from "../../../providers/mqtt-provider";
+import { createEffect, For, Show } from "solid-js";
+import { useMqttMessages } from "../../../providers/mqtt-provider";
 import { formatTime } from "../../../utils/format";
 import { base64ByteLength } from "../../shared/hex-view";
 import styles from "../messages.module.css";
@@ -18,38 +11,22 @@ import { getTopicColor } from "../utils";
 
 export function MessagesPanel() {
   const {
-    messages,
+    visibleMessages,
+    topicFilter,
+    setTopicFilter,
+    filterTopics,
     selectedMessage,
     setSelectedMessage,
     autoFollow,
     setAutoFollow,
     clearMessages,
   } = useMqttMessages();
-  const { subscriptions } = useMqttSubscribe();
-
-  const [topicFilter, setTopicFilter] = createSignal("");
-
-  const uniqueTopics = createMemo(() =>
-    collectFilterTopics(subscriptions(), messages()),
-  );
-
-  // Reset filter when the selected topic disappears from subscriptions
-  createEffect(() => {
-    const filter = topicFilter();
-    if (filter && !uniqueTopics().includes(filter)) {
-      setTopicFilter("");
-    }
-  });
-
-  const filteredMessages = createMemo(() =>
-    filterMessagesByTopic(messages(), topicFilter()),
-  );
 
   let scrollRef!: HTMLDivElement;
 
   const virtualizer = createVirtualizer({
     get count() {
-      return filteredMessages().length;
+      return visibleMessages().length;
     },
     getScrollElement: () => scrollRef,
     estimateSize: () => 80,
@@ -59,21 +36,12 @@ export function MessagesPanel() {
     measureElement: (el) => el?.getBoundingClientRect().height ?? 80,
   });
 
+  // 選択の追従は application 層 (createMessagesState) が行う。ここはスクロールだけを追従させる。
   createEffect(() => {
-    if (autoFollow() && filteredMessages().length > 0) {
-      virtualizer.scrollToIndex(filteredMessages().length - 1, {
+    if (autoFollow() && visibleMessages().length > 0) {
+      virtualizer.scrollToIndex(visibleMessages().length - 1, {
         align: "end",
       });
-    }
-  });
-
-  // フィルター有効時は最後のフィルター済みメッセージを選択する
-  createEffect(() => {
-    const filter = topicFilter();
-    if (!filter || !autoFollow()) return;
-    const filtered = filteredMessages();
-    if (filtered.length > 0) {
-      setSelectedMessage(filtered[filtered.length - 1]);
     }
   });
 
@@ -89,7 +57,7 @@ export function MessagesPanel() {
             title="Filter by topic"
           >
             <option value="">All topics</option>
-            <For each={uniqueTopics()}>
+            <For each={filterTopics()}>
               {(topic) => <option value={topic}>{topic}</option>}
             </For>
           </select>
@@ -124,7 +92,7 @@ export function MessagesPanel() {
         class={styles.messagesScrollArea}
       >
         <Show
-          when={filteredMessages().length > 0}
+          when={visibleMessages().length > 0}
           fallback={
             <div class={base.listPadding}>
               <p class={base.emptyText}>No messages yet</p>
@@ -137,7 +105,7 @@ export function MessagesPanel() {
           >
             <For each={virtualizer.getVirtualItems()}>
               {(virtualItem) => {
-                const msg = () => filteredMessages()[virtualItem.index];
+                const msg = () => visibleMessages()[virtualItem.index];
                 return (
                   <div
                     data-index={virtualItem.index}
