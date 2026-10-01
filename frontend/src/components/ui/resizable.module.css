@@ -2,6 +2,9 @@
   display: flex;
   height: 100%;
   width: 100%;
+  /* 中身の最小コンテンツ幅（長い 1 行の <pre> など）で flex の親からはみ出さないようにする */
+  min-width: 0;
+  min-height: 0;
 }
 
 .panelGroupHorizontal {

@@ -319,6 +319,31 @@ test("message rows stay contiguous whatever the payload length", async ({
   expect(pageErrors).toEqual([]);
 });
 
+test("selecting a long single-line payload does not widen the window", async ({
+  page,
+  app,
+  fake,
+}) => {
+  const pageErrors = collectPageErrors(page);
+  await subscribe(app, "sensors/temp");
+  // 改行も空白も無く、詳細の <pre> で折り返されないペイロード。
+  const payload = "x".repeat(400);
+  await fake.emit(WailsEvents.mqttMessage, message("sensors/temp", payload));
+
+  await app.mqttMessage(payload).click();
+  await expect(page.getByText(payload, { exact: true })).toHaveCount(2);
+
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth,
+    ),
+  ).toBeLessThanOrEqual(0);
+  await expect(
+    app.mqttSection("Messages").getByRole("button", { name: "Clear" }),
+  ).toBeInViewport({ ratio: 1 });
+  expect(pageErrors).toEqual([]);
+});
+
 // ── 観点H: Auto (最新メッセージへの追従) ─────────────────────────────────────
 
 test("with Auto enabled the newest message is scrolled into view", async ({
