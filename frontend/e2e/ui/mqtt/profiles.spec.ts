@@ -1,7 +1,7 @@
 import { expect, test } from "../../fixtures/ui";
 
 // ブローカープロファイルの編集・選択・接続失敗。偽バックエンドの Connect は seed.mqttConnect を
-// 指定しない限り必ず "connection refused" で失敗するので、未接続のまま書ける範囲を扱う。
+// "ok" にしない限り失敗するので、未接続のまま書ける範囲を扱う。
 
 const ALPHA = {
   id: "profile-alpha",
@@ -152,6 +152,8 @@ test.describe("editing a broker", () => {
 });
 
 // ── 観点E: 接続失敗のトースト ────────────────────────────────────────────────
+// 既定の偽バックエンドは実バックエンドと同じく、Connect で接続 ID を返してから
+// mqtt:connection-failed で失敗を知らせる。
 
 test.describe("connect failure", () => {
   test.use({ seed: { mqttProfiles: [ALPHA] } });
@@ -165,12 +167,17 @@ test.describe("connect failure", () => {
     await app.brokerConnectButton.click();
 
     await expect(
-      page.getByRole("alert").filter({ hasText: "Failed to reconnect" }),
+      page.getByRole("alert").filter({ hasText: "MQTT connection failed" }),
     ).toContainText("connection refused");
-    // 未接続のまま、もう一度押せる。
+    // 未接続のまま、もう一度押せる。失敗した接続はバックエンドに残らない。
     await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
     await expect(app.brokerConnectButton).toBeEnabled();
     expect(await fake.calls("Connect")).toBe(1);
+    expect((await fake.snapshot()).mqttConnections).toEqual([]);
+
+    await app.brokerConnectButton.click();
+    await expect.poll(() => fake.calls("Connect")).toBe(2);
+    await expect(app.brokerConnectButton).toBeEnabled();
     expect((await fake.snapshot()).mqttConnections).toEqual([]);
   });
 
@@ -186,7 +193,7 @@ test.describe("connect failure", () => {
 
     await expect(dialog).toBeHidden();
     await expect(
-      page.getByRole("alert").filter({ hasText: "Failed to connect" }),
+      page.getByRole("alert").filter({ hasText: "MQTT connection failed" }),
     ).toContainText("connection refused");
     // 保存は接続より先に済んでいる。
     await expect(app.broker("Unreachable")).toContainText(
@@ -205,8 +212,35 @@ test.describe("connect failure", () => {
 
     const toast = page
       .getByRole("alert")
-      .filter({ hasText: "Failed to reconnect" });
+      .filter({ hasText: "MQTT connection failed" });
     await expect(toast).toBeVisible();
+    await toast.getByRole("button", { name: "Dismiss" }).click();
+    await expect(toast).toBeHidden();
+  });
+});
+
+// Connect の RPC 自体が失敗する場合 (実バックエンドでは終了処理中や入力の検証エラー)。
+test.describe("connect rejected", () => {
+  test.use({ seed: { mqttProfiles: [ALPHA], mqttConnect: "reject" } });
+
+  test("rejected mqtt connect shows an error toast that can be dismissed", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.selectBroker(ALPHA.name);
+    await app.brokerConnectButton.click();
+
+    const toast = page
+      .getByRole("alert")
+      .filter({ hasText: "Failed to reconnect" });
+    await expect(toast).toContainText("connection refused");
+    // 未接続のまま、もう一度押せる。
+    await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
+    await expect(app.brokerConnectButton).toBeEnabled();
+    expect(await fake.calls("Connect")).toBe(1);
+    expect((await fake.snapshot()).mqttConnections).toEqual([]);
+
     await toast.getByRole("button", { name: "Dismiss" }).click();
     await expect(toast).toBeHidden();
   });

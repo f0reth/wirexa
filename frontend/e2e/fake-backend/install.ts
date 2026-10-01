@@ -670,7 +670,11 @@ const MqttHandler = {
     return clone(saved);
   }),
 
+  // Go 側と同じく、未知の ID は NotFoundError の文言で失敗させる。
   DeleteProfile: mutates("DeleteProfile", (id: string) => {
+    if (!db.mqttProfiles.some((p) => p.id === id)) {
+      throw new Error(`profile not found: ${id}`);
+    }
     db.mqttProfiles = db.mqttProfiles.filter((p) => p.id !== id);
   }),
 
@@ -678,11 +682,13 @@ const MqttHandler = {
     clone(db.mqttConnections),
   ),
 
-  // 既定では繋がるブローカーが無いものとして失敗させる (UI は offline 状態を描く)。
-  // seed.mqttConnect が "ok" なら、Go の MQTTService.Connect
-  // (internal/application/mqtt/service.go) と同じく接続 ID を先に返し、確立はあとから
-  // mqtt:connected で知らせる。UI は戻り値で接続を作ってからイベントを受けるので、
+  // Go の MQTTService.Connect (internal/application/mqtt/service.go) と同じく接続 ID を先に返し、
+  // 結果はあとからイベントで知らせる。UI は戻り値で接続を作ってからイベントを受けるので、
   // 戻り値が届いたあと (次のタスク) に発火する。
+  // - 既定: 繋がるブローカーが無いものとして、接続を消してから mqtt:connection-failed を出す
+  //   (Go は失敗した接続を一覧から外す)。
+  // - seed.mqttConnect が "ok": 確立して mqtt:connected を出す。
+  // - seed.mqttConnect が "reject": RPC 自体を失敗させる (Go では終了処理中の Connect に当たる)。
   Connect: counted(
     "Connect",
     async (config: {
@@ -691,11 +697,11 @@ const MqttHandler = {
       profileId: string;
       useTLS: boolean;
     }): Promise<string> => {
-      if (seed.mqttConnect !== "ok") throw new Error("connection refused");
       if (config.broker === "") {
         throw validationError("broker URL", "is required");
       }
       validateBrokerScheme(config.broker, config.useTLS);
+      if (seed.mqttConnect === "reject") throw new Error("connection refused");
       const conn: ConnectionStatus = {
         id: newId("conn"),
         name: config.name,
@@ -708,9 +714,20 @@ const MqttHandler = {
       db.mqttConnections.push(conn);
       save();
       setTimeout(() => {
-        // 確立より先に切断された接続はイベントを出さない (Go の onConnected と同じ)。
+        // 結果が出るより先に切断された接続はイベントを出さない (Go の runConnect / onConnected と同じ)。
         const live = db.mqttConnections.find((c) => c.id === conn.id);
         if (!live) return;
+        if (seed.mqttConnect !== "ok") {
+          db.mqttConnections = db.mqttConnections.filter(
+            (c) => c.id !== conn.id,
+          );
+          save();
+          emitEvent(WailsEvents.mqttConnectionFailed, {
+            connectionId: conn.id,
+            error: "connection refused",
+          });
+          return;
+        }
         live.connected = true;
         save();
         emitEvent(WailsEvents.mqttConnected, { connectionId: conn.id });

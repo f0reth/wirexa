@@ -33,10 +33,12 @@ export interface FakeSeed {
   udpTargets?: Array<{ id?: string; name: string; host: string; port: number }>;
   mqttProfiles?: Array<{ id?: string; name: string; broker?: string }>;
   /**
-   * "ok" なら MQTT の Connect を成功させ、続けて mqtt:connected を発火する。
-   * 未設定なら Connect は必ず失敗する (繋がるブローカーが無い状態)。
+   * MQTT の Connect の結果。
+   * - 未設定: 接続 ID を返してから mqtt:connection-failed を発火する (繋がるブローカーが無い状態)。
+   * - "ok": 接続 ID を返してから mqtt:connected を発火する。
+   * - "reject": Connect の RPC 自体を失敗させる。
    */
-  mqttConnect?: "ok";
+  mqttConnect?: "ok" | "reject";
   /** SendRequest が返すレスポンス (既定値に対する上書き)。 */
   httpResponse?: Partial<HttpResponse>;
   /** SendRequest が解決するまでの遅延 (ms)。ローディング状態の検証に使う。 */
