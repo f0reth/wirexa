@@ -1,7 +1,14 @@
 // Package mqttdomain は MQTT ドメイン層のポートインターフェースを定義する。
 package mqttdomain
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrAckTimeout はブローカーの応答 (PUBACK・SUBACK・UNSUBACK など) を時間内に確認できなかったことを表す。
+// ブローカーが要求を処理したかどうかは分からない。
+var ErrAckTimeout = errors.New("no acknowledgement from broker in time")
 
 // MessageHandler はサブスクライブしたトピックのメッセージ受信時に呼ばれるコールバック。
 // payload は生バイト列で渡す（バイナリペイロードを application 層まで保持するため）。
@@ -20,7 +27,9 @@ type BrokerClient interface {
 	Connect(ctx context.Context) error
 	// Disconnect は接続を閉じる。quiesce はミリ秒単位の待機時間。
 	Disconnect(quiesce uint)
-	// Publish は指定トピックへメッセージを送信する。
+	// Publish は指定トピックへメッセージを送信する。接続が開いていなければ (自動再接続中を含む)
+	// 送らずにエラーを返す。ブローカーの応答を時間内に確認できなければ ErrAckTimeout を返す
+	// (メッセージは再接続後に届き得る)。
 	Publish(topic string, qos byte, retained bool, payload string) error
 	// Subscribe は指定トピックパターンの購読を開始し、受信時に handler を呼ぶ。
 	// ブローカーが購読を拒否した場合は ErrSubscriptionRejected を返す。

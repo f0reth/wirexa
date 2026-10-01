@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -229,9 +230,16 @@ func (p *pahoClient) Disconnect(quiesce uint) {
 }
 
 func (p *pahoClient) Publish(topic string, qos byte, retained bool, payload string) error {
+	// 自動再接続中の paho は QoS 0 を送らずに成功させ、QoS 1/2 を保存して再接続後に送る。
+	// 呼び出し元に返した結果と食い違うので、接続が開いていなければ送らない。
+	// 確認の直後に切断された場合までは防げない (起きる窓を狭めるだけ)。
+	if !p.client.IsConnectionOpen() {
+		return errors.New("not connected")
+	}
 	token := p.client.Publish(topic, qos, retained, payload)
 	if !token.WaitTimeout(p.tokenTimeout) {
-		return errors.New("publish timed out")
+		// paho のストアに保存されたメッセージは取り消せないので、再接続後に送られ得る。
+		return fmt.Errorf("publish was not acknowledged in time (it may still be delivered after reconnecting): %w", domain.ErrAckTimeout)
 	}
 	return token.Error()
 }

@@ -331,8 +331,10 @@ func TestNewPahoClientFactory_WithoutTLSKeepsScheme(t *testing.T) {
 	}
 }
 
-// 確立済みの接続をブローカーが切ると、factory に渡した onConnectionLost がエラー付きで呼ばれる。
-func TestPahoClient_ConnectionLost_InvokesCallback(t *testing.T) {
+// connectAndLose は、1 本目の接続だけ受理して少し後に切り、自動再接続の試行は受け付けない偽ブローカーに
+// 接続し、onConnectionLost が受け取った原因を返す。返した client は自動再接続を試み続けている。
+func connectAndLose(t *testing.T) (*pahoClient, error) {
+	t.Helper()
 	var accepted atomic.Int32
 	broker := newFakeBroker(t, func(conn net.Conn) {
 		defer conn.Close()
@@ -358,15 +360,68 @@ func TestPahoClient_ConnectionLost_InvokesCallback(t *testing.T) {
 	if err := p.Connect(context.Background()); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
-	defer p.Disconnect(0)
+	t.Cleanup(func() { p.Disconnect(0) })
 
 	select {
 	case err := <-lost:
-		if err == nil {
-			t.Error("onConnectionLost should receive the cause")
-		}
+		return p, err
 	case <-time.After(3 * time.Second):
 		t.Fatal("onConnectionLost was not called after the broker closed the connection")
+		return nil, nil
+	}
+}
+
+// 確立済みの接続をブローカーが切ると、factory に渡した onConnectionLost がエラー付きで呼ばれる。
+func TestPahoClient_ConnectionLost_InvokesCallback(t *testing.T) {
+	if _, err := connectAndLose(t); err == nil {
+		t.Error("onConnectionLost should receive the cause")
+	}
+}
+
+// 接続が切れて自動再接続している間の Publish は、送らずにすぐエラーを返す。paho は再接続中の QoS 0 を
+// 送らずに成功させ、QoS 1/2 を保存して再接続後に送るので、そのままでは返した結果と食い違う。
+func TestPahoClient_Publish_WhileReconnecting_ReturnsError(t *testing.T) {
+	p, _ := connectAndLose(t)
+
+	for _, qos := range []byte{0, 1} {
+		start := time.Now()
+		err := p.Publish("sensors/temp", qos, false, "x")
+		if err == nil {
+			t.Errorf("Publish(qos %d) while reconnecting should fail", qos)
+		}
+		// TokenTimeout (1 秒) まで待たない (QoS 1 を保存して応答を待っていない)。
+		if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+			t.Errorf("Publish(qos %d) took %v, want an immediate error", qos, elapsed)
+		}
+	}
+}
+
+// PUBACK が時間内に返らなければ、送達を確認できなかったことが分かるエラーを返す。
+func TestPahoClient_Publish_AckTimeout(t *testing.T) {
+	_, p := newSubscribingBroker(t)
+
+	err := p.Publish("sensors/temp", 1, false, "x")
+
+	if !errors.Is(err, domain.ErrAckTimeout) {
+		t.Errorf("err = %v, want ErrAckTimeout", err)
+	}
+}
+
+// 接続が開いていれば Publish はブローカーに届く。
+func TestPahoClient_Publish_Connected(t *testing.T) {
+	b, p := newSubscribingBroker(t)
+
+	if err := p.Publish("sensors/temp", 0, false, "x"); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	select {
+	case topic := <-b.published:
+		if topic != "sensors/temp" {
+			t.Errorf("broker received %q, want sensors/temp", topic)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("broker did not receive the PUBLISH")
 	}
 }
 
@@ -376,14 +431,19 @@ func TestPahoClient_ConnectionLost_InvokesCallback(t *testing.T) {
 // 重なる購読ごとに PUBLISH を 1 件ずつ送るブローカーの再現には testutil.DuplicatingBroker を使う。
 type subscribingBroker struct {
 	conn net.Conn
+	// published は client から受信した PUBLISH のトピックを届いた順に流す (PUBACK は返さない)。
+	published chan string
 	// writeMu は応答 (接続の goroutine) と publish (テストの goroutine) の書き込みを直列化する。
 	writeMu sync.Mutex
+	// silentSubscribe / silentUnsubscribe が true の間は、SUBSCRIBE / UNSUBSCRIBE に応答しない。
+	silentSubscribe   atomic.Bool
+	silentUnsubscribe atomic.Bool
 }
 
 // newSubscribingBroker は偽ブローカーを起動して pahoClient を接続し、ブローカー側の接続を返す。
 func newSubscribingBroker(t *testing.T) (*subscribingBroker, *pahoClient) {
 	t.Helper()
-	b := &subscribingBroker{}
+	b := &subscribingBroker{published: make(chan string, 16)}
 	ready := make(chan struct{})
 	broker := newFakeBroker(t, func(conn net.Conn) {
 		defer conn.Close()
@@ -415,11 +475,21 @@ func newSubscribingBroker(t *testing.T) (*subscribingBroker, *pahoClient) {
 	return b, p
 }
 
-// reply は SUBSCRIBE と UNSUBSCRIBE に成功の応答を返す。それ以外のパケットは読み捨てる。
+// reply は SUBSCRIBE と UNSUBSCRIBE に成功の応答を返す (silentSubscribe / silentUnsubscribe の間は返さない)。
+// PUBLISH は記録するだけで応答しない。それ以外のパケットは読み捨てる。
 func (b *subscribingBroker) reply(pkt packets.ControlPacket) error {
 	var ack packets.ControlPacket
 	switch req := pkt.(type) {
+	case *packets.PublishPacket:
+		select {
+		case b.published <- req.TopicName:
+		default:
+		}
+		return nil
 	case *packets.SubscribePacket:
+		if b.silentSubscribe.Load() {
+			return nil
+		}
 		suback, ok := packets.NewControlPacket(packets.Suback).(*packets.SubackPacket)
 		if !ok {
 			return errors.New("unexpected packet type")
@@ -428,6 +498,9 @@ func (b *subscribingBroker) reply(pkt packets.ControlPacket) error {
 		suback.ReturnCodes = req.Qoss
 		ack = suback
 	case *packets.UnsubscribePacket:
+		if b.silentUnsubscribe.Load() {
+			return nil
+		}
 		unsuback, ok := packets.NewControlPacket(packets.Unsuback).(*packets.UnsubackPacket)
 		if !ok {
 			return errors.New("unexpected packet type")
