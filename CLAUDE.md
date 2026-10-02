@@ -69,6 +69,7 @@ Both sides follow the same layered (ports & adapters) structure.
   - ポートの置き場所は用途で分かれる。localStorage などの保存は `domain/<proto>/ports.ts`（例: `PresetStorage`、`ConnectionPersistence`、`ThemeStorage`）、RPC は使う側の application ファイルが定義する `XxxApi` インターフェース（例: `CollectionsApi`、`MqttConnectionApi`、`UdpSendApi`）。infrastructure のモジュールは `XxxApi` を import せず構造的に満たし、Provider がそのまま注入する（例: `udp-provider.tsx` の `udpClient`）。
   - `application/` から `infrastructure/` と `wailsjs/` を import しない（biome の `noRestrictedImports` がエラーにする）。外部作用は上記の置き場所にポートを定義し、合成ルート（`presentation/providers/*.tsx`、`App.tsx`）から注入する。Wails や保存領域に依存せず Web 標準 API だけで完結するヘルパー（例: `generateId`）は `shared/` に置き、どの層からも import してよい。
   - `infrastructure/` から `application/` への import（`logger/client.ts` → `application/logger`、`openapi/parser.ts` → `application/openapi/ports`）も既存のものだけで、増やさない。
+  - `presentation/` の effect から application の状態を書き戻さない（ユーザー操作のイベントハンドラから setter を呼ぶのはよい）。フィルター後の一覧のような派生状態と、それに追従する effect は application 層に置き、1 つの状態を書く effect は 1 か所にする（追従先の違う effect が 2 つあると、互いに書き換え続けて止まらなくなる）。
 
 ### Backend (`internal/`)
 
