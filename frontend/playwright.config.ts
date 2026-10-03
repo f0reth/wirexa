@@ -16,7 +16,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env.CI ? 2 : undefined,
   // CI では list も出し、末尾の集計 (N flaky) をログで読めるようにする。retries があるので、
   // ジョブの成否だけでは不安定なテストを見逃す。
   reporter: process.env.CI ? [["list"], ["html"]] : "html",
