@@ -190,6 +190,46 @@ test("muted subscription hides its messages", async ({ app, fake }) => {
   await expect(app.mqttMessage("after-unmute")).toBeVisible();
 });
 
+// 共有購読のメッセージは、接頭辞の無いトピックで届く (バックエンドは接頭辞を外して振り分ける)。
+test("shared subscription shows its messages", async ({ app, fake }) => {
+  await subscribe(app, "$share/group/sensors/#");
+
+  await fake.emitAll(WailsEvents.mqttMessage, [
+    message("other/topic", "not-subscribed"),
+    message("sensors/temp", "shared-reading"),
+  ]);
+
+  await expect(app.mqttMessage("shared-reading")).toContainText(
+    "sensors/temp",
+  );
+  await expect(app.mqttMessage("not-subscribed")).toHaveCount(0);
+});
+
+// 張り直しでバックエンドが外した購読 (mqtt:subscription-dropped) は、行が消えて通知が出る。
+// 張り直しの拒否は偽バックエンドでは起こせないので、Go の resubscribe が発火するイベントを流して模す。
+test("dropped subscription is removed and notified", async ({
+  page,
+  app,
+  fake,
+}) => {
+  await subscribe(app, "sensors/#");
+  await subscribe(app, "alerts/fire");
+
+  await fake.emit(WailsEvents.mqttSubscriptionDropped, {
+    connectionId,
+    topic: "sensors/#",
+    error: "subscription rejected by broker",
+  });
+
+  await expect(app.mqttSubscription("sensors/#")).toBeHidden();
+  await expect(app.mqttSubscription("alerts/fire")).toBeVisible();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Subscription to sensors/# was dropped" }),
+  ).toContainText("subscription rejected by broker");
+});
+
 test("topic filter can shorten a list that grew after it was first drawn", async ({
   page,
   app,
