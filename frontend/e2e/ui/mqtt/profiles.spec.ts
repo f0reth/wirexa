@@ -322,7 +322,10 @@ test.describe("connect failure", () => {
     await app.brokerConnectButton.click();
     await expect.poll(() => fake.calls("Connect")).toBe(2);
     await expect(app.brokerConnectButton).toBeEnabled();
-    expect((await fake.snapshot()).mqttConnections).toEqual([]);
+    // 偽バックエンドは失敗した接続を少し遅れて取り消すので、消えるまで待つ。
+    await expect
+      .poll(async () => (await fake.snapshot()).mqttConnections)
+      .toEqual([]);
   });
 
   test("Save & Connect keeps the new profile when the connection fails", async ({
