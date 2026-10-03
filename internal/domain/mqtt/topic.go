@@ -1,7 +1,6 @@
 package mqttdomain
 
 import (
-	"errors"
 	"strings"
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
@@ -9,9 +8,6 @@ import (
 
 // maxTopicBytes は MQTT のトピック (UTF-8 エンコード文字列) の最大バイト数。
 const maxTopicBytes = 65535
-
-// ErrSubscriptionRejected はブローカーが購読を拒否した (SUBACK が失敗コードを返した) ことを表す。
-var ErrSubscriptionRejected = errors.New("subscription rejected by broker")
 
 // ValidateTopicName は publish 先のトピック名を検証する (MQTT 3.1.1 4.7)。
 // トピック名にはワイルドカード (+ と #) を含められない。ブローカーは違反をプロトコル違反として
@@ -58,23 +54,4 @@ func validateTopicString(field, topic string) error {
 		return &cmn.ValidationError{Field: field, Message: "must not contain the null character"}
 	}
 	return nil
-}
-
-// ValidateBrokerScheme は、useTLS のときに Broker URL のスキームが TLS で接続できるものかを検証する。
-// TLS のスキーム (ssl・tls・mqtts・wss) と、TLS のスキームに変えられるもの (tcp・mqtt・ws・スキーム無し) を通す。
-// スキームの大文字小文字は区別しない。それ以外のスキームは平文で繋がるか接続に失敗するだけなので拒否する。
-// useTLS でなければ何も検証しない。
-func ValidateBrokerScheme(broker string, useTLS bool) error {
-	if !useTLS {
-		return nil
-	}
-	scheme, _, ok := strings.Cut(broker, "://")
-	if !ok {
-		return nil
-	}
-	switch strings.ToLower(scheme) {
-	case "tcp", "mqtt", "ws", "ssl", "tls", "mqtts", "wss":
-		return nil
-	}
-	return &cmn.ValidationError{Field: "broker URL", Message: "scheme cannot be used with TLS"}
 }

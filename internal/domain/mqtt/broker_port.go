@@ -1,4 +1,3 @@
-// Package mqttdomain は MQTT ドメイン層のポートインターフェースを定義する。
 package mqttdomain
 
 import (
@@ -9,6 +8,9 @@ import (
 // ErrAckTimeout はブローカーの応答 (PUBACK・SUBACK・UNSUBACK など) を時間内に確認できなかったことを表す。
 // ブローカーが要求を処理したかどうかは分からない。
 var ErrAckTimeout = errors.New("no acknowledgement from broker in time")
+
+// ErrSubscriptionRejected はブローカーが購読を拒否した (SUBACK が失敗コードを返した) ことを表す。
+var ErrSubscriptionRejected = errors.New("subscription rejected by broker")
 
 // MessageHandler はサブスクライブしたトピックのメッセージ受信時に呼ばれるコールバック。
 // payload は生バイト列で渡す（バイナリペイロードを application 層まで保持するため）。

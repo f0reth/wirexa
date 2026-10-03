@@ -1,4 +1,3 @@
-// Package mqttapp は MQTT 接続管理ユースケースを提供する。
 package mqttapp
 
 import (
