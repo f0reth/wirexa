@@ -8,6 +8,7 @@ export const WailsEvents = {
   mqttMessage: "mqtt:message",
   mqttScanTopic: "mqtt:scan-topic",
   mqttScanStopped: "mqtt:scan-stopped",
+  mqttSubscriptionDropped: "mqtt:subscription-dropped",
   udpMessage: "udp:message",
   appBeforeClose: "app:before-close",
 } as const;
@@ -19,4 +20,5 @@ export type MqttEventName =
   | "mqtt:connection-failed"
   | "mqtt:message"
   | "mqtt:scan-topic"
-  | "mqtt:scan-stopped";
+  | "mqtt:scan-stopped"
+  | "mqtt:subscription-dropped";

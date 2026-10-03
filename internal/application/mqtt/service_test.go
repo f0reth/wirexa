@@ -1015,6 +1015,8 @@ func eventConnID(ev emittedEvent) string {
 		return data.ConnectionID
 	case domain.ScannedTopic:
 		return data.ConnectionID
+	case domain.SubscriptionDropped:
+		return data.ConnectionID
 	}
 	return ""
 }
@@ -1876,7 +1878,8 @@ func TestMQTTService_Reconnect_ResubscribeFailures(t *testing.T) {
 				},
 				isConnectedFn: func() bool { return !failing.Load() || !tc.lost },
 			}
-			svc := newTestService(t, &mockEmitter{}, rec.factory(client))
+			emitter := &mockEmitter{}
+			svc := newTestService(t, emitter, rec.factory(client))
 			id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
 			if err != nil {
 				t.Fatalf("Connect: %v", err)
@@ -1890,6 +1893,21 @@ func TestMQTTService_Reconnect_ResubscribeFailures(t *testing.T) {
 
 			failing.Store(true)
 			rec.onConnected(0)()
+
+			// 外した購読ごとに mqtt:subscription-dropped を 1 回出し、残した購読では出さない。
+			var dropped []domain.SubscriptionDropped
+			for _, ev := range emitter.snapshot() {
+				if ev.event == cmn.EventMQTTSubscriptionDropped {
+					dropped = append(dropped, ev.data.(domain.SubscriptionDropped))
+				}
+			}
+			var wantDropped []domain.SubscriptionDropped
+			for _, topic := range tc.wantUnsubscribed {
+				wantDropped = append(wantDropped, domain.SubscriptionDropped{ConnectionID: id, Topic: topic, Error: tc.subscribeErr.Error()})
+			}
+			if !slices.Equal(dropped, wantDropped) {
+				t.Errorf("mqtt:subscription-dropped = %v, want %v", dropped, wantDropped)
+			}
 
 			var subs []string
 			for _, s := range svc.GetConnections()[0].Subscriptions {
@@ -1905,6 +1923,46 @@ func TestMQTTService_Reconnect_ResubscribeFailures(t *testing.T) {
 				t.Errorf("client.Unsubscribe called with %v, want %v", unsubscribed, tc.wantUnsubscribed)
 			}
 		})
+	}
+}
+
+// 張り直しの途中で Disconnect された接続では、張り直しに失敗しても mqtt:subscription-dropped を出さない。
+func TestMQTTService_Reconnect_ResubscribeFailureAfterDisconnect_NoDroppedEvent(t *testing.T) {
+	rec := &callbackRecorder{}
+	var failing atomic.Bool
+	var svc *MQTTService
+	disconnected := make(chan error, 1)
+	client := &mockBrokerClient{
+		subscribeFn: func(topic string, _ byte, _ domain.MessageHandler) error {
+			if !failing.Load() {
+				return nil
+			}
+			// 張り直しの client.Subscribe の実行中に Disconnect が detach する。
+			// Disconnect は張り直しが opMu を放すまで client を切断しない。
+			go func() { disconnected <- svc.Disconnect(svc.GetConnections()[0].ID) }()
+			waitDetached(t, svc)
+			return domain.ErrSubscriptionRejected
+		},
+	}
+	emitter := &mockEmitter{}
+	svc = newTestService(t, emitter, rec.factory(client))
+	id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	waitEstablished(t, svc, 1)
+	if err := svc.Subscribe(id, "a/#", 0); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	failing.Store(true)
+	rec.onConnected(0)()
+
+	if err := <-disconnected; err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	if n := emitter.count(cmn.EventMQTTSubscriptionDropped); n != 0 {
+		t.Errorf("mqtt:subscription-dropped emitted %d times after Disconnect, want 0", n)
 	}
 }
 

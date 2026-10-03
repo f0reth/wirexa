@@ -116,6 +116,7 @@ func (s *MQTTService) messageHandler(connectionID string, conn *connection) doma
 // resubscribe は接続の確立後に subs の購読を購読した順に張り直す。client は CleanSession で接続するので、
 // 再接続したブローカー側には前回の購読が残っていない。張り直さないと、GetConnections は
 // 購読中と返し続けるのにメッセージが届かなくなる。確立前に受け付けた購読もここで購読する。
+// 張り直せずに外した購読は mqtt:subscription-dropped で知らせる。
 // onConnected (client のコールバック用 goroutine) から、opMu を保持したまま呼ぶ。
 func (s *MQTTService) resubscribe(connID string, conn *connection, subs []domain.SubscriptionInfo) {
 	for _, sub := range subs {
@@ -143,6 +144,15 @@ func (s *MQTTService) resubscribe(connID string, conn *connection, subs []domain
 		if errors.Is(err, domain.ErrSubscriptionRejected) || conn.client.IsConnected() {
 			conn.stateMu.Lock()
 			conn.deleteSub(topic)
+			// 外したことをフロントエンドに知らせる (mqtt:connected は張り直しの前に出ているので、
+			// 知らせないと購読の行が残る)。途中で切断された接続では出さない。
+			if !conn.terminal() {
+				s.emitter.Emit(cmn.EventMQTTSubscriptionDropped, domain.SubscriptionDropped{
+					ConnectionID: connID,
+					Topic:        topic,
+					Error:        err.Error(),
+				})
+			}
 			conn.stateMu.Unlock()
 			// client は張り直しの失敗では振り分け先を残すので、解除して片付ける。ブローカーが購読を
 			// 受理していた場合も、これでブローカー側の購読が消える。

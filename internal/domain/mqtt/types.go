@@ -58,6 +58,14 @@ type ScannedTopic struct {
 	Topic        string `json:"topic"`
 }
 
+// SubscriptionDropped は張り直し (接続確立時・再接続時) に失敗して外した購読を表す
+// (mqtt:subscription-dropped のペイロード)。
+type SubscriptionDropped struct {
+	ConnectionID string `json:"connectionId"`
+	Topic        string `json:"topic"`
+	Error        string `json:"error"`
+}
+
 // ConnectionEvent はエラーを伴わない接続のライフサイクルイベント (mqtt:connected・mqtt:disconnected) の
 // ペイロードを表す。
 type ConnectionEvent struct {

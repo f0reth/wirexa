@@ -43,6 +43,11 @@ func TestLifecycleEvents_WireFormat(t *testing.T) {
 			event: ConnectionErrorEvent{ConnectionID: "c1"},
 			want:  map[string]any{"connectionId": "c1", "error": ""},
 		},
+		{
+			name:  "SubscriptionDropped",
+			event: SubscriptionDropped{ConnectionID: "c1", Topic: "a/#", Error: "subscription rejected"},
+			want:  map[string]any{"connectionId": "c1", "topic": "a/#", "error": "subscription rejected"},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

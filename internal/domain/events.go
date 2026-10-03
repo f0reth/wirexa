@@ -7,13 +7,14 @@ package domain
 //
 //go:generate go run github.com/f0reth/Wirexa/tools/gen-events
 const (
-	EventMQTTConnected        = "mqtt:connected"
-	EventMQTTDisconnected     = "mqtt:disconnected"
-	EventMQTTConnectionLost   = "mqtt:connection-lost"
-	EventMQTTConnectionFailed = "mqtt:connection-failed"
-	EventMQTTMessage          = "mqtt:message"
-	EventMQTTScanTopic        = "mqtt:scan-topic"
-	EventMQTTScanStopped      = "mqtt:scan-stopped"
-	EventUDPMessage           = "udp:message"
-	EventAppBeforeClose       = "app:before-close"
+	EventMQTTConnected           = "mqtt:connected"
+	EventMQTTDisconnected        = "mqtt:disconnected"
+	EventMQTTConnectionLost      = "mqtt:connection-lost"
+	EventMQTTConnectionFailed    = "mqtt:connection-failed"
+	EventMQTTMessage             = "mqtt:message"
+	EventMQTTScanTopic           = "mqtt:scan-topic"
+	EventMQTTScanStopped         = "mqtt:scan-stopped"
+	EventMQTTSubscriptionDropped = "mqtt:subscription-dropped"
+	EventUDPMessage              = "udp:message"
+	EventAppBeforeClose          = "app:before-close"
 )

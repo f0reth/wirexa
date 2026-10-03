@@ -30,6 +30,7 @@ var events = []eventPair{
 	{"mqttMessage", domain.EventMQTTMessage},
 	{"mqttScanTopic", domain.EventMQTTScanTopic},
 	{"mqttScanStopped", domain.EventMQTTScanStopped},
+	{"mqttSubscriptionDropped", domain.EventMQTTSubscriptionDropped},
 	{"udpMessage", domain.EventUDPMessage},
 	{"appBeforeClose", domain.EventAppBeforeClose},
 }
