@@ -15,7 +15,7 @@ export function BrokerTree() {
   const {
     profiles,
     connections,
-    activeConnectionId,
+    activeConnection,
     createOfflineConnection,
     handleConnect,
     handleReconnect,
@@ -39,16 +39,13 @@ export function BrokerTree() {
     return map;
   });
 
-  const isProfileConnected = (profileId: string) => {
-    const conn = connectionByProfileId().get(profileId);
-    return conn !== undefined && isConnected(conn);
-  };
-
   const getConnectionForProfile = (profileId: string) =>
     connectionByProfileId().get(profileId);
 
-  const getConnectionIdForProfile = (profileId: string) =>
-    connectionByProfileId().get(profileId)?.connectionId;
+  const isProfileConnected = (profileId: string) => {
+    const conn = getConnectionForProfile(profileId);
+    return conn !== undefined && isConnected(conn);
+  };
 
   const handleProfileClick = (profileId: string) => {
     const existingConn = getConnectionForProfile(profileId);
@@ -89,16 +86,12 @@ export function BrokerTree() {
     } catch {
       return;
     }
-    const connId = getConnectionIdForProfile(id);
+    const connId = getConnectionForProfile(id)?.connectionId;
     if (connId) closeConnection(connId);
   };
 
-  const isActive = (profileId: string) => {
-    const connId = activeConnectionId();
-    if (!connId) return false;
-    const conn = connections[connId];
-    return conn?.profileId === profileId;
-  };
+  const isActive = (profileId: string) =>
+    activeConnection()?.profileId === profileId;
 
   return (
     <>
