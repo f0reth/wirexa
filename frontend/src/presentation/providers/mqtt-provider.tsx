@@ -12,6 +12,7 @@ import { createPresetsState } from "../../application/mqtt/presets";
 import { createProfilesState } from "../../application/mqtt/profiles";
 import { createPublishState } from "../../application/mqtt/publish";
 import { createSubscriptionsState } from "../../application/mqtt/subscriptions";
+import { notifyOnError } from "../../application/ui/guard";
 import { notify } from "../../application/ui/notifications";
 import { MQTT_MAX_MESSAGES, MQTT_MAX_TOPICS } from "../../config/limits";
 import type {
@@ -115,8 +116,17 @@ export function MqttProvider(props: { children: JSX.Element }) {
 
   onMount(async () => {
     // プロファイルをロードしてからバックエンドの実接続状態を復元する。
-    await loadProfiles();
-    await connState.restore();
+    // 読み込めなかったときは復元しない（プロファイルが空のまま restore() すると、
+    // 最後に選んだプロファイルが接続中でない限り、その保存値を消してしまう）。
+    const loaded = await notifyOnError(
+      notify,
+      "Failed to load brokers",
+      loadProfiles,
+    ).then(
+      () => true,
+      () => false,
+    );
+    if (loaded) await connState.restore();
     if (presetState.presets().length === 0) {
       presetState.addPreset();
     }
