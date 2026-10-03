@@ -2,6 +2,7 @@ import { createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { ProfileOrderStorage } from "../../domain/mqtt/ports";
 import type { BrokerProfile } from "../../domain/mqtt/types";
+import type { Notifier } from "../../domain/ui/ports";
 import {
   createEmptyProfile,
   createProfilesState,
@@ -46,13 +47,23 @@ function makeOrderStorage(initial: string[] = []) {
   return { storage, stored: () => stored };
 }
 
+function makeNotifier(): Notifier {
+  return {
+    error: vi.fn(),
+    success: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+  };
+}
+
 function withState(
   api: ProfileApi,
   fn: (state: ReturnType<typeof createProfilesState>) => Promise<void>,
   orderStorage: ProfileOrderStorage = makeOrderStorage().storage,
+  notifier: Notifier = makeNotifier(),
 ): Promise<void> {
   return createRoot(async (dispose) => {
-    await fn(createProfilesState(api, orderStorage));
+    await fn(createProfilesState(api, notifier, orderStorage));
     dispose();
   });
 }
@@ -82,6 +93,7 @@ describe("createProfilesState failures", () => {
       throw new Error("disk full");
     });
     const { storage, stored } = makeOrderStorage(["p1"]);
+    const notifier = makeNotifier();
     await withState(
       api,
       async (state) => {
@@ -92,8 +104,16 @@ describe("createProfilesState failures", () => {
         );
         expect(state.profiles().map((p) => p.id)).toEqual(["p1"]);
         expect(stored()).toEqual(["p1"]);
+        // 接続バーの入力のたびに保存が走るので、同じプロファイルの通知は key で 1 つにまとめる。
+        expect(notifier.error).toHaveBeenCalledTimes(1);
+        expect(notifier.error).toHaveBeenCalledWith(
+          "Failed to save broker",
+          "disk full",
+          { key: "mqtt:save-profile:p2" },
+        );
       },
       storage,
+      notifier,
     );
   });
 
@@ -103,6 +123,7 @@ describe("createProfilesState failures", () => {
       throw new Error("locked");
     });
     const { storage, stored } = makeOrderStorage(["p1", "p2"]);
+    const notifier = makeNotifier();
     await withState(
       api,
       async (state) => {
@@ -111,8 +132,31 @@ describe("createProfilesState failures", () => {
         await expect(state.deleteProfile("p1")).rejects.toThrow("locked");
         expect(state.profiles().map((p) => p.id)).toEqual(["p1", "p2"]);
         expect(stored()).toEqual(["p1", "p2"]);
+        expect(notifier.error).toHaveBeenCalledTimes(1);
+        expect(notifier.error).toHaveBeenCalledWith(
+          "Failed to delete broker",
+          "locked",
+        );
       },
       storage,
+      notifier,
+    );
+  });
+
+  it("does not notify when saving and deleting succeed", async () => {
+    const notifier = makeNotifier();
+    await withState(
+      makeApi([makeProfile("p1")]),
+      async (state) => {
+        await state.loadProfiles();
+        await state.saveProfile(makeProfile("p1", { name: "Renamed" }));
+        await state.deleteProfile("p1");
+
+        expect(state.profiles()).toEqual([]);
+        expect(notifier.error).not.toHaveBeenCalled();
+      },
+      undefined,
+      notifier,
     );
   });
 

@@ -452,7 +452,9 @@ export function createConnectionsState(
       ...state,
       profile: updatedProfile,
     }));
-    saveProfile(updatedProfile);
+    // 失敗の通知は注入された saveProfile が出す。失敗してもタブの URL は入力した値のままにする
+    // （入力欄を巻き戻すと打てなくなる）。
+    saveProfile(updatedProfile).catch(() => {});
   };
 
   const createOfflineConnection = (profile: BrokerProfile) => {

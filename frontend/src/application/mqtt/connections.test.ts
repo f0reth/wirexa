@@ -1133,6 +1133,44 @@ describe("createConnectionsState tabs and profiles", () => {
     h.dispose();
   });
 
+  // 通知は注入された saveProfile が出すので、ここでは失敗を受け止めるだけ。
+  it("keeps the typed broker and swallows a failed save", async () => {
+    // vi.fn は返した Promise に結果を記録するハンドラを付けるので、失敗を受け止めていなくても
+    // 未捕捉の rejection にならない。素の関数で失敗させ、Promise にハンドラが付いたことを確かめる。
+    const saved: BrokerProfile[] = [];
+    const failure = Promise.reject<BrokerProfile>(new Error("disk full"));
+    const onSettled = vi.spyOn(failure, "then");
+    const saveProfile = (p: BrokerProfile): Promise<BrokerProfile> => {
+      saved.push(p);
+      return failure;
+    };
+    const { state, dispose } = createRoot((dispose) => ({
+      state: createConnectionsState(
+        makeApi(async () => []),
+        noopEvent,
+        makePersistence(null),
+        () => [makeProfile("p1")],
+        saveProfile,
+        noopLogger,
+        makeNotifier(),
+        1000,
+        1000,
+      ),
+      dispose,
+    }));
+    await state.restore();
+
+    state.updateConnectionBroker("offline-p1", "tcp://changed:1883");
+
+    // catch は then(undefined, onRejected) を呼ぶ。
+    expect(onSettled).toHaveBeenCalledWith(undefined, expect.any(Function));
+    expect(saved).toHaveLength(1);
+    expect(state.connections["offline-p1"].profile.broker).toBe(
+      "tcp://changed:1883",
+    );
+    dispose();
+  });
+
   it("ignores a broker update for an unknown tab", () => {
     const h = harness();
 

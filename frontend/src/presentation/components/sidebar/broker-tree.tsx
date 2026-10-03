@@ -60,14 +60,17 @@ export function BrokerTree() {
   };
 
   // 新規作成では ID がサーバ採番されるため、保存後の戻り値で接続を作る。
+  // 保存に失敗したらダイアログを開いたままにする（通知は saveProfile が出す）。
   const handleProfileSave = async (profile: BrokerProfile) => {
-    const saved = await saveProfile(profile);
+    const saved = await saveProfile(profile).catch(() => null);
+    if (!saved) return;
     setEditingProfile(null);
     createOfflineConnection(saved);
   };
 
   const handleProfileSaveAndConnect = async (profile: BrokerProfile) => {
-    const saved = await saveProfile(profile);
+    const saved = await saveProfile(profile).catch(() => null);
+    if (!saved) return;
     setEditingProfile(null);
     const existingConn = getConnectionForProfile(saved.id);
     if (existingConn) {
@@ -78,10 +81,15 @@ export function BrokerTree() {
     }
   };
 
-  const handleProfileDelete = (id: string) => {
+  // 削除に成功してからタブを閉じる。失敗したらタブも接続も残す（通知は deleteProfile が出す）。
+  const handleProfileDelete = async (id: string) => {
+    try {
+      await deleteProfile(id);
+    } catch {
+      return;
+    }
     const connId = getConnectionIdForProfile(id);
     if (connId) closeConnection(connId);
-    deleteProfile(id);
   };
 
   const isActive = (profileId: string) => {

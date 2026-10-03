@@ -128,7 +128,7 @@ export function MqttProvider(props: { children: JSX.Element }) {
     saveProfile,
     deleteProfile,
     reorderProfiles,
-  } = createProfilesState(mqttClient, createProfileOrderStorage());
+  } = createProfilesState(mqttClient, notify, createProfileOrderStorage());
   const mqttLogger = createLogger("frontend:mqtt");
   const connState = createConnectionsState(
     mqttClient,
