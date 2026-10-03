@@ -42,7 +42,6 @@ function makeApi(
     connect: vi.fn(async () => "new-id"),
     disconnect: vi.fn(async () => {}),
     subscribe: vi.fn(async () => {}),
-    unsubscribe: vi.fn(async () => {}),
     stopTopicScan: vi.fn(async () => {}),
     getConnections: vi.fn(getConnections),
   };

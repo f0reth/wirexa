@@ -49,7 +49,6 @@ export interface MqttConnectionApi {
   connect(profile: BrokerProfile): Promise<string>;
   disconnect(connectionId: string): Promise<void>;
   subscribe(connectionId: string, topic: string, qos: number): Promise<void>;
-  unsubscribe(connectionId: string, topic: string): Promise<void>;
   stopTopicScan(connectionId: string): Promise<void>;
   getConnections(): Promise<ConnectionStatus[]>;
 }
