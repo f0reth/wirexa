@@ -11,6 +11,7 @@ import {
   type FixedLengthFieldState,
 } from "../../application/udp/send";
 import { createTargetsState } from "../../application/udp/targets";
+import { runGuarded } from "../../application/ui/guard";
 import { notify } from "../../application/ui/notifications";
 import type {
   Endianness,
@@ -87,7 +88,11 @@ export function UdpProvider(props: { children: JSX.Element }) {
 
   // 起動時のシーケンスはここに集約する（TargetTree を表示しなくても一覧を読み込む）。
   onMount(() => {
-    void targetsState.refreshTargets();
+    void runGuarded(
+      notify,
+      "Failed to load targets",
+      targetsState.refreshTargets,
+    );
   });
 
   return (
