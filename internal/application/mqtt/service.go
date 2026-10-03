@@ -15,10 +15,7 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 )
 
-const (
-	keyConnectionID = "connectionId"
-	fieldTopic      = "topic"
-)
+const keyConnectionID = "connectionId"
 
 const (
 	// scanFilter は Broker Topics のスキャンが購読するフィルター。
@@ -188,10 +185,7 @@ func NewMQTTService(parent context.Context, emitter cmn.Emitter, clientFactory d
 
 // Connect は MQTT ブローカーへの接続を開始し、接続 ID を返す。接続自体は非同期に行う。
 func (s *MQTTService) Connect(config domain.ConnectionConfig) (string, error) {
-	if config.Broker == "" {
-		return "", &cmn.ValidationError{Field: "broker URL", Message: cmn.MsgRequired}
-	}
-	if err := domain.ValidateBrokerScheme(config.Broker, config.UseTLS); err != nil {
+	if err := domain.ValidateBroker(config.Broker, config.UseTLS); err != nil {
 		return "", err
 	}
 
@@ -389,11 +383,11 @@ func (s *MQTTService) withConn(id string, fn func(conn *connection) error) error
 
 // Publish は指定トピックへメッセージを送信する。
 func (s *MQTTService) Publish(connectionID, topic, payload string, qos byte, retain bool) error {
-	if err := domain.ValidateTopicName(fieldTopic, topic); err != nil {
+	if err := domain.ValidateTopicName(topic); err != nil {
 		return err
 	}
-	if qos > 2 {
-		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
+	if err := domain.ValidateQoS(qos); err != nil {
+		return err
 	}
 	return s.withConn(connectionID, func(conn *connection) error {
 		if err := conn.client.Publish(topic, qos, retain, payload); err != nil {
@@ -405,11 +399,11 @@ func (s *MQTTService) Publish(connectionID, topic, payload string, qos byte, ret
 
 // Subscribe は指定トピックの購読を開始する。接続の確立前なら登録だけ行い、確立時に購読する。
 func (s *MQTTService) Subscribe(connectionID, topic string, qos byte) error {
-	if err := domain.ValidateTopicFilter(fieldTopic, topic); err != nil {
+	if err := domain.ValidateTopicFilter(topic); err != nil {
 		return err
 	}
-	if qos > 2 {
-		return &cmn.ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
+	if err := domain.ValidateQoS(qos); err != nil {
+		return err
 	}
 	return s.withConn(connectionID, func(conn *connection) error {
 		if conn.updatePendingSubs(func() { conn.setSub(topic, qos) }) {
@@ -508,7 +502,7 @@ func (s *MQTTService) resubscribe(connID string, conn *connection, subs []domain
 // Unsubscribe は指定トピックの購読を解除する。接続の確立前なら登録を外すだけで client は呼ばない。
 // ブローカーの応答を確認できなかった場合 (domain.ErrAckTimeout) はエラーを返すが、購読は外す。
 func (s *MQTTService) Unsubscribe(connectionID, topic string) error {
-	if err := domain.ValidateTopicFilter(fieldTopic, topic); err != nil {
+	if err := domain.ValidateTopicFilter(topic); err != nil {
 		return err
 	}
 	return s.withConn(connectionID, func(conn *connection) error {

@@ -28,7 +28,7 @@ func TestValidateTopicName(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			assertTopicErr(t, ValidateTopicName("topic", tc.topic), tc.wantErr)
+			assertTopicErr(t, ValidateTopicName(tc.topic), tc.wantErr)
 		})
 	}
 }
@@ -57,7 +57,7 @@ func TestValidateTopicFilter(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			assertTopicErr(t, ValidateTopicFilter("topic", tc.filter), tc.wantErr)
+			assertTopicErr(t, ValidateTopicFilter(tc.filter), tc.wantErr)
 		})
 	}
 }
