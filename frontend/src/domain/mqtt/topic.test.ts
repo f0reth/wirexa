@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { compilePattern, topicMatches, topicMatchesParts } from "./topic";
+import {
+  compilePattern,
+  stripSharedPrefix,
+  topicMatches,
+  topicMatchesParts,
+} from "./topic";
 
 describe("compilePattern", () => {
   it("splits a single-level topic", () => {
@@ -229,5 +234,26 @@ describe("topicMatches", () => {
 
   it("matches an empty topic with +", () => {
     expect(topicMatches("+", "")).toBe(true);
+  });
+});
+
+// バックエンドの filterMatches (internal/infrastructure/mqtt/paho_client.go) と同じ規則であること。
+describe("stripSharedPrefix", () => {
+  it("strips $share/<group>/", () => {
+    expect(stripSharedPrefix("$share/g/a/#")).toBe("a/#");
+    expect(stripSharedPrefix("$share/g/a/b")).toBe("a/b");
+  });
+
+  it("strips $queue/", () => {
+    expect(stripSharedPrefix("$queue/a/b")).toBe("a/b");
+  });
+
+  it("keeps $share/<group> without a filter as is", () => {
+    expect(stripSharedPrefix("$share/g")).toBe("$share/g");
+  });
+
+  it("keeps a non-shared filter as is", () => {
+    expect(stripSharedPrefix("a/b")).toBe("a/b");
+    expect(stripSharedPrefix("$SYS/#")).toBe("$SYS/#");
   });
 });

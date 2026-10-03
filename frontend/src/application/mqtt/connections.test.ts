@@ -383,6 +383,24 @@ describe("createConnectionsState incoming messages", () => {
     h.dispose();
   });
 
+  it("appends messages of shared subscriptions, whose topics carry no prefix", async () => {
+    const h = harness({
+      live: [liveStatus("c1", "p1", ["$share/g/sensors/#", "$share/g/a/b"])],
+    });
+    await h.state.restore();
+
+    h.events.emit(WailsEvents.mqttMessage, rawMessage("c1", "sensors/temp"));
+    h.events.emit(WailsEvents.mqttMessage, rawMessage("c1", "a/b"));
+    h.events.emit(WailsEvents.mqttMessage, rawMessage("c1", "other"));
+    runFrame();
+
+    expect(h.state.connections.c1.messages.map((m) => m.topic)).toEqual([
+      "sensors/temp",
+      "a/b",
+    ]);
+    h.dispose();
+  });
+
   it("keeps the base64 flag of binary payloads", async () => {
     const h = harness({ live: [liveStatus("c1", "p1", ["bin"])] });
     await h.state.restore();
