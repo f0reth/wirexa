@@ -18,7 +18,6 @@
 | 低 | `application/mqtt/connections.ts` | `MqttConnectionApi` から使っていない `unsubscribe` を外す |
 | 低 | `application/mqtt/presets.ts`・`connections.ts`・`infrastructure/mqtt/client.ts` ほか | 参照されていない export・再 export・引数を整理する |
 | 低 | `application/mqtt/presets.ts`・`profiles.ts` | 「更新して保存」の繰り返しをヘルパーにまとめる |
-| 低 | `application/mqtt/messages.ts`・`subscription.ts`・`domain/mqtt/topic.ts` | ワイルドカード判定を domain に 1 つだけ置く |
 | 低 | `presentation/providers/mqtt-provider.tsx` | 4 つの hook の重複と、手書きのコンテキスト型を整理する |
 | 低 | `presentation/components/sidebar/broker-tree.tsx` | 薄いラッパー関数と `isActive` を整理する |
 
@@ -145,15 +144,6 @@
 - **検証コマンド**: 追加無し
 - **付随作業**: 無し
 
-### ワイルドカード判定を domain に 1 つだけ置く
-- **該当箇所**: `application/mqtt/messages.ts:6-8`、`application/mqtt/subscription.ts:12-15`
-- **現状**: 「`+` か `#` を含むか」の判定が `messages.ts` の `hasWildcard` と `subscription.ts` のインラインの式に分かれている。
-- **改善案**: `domain/mqtt/topic.ts` に `hasWildcard` を移して export し、両方から使う。
-- **期待効果**: 重複の削減
-- **挙動を守っているテスト**: `application/mqtt/messages.test.ts`、`application/mqtt/subscription.test.ts`、`domain/mqtt/topic.test.ts`
-- **検証コマンド**: 追加無し
-- **付随作業**: 無し
-
 ### Provider の hook とコンテキスト型を整理する
 - **該当箇所**: `presentation/providers/mqtt-provider.tsx:62-115`・`:212-236`
 - **現状**: 4 つの hook が、同じ `useContext` と例外の送出を書いている。`SubscribeContextValue`・`MessagesContextValue`・`PublishContextValue` は、`createSubscriptionsState`・`createMessagesState`・`createPresetsState` の戻り値をそのままスプレッドしたものなのに、型を手で書き写している（application 側に項目を足しても、ここを直さないとコンポーネントから見えない）。
@@ -179,18 +169,13 @@
 - **`application/mqtt/profile-validation.ts` のポート・ホストの検証**: 送信前の先回り検証。`parseBrokerUrl` で読み戻せる形に限るというフロント固有の理由もコメントに書かれている。
 - **`application/mqtt/connections.ts:9` の `application/logger` の `Logger`**: application に置かれたポートとして扱う現行の設計。
 - **`application/mqtt/` が signal・store で状態を持つこと**: 現行の設計。
-- **`application/mqtt/profiles.ts` と `application/udp/targets.ts` の共通化**: 並び順の読み込みは既に `applyOrder`・`moveItem` を共有している。残りは挙動が違う（mqtt は signal を手元で更新して失敗をそのまま伝え、udp は store を RPC で読み直して失敗を通知する）ので、まとめると挙動が変わる。
+- **`application/mqtt/profiles.ts` と `application/udp/targets.ts` の共通化**: 並び順の読み込みは既に `applyOrder`・`moveItem` を共有している。残りは挙動が違う（mqtt は signal を手元で更新し、削除の失敗を呼び出し側に伝える。udp は store を RPC で読み直し、削除の失敗を通知だけで終える）ので、まとめると挙動が変わる。
 - **`sidebar/profile-list.tsx`**: mqtt と udp で既に共通化されている。相違点は props で受けていて、追加でまとめる箇所は無い。
 - **`broker-settings-dialog.tsx` と udp の `TargetDialog`（`target-tree.tsx`）の共通化**: 入力項目・検証・ボタンの構成が違い、`profile-list.tsx:38-40` のコメントも編集ダイアログは共通化しないと決めている。
 - **`broker-manager.tsx:35-47` の effect**: 書き換えるのはコンポーネント内の入力欄の signal だけで、application の状態は書き戻していない。規約の範囲内で、理由もコメントに書かれている。
 - **`panels/messages-panel.tsx:47-53` の effect**: スクロールの追従だけを行う。選択の追従は `application/mqtt/messages.ts` の 1 か所にある。
 - **`application/mqtt/subscriptions.ts` の `setIsScanning`（`:173-231`）**: 長いが、開始と停止の順序を守るための処理で、分けると順序の前提が読み取りにくくなる。`subscriptions.test.ts` が順序を細かく検証している。
 - **`application/mqtt/connections.ts:331`・`:347` の `console.error`**: 注入された `logger` を使わず、コンソールに出している。`logger.error` に替えるとログの出力先（バックエンドのログファイル）が変わるので、挙動変更にあたる。替えるかどうかは別に決める。
-- **`sidebar/broker-tree.tsx:63-79` の保存失敗の扱い**: `saveProfile` の失敗を捕まえておらず、通知も出ない（udp は `notifyOnError` で通知する）。直すと挙動が変わるので、リファクタリングの候補にはしない。
 - **`infrastructure/storage/local-storage.ts` の mqtt 部分**: `ConnectionPersistence`（`loadLastProfileId` など）だけメソッド名がほかのポート（`load`・`save`）と違うが、実害が無く、揃える効果が小さい。`StoredPreset`（`:49`）は `retain` 導入前の保存値を読むためのもので必要。
 - **`presentation/components/mqtt/utils.ts` の `getTopicColor`**: 表示用の色の計算で、presentation に置くのが適切。
 - **`application/mqtt/connections.ts` の `switchConnection`**: `setActiveConnectionId` を包むだけだが、setter をそのまま公開しないための入口として残す。
-
-## 調査中に気づいた、リファクタリングの範囲外の点
-
-- **共有購読とトピックフィルター**: `application/mqtt/messages.ts` の `collectFilterTopics`・`filterMessagesByTopic` は、購読のトピックを `stripSharedPrefix` に通さずに照合している。コードを読む限り、`$share/g/sensors/#` を購読していると、一致した実トピックがフィルターの選択肢に並ばず、その購読自体をフィルターに選ぶと一覧が空になる。`messages.test.ts` に共有購読のケースは無く、実際に動かして確かめてはいない。挙動の修正になるので、別の作業として確認するのがよい。
