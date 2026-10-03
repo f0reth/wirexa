@@ -1,6 +1,7 @@
 build
 node_modules
 dist
+dist-e2e
 playwright-report
 test-results
 settings.local.json
