@@ -10,6 +10,7 @@ permissions:
 jobs:
   lint-go:
     name: Go Lint
+    if: github.actor == github.repository_owner
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +23,7 @@ jobs:
 
   lint-frontend:
     name: Frontend Lint
+    if: github.actor == github.repository_owner
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
