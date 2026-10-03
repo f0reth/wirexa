@@ -1,10 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
   compilePattern,
+  hasWildcard,
   stripSharedPrefix,
   topicMatches,
   topicMatchesParts,
 } from "./topic";
+
+describe("hasWildcard", () => {
+  it("returns true for a topic containing + or #", () => {
+    expect(hasWildcard("sensors/#")).toBe(true);
+    expect(hasWildcard("sensors/+/temp")).toBe(true);
+    expect(hasWildcard("#")).toBe(true);
+  });
+
+  it("returns false for a topic without wildcards", () => {
+    expect(hasWildcard("sensors/temp")).toBe(false);
+    expect(hasWildcard("$share/g/a")).toBe(false);
+    expect(hasWildcard("")).toBe(false);
+  });
+});
 
 describe("compilePattern", () => {
   it("splits a single-level topic", () => {

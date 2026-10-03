@@ -19,6 +19,11 @@ export function stripSharedPrefix(filter: string): string {
   return filter;
 }
 
+/** トピックにワイルドカードが含まれるか。含む場合はパターン照合が必要になる。 */
+export function hasWildcard(topic: string): boolean {
+  return topic.includes("#") || topic.includes("+");
+}
+
 export function compilePattern(pattern: string): string[] {
   return pattern.split("/");
 }

@@ -71,6 +71,22 @@ describe("collectFilterTopics", () => {
       ),
     ).toEqual(["sensors/#", "sensors/+", "sensors/temp"]);
   });
+
+  // 受信したメッセージのトピックには共有購読の接頭辞が付かない。
+  it("adds concrete topics matched by a shared wildcard subscription", () => {
+    expect(
+      collectFilterTopics(
+        [{ topic: "$share/g/sensors/#" }, { topic: "$queue/q/+" }],
+        [makeMessage("sensors/temp"), makeMessage("q/1"), makeMessage("x/y")],
+      ),
+    ).toEqual(["$queue/q/+", "$share/g/sensors/#", "q/1", "sensors/temp"]);
+  });
+
+  it("does not expand a shared subscription without wildcards", () => {
+    expect(
+      collectFilterTopics([{ topic: "$share/g/a" }], [makeMessage("a")]),
+    ).toEqual(["$share/g/a"]);
+  });
 });
 
 describe("filterMessagesByTopic", () => {
@@ -79,31 +95,98 @@ describe("filterMessagesByTopic", () => {
     makeMessage("sensors/b/temp", "2"),
     makeMessage("other/x", "3"),
   ];
+  const subscriptions = [
+    { topic: "sensors/#" },
+    { topic: "sensors/+/temp" },
+    { topic: "missing/topic" },
+  ];
 
   it("returns the same array instance when the filter is empty", () => {
-    expect(filterMessagesByTopic(messages, "")).toBe(messages);
+    expect(filterMessagesByTopic(messages, "", subscriptions)).toBe(messages);
   });
 
   it("filters by exact topic", () => {
     expect(
-      filterMessagesByTopic(messages, "sensors/a/temp").map((m) => m.id),
+      filterMessagesByTopic(messages, "sensors/a/temp", subscriptions).map(
+        (m) => m.id,
+      ),
     ).toEqual(["1"]);
   });
 
   it("filters by a # pattern", () => {
     expect(
-      filterMessagesByTopic(messages, "sensors/#").map((m) => m.id),
+      filterMessagesByTopic(messages, "sensors/#", subscriptions).map(
+        (m) => m.id,
+      ),
     ).toEqual(["1", "2"]);
   });
 
   it("filters by a + pattern", () => {
     expect(
-      filterMessagesByTopic(messages, "sensors/+/temp").map((m) => m.id),
+      filterMessagesByTopic(messages, "sensors/+/temp", subscriptions).map(
+        (m) => m.id,
+      ),
     ).toEqual(["1", "2"]);
   });
 
   it("returns nothing when no topic matches", () => {
-    expect(filterMessagesByTopic(messages, "missing/topic")).toEqual([]);
+    expect(
+      filterMessagesByTopic(messages, "missing/topic", subscriptions),
+    ).toEqual([]);
+  });
+
+  describe("shared subscriptions", () => {
+    const received = [
+      makeMessage("sensors/temp", "1"),
+      makeMessage("a", "2"),
+      makeMessage("q/1", "3"),
+      makeMessage("other/x", "4"),
+    ];
+    const shared = [
+      { topic: "$share/g/sensors/#" },
+      { topic: "$share/g/a" },
+      { topic: "$queue/q/+" },
+    ];
+
+    it("matches a $share wildcard subscription without its prefix", () => {
+      expect(
+        filterMessagesByTopic(received, "$share/g/sensors/#", shared).map(
+          (m) => m.id,
+        ),
+      ).toEqual(["1"]);
+    });
+
+    it("matches a $share subscription without wildcards without its prefix", () => {
+      expect(
+        filterMessagesByTopic(received, "$share/g/a", shared).map((m) => m.id),
+      ).toEqual(["2"]);
+    });
+
+    it("matches a $queue subscription without its prefix", () => {
+      expect(
+        filterMessagesByTopic(received, "$queue/q/+", shared).map((m) => m.id),
+      ).toEqual(["3"]);
+    });
+
+    // 実トピックにまで接頭辞を外すと、$queue/q/1 を q/1 で照合して 0 件になる。
+    it("filters a concrete topic by exact match without stripping a prefix", () => {
+      const msgs = [makeMessage("$queue/q/1", "1"), makeMessage("q/1", "2")];
+      expect(
+        filterMessagesByTopic(msgs, "$queue/q/1", [
+          { topic: "$share/g/$queue/q/+" },
+        ]).map((m) => m.id),
+      ).toEqual(["1"]);
+    });
+
+    it("keeps messages whose concrete topic equals the subscription string", () => {
+      const msgs = [makeMessage("$queue/a", "1"), makeMessage("a", "2")];
+      expect(
+        filterMessagesByTopic(msgs, "$queue/a", [
+          { topic: "$queue/a" },
+          { topic: "$share/g/$queue/+" },
+        ]).map((m) => m.id),
+      ).toEqual(["1", "2"]);
+    });
   });
 });
 
@@ -344,6 +427,22 @@ describe("createMessagesState topic filter", () => {
 
     expect(h.state.visibleMessages()).toEqual([]);
     expect(h.state.selectedMessage()?.id).toBe("t1");
+    h.dispose();
+  });
+
+  it("shows the messages of a shared subscription chosen as the filter", () => {
+    const h = setupSensors({
+      subscriptions: [makeSubscription("$share/g/sensors/#", 0)],
+    });
+
+    expect(h.state.filterTopics()).toEqual([
+      "$share/g/sensors/#",
+      "sensors/hum",
+      "sensors/temp",
+    ]);
+
+    h.state.setTopicFilter("$share/g/sensors/#");
+    expect(h.state.visibleMessages().map((m) => m.id)).toEqual(["t1", "h1"]);
     h.dispose();
   });
 

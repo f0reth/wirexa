@@ -1,15 +1,15 @@
 import { createEffect, createMemo, createSignal, untrack } from "solid-js";
-import { topicMatches } from "../../domain/mqtt/topic";
+import {
+  hasWildcard,
+  stripSharedPrefix,
+  topicMatches,
+} from "../../domain/mqtt/topic";
 import type { ConnectionStateExt, MqttMessageView } from "./connections";
-
-/** トピックにワイルドカードが含まれるか。含む場合はパターン照合が必要になる。 */
-function hasWildcard(topic: string): boolean {
-  return topic.includes("#") || topic.includes("+");
-}
 
 /**
  * トピックフィルターの選択肢を作る。
  * 購読トピックそのものに加え、ワイルドカード購読に一致した実トピックも列挙する。
+ * 受信したメッセージのトピックには共有購読の接頭辞が付かないので、接頭辞を外して照合する。
  */
 export function collectFilterTopics(
   subscriptions: readonly { topic: string }[],
@@ -19,9 +19,10 @@ export function collectFilterTopics(
 
   for (const sub of subscriptions) {
     result.add(sub.topic);
-    if (hasWildcard(sub.topic)) {
+    const match = stripSharedPrefix(sub.topic);
+    if (hasWildcard(match)) {
       for (const msg of messages) {
-        if (topicMatches(sub.topic, msg.topic)) {
+        if (topicMatches(match, msg.topic)) {
           result.add(msg.topic);
         }
       }
@@ -31,16 +32,28 @@ export function collectFilterTopics(
   return Array.from(result).sort();
 }
 
-/** フィルターが空なら元の配列をそのまま返す（参照の同一性を保つ）。 */
+/**
+ * フィルターが空なら元の配列をそのまま返す（参照の同一性を保つ）。
+ * 選択肢には購読の文字列と実トピックが並ぶ。共有購読の接頭辞を外して照合するのは、
+ * フィルターが購読の文字列のときだけにする（実トピックは受信したままの文字列で照合する）。
+ */
 export function filterMessagesByTopic(
   messages: MqttMessageView[],
   filter: string,
+  subscriptions: readonly { topic: string }[],
 ): MqttMessageView[] {
   if (!filter) return messages;
-  if (hasWildcard(filter)) {
-    return messages.filter((m) => topicMatches(filter, m.topic));
+  if (!subscriptions.some((s) => s.topic === filter)) {
+    return messages.filter((m) => m.topic === filter);
   }
-  return messages.filter((m) => m.topic === filter);
+  const match = stripSharedPrefix(filter);
+  const wildcard = hasWildcard(match);
+  // 購読と同じ文字列の実トピックを受信していることもあるので、filter との完全一致も残す。
+  return messages.filter(
+    (m) =>
+      m.topic === filter ||
+      (wildcard ? topicMatches(match, m.topic) : m.topic === match),
+  );
 }
 
 export function createMessagesState(
@@ -60,7 +73,11 @@ export function createMessagesState(
     collectFilterTopics(activeConnection()?.subscriptions ?? [], messages()),
   );
   const visibleMessages = createMemo(() =>
-    filterMessagesByTopic(messages(), topicFilter()),
+    filterMessagesByTopic(
+      messages(),
+      topicFilter(),
+      activeConnection()?.subscriptions ?? [],
+    ),
   );
 
   // 選択肢から消えたフィルターは解除する
