@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { makeSubscription } from "./subscription";
+import { makeSubscription, subscriptionMatches } from "./subscription";
 
 describe("makeSubscription", () => {
   it("compiles a shared wildcard subscription without its prefix", () => {
@@ -28,5 +28,27 @@ describe("makeSubscription", () => {
 
   it("compiles a wildcard subscription as is", () => {
     expect(makeSubscription("a/+/c", 0).patternParts).toEqual(["a", "+", "c"]);
+  });
+});
+
+describe("subscriptionMatches", () => {
+  const matches = (filter: string, topic: string) =>
+    subscriptionMatches(makeSubscription(filter, 0), topic, topic.split("/"));
+
+  it("matches a plain topic only when it is identical", () => {
+    expect(matches("a/b", "a/b")).toBe(true);
+    expect(matches("a/b", "a/b/c")).toBe(false);
+  });
+
+  it("matches a wildcard subscription by its pattern", () => {
+    expect(matches("sensors/#", "sensors/temp/1")).toBe(true);
+    expect(matches("a/+/c", "a/b/c")).toBe(true);
+    expect(matches("a/+/c", "a/b/d")).toBe(false);
+  });
+
+  it("matches a shared subscription against the topic without its prefix", () => {
+    expect(matches("$share/g/a/b", "a/b")).toBe(true);
+    expect(matches("$share/g/sensors/#", "sensors/temp")).toBe(true);
+    expect(matches("$share/g/a/b", "a/c")).toBe(false);
   });
 });

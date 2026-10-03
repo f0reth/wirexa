@@ -1,4 +1,8 @@
-import { compilePattern, stripSharedPrefix } from "../../domain/mqtt/topic";
+import {
+  compilePattern,
+  stripSharedPrefix,
+  topicMatchesParts,
+} from "../../domain/mqtt/topic";
 import type { Subscription } from "../../domain/mqtt/types";
 import { generateId } from "../../shared/id";
 
@@ -20,4 +24,20 @@ export function makeSubscription(topic: string, qos: number): Subscription {
     patternParts: isPattern ? compilePattern(matchFilter) : undefined,
     muted: false,
   };
+}
+
+/**
+ * 受信したトピックが購読に一致するかを返す。topicParts は topic を "/" で分けたもの
+ * (同じトピックを複数の購読と照合するので、呼び出し側で 1 回だけ分ける)。
+ */
+export function subscriptionMatches(
+  sub: Subscription,
+  topic: string,
+  topicParts: string[],
+): boolean {
+  return (
+    sub.topic === topic ||
+    (sub.patternParts !== undefined &&
+      topicMatchesParts(sub.patternParts, topicParts))
+  );
 }

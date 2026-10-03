@@ -8,48 +8,34 @@ import {
 import { createStore, produce } from "solid-js/store";
 import type { Logger } from "../../application/logger";
 import type { ConnectionPersistence } from "../../domain/mqtt/ports";
-import { topicMatchesParts } from "../../domain/mqtt/topic";
 import type {
   BrokerProfile,
   ConnectionStatus,
   MqttEventPayloads,
-  MqttMessage,
-  MqttRawMessage,
-  OfflineConnectionState,
-  OnlineConnectionState,
-  ScannedTopic,
   Subscription,
   Tab,
 } from "../../domain/mqtt/types";
 import type { Notifier } from "../../domain/ui/ports";
 import { errorMessage } from "../../shared/error";
-import { generateId } from "../../shared/id";
 import { type MqttEventName, WailsEvents } from "../../shared/wails-events";
+import {
+  type ConnectionStateExt,
+  makeOfflineState,
+  makeOnlineState,
+  offlineId,
+  synthesizeProfile,
+} from "./connection-state";
+import { createEventBuffer } from "./message-buffer";
 import { makeSubscription } from "./subscription";
 
+export type {
+  ConnectionStateExt,
+  MqttMessageView,
+  OfflineStateExt,
+  OnlineStateExt,
+} from "./connection-state";
+
 export type { ConnectionPersistence };
-
-/** UI 表示用に id・direction を付加したアプリケーション層のメッセージ型。 */
-export type MqttMessageView = MqttMessage & {
-  id: string;
-  direction: "incoming" | "outgoing";
-};
-
-// Application層が管理するランタイム状態。
-// Domain型 (ConnectionState) はブローカー接続の純粋なドメイン概念のみを持つ。
-interface ConnectionRuntimeState {
-  subscriptions: Subscription[];
-  messages: MqttMessageView[];
-  selectedMessage: MqttMessageView | null;
-  autoFollow: boolean;
-  brokerTopics: string[];
-  readonly brokerTopicsSet: Set<string>;
-  isScanning: boolean;
-}
-
-export type OfflineStateExt = OfflineConnectionState & ConnectionRuntimeState;
-export type OnlineStateExt = OnlineConnectionState & ConnectionRuntimeState;
-export type ConnectionStateExt = OfflineStateExt | OnlineStateExt;
 
 /** イベントの購読を登録し、解除する関数を返す。ペイロードの型はイベント名で決まる。 */
 export type MqttEventListener = <E extends MqttEventName>(
@@ -64,60 +50,6 @@ export interface MqttConnectionApi {
   unsubscribe(connectionId: string, topic: string): Promise<void>;
   stopTopicScan(connectionId: string): Promise<void>;
   getConnections(): Promise<ConnectionStatus[]>;
-}
-
-// オフライン接続の ID 生成ロジックをここに集約
-function offlineId(profileId: string): string {
-  return `offline-${profileId}`;
-}
-
-function makeOfflineState(profile: BrokerProfile): OfflineStateExt {
-  return {
-    type: "offline",
-    connectionId: offlineId(profile.id),
-    profileId: profile.id,
-    profile: { ...profile },
-    subscriptions: [],
-    messages: [],
-    selectedMessage: null,
-    autoFollow: false,
-    brokerTopics: [],
-    brokerTopicsSet: new Set(),
-    isScanning: false,
-  };
-}
-
-// プロファイルが既に削除された接続を復元する際に、状態から最小限のプロファイルを合成する。
-function synthesizeProfile(status: ConnectionStatus): BrokerProfile {
-  return {
-    id: status.profileId || status.id,
-    name: status.name,
-    broker: status.broker,
-    clientId: "",
-    username: "",
-    password: "",
-    useTls: false,
-  };
-}
-
-function makeOnlineState(
-  connId: string,
-  profile: BrokerProfile,
-): OnlineStateExt {
-  return {
-    type: "online",
-    connectionId: connId,
-    profileId: profile.id,
-    profile: { ...profile },
-    connected: false,
-    subscriptions: [],
-    messages: [],
-    selectedMessage: null,
-    autoFollow: false,
-    brokerTopics: [],
-    brokerTopicsSet: new Set(),
-    isScanning: false,
-  };
 }
 
 export function createConnectionsState(
@@ -158,127 +90,35 @@ export function createConnectionsState(
     });
   }
 
-  // Micro-batch: buffer incoming messages and flush once per animation frame.
-  const messageBuffer: MqttRawMessage[] = [];
-  // スキャンで見つかったトピック (mqtt:scan-topic)。メッセージと同じフレームでまとめて反映する。
-  const topicBuffer: ScannedTopic[] = [];
-  let flushScheduled = false;
+  const buffer = createEventBuffer(updateConnection, maxMessages, maxTopics);
 
-  function scheduleFlush() {
-    if (flushScheduled) return;
-    flushScheduled = true;
-    requestAnimationFrame(() => {
-      flushScheduled = false;
-      flushTopics();
-      flushMessages();
+  // 同じプロファイルのタブを消して、新しいタブに置き換える。
+  function replaceProfileTab(profileId: string, entry: ConnectionStateExt) {
+    setConnections(
+      produce((s) => {
+        for (const key of Object.keys(s)) {
+          if (s[key].profileId === profileId) delete s[key];
+        }
+        s[entry.connectionId] = entry;
+      }),
+    );
+  }
+
+  // オンラインのタブを未接続にする。stopScan が true なら、スキャン中の表示も止める。
+  function markOffline(connId: string, opts: { stopScan: boolean }) {
+    updateConnection(connId, (state) => {
+      if (state.type !== "online") return state;
+      return opts.stopScan
+        ? { ...state, connected: false, isScanning: false }
+        : { ...state, connected: false };
     });
   }
 
-  function flushTopics() {
-    if (topicBuffer.length === 0) return;
-
-    const grouped = new Map<string, string[]>();
-    for (const { connectionId, topic } of topicBuffer) {
-      let arr = grouped.get(connectionId);
-      if (!arr) {
-        arr = [];
-        grouped.set(connectionId, arr);
-      }
-      arr.push(topic);
-    }
-    topicBuffer.length = 0;
-
-    for (const [connId, topics] of grouped) {
-      updateConnection(connId, (state) => {
-        // 停止と行き違いで届いたトピックは捨てる。
-        if (!state.isScanning) return state;
-        const added = [
-          ...new Set(topics.filter((t) => !state.brokerTopicsSet.has(t))),
-        ];
-        if (added.length === 0) return state;
-
-        let brokerTopics = [...state.brokerTopics, ...added];
-        const brokerTopicsSet = new Set(state.brokerTopicsSet);
-        for (const t of added) brokerTopicsSet.add(t);
-        if (brokerTopics.length > maxTopics) {
-          const excess = brokerTopics.length - maxTopics;
-          for (const t of brokerTopics.slice(0, excess)) {
-            brokerTopicsSet.delete(t);
-          }
-          brokerTopics = brokerTopics.slice(excess);
-        }
-        return { ...state, brokerTopics, brokerTopicsSet };
-      });
-    }
-  }
-
-  function flushMessages() {
-    if (messageBuffer.length === 0) return;
-
-    const grouped = new Map<string, MqttRawMessage[]>();
-    for (const msg of messageBuffer) {
-      let arr = grouped.get(msg.connectionId);
-      if (!arr) {
-        arr = [];
-        grouped.set(msg.connectionId, arr);
-      }
-      arr.push(msg);
-    }
-    messageBuffer.length = 0;
-
-    for (const [connId, batch] of grouped) {
-      updateConnection(connId, (state) => {
-        const pendingMessages: MqttMessageView[] = [];
-
-        for (const data of batch) {
-          const msgParts = data.topic.split("/");
-          // 重なる購読（例: muted の sensors/# と sensors/temp）があれば、
-          // muted でない購読が 1 つでも一致すれば表示する。
-          const delivered = state.subscriptions.some(
-            (s) =>
-              !s.muted &&
-              (s.topic === data.topic ||
-                (s.patternParts &&
-                  topicMatchesParts(s.patternParts, msgParts))),
-          );
-          if (delivered) {
-            pendingMessages.push({
-              id: generateId(),
-              topic: data.topic,
-              payload: data.payload,
-              payloadBase64: data.payloadBase64 ?? false,
-              qos: data.qos as 0 | 1 | 2,
-              timestamp: new Date(data.timestamp),
-              direction: "incoming",
-            });
-          }
-        }
-
-        if (pendingMessages.length === 0) return state;
-        const combined = [...state.messages, ...pendingMessages];
-        if (combined.length > maxMessages) {
-          combined.splice(0, combined.length - maxMessages);
-        }
-        return { ...state, messages: combined };
-      });
-    }
-  }
-
   // Wails イベントリスナー登録 → onCleanup で解除
-  const cancelMessage = onEvent(WailsEvents.mqttMessage, (data) => {
-    if (messageBuffer.length < 5000) {
-      messageBuffer.push(data);
-    }
-    scheduleFlush();
-  });
+  const cancelMessage = onEvent(WailsEvents.mqttMessage, buffer.pushMessage);
 
   // Broker Topics の一覧はスキャン用の接続が見つけたトピックから作る (mqtt:message からは作らない)。
-  const cancelScanTopic = onEvent(WailsEvents.mqttScanTopic, (data) => {
-    if (topicBuffer.length < 5000) {
-      topicBuffer.push(data);
-    }
-    scheduleFlush();
-  });
+  const cancelScanTopic = onEvent(WailsEvents.mqttScanTopic, buffer.pushTopic);
 
   // スキャン用の接続が切れてスキャンが止まった (自動では再開しない)。
   const cancelScanStopped = onEvent(WailsEvents.mqttScanStopped, (data) => {
@@ -299,11 +139,7 @@ export function createConnectionsState(
   });
 
   const cancelDisconnected = onEvent(WailsEvents.mqttDisconnected, (data) => {
-    const { connectionId } = data;
-    updateConnection(connectionId, (state) => {
-      if (state.type !== "online") return state;
-      return { ...state, connected: false, isScanning: false };
-    });
+    markOffline(data.connectionId, { stopScan: true });
   });
 
   const cancelConnectionLost = onEvent(
@@ -312,10 +148,8 @@ export function createConnectionsState(
       const { connectionId, error } = data;
       console.error("[MQTT] Connection lost:", error);
       notifier.error("MQTT connection lost", error, { key: connectionId });
-      updateConnection(connectionId, (state) => {
-        if (state.type !== "online") return state;
-        return { ...state, connected: false };
-      });
+      // スキャンの状態は変えない。
+      markOffline(connectionId, { stopScan: false });
     },
   );
 
@@ -325,10 +159,7 @@ export function createConnectionsState(
       const { connectionId, error } = data;
       console.error("[MQTT] Connection failed:", error);
       notifier.error("MQTT connection failed", error, { key: connectionId });
-      updateConnection(connectionId, (state) => {
-        if (state.type !== "online") return state;
-        return { ...state, connected: false, isScanning: false };
-      });
+      markOffline(connectionId, { stopScan: true });
     },
   );
 
@@ -438,14 +269,7 @@ export function createConnectionsState(
 
   const createOfflineConnection = (profile: BrokerProfile) => {
     const entry = makeOfflineState(profile);
-    setConnections(
-      produce((s) => {
-        for (const key of Object.keys(s)) {
-          if (s[key].profileId === profile.id) delete s[key];
-        }
-        s[entry.connectionId] = entry;
-      }),
-    );
+    replaceProfileTab(profile.id, entry);
     setActiveConnectionId(entry.connectionId);
   };
 
@@ -458,15 +282,7 @@ export function createConnectionsState(
     });
     try {
       const connId = await api.connect(profile);
-      const newState = makeOnlineState(connId, profile);
-      setConnections(
-        produce((s) => {
-          for (const key of Object.keys(s)) {
-            if (s[key].profileId === profile.id) delete s[key];
-          }
-          s[connId] = newState;
-        }),
-      );
+      replaceProfileTab(profile.id, makeOnlineState(connId, profile));
       setActiveConnectionId(connId);
       logger.info("MQTT connect initiated", {
         connection_id: connId,
@@ -494,10 +310,7 @@ export function createConnectionsState(
       });
       notifier.error("Failed to disconnect", errorMessage(err));
     }
-    updateConnection(connId, (state) => {
-      if (state.type !== "online") return state;
-      return { ...state, connected: false, isScanning: false };
-    });
+    markOffline(connId, { stopScan: true });
   };
 
   // profile を渡すと、タブが持つプロファイルの代わりにそれで接続し、タブのプロファイルも置き換える
