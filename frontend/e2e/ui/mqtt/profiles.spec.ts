@@ -151,6 +151,94 @@ test.describe("editing a broker", () => {
   });
 });
 
+// ── 観点E: 保存・削除の失敗 ──────────────────────────────────────────────────
+
+test.describe("save failure", () => {
+  test.use({
+    seed: { mqttProfiles: [ALPHA], saveProfileError: "disk full" },
+  });
+
+  test("failed save shows an error toast and keeps the dialog open", async ({
+    page,
+    app,
+  }) => {
+    await page.getByRole("button", { name: "New Broker" }).click();
+    const dialog = page.getByRole("dialog", { name: "New Profile" });
+    await dialog.getByLabel("Name", { exact: true }).fill("Not Saved");
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Failed to save broker" }),
+    ).toContainText("disk full");
+    // 入力をやり直せるよう、ダイアログは開いたままにする。一覧にも増えない。
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue(
+      "Not Saved",
+    );
+    await expect(app.broker("Not Saved")).toHaveCount(0);
+  });
+
+  // 接続バーは入力のたびに保存するので、失敗が続いても通知は 1 つにまとめる。
+  test("failed saves from the connection bar show a single toast", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (err) => pageErrors.push(err.message));
+    await app.selectBroker(ALPHA.name);
+
+    const host = page.getByPlaceholder("localhost");
+    await host.press("End");
+    await host.pressSequentially("xyz");
+    await fake.waitForCalls("SaveProfile", 3);
+
+    const toast = page
+      .getByRole("alert")
+      .filter({ hasText: "Failed to save broker" });
+    await expect(toast).toHaveCount(1);
+    await expect(toast).toContainText("disk full");
+    // 入力した値は巻き戻さない。
+    await expect(host).toHaveValue("alpha.localxyz");
+    expect(pageErrors).toEqual([]);
+  });
+});
+
+test.describe("delete failure", () => {
+  test.use({
+    seed: {
+      mqttProfiles: [ALPHA],
+      mqttConnect: "ok",
+      deleteProfileError: "access denied",
+    },
+  });
+
+  test("failed delete shows an error toast and keeps the broker connected", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (err) => pageErrors.push(err.message));
+    await app.connectBroker(ALPHA.name);
+
+    const row = app.broker(ALPHA.name);
+    await row.hover();
+    await row.getByRole("button", { name: "Delete broker" }).click();
+    await app.confirmDelete();
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Failed to delete broker" }),
+    ).toContainText("access denied");
+    // 削除に失敗したら、ブローカーもタブも接続も残す。
+    await expect(app.broker(ALPHA.name)).toBeVisible();
+    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    expect(await fake.calls("Disconnect")).toBe(0);
+    expect((await fake.snapshot()).mqttConnections).toHaveLength(1);
+    expect(pageErrors).toEqual([]);
+  });
+});
+
 // ── 観点E: 接続失敗のトースト ────────────────────────────────────────────────
 // 既定の偽バックエンドは実バックエンドと同じく、Connect で接続 ID を返してから
 // mqtt:connection-failed で失敗を知らせる。

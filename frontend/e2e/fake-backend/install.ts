@@ -655,7 +655,9 @@ function mqttConnection(id: string): ConnectionStatus {
 const MqttHandler = {
   GetProfiles: counted("GetProfiles", async () => clone(db.mqttProfiles)),
 
+  // seed.saveProfileError で書き込みの失敗 (ディスクの I/O エラーなど) を模す。
   SaveProfile: mutates("SaveProfile", (profile: BrokerProfile) => {
+    if (seed.saveProfileError) throw new Error(seed.saveProfileError);
     const index = db.mqttProfiles.findIndex((p) => p.id === profile.id);
     // Go 側と同じく、未知の非空 ID は新規作成として受理しない。
     if (profile.id && index < 0) {
@@ -671,7 +673,9 @@ const MqttHandler = {
   }),
 
   // Go 側と同じく、未知の ID は NotFoundError の文言で失敗させる。
+  // seed.deleteProfileError でファイルの削除の失敗を模す。
   DeleteProfile: mutates("DeleteProfile", (id: string) => {
+    if (seed.deleteProfileError) throw new Error(seed.deleteProfileError);
     if (!db.mqttProfiles.some((p) => p.id === id)) {
       throw new Error(`profile not found: ${id}`);
     }

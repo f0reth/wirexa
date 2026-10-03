@@ -39,6 +39,10 @@ export interface FakeSeed {
    * - "reject": Connect の RPC 自体を失敗させる。
    */
   mqttConnect?: "ok" | "reject";
+  /** MQTT の SaveProfile を必ず失敗させる (ディスクへの書き込みの失敗などを模す)。 */
+  saveProfileError?: string;
+  /** MQTT の DeleteProfile を必ず失敗させる。 */
+  deleteProfileError?: string;
   /** SendRequest が返すレスポンス (既定値に対する上書き)。 */
   httpResponse?: Partial<HttpResponse>;
   /** SendRequest が解決するまでの遅延 (ms)。ローディング状態の検証に使う。 */
