@@ -812,24 +812,77 @@ describe("createConnectionsState connection operations", () => {
     expect(h.api.subscribe).toHaveBeenCalledWith("new-id", "a", 0);
     expect(h.api.subscribe).toHaveBeenCalledWith("new-id", "b/#", 0);
     expect(h.notifier.error).not.toHaveBeenCalled();
+    // 購読が成功したら、バックエンドの購読は確かめない (restore の 1 回だけ)。
+    expect(h.api.getConnections).toHaveBeenCalledTimes(1);
     h.dispose();
   });
 
-  it("keeps re-subscribing after one topic fails", async () => {
+  it("removes the row of a topic that failed to re-subscribe and keeps re-subscribing", async () => {
     const h = harness({ live: [liveStatus("c1", "p1", ["a", "b", "c"])] });
     await h.state.restore();
     h.api.subscribe = vi.fn(async (_id: string, topic: string) => {
       if (topic === "b") throw new Error("not authorized");
     });
+    // 新しい接続は生きていて、失敗した b はバックエンドの購読に無い。
+    h.api.getConnections = vi.fn(async () => [
+      liveStatus("new-id", "p1", ["a"]),
+    ]);
 
     await h.state.handleReconnect("c1");
 
     expect(h.api.subscribe).toHaveBeenCalledTimes(3);
+    expect(h.api.subscribe).toHaveBeenLastCalledWith("new-id", "c", 0);
     expect(h.notifier.error).toHaveBeenCalledTimes(1);
     expect(h.notifier.error).toHaveBeenCalledWith(
       "Failed to re-subscribe to b",
       "not authorized",
     );
+    expect(
+      h.state.connections["new-id"].subscriptions.map((s) => s.topic),
+    ).toEqual(["a", "c"]);
+    h.dispose();
+  });
+
+  it("keeps every row and stops re-subscribing when the new connection is gone", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1", ["a", "b", "c"])] });
+    await h.state.restore();
+    h.api.subscribe = vi.fn(async (_id: string, topic: string) => {
+      if (topic === "b") throw new Error("connection not found");
+    });
+    // 接続に失敗して閉じた。
+    h.api.getConnections = vi.fn(async () => []);
+
+    await h.state.handleReconnect("c1");
+
+    expect(h.api.subscribe).toHaveBeenCalledTimes(2);
+    expect(h.api.subscribe).not.toHaveBeenCalledWith("new-id", "c", 0);
+    expect(h.notifier.error).toHaveBeenCalledTimes(1);
+    expect(
+      h.state.connections["new-id"].subscriptions.map((s) => s.topic),
+    ).toEqual(["a", "b", "c"]);
+    h.dispose();
+  });
+
+  it("keeps the row and logs when checking the backend subscriptions fails", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1", ["a", "b", "c"])] });
+    await h.state.restore();
+    h.api.subscribe = vi.fn(async (_id: string, topic: string) => {
+      if (topic === "b") throw new Error("not authorized");
+    });
+    h.api.getConnections = vi.fn(async () => {
+      throw new Error("ipc down");
+    });
+
+    await h.state.handleReconnect("c1");
+
+    expect(h.api.subscribe).toHaveBeenCalledTimes(3);
+    expect(h.logger.error).toHaveBeenCalledWith(
+      "MQTT re-subscribe check failed",
+      { connection_id: "new-id", topic: "b", error: "Error: ipc down" },
+    );
+    expect(
+      h.state.connections["new-id"].subscriptions.map((s) => s.topic),
+    ).toEqual(["a", "b", "c"]);
     h.dispose();
   });
 

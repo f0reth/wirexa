@@ -561,19 +561,51 @@ export function createConnectionsState(
         const current = connections[newConnId];
         if (!current) break;
         if (!current.subscriptions.some((s) => s.id === sub.id)) continue;
-        await api
-          .subscribe(newConnId, sub.topic, sub.qos)
-          .catch((err) =>
-            notifier.error(
-              `Failed to re-subscribe to ${sub.topic}`,
-              errorMessage(err),
-            ),
+        try {
+          await api.subscribe(newConnId, sub.topic, sub.qos);
+        } catch (err) {
+          notifier.error(
+            `Failed to re-subscribe to ${sub.topic}`,
+            errorMessage(err),
           );
+          if (!(await settleFailedResubscribe(newConnId, sub))) break;
+        }
       }
     } catch (err) {
       notifier.error("Failed to reconnect", errorMessage(err));
     }
   };
+
+  // handleReconnect で購読の RPC が失敗した行を、バックエンドの購読と突き合わせて片付ける。
+  // 確立後の購読の失敗は張り直しを通らず mqtt:subscription-dropped も出ないので、ここで行を外す。
+  // 残りの購読を続けて送るなら true を返す。
+  async function settleFailedResubscribe(
+    connId: string,
+    sub: Subscription,
+  ): Promise<boolean> {
+    let live: ConnectionStatus[];
+    try {
+      live = await api.getConnections();
+    } catch (err) {
+      // バックエンドの購読が分からないので、行は残す。
+      logger.error("MQTT re-subscribe check failed", {
+        connection_id: connId,
+        topic: sub.topic,
+        error: String(err),
+      });
+      return true;
+    }
+    const status = live.find((c) => c.id === connId);
+    // 新しい接続が無い (接続に失敗して閉じた)。行は次の Reconnect で引き継ぐので残し、残りは送らない。
+    if (!status) return false;
+    if (!status.subscriptions.some((s) => s.topic === sub.topic)) {
+      updateConnection(connId, (state) => ({
+        ...state,
+        subscriptions: state.subscriptions.filter((s) => s.id !== sub.id),
+      }));
+    }
+    return true;
+  }
 
   const closeConnection = (connectionId: string) => {
     const conn = connections[connectionId];
