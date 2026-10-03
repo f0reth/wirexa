@@ -30,14 +30,7 @@ import {
 import { createEventBuffer } from "./message-buffer";
 import { makeSubscription } from "./subscription";
 
-export type {
-  ConnectionStateExt,
-  MqttMessageView,
-  OfflineStateExt,
-  OnlineStateExt,
-} from "./connection-state";
-
-export type { ConnectionPersistence };
+export type { ConnectionStateExt, MqttMessageView } from "./connection-state";
 
 /** イベントの購読を登録し、解除する関数を返す。ペイロードの型はイベント名で決まる。 */
 export type MqttEventListener = <E extends MqttEventName>(
@@ -299,9 +292,7 @@ export function createConnectionsState(
     }
   };
 
-  const handleDisconnect = async (connectionId?: string) => {
-    const connId = connectionId ?? activeConnectionId();
-    if (!connId) return;
+  const handleDisconnect = async (connId: string) => {
     try {
       await api.disconnect(connId);
       logger.info("MQTT disconnected", { connection_id: connId });

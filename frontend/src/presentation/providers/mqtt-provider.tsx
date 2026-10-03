@@ -49,7 +49,7 @@ export interface ConnectionContextValue {
   setActiveTab: Setter<Tab>;
   createOfflineConnection: (profile: BrokerProfile) => void;
   handleConnect: (profileId: string) => Promise<void>;
-  handleDisconnect: (connectionId?: string) => Promise<void>;
+  handleDisconnect: (connectionId: string) => Promise<void>;
   handleReconnect: (
     connectionId: string,
     profile?: BrokerProfile,
@@ -79,7 +79,6 @@ export interface SubscribeContextValue {
 
 // --- MqttMessagesContext ---
 export interface MessagesContextValue {
-  messages: Accessor<MqttMessageView[]>;
   /** トピックフィルターを通した、一覧に表示するメッセージ。 */
   visibleMessages: Accessor<MqttMessageView[]>;
   topicFilter: Accessor<string>;
@@ -95,8 +94,7 @@ export interface MessagesContextValue {
 // --- MqttPublishContext ---
 export interface PublishContextValue {
   presets: Accessor<PublishPreset[]>;
-  savePreset: (preset: Omit<PublishPreset, "id">) => void;
-  addPreset: (name?: string) => void;
+  addPreset: () => void;
   removePreset: (id: string) => void;
   updatePreset: (
     id: string,
@@ -151,6 +149,8 @@ export function MqttProvider(props: { children: JSX.Element }) {
     connState.activeConnection,
     connState.updateConnection,
   );
+  // 一覧に出すのは visibleMessages なので、フィルター前の messages はコンテキストに出さない。
+  const { messages: _messages, ...messagesContext } = msgState;
   const presetState = createPresetsState(createPresetsStorage());
   const publishState = createPublishState(
     mqttClient,
@@ -188,7 +188,7 @@ export function MqttProvider(props: { children: JSX.Element }) {
         updateConnectionBroker: connState.updateConnectionBroker,
         reorderProfiles,
         ...subsState,
-        ...msgState,
+        ...messagesContext,
         ...presetState,
         ...publishState,
       }}

@@ -141,38 +141,14 @@ function setup(initial = [makePreset("p1"), makePreset("p2")]) {
 }
 
 describe("createPresetsState persistence", () => {
-  it("saves a new preset, selects it and loads it into the draft", () => {
-    const { state, storage, dispose } = setup();
-
-    state.savePreset({
-      name: "new",
-      topic: "a/b",
-      payload: "{}",
-      qos: 2,
-      retain: true,
-    });
-
-    const saved = state.presets()[2];
-    expect(saved).toMatchObject({ name: "new", topic: "a/b", qos: 2 });
-    expect(saved.id).not.toBe("");
-    expect(state.selectedPresetId()).toBe(saved.id);
-    expect(state.draft()).toEqual({
-      topic: "a/b",
-      payload: "{}",
-      qos: 2,
-      retain: true,
-    });
-    expect(storage.save).toHaveBeenLastCalledWith(state.presets());
-    dispose();
-  });
-
-  it("names an added preset 'no name' by default and saves it", () => {
+  it("names an added preset 'no name', selects it and saves it", () => {
     const { state, storage, dispose } = setup([]);
 
     state.addPreset();
-    state.addPreset("named");
+    state.addPreset();
 
-    expect(state.presets().map((p) => p.name)).toEqual(["no name", "named"]);
+    expect(state.presets().map((p) => p.name)).toEqual(["no name", "no name"]);
+    expect(state.presets()[0].id).not.toBe(state.presets()[1].id);
     expect(state.presets()[0]).toMatchObject({
       topic: "",
       payload: "",

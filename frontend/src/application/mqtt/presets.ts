@@ -4,8 +4,6 @@ import type { PublishPreset, Qos } from "../../domain/mqtt/types";
 import { moveItem } from "../../shared/array";
 import { generateId } from "../../shared/id";
 
-export type { PresetStorage };
-
 /** Publish フォームの編集中の値。プリセット未選択でも publish できるよう独立させる。 */
 export interface PublishDraft {
   topic: string;
@@ -54,18 +52,6 @@ export function createPresetsState(storage: PresetStorage) {
     if (id) updatePreset(id, patch);
   }
 
-  function savePreset(preset: Omit<PublishPreset, "id">) {
-    const id = generateId();
-    const newPreset: PublishPreset = { ...preset, id };
-    setPresets((prev) => {
-      const next = [...prev, newPreset];
-      storage.save(next);
-      return next;
-    });
-    setSelectedPresetId(id);
-    loadDraftFromPreset(id);
-  }
-
   function updatePreset(
     id: string,
     updates: Partial<Omit<PublishPreset, "id">>,
@@ -86,11 +72,11 @@ export function createPresetsState(storage: PresetStorage) {
     setSelectedPresetId((prev) => (prev === id ? null : prev));
   }
 
-  function addPreset(name?: string) {
+  function addPreset() {
     const id = generateId();
     const newPreset: PublishPreset = {
       id,
-      name: name ?? "no name",
+      name: "no name",
       topic: "",
       payload: "",
       qos: 0,
@@ -117,7 +103,6 @@ export function createPresetsState(storage: PresetStorage) {
 
   return {
     presets,
-    savePreset,
     addPreset,
     updatePreset,
     removePreset,

@@ -25,8 +25,8 @@ interface ConnectionRuntimeState {
   isScanning: boolean;
 }
 
-export type OfflineStateExt = OfflineConnectionState & ConnectionRuntimeState;
-export type OnlineStateExt = OnlineConnectionState & ConnectionRuntimeState;
+type OfflineStateExt = OfflineConnectionState & ConnectionRuntimeState;
+type OnlineStateExt = OnlineConnectionState & ConnectionRuntimeState;
 export type ConnectionStateExt = OfflineStateExt | OnlineStateExt;
 
 // オフライン接続の ID 生成ロジックをここに集約

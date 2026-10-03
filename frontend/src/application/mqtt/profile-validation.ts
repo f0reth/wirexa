@@ -1,7 +1,7 @@
 // ブローカープロファイル編集フォームの入力検証。
 
 /** プロファイルダイアログが編集する、検証対象の入力値。 */
-export interface ProfileDraftInput {
+interface ProfileDraftInput {
   name: string;
   host: string;
   /** ポートは入力欄の文字列そのまま（未入力は ""）。 */

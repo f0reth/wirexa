@@ -25,9 +25,10 @@ import base from "./mqtt.module.css";
 import styles from "./publish.module.css";
 import { QosSelect } from "./qos-select";
 
-function PresetsPanel(props: { addPreset: () => void }) {
+function PresetsPanel() {
   const {
     presets,
+    addPreset,
     removePreset,
     updatePreset,
     reorderPresets,
@@ -42,7 +43,7 @@ function PresetsPanel(props: { addPreset: () => void }) {
     <div class={styles.presetsPanel}>
       <div class={base.sectionHeader}>
         <h3 class={base.sectionTitle}>Messages</h3>
-        <Button variant="ghost" size="icon" onClick={() => props.addPreset()}>
+        <Button variant="ghost" size="icon" onClick={() => addPreset()}>
           <Plus size={16} />
         </Button>
       </div>
@@ -217,12 +218,10 @@ function PublishForm() {
 }
 
 export function PublishTab() {
-  const { addPreset } = useMqttPublish();
-
   return (
     <ResizablePanelGroup direction="horizontal" class={base.tabContent}>
       <ResizablePanel defaultSize={30} minSize={20}>
-        <PresetsPanel addPreset={addPreset} />
+        <PresetsPanel />
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={70} minSize={40}>

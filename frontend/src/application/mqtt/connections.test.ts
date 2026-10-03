@@ -754,27 +754,18 @@ describe("createConnectionsState connection operations", () => {
     h.dispose();
   });
 
-  it("disconnects the active connection when no id is given", async () => {
+  it("disconnects the given connection and stops its scan", async () => {
     const h = harness({ live: [liveStatus("c1", "p1")], lastProfileId: "p1" });
     await h.state.restore();
     h.state.updateConnection("c1", (s) => ({ ...s, isScanning: true }));
 
-    await h.state.handleDisconnect();
+    await h.state.handleDisconnect("c1");
 
     expect(h.api.disconnect).toHaveBeenCalledWith("c1");
     expect(h.state.connections.c1).toMatchObject({
       connected: false,
       isScanning: false,
     });
-    h.dispose();
-  });
-
-  it("does nothing on disconnect without an active connection", async () => {
-    const h = harness();
-
-    await h.state.handleDisconnect();
-
-    expect(h.api.disconnect).not.toHaveBeenCalled();
     h.dispose();
   });
 
