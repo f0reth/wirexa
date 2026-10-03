@@ -1,456 +1,365 @@
 ---
 name: e2e-test-review
-description: E2Eテスト（Playwright）の網羅性をユーザーフロー・UI操作・境界条件・バックエンド統合の観点で分析し、Markdownレポートを出力する
+description: E2Eテスト（Playwright）の網羅性をユーザーフロー・UI操作・境界条件・バックエンド統合・偽バックエンドの忠実さの観点で分析し、Markdownレポートを出力する
+argument-hint: "[http|mqtt|udp|openapi|common|<コンポーネントのパス>]"
 disable-model-invocation: true
 ---
 
-フロントエンド（`frontend/e2e/`）のE2Eテストケースが十分かどうかを分析し、`docs/e2e-test-review.md` にレポートを出力してください。
+フロントエンド（`frontend/e2e/`）の E2E テストケースが十分かどうかを分析し、レポートを出力する（既にあれば上書き）。リポジトリに書き出してよいのはレポートだけで、テストや本体コードは書き換えない。
 
-## E2Eテストの目的と単体テストとの違い
+指定された引数: 「$ARGUMENTS」（かぎ括弧の中が空なら引数なし）
 
-E2Eテストは「ユーザーが実際にアプリを操作するシナリオ」を検証する。単体テストとは以下が異なる。
+## 前提: 2 つのスイート
 
-| 項目     | 単体テスト（Vitest）       | E2Eテスト（Playwright）        |
-| -------- | -------------------------- | ------------------------------ |
-| 検証対象 | 関数・モジュール単体の動作 | ユーザーフロー全体             |
-| 実行環境 | jsdom/Node.js              | 実ブラウザ（Chromium）         |
-| 関心事   | 分岐・戻り値・副作用       | UI表示・ユーザー操作・画面遷移 |
+このアプリの E2E は 2 つのスイートに分かれていて、どちらも既に多数の spec がある。「どちらで検証しているか」「どちらで検証すべきか」を常に区別すること。
 
-## テスト実行モード
+| | UI e2e | フルスタック e2e |
+| --- | --- | --- |
+| spec | `frontend/e2e/ui/**/*.spec.ts` | `frontend/e2e/integration/**/*.spec.ts` |
+| 設定 | `playwright.config.ts` | `playwright.integration.config.ts` |
+| 実行 | `task frontend:test:e2e` | `task frontend:test:e2e:fullstack` |
+| バックエンド | `e2e/fake-backend/install.ts` が `window.go` / `window.runtime` を差し替える（Go は動かない） | 実物（`wails dev`）。MQTT は `tools/e2e-broker`、HTTP / UDP の相手は `e2e/fixtures/http-server.ts`・`udp-server.ts` |
+| 状態の隔離 | ページのメモリだけ。テスト間の掃除は不要 | `APPDATA` を一時ディレクトリへ向ける。実行中は同じ保存先を使い回すので前のテストのデータが残る |
+| 並列 | 完全並列 | 直列（アプリは 1 インスタンス） |
+| CI | 実行する | 実行しない（Windows・ローカル専用） |
 
-このアプリのE2Eテストには2つのモードがある。分析時はどのモードで動くかを常に意識すること。
+どちらのスイートで検証するかは次で決める。
 
-| モード                 | コマンド                                  | Wailsバックエンド                             | 用途                                   |
-| ---------------------- | ----------------------------------------- | --------------------------------------------- | -------------------------------------- |
-| **フロントエンドのみ** | `bun run build:e2e && bun run preview:e2e` | 起動しない（Wailsバインディングはモック扱い） | UIフロー・レイアウト・操作の確認       |
-| **フルスタック**       | `wails dev` または ビルド済みバイナリ起動 | 起動する（実際のGo処理・ファイルI/O）         | バックエンド連携・永続化・実通信の確認 |
+- **UI e2e で足りる**: 画面の表示・操作・状態遷移、RPC に渡した引数（`fake.args`）、RPC の失敗・遅延時の表示（`FakeSeed` の `*Error`・`*DelayMs`）、バックエンドからのイベントへの反応（`fake.emit` / `fake.emitAll`）、localStorage の復元（`page.reload()`）。CI で回るので、UI e2e で書けるものは UI e2e を優先する。
+- **フルスタックでしか確かめられない**: Go の実処理の結果（実際に送られた HTTP リクエスト・MQTT/UDP の実通信）、ディスク上の保存形式、Go 側の検証エラーの文言、RPC 引数を信頼しない設計（ファイルアクセスの許可リストなど）、Go 側のメモリに残る状態（接続・リスナー）の復元。
+- 偽バックエンドに無い機能（`FakeSeed` に注入口が無い失敗など）が必要な場合は「偽バックエンドの拡張が必要」と書く。フルスタックへ回す理由にはしない。
 
-`playwright.config.ts` の `webServer.command` が `bun run build:e2e && bun run preview:e2e`（ビルド済みバンドルの配信。`WIREXA_E2E_DEV=1` のときは `bun run dev:e2e`）なら「フロントエンドのみ」モード。
-観点 M（バックエンド統合）のテストはフルスタックモードが必要。現状のPlaywright設定がどちらに対応しているかをレポートに明記すること。
+## 対象スコープと出力先
 
-## 対象スコープ
+| `$ARGUMENTS` | 対象 | 出力先 |
+| --- | --- | --- |
+| 空 | すべて | `docs/e2e-test-review.md` |
+| `mqtt`・`http`・`udp`・`openapi` のいずれか | そのプロトコルのフロー（下記のパス）と観点 H〜K の該当分。共通の観点 A〜G・L〜N もそのプロトコルの範囲だけ見る | `docs/e2e-test-review-<proto>.md` |
+| `common` | プロトコルに依らない部分（`App.tsx`、`presentation/components/sidebar/index.tsx`・`protocol-switcher.tsx`、`components/ui/`（確認ダイアログ・フォーカストラップ・トースト・一覧の並び替え）、`application/ui/`（テーマ・通知）、`e2e/ui/common/`、`e2e/integration/common/`、`e2e/fixtures/`、`e2e/fake-backend/`）。観点 H〜K は対象外（終了時の確認は実装が `openapi-provider.tsx` にあるので openapi で見る） | `docs/e2e-test-review-common.md` |
+| コンポーネントのパス（例: `presentation/components/sidebar`） | そのコンポーネントの操作だけ | `docs/e2e-test-review-<パスの末尾>.md` |
 
-- 分析対象（テスト）: `frontend/e2e/**/*.spec.ts`
-- 分析対象（本体コード）: `frontend/src/` 配下のコンポーネント・プロバイダ・ストア・ドメイン
-- バックエンドコード: `internal/` 配下のハンドラ・サービス・ドメイン
-- 設定: `frontend/playwright.config.ts`、`frontend/vite.e2e.config.ts`
-- `$ARGUMENTS` で特定のプロトコルやコンポーネントが指定された場合はそちらのみを対象にする
+プロトコルごとのパス（テストはどれも `e2e/ui/<proto>/` と `e2e/integration/<proto>/`）:
 
-> **`$ARGUMENTS` の絞り込みについて**: 以下のルールを適用する。
->
-> - 省略した場合（空）→ すべてのプロトコル・コンポーネントを対象にする
-> - プロトコル名（例: `mqtt`, `http`, `udp`, `openapi`）→ そのプロトコルのフローのみを対象にする
-> - コンポーネントパス（例: `presentation/components/sidebar`）→ そのコンポーネントのインタラクションのみを対象にする
+| | 本体（`frontend/src/`） | バックエンド |
+| --- | --- | --- |
+| mqtt | `presentation/components/mqtt/`、`sidebar/broker-tree.tsx`・`profile-list.tsx`、`presentation/providers/mqtt-provider.tsx`、`application/mqtt/` | `internal/adapters/mqtt_handler.go` |
+| http | `presentation/components/http/`、`sidebar/collection-tree.tsx`・`collection-node.tsx`・`tree-item-node.tsx`・`tree-ui-context.tsx`・`rename-input.tsx`・`use-tree-drag-drop.ts`・`use-long-press-drag.ts`・`drag-state.ts`、`presentation/providers/http-provider.tsx`、`application/http/` | `internal/adapters/http_handler.go` |
+| udp | `presentation/components/udp/`、`sidebar/target-tree.tsx`・`profile-list.tsx`、`presentation/providers/udp-provider.tsx`、`application/udp/` | `internal/adapters/udp_handler.go` |
+| openapi | `presentation/components/openapi/`、`sidebar/openapi-file-tree.tsx`・`openapi-file-node.tsx`・`use-long-press-drag.ts`、`presentation/providers/openapi-provider.tsx`、`application/openapi/`、`infrastructure/app/lifecycle.ts`（終了時の確認） | `internal/adapters/openapi_handler.go` |
+
+`e2e/ui/common/` にはプロトコル固有のテストも入っている（HTTP のフォーム検証、リクエストの復元など）。プロトコルを絞った場合も、そのプロトコルに関わる `common/` のテストは読むこと。
 
 ## 分析手順
 
-### Step 1: アプリのユーザーフロー把握
+### Step 1: ユーザーフローの把握（本体コードを先に読む）
 
-**本体コードを読む**。テストファイルより先に以下を確認する。
+1. `frontend/src/App.tsx` と `presentation/components/sidebar/protocol-switcher.tsx` — 全体レイアウト、プロトコル切り替え、サイドバーの開閉、テーマ
+2. `presentation/components/sidebar/` — 追加・削除・リネーム・選択・並び替え・開閉
+3. 各プロトコルのコンポーネントと `presentation/providers/` — 主要な操作と、状態がどこで管理されているか
+4. `infrastructure/storage/local-storage.ts` — localStorage に保存しているキー（リロードで復元されるもの）
+5. `config/limits.ts` — 上限値の定数（レポートには実際の値を使う）
+6. `internal/adapters/` のハンドラ — 公開している RPC。`internal/domain/events.go` — バックエンドが発火するイベント
+7. `infrastructure/app/lifecycle.ts` と `openapi-provider.tsx` — 終了時の確認（`app:before-close` → `ConfirmQuit`）
 
-1. `frontend/src/App.tsx` を読み、プロトコル（mqtt/http/udp/openapi）と全体レイアウトを把握する
-2. `frontend/src/presentation/components/sidebar/` を読み、サイドバーで行える操作（追加・削除・リネーム・選択・ドラッグ）を列挙する
-3. 各プロトコルのコンポーネント（`presentation/components/mqtt/`・`http/`・`udp/`・`openapi/`）を読み、主要なユーザー操作を列挙する
-4. `presentation/providers/` を読み、グローバル状態がどのように管理されているかを把握する
-5. `frontend/src/config/limits.ts` を読み、上限値の定数（MQTT_MAX_MESSAGES・MQTT_MAX_TOPICS・UDP_MAX_MESSAGES等）を把握する
-6. `internal/adapters/` 配下のハンドラを読み、Wailsバインディングとして公開されている関数を把握する
+列挙したフローをレポートの「ユーザーフロー一覧」に書く。
 
-列挙した結果は「ユーザーフロー一覧」としてレポートの Step 1 セクションに記載する。
+### Step 2: テスト基盤と既存テストの把握
 
-### Step 2: 既存E2Eテストの読み取り
+テスト基盤を先に読む。spec はこれらを通して画面を操作するので、読まないと spec の内容を誤解する。
 
-`frontend/e2e/` 配下の全テストファイルを読み、以下を把握する。
+- `e2e/fixtures/app.ts` — ページオブジェクト `App`。ロケーターと操作はここに集約されている
+- `e2e/fixtures/ui.ts`・`e2e/fake-backend/types.ts` — UI e2e の test の入口（`app`・`fake`・`seed`）。`fake`（`calls`・`args`・`waitForCalls`・`emit`・`emitAll`・`snapshot`）と `FakeSeed`（初期データ、失敗・遅延の注入）
+- `e2e/fake-backend/install.ts` — 偽バックエンドの実装
+- `e2e/fixtures/integration.ts`・`e2e/integration/global-setup.ts`・各 fixture — フルスタックの test の入口（`app` と保存データの読み取り・後始末ヘルパー）
 
-- `test` / `describe` ブロックの構造と検証しているシナリオ
-- 使用している Playwright ロケーター（`page.getByRole`・`page.getByText`・`page.locator` など）
-- `page.goto()` で訪れているURL・ルート
-- `expect(page)` / `expect(locator)` で検証している内容（`toBeVisible`・`toHaveText`・`toHaveValue`など）
-- `page.fill()`・`page.click()`・`page.keyboard.press()` などのユーザー操作
-- `page.waitForSelector()`・`page.waitForResponse()` などの待機処理
+そのうえで対象の spec をすべて読み、「何を検証しているか」を spec ファイル単位で要約する。テスト 1 件ごとの表は作らない（件数が多く、読み手の役に立たない）。
 
-把握した内容は「既存テストカバレッジ」としてレポートの Step 2 セクションに記載する。
+### Step 3: 観点ごとに不足を検出
 
-### Step 3: 以下の観点で不足を検出
+**Step 1 で把握した本体コードを根拠に**不足しているテストケースを検出する。一般論ではなく、コードのファイル名と行番号を根拠に書く。観点の表は「見るべき点」であり、機能の一覧ではない。表に無くても、コードにある操作でテストが無ければ該当する観点で報告する。
 
-観点ごとに、**本体コード（Step 1で把握したユーザーフロー）を根拠に**不足しているテストケースを検出する。推測・一般論は禁止。コードの具体的なファイル名と行番号を根拠にすること。
-
-観点が対象アプリに該当しない場合は「該当なし（理由）」と記載してスキップする。
+観点が対象に該当しない場合は「該当なし（理由）」と書く。
 
 ---
 
-#### 観点 A: ページ表示・初期状態（Initial Render）
+#### 観点 A: 初期状態（Initial Render）
 
-アプリ起動直後・プロトコル切り替え直後の初期状態を検証しているか。
-
-| チェック項目                                       | このアプリでの例                                                                     |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| アプリ起動時の初期プロトコルがmqttであることの確認 | `ProtocolSwitcher` の mqtt ボタンが選択状態になっているか                            |
-| 各プロトコルへの切り替えでパネルが表示されるか     | http/udp/openapi に切り替えたときに対応するパネルが `display: flex` になるか         |
-| 初回訪問時の空状態（empty state）表示              | コレクション・ブローカーリストが空のとき「まだ何もない」的なメッセージが表示されるか |
-| テーマ（ライト/ダーク）の初期状態                  | `localStorage` に保存済みのテーマが復元されているか                                  |
-
----
+| チェック項目 | このアプリでの例 |
+| --- | --- |
+| 起動時の初期プロトコル | MQTT のボタンが `aria-pressed` になっている |
+| 各プロトコルの空状態 | `No brokers yet`・`No collections yet`・`No targets yet`・`No files opened yet` など |
+| テーマの初期状態と復元 | `app:theme` に保存されたテーマが起動時に適用される |
+| 起動時の読み込み失敗 | `GetSidebarLayout`・`GetProfiles`・`GetTargets` が失敗したときの表示と、その後の操作で保存済みデータを壊さないこと（`FakeSeed` の `getSidebarLayoutError`・`getProfilesError`・`getTargetsError`）。`GetCollections`・`GetRecents` は Go 側がエラーを返さず、`GetRecents` の失敗は画面に出ない（`console.error` だけ）ので、テストが無くても不足として報告しない |
 
 #### 観点 B: プロトコル切り替え（Protocol Navigation）
 
-`ProtocolSwitcher` による画面切り替えフローを検証しているか。
-
-| チェック項目                                     | このアプリでの例                                                             |
-| ------------------------------------------------ | ---------------------------------------------------------------------------- |
-| mqtt→http→udp→openapi の順で切り替えられるか     | 各ボタンをクリックして対応パネルが表示されることを確認                       |
-| 切り替え後にサイドバーの内容が変わるか           | mqtt→http で Sidebar の内容（コレクションツリー）が切り替わるか              |
-| 切り替え後に元のプロトコルに戻れるか             | http→mqtt に戻ったとき前の状態が保持されているか（`visited` シグナルの動作） |
-| 切り替え中に前プロトコルのパネルが非表示になるか | `display: none` になっているか（DOMからは消えない設計）                      |
-
----
+| チェック項目 | このアプリでの例 |
+| --- | --- |
+| 4 プロトコルの切り替えとサイドバーの内容 | 見出しが `Brokers` / `Collections` / `Targets` / `OpenAPI Files` に変わる |
+| 切り替え後の状態の保持 | 一度開いたパネルは `display: none` で残り、入力内容が戻ってくる（`visited`） |
+| 選択中のプロトコルを再クリック | サイドバーが閉じる・開く。別のプロトコルを選ぶと開き直す |
 
 #### 観点 C: サイドバー操作（Sidebar Interaction）
 
-`frontend/src/presentation/components/sidebar/` のコンポーネント群の操作フローを検証しているか。
+| チェック項目 | このアプリでの例 |
+| --- | --- |
+| 追加 | コレクション・フォルダ・リクエスト（ルート直下を含む）、ブローカー、ターゲット、OpenAPI の新規文書 |
+| リネーム | ダブルクリック → 入力 → Enter / blur で確定、Escape で取り消し |
+| 削除と確認ダイアログ | Delete で消える、Cancel / Escape で残る、子を持つフォルダの削除 |
+| 選択 | クリック・キーボードで選び、対応する編集パネルが開く |
+| 並び替え・移動 | ツリー（コレクション間・フォルダ内・ルートへの移動）、ブローカー・ターゲット・最近使ったファイルの並び替え |
+| 開閉 | コレクション・フォルダの開閉と、その復元（`wirexa:http:expandedFolders`） |
+| 予約コレクション `__root__` | 画面に出ない・削除やリネームができない |
 
-| チェック項目                               | このアプリでの例                                                                         |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| 新規コレクション/フォルダ/リクエストの追加 | 追加ボタン押下 → ツリーにアイテムが追加される                                            |
-| アイテムのリネーム                         | ダブルクリック or リネームアイコン → インライン入力 → Enter で確定 / Escape でキャンセル |
-| アイテムの削除（確認ダイアログ含む）       | 削除ボタン → ConfirmDialog 表示 → 確認クリック → ツリーから消える                        |
-| アイテムの選択・フォーカス                 | クリックで選択状態になるか・対応する編集パネルが開くか                                   |
-| ドラッグ&ドロップによる並び替え            | ドラッグで順序が変わるか（Playwright の `dragTo()` で検証）                              |
-| 折りたたみ（collapse/expand）              | フォルダをクリックして子アイテムが表示/非表示になるか                                    |
+#### 観点 D: 入力・バリデーション・境界値（Form Input, Validation & Boundary）
 
----
+| チェック項目 | このアプリでの例 |
+| --- | --- |
+| 必須項目が空のときの送信ブロック | URL 空欄で Send が無効、名前が空のブローカーは Save が無効 |
+| 空白だけの入力 | リネームで空白だけを確定したとき、ホストが空白のとき |
+| ポート番号の範囲（1〜65535） | MQTT ブローカー、UDP ターゲット・送信先・待ち受けポートに `0`・`65535`・`65536` |
+| 不正な URL | `not-a-url` |
+| 不正な MQTT トピックフィルター | 検証はバックエンド側。画面はエラーをトーストで出す |
+| `config/limits.ts` の上限 | `MQTT_MAX_MESSAGES`・`MQTT_MAX_TOPICS`・`UDP_MAX_MESSAGES` の境界（上限ちょうど・上限 +1） |
+| key-value エディタ | 行の追加・削除・有効/無効、Form Data の種別（Text / File / JSON） |
+| UDP の固定長フィールド | 不正な hex、バイト数の表示、エンディアン |
+| 特殊文字・Unicode | 名前やトピックに日本語・絵文字・`<script>` |
 
-#### 観点 D: フォーム入力・バリデーション・境界値（Form Input, Validation & Boundary）
+#### 観点 E: 非同期操作（Async & Loading State）
 
-入力フィールドへの操作と入力値のバリデーション、および境界値を検証しているか。
+| チェック項目 | このアプリでの例 |
+| --- | --- |
+| 処理中の表示と二重実行の防止 | HTTP は Send が Cancel に替わる。UDP は `Sending...`・`Starting...` で無効化 |
+| 取り消し | Cancel で `CancelRequest` が呼ばれ、表示が戻る |
+| 成功後の更新 | レスポンス表示、接続状態、一覧への反映 |
+| 失敗時の表示 | トースト、フォーム内のエラー、自動保存失敗のバナー。同じ失敗でトーストが重複しないこと |
+| 処理中に対象を切り替えたとき | 送信中に別のリクエストへ切り替えたら、古いレスポンスを表示しない |
 
-| チェック項目                         | このアプリでの例                                                                                                                                                |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 必須フィールド空欄での送信ブロック   | URL空欄でHTTPリクエストを送信しようとしたときエラー表示またはボタン無効化                                                                                       |
-| 空白のみの入力の扱い                 | ブローカーアドレスに `"   "` を入力したとき                                                                                                                     |
-| **ポート番号の範囲（1〜65535）**     | UDPターゲット・MQTTブローカーのポートに `0`・`65535`・`65536` を入力したとき                                                                                    |
-| **不正なURLフォーマット**            | HTTPリクエストのURLに `not-a-url` を入力したときの扱い                                                                                                          |
-| **不正なMQTTトピック**               | トピックに空文字・スペース・`#` を中間に含む文字列を入力したとき（`domain/mqtt/topic.ts` のバリデーション参照）                                                 |
-| **limits.tsの上限値境界**            | `MQTT_MAX_MESSAGES=5000` 件のメッセージが表示されているとき新規メッセージが届いたら古いものが破棄されるか、`MQTT_MAX_TOPICS=500`・`UDP_MAX_MESSAGES=500` も同様 |
-| キーバリューエディタの行追加・削除   | `key-value-editor.tsx` でヘッダー/パラメータの追加・削除                                                                                                        |
-| フォームの `enabled/disabled` トグル | key-valueエディタの各行のチェックボックスON/OFF                                                                                                                 |
-| **特殊文字・Unicodeの入力**          | トピック名・コレクション名に日本語・絵文字・`<script>` タグを入力したとき                                                                                       |
+#### 観点 F: 画面側の永続化（Persistence in localStorage）
 
----
+`infrastructure/storage/local-storage.ts` のキーごとに、リロード後の復元を検証しているか。バックエンドの保存は観点 M。
 
-#### 観点 E: 非同期操作・ローディング状態（Async & Loading State）
-
-非同期処理中のUI状態を検証しているか。
-
-> **モードによる制約**: フロントエンドのみモード（`playwright.config.ts`）ではWailsバックエンドが動かないため、Wailsバインディング呼び出しの待機中UI（ローディングスピナー等）は検証できない。フルスタックモード（`wails dev` / ビルド済みバイナリ）では以下すべてが検証可能。フロントエンドのみモードで動作する場合は「フルスタックモードで要検証」と注記すること。
-
-| チェック項目                          | このアプリでの例                                                                             |
-| ------------------------------------- | -------------------------------------------------------------------------------------------- |
-| ローディングスピナー/スケルトンの表示 | HTTPリクエスト送信中にローディング表示が出るか                                               |
-| 成功後のUI更新                        | レスポンスが返ったあとにレスポンスビューワーに内容が表示されるか                             |
-| エラー時のエラーメッセージ表示        | 接続失敗時にトースト/エラーバナーが表示されるか                                              |
-| ボタンの二重クリック防止              | 送信中は送信ボタンが無効化（`disabled`）になるか                                             |
-| **キャンセル操作**                    | 送信中にキャンセルボタンを押したらリクエストが中断されるか（`CancelRequest` バインディング） |
-
----
-
-#### 観点 F: テーマ・設定の永続化（Persistence）
-
-ユーザー設定が `localStorage` 経由で保持されることを検証しているか。
-
-| チェック項目                          | このアプリでの例                                         |
-| ------------------------------------- | -------------------------------------------------------- |
-| ダーク/ライトテーマ切り替えの永続化   | テーマ切り替え → リロード → 同じテーマが適用されているか |
-| 選択中のコレクション/ブローカーの保持 | リロード後に前回選択していたアイテムが選択状態になるか   |
-| フォームの入力内容の保持              | HTTPリクエストの入力内容がリロード後に復元されるか       |
-
----
+| チェック項目 | このアプリでの例 |
+| --- | --- |
+| テーマ | `app:theme` |
+| 選択中のリクエスト | `wirexa:http:activeRequest` |
+| フォルダの開閉 | `wirexa:http:expandedFolders` |
+| 最後に使ったブローカー | `mqtt:lastActiveProfileId` |
+| プリセット | `mqtt:presets` |
+| 並び順 | `mqtt:profileOrder`・`udp:targetOrder` |
+| 形の壊れた保存値 | 既定値に戻って起動できる |
 
 #### 観点 G: キーボード操作・アクセシビリティ（Keyboard & Accessibility）
 
-マウス操作なしでの操作・アクセシビリティを検証しているか。
+| チェック項目 | このアプリでの例 |
+| --- | --- |
+| Tab でのフォーカス移動 | 入力欄 → ボタン、ダイアログ内のフォーカストラップ |
+| Enter / Space での実行・選択 | URL 欄の Enter で送信、行の Enter / Space で選択 |
+| Escape での取り消し | リネーム、確認ダイアログ |
+| ショートカット | OpenAPI の Ctrl+S |
+| ロールとアクセシブル名 | `button`・`tab`・`tabpanel`・`dialog`、id の重複が無いこと |
 
-| チェック項目                              | このアプリでの例                                               |
-| ----------------------------------------- | -------------------------------------------------------------- |
-| Tab キーによるフォーカス移動              | Tabキーで各入力フィールドを順番に移動できるか                  |
-| Enter キーでのフォーム送信                | HTTPリクエストバーでEnterを押したらリクエストが送信されるか    |
-| Escape キーでのキャンセル                 | リネーム入力中にEscapeを押したら入力がキャンセルされるか       |
-| ロール属性（button/input/dialog）の正しさ | `getByRole("button", { name: "送信" })` でボタンが取得できるか |
+#### 観点 H: MQTT 固有フロー
 
----
+| チェック項目 | このアプリでの例 | 検証するスイート |
+| --- | --- | --- |
+| プロファイルの作成・編集・削除 | ダイアログと接続バーの両方からの編集、複数ブローカーの切り替え | UI |
+| 接続・切断 | Connect / Disconnect、`Save & Connect`、接続失敗・拒否 | UI（表示）/ フルスタック（実接続） |
+| 購読・購読解除 | Subscriptions への追加、ミュート、共有購読（`$share/`・`$queue/`）、切断された購読の通知 | UI / フルスタック（実受信） |
+| メッセージ一覧 | 受信、詳細表示とコピー、トピックでの絞り込み、Clear、Auto スクロール | UI（`fake.emit`） |
+| メッセージ上限 | `MQTT_MAX_MESSAGES` を超えたときの破棄 | UI（`fake.emitAll`） |
+| パブリッシュ | トピック・QoS・retain・ペイロード、オフライン時は無効 | UI（`fake.args`）/ フルスタック（ループバック） |
+| プリセット | 追加・選択・リネーム・削除・並び替え・復元 | UI |
+| トピックスキャン | スキャン結果の一覧と、そこからの購読 | UI / フルスタック |
+| 再接続・切り替え | 再接続後も購読が続く、ブローカーごとに購読が独立している | フルスタック |
 
-#### 観点 H: MQTTプロトコル固有フロー（MQTT Flow）
+#### 観点 I: HTTP 固有フロー
 
-MQTTクライアントのユーザーフローを検証しているか（`presentation/components/mqtt/`）。
+| チェック項目 | このアプリでの例 | 検証するスイート |
+| --- | --- | --- |
+| メソッド・URL・送信 | メソッド選択、送信、レスポンス表示 | UI / フルスタック（実送信） |
+| ヘッダー・クエリ・認証 | Basic / Bearer の入力欄と、実際に送られる値 | UI（`fake.args`）/ フルスタック（サーバーが受けた値） |
+| ボディ | none / JSON / Text / Form Data / Form URL Encoded / File の切り替えと、種別ごとの値の保持 | UI / フルスタック（multipart の中身） |
+| ファイル参照 | 手入力のパスは未確定で送れない、Browse で確定、編集でトークンを捨てる、再起動後は再選択を求める | UI / フルスタック（手入力のパスが送られないこと） |
+| リクエスト設定 | タイムアウト、プロキシ、TLS 検証、リダイレクト | UI |
+| レスポンス表示 | ステータス、Body / Headers / Timing、画像、バイナリ（hex）、空ボディ、HTML を含む JSON、複数値ヘッダー | UI / フルスタック |
+| 大きなレスポンス | 打ち切り表示、保存、保存は 1 回だけ、回収済みのときの案内 | UI |
+| コピー | レスポンスボディをクリップボードへ | UI |
+| 自動保存と復元 | 入力の自動保存、Doc タブ、保存失敗のバナー、リロード後の復元 | UI / フルスタック |
+| レスポンスパネルの開閉 | 隠す・戻す、送信時に自動で開く | UI |
 
-> **モード注記**: ブローカーへの実接続はフルスタックモードが必要。フロントエンドのみモードではUI操作のみ検証可能。
+#### 観点 J: UDP 固有フロー
 
-| チェック項目                             | このアプリでの例                                                | 必要なモード                                            |
-| ---------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------- |
-| ブローカーへの接続・切断フロー           | ブローカー設定入力 → 接続ボタン → 接続状態表示 → 切断ボタン     | フルスタック                                            |
-| トピックのサブスクライブ                 | トピック入力 → Subscribeボタン → Subscriptionsパネルに追加      | フルスタック（受信確認） / フロントエンドのみ（UI確認） |
-| メッセージのパブリッシュ                 | トピック・ペイロード入力 → Publishボタン → Messagesパネルに表示 | フルスタック                                            |
-| 複数ブローカーの管理                     | ブローカー追加 → 切り替え → 各ブローカーの状態が独立しているか  | フロントエンドのみ（UI確認）                            |
-| QoS の選択（0/1/2）                      | QoSセレクトの切り替えが実際の操作に反映されるか                 | フロントエンドのみ（UI確認）                            |
-| **メッセージ上限（5000件）到達時の挙動** | 5001件目のメッセージで古いものが1件削除されるか                 | フルスタック                                            |
-| **新着メッセージへのオートスクロール**   | メッセージ受信時にリストが最新メッセージにスクロールするか      | フルスタック（受信確認） / フロントエンドのみ（JS経由でメッセージ追加後に確認） |
+| チェック項目 | このアプリでの例 | 検証するスイート |
+| --- | --- | --- |
+| ターゲットの作成・編集・削除・並び替え | ダイアログ、`host:port` の表示 | UI |
+| 送信 | エンコーディング（text / json / 固定長）ごとのペイロード、種別ごとの値の保持 | UI（`fake.args`）/ フルスタック（実送信） |
+| 待ち受けの開始・停止 | 開始中の表示、待ち受け中は Start が無効、リロード後の復元 | UI / フルスタック |
+| 開始の失敗 | ポート未指定、使用中のポート | UI / フルスタック |
+| 受信ログ | 新しい順、Clear、ペイロードのコピー | UI（`fake.emit`）/ フルスタック |
+| メッセージ上限 | `UDP_MAX_MESSAGES` を超えたときの破棄 | UI（`fake.emitAll`）/ フルスタック |
 
----
+#### 観点 K: OpenAPI 固有フロー
 
-#### 観点 I: HTTPプロトコル固有フロー（HTTP Flow）
+| チェック項目 | このアプリでの例 | 検証するスイート |
+| --- | --- | --- |
+| 編集とプレビュー | 入力がプレビューに反映される、空・不正な YAML/JSON のときの表示、プレビューの開閉 | UI / フルスタック |
+| 新規文書・ファイルを開く | New、ファイルダイアログ、ファイルのドロップ | UI（開いた状態から始めるなら `FakeSeed.openApiFiles`。ダイアログで開く経路は偽バックエンドの拡張が必要: OpenAPI の `OpenFilePicker` は常にキャンセルを返す。`FakeSeed.pickedFile` は HTTP 用） |
+| 保存 | Save、Ctrl+S、Save As、未保存マークの付き方と消え方 | UI |
+| 未保存の確認 | 別の文書を開く・新規作成・ドロップ時の `Save & continue` / `Discard changes` / `Cancel` | UI |
+| 終了時の確認 | `app:before-close` を受けたときの確認と `ConfirmQuit` | UI（`fake.emit`） |
+| 最近使ったファイル | 選択、履歴からの削除、並び替え、リロード後の順序 | UI |
+| ファイルアクセスの許可リスト | ダイアログで選んでいないパスの `ReadFile` / `WriteFile` が拒否される（`docs/http-local-file-access-hardening.md`） | フルスタック |
 
-HTTPクライアントのユーザーフローを検証しているか（`presentation/components/http/`）。
+#### 観点 L: テスト構造（Test Structure Integrity）
 
-> **モード注記**: 実HTTPリクエスト送信・レスポンス表示はフルスタックモードが必要。
+| チェック項目 | 見るところ |
+| --- | --- |
+| 固定 sleep | `page.waitForTimeout`。`expect(...)`、`expect.poll`、`fake.waitForCalls` に置き換える |
+| ページオブジェクトを通さないロケーター | spec に直接書かれた CSS クラス・XPath・DOM 構造依存のロケーター。`fixtures/app.ts` の中にあるもの（CodeMirror の `.cm-*`、`data-drop-zone` など、理由がコメントされているもの）は指摘しない |
+| ヘルパーの重複 | 複数の spec に同じ操作がコピーされていないか（`App` に寄せる） |
+| `test.only`・`test.skip`・`test.fixme` の放置 | |
+| アサーションの無いテスト、操作しただけで結果を見ていないテスト | テスト名が言っていることを実際に検証しているか |
+| 個別の `timeout` 指定 | 既定値は config の `expect.timeout` にある。上書きには理由があるか |
+| URL・ポートの直書き | `baseURL` を使っているか |
+| フルスタックの後始末 | Go 側に残る状態（UDP リスナー・MQTT 接続）を `afterEach` で `stopUdpListeners`・`disconnectMqttConnections` を使って止めているか。前のテストのデータが残っていても通る書き方か（件数の完全一致ではなく名前で絞る） |
+| スイートの選び方 | UI e2e で書けるのにフルスタックにだけあるテスト（CI で回らない）、逆に偽バックエンドの挙動を確かめているだけのテスト |
 
-| チェック項目                                           | このアプリでの例                                              | 必要なモード                 |
-| ------------------------------------------------------ | ------------------------------------------------------------- | ---------------------------- |
-| HTTPメソッドの選択（GET/POST/PUT/DELETE等）            | メソッドセレクト変更 → 正しいメソッドが選択されるか           | フロントエンドのみ           |
-| URL入力とリクエスト送信                                | URL入力 → 送信ボタン → レスポンス表示                         | フルスタック                 |
-| リクエストヘッダー・パラメータの追加                   | key-valueエディタでヘッダー追加 → リクエストに含まれるか      | フルスタック                 |
-| ボディ（JSON/テキスト等）の入力                        | ボディタイプ切り替え → 対応する入力UIが表示されるか           | フロントエンドのみ           |
-| レスポンスの表示（ステータスコード・ボディ・ヘッダー） | レスポンスビューワーに正しい内容が表示されるか                | フルスタック                 |
-| コレクションへの保存・読み込み                         | リクエストをコレクションに保存 → 再選択して内容が復元されるか | フルスタック                 |
-| **認証設定（Basic/Bearer）の入力**                     | 認証タイプを切り替えると対応する入力欄が表示されるか          | フロントエンドのみ           |
-| **プロキシ設定・タイムアウト設定**                     | リクエスト設定パネルで変更できるか                            | フロントエンドのみ（UI確認） |
-| **レスポンスのクリップボードコピー**                   | コピーボタンをクリックするとレスポンスボディ等がクリップボードに書き込まれるか（`page.evaluate(() => navigator.clipboard.readText())` で検証） | フロントエンドのみ |
+#### 観点 M: バックエンド統合（Backend Integration）
 
----
+フルスタックでしか確かめられないこと。番号は変えない。`e2e/integration/common/backend-integration.spec.ts` のコメントと describe 名（M-1〜M-4・M-8）がこの番号を使っている。M-5〜M-7・M-9・M-10 は spec に番号が書かれていないので、プロトコルごとの spec（`e2e/integration/<proto>/`）を内容で照らし合わせる。
 
-#### 観点 J: UDPプロトコル固有フロー（UDP Flow）
+| 番号 | チェック項目 | このアプリでの例 | 根拠ファイル |
+| --- | --- | --- | --- |
+| M-1 | RPC が実バックエンドに届き、結果が返る | 画面で作ったものが `GetCollections`・`GetProfiles`・`GetTargets` に現れる | `internal/adapters/*_handler.go` |
+| M-2 | コレクションの永続化 | リロード後も残る。`collections/*.json` の形が golden と一致する | `internal/infrastructure/http/collection_repository.go` |
+| M-3 | MQTT プロファイルの永続化 | 同上（`mqtt-profiles/*.json`） | `internal/infrastructure/mqtt/profile_repository.go` |
+| M-4 | UDP ターゲットの永続化 | 同上（`udp-targets/*.json`） | `internal/infrastructure/udp/target_repository.go` |
+| M-5 | バックエンドのエラーの表示 | Go 側の検証エラーや I/O エラーが画面に出る | `internal/domain/errors.go` |
+| M-6 | 実通信 | HTTP の実送信（サーバーが受けた内容）、MQTT の実接続・送受信、UDP の実送受信 | `internal/infrastructure/http/net_client.go`、`mqtt/paho_client.go`、`udp/net_socket.go` |
+| M-7 | イベントの受信 | バックエンドが発火したイベントが画面に反映される | `internal/infrastructure/wails_emitter.go`、`internal/domain/events.go` |
+| M-8 | サイドバーレイアウトの永続化 | 並び替えが `sidebar_layout.json` に保存される | `internal/infrastructure/http/sidebar_layout_repository.go` |
+| M-9 | OpenAPI の最近使ったファイル | `openapi-recents.json` への保存と復元 | `internal/infrastructure/openapi/recent_repository.go` |
+| M-10 | RPC 引数を信頼しない設計 | 許可されていないパス・トークンの拒否 | `internal/infrastructure/http/file_registry.go`、`openapi/file_access.go` |
 
-UDPクライアントのユーザーフローを検証しているか（`presentation/components/udp/`）。
+永続化は「リロード後に残る」と「ディスク上のファイルの形が `testdata/*.golden.json` と一致する」（`readStoredEntities`・`readGolden`・`shapeOf`）の両方で見る。アプリの再起動はこのスイートでは行えない（1 回の実行で `wails dev` を 1 つ起動するだけ）ので、再起動をまたぐ検証が無いことは不足として報告しない。破損ファイルの退避など起動時の復旧は Go の統合テスト（`internal/integration/`）の範囲。
 
-> **モード注記**: 実UDP送受信はフルスタックモードが必要。
+#### 観点 N: 偽バックエンドの忠実さ（Fake Backend Fidelity）
 
-| チェック項目                            | このアプリでの例                                        | 必要なモード |
-| --------------------------------------- | ------------------------------------------------------- | ------------ |
-| 送信フォームへの入力と送信              | ターゲットアドレス・ポート・メッセージ入力 → 送信ボタン | フルスタック |
-| 受信リスンの開始・停止                  | リッスン開始ボタン → 受信中状態表示 → 停止ボタン        | フルスタック |
-| 受信メッセージのログ表示                | メッセージ受信後にメッセージログに表示されるか          | フルスタック |
-| **メッセージ上限（500件）到達時の挙動** | 501件目のメッセージで古いものが削除されるか             | フルスタック |
-| **新着メッセージへのオートスクロール**  | メッセージ受信時にリストが最新メッセージにスクロールするか | フルスタック（受信確認） / フロントエンドのみ（JS経由でメッセージ追加後に確認） |
+UI e2e は偽バックエンドの挙動を前提に通る。偽バックエンドが Go とずれていると、テストが通っても実物では動かない。
 
----
+| チェック項目 | 見るところ |
+| --- | --- |
+| RPC の網羅 | `internal/adapters/` の公開メソッドと `app.go` の `ConfirmQuit`（`main.App`）がすべて `install.ts` にあるか。足りないと UI e2e でその操作は失敗するか、何も起きない |
+| 挙動の一致 | 検証の順序と条件（空の名前、ポート範囲、`__root__` の予約など）、戻り値の形、既定値、並び順が Go の application サービスと同じか |
+| イベントの一致 | RPC のあとに発火するイベントの種類と順序が Go と同じか（MQTT の接続成功・失敗など） |
+| 型の追従 | `fake-backend/types.ts` が domain 型を使っていて、フィールドの追加に追従できているか |
+| 忠実さを確かめるテスト | 同じシナリオが UI e2e とフルスタックの両方にあり、ずれを検出できるか（特に検証エラーと予約コレクション） |
+| 注入口の不足 | 観点 A・E で必要な失敗・遅延のうち、`FakeSeed` に注入口が無いもの |
 
-#### 観点 K: OpenAPIプロトコル固有フロー（OpenAPI Flow）
-
-OpenAPIビューワーのユーザーフローを検証しているか（`presentation/components/openapi/`）。
-
-| チェック項目                              | このアプリでの例                                           | 必要なモード                |
-| ----------------------------------------- | ---------------------------------------------------------- | --------------------------- |
-| OpenAPIファイルの読み込み                 | ファイル選択ダイアログ → ファイル読み込み → エディタに表示 | フルスタック（ファイルI/O） |
-| エディタでの編集                          | テキスト入力 → プレビューパネルに反映されるか              | フロントエンドのみ          |
-| 無効なYAML/JSONを入力したときのエラー表示 | パースエラーが適切に表示されるか                           | フロントエンドのみ          |
-
----
-
-#### 観点 L: テスト構造の整合性（Test Structure Integrity）
-
-E2Eテストコード自体の正しさ・保守性を検証する。
-
-| チェック項目                                           | このアプリでの例                                                                                     |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| ハードコードされたセレクタ（`locator(".class-name")`） | リファクタで壊れやすい。`getByRole`・`getByTestId`・`getByLabel`が望ましい                           |
-| `page.waitForTimeout(数値)` の使用                     | 固定sleep。`waitForSelector`・`waitForResponse`・`toBeVisible` に置き換えるべき                      |
-| テスト間の状態汚染                                     | 前のテストで作成したデータが次のテストに影響していないか（`beforeEach`でのリセット）                 |
-| `test.skip` の放置                                     | スキップしたまま残っているテストがないか                                                             |
-| `test.only` の放置                                     | `test.only` が残っていると他のすべてのテストが実行されなくなる                                       |
-| アサーションなしのテスト                               | `await page.click(...)` はするが `expect(...)` がないテストがないか                                  |
-| ベースURL依存の不安定なテスト                          | `http://localhost:5175` などのURLに直接依存していないか（`playwright.config.ts` の `baseURL` を使っているか） |
-| **フルスタックテストの前提条件**                       | バックエンドが起動済みであることをテスト冒頭で確認しているか（ポートチェック等）                     |
-
----
-
-#### 観点 M: バックエンド統合テスト（Backend Integration）
-
-> **このアプリ固有の観点**: WailsアプリのE2Eテストではブラウザ操作＋Goバックエンド処理＋ファイルI/Oが一連の流れとなる。フルスタックモードでのみ検証可能。フロントエンドのみモードのPlaywright設定（`playwright.config.ts`）ではこれらは検証できないため、フルスタックモード用のPlaywright設定の追加が必要。
-
-| チェック項目                           | このアプリでの例                                                                                       | 根拠ファイル                                                                      |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| **Wailsバインディング呼び出しの成功**  | `GetCollections`・`CreateCollection`等が正常にGoバックエンドに届くか                                   | `internal/adapters/http_handler.go`・`frontend/src/infrastructure/http/client.ts` |
-| **コレクションの永続化**               | コレクション作成 → アプリ再起動 → データが残っているか                                                 | `internal/infrastructure/http/json_repository.go`                                 |
-| **MQTTブローカープロファイルの永続化** | ブローカー設定保存 → アプリ再起動 → プロファイルが復元されるか                                         | `internal/infrastructure/mqtt/json_profile_repository.go`                         |
-| **UDPターゲットの永続化**              | ターゲット追加 → アプリ再起動 → ターゲットが残っているか                                               | `internal/infrastructure/udp/json_target_repository.go`                           |
-| **バックエンドエラーのUI表示**         | Goバックエンドがエラーを返したとき（例: ファイル権限エラー）UIにエラーが表示されるか                   | `internal/domain/errors.go`                                                       |
-| **実HTTPリクエスト送信**               | ローカルのテスト用HTTPサーバーにGETリクエストを送り、ステータスコード・ボディが正しく表示されるか      | `internal/infrastructure/http/net_client.go`                                      |
-| **Wailsイベント（EventsOn）の受信**    | バックエンドからEmitされたイベントがフロントエンドで受信されUIに反映されるか（例: MQTTメッセージ受信） | `internal/infrastructure/wails_emitter.go`                                        |
-| **サイドバーレイアウトの永続化**       | サイドバーのドラッグ&ドロップ後の順序が再起動後も保持されるか                                          | `internal/infrastructure/http/sidebar_layout_repository.go`                       |
+ずれを見つけたら、Go 側と `install.ts` 側の両方のファイル名と行番号を書く。
 
 ---
 
 ## 出力形式
 
-`docs/e2e-test-review.md` に以下の構成で出力してください。ファイルが既に存在する場合は上書きしてください。
+次の構成で出力する。表の例は書式を示すだけで、内容は実際に読んだコードから書くこと。
 
 ```markdown
-# フロントエンド E2E テストレビュー
+# E2E テストレビュー
 
 生成日時: YYYY-MM-DD
-対象: frontend/e2e/ 配下の E2E テスト（Playwright）
-実行モード: フロントエンドのみ（playwright.config.ts） / フルスタック（どちらか記載）
+対象: （引数に応じた範囲）
+スイート: UI e2e（spec N 本・テスト N 件）/ フルスタック e2e（spec N 本・テスト N 件）
 
 ---
 
-## Step 1: ユーザーフロー一覧
+## ユーザーフロー一覧
 
-本体コードから抽出したユーザーフローの一覧。各フローがE2Eテストで検証されているかどうかを示す。
+| フロー | コンポーネント（ファイル:行） | UI e2e | フルスタック |
+| --- | --- | --- | --- |
+| （フロー） | （ファイル:行） | 済（spec:行） | 対象外 |
 
-| フロー                                  | コンポーネント（ファイル:行）     | テスト済み?           |
-| --------------------------------------- | --------------------------------- | --------------------- |
-| アプリ起動 → MQTTパネルが初期表示される | App.tsx:25                        | 済（smoke.spec.ts:3） |
-| プロトコル切り替え（mqtt→http）         | App.tsx:51, protocol-switcher.tsx | 未テスト              |
-| ...                                     |                                   |                       |
-
-> **テスト済みの選択肢**: `済（ファイル名:行番号）` / `部分的（ファイル名:行番号）` / `未テスト`
+> 各列の値: `済（ファイル名:行番号）` / `部分的（ファイル名:行番号）` / `未テスト` / `対象外`（そのスイートで検証する意味が無い）
 
 ---
 
-## Step 2: 既存テストカバレッジ
+## 既存テストの概要
 
-既存のE2Eテストファイルが何をカバーしているかの一覧。
-
-| テストファイル  | describe / test                  | 検証内容                            | 使用ロケーター             |
-| --------------- | -------------------------------- | ----------------------------------- | -------------------------- |
-| smoke.spec.ts:3 | （なし）app launches and renders | `page.title()` が /Wirexa/ にマッチ | `expect(page).toHaveTitle` |
-| ...             |                                  |                                     |                            |
+| spec | テスト数 | 検証している内容（要約） |
+| --- | --- | --- |
+| ui/mqtt/messages.spec.ts | N | （2〜3 行で要約） |
 
 ---
 
 ## サマリー
 
-> **チェック項目数の数え方**: 各観点テーブルの行数を「チェック項目数」として集計する。
+| 観点 | チェック項目数 | 済 | 部分的 | 不足 |
+| --- | --- | --- | --- | --- |
+| [A] 初期状態 | N | N | N | N |
+| ...（A〜N） | | | | |
 
-| 観点                                     | チェック項目数 | テスト済み | 不足 | カバー率 |
-| ---------------------------------------- | -------------- | ---------- | ---- | -------- |
-| [A] ページ表示・初期状態                 | N              | N          | N    | N%       |
-| [B] プロトコル切り替え                   | N              | N          | N    | N%       |
-| [C] サイドバー操作                       | N              | N          | N    | N%       |
-| [D] フォーム入力・バリデーション・境界値 | N              | N          | N    | N%       |
-| [E] 非同期操作・ローディング状態         | N              | N          | N    | N%       |
-| [F] テーマ・設定の永続化                 | N              | N          | N    | N%       |
-| [G] キーボード操作・アクセシビリティ     | N              | N          | N    | N%       |
-| [H] MQTTプロトコル固有フロー             | N              | N          | N    | N%       |
-| [I] HTTPプロトコル固有フロー             | N              | N          | N    | N%       |
-| [J] UDPプロトコル固有フロー              | N              | N          | N    | N%       |
-| [K] OpenAPIプロトコル固有フロー          | N              | N          | N    | N%       |
-| [L] テスト構造の整合性                   | N              | N          | N    | N%       |
-| [M] バックエンド統合テスト               | N              | N          | N    | N%       |
+> チェック項目数は各観点の表の行数。該当なしの行は数えない。
 
 ---
 
 ## 観点別詳細
 
-### [A] ページ表示・初期状態
+### [A] 初期状態
 
-#### テスト済みケース
+#### テスト済み
 
-- （例）`smoke.spec.ts:3` — アプリ起動時にタイトルが `/Wirexa/` にマッチする
+- `ファイル名:行` — 検証している内容
 
-#### 不足ケース
+#### 不足
 
-- **不足内容**: 初期プロトコルが mqtt であることの確認
-- **根拠コード**: `App.tsx:25` `const [protocol, setProtocol] = createSignal<Protocol>("mqtt")` — デフォルト値が mqtt
-- **推奨テスト名**: `test("mqtt tab is selected by default on app launch", ...)`
-- **優先度**: 高
+- **不足内容**: （何が検証されていないか）
+- **根拠コード**: `ファイル名:行` — （その挙動を実装している箇所）
+- **スイート**: UI e2e / フルスタック / UI e2e（偽バックエンドの拡張が必要: 何を足すか）
+- **推奨テスト名**: `test("...", ...)`
+- **追加先**: （既存の spec ファイル名。無ければ新しいファイル名）
+- **優先度**: 高 / 中 / 低
 
-### [B] プロトコル切り替え
-
-（同様の形式で記載）
-
-...（各観点を同様に記載）...
-
-### [M] バックエンド統合テスト
-
-> **前提**: 現在の `playwright.config.ts` がフロントエンドのみモードのため、この観点のテストは現状すべて「未テスト」。フルスタックモード用のPlaywright設定追加が必要。
-
-#### フルスタックE2Eを追加するために必要な手順
-
-1. `playwright.config.ts` に `webServer` としてWailsバイナリ起動コマンドを追加
-2. バックエンドが起動しているポート（Wailsの組み込みサーバーポート）に `baseURL` を向ける
-3. テストの `beforeAll` でバックエンドの起動完了を確認する待機処理を追加
-
-#### 不足ケース
-
-- **不足内容**: コレクション作成後のアプリ再起動による永続化確認
-- **根拠コード**: `internal/infrastructure/http/json_repository.go` — JSONファイルに書き込む
-- **推奨テスト名**: `test("created collection persists after app restart", ...)`
-- **優先度**: 高（現状テストが0件でバックエンド連携が一切検証されていない）
+...（A〜N を同じ形式で）...
 
 ---
 
-## 最優先で追加すべきテスト TOP5
+## 優先して追加すべきテスト
 
-1. **プロトコル切り替えフロー**（観点B）— 現状はsmoke testのみで主要ナビゲーションが無検証
-   - 根拠: `App.tsx` のプロトコル切り替えロジックがE2Eで一度も実行されていない
-2. ...
-3. ...
-4. ...
-5. ...
+（最大 5 件。優先度 高 が無ければ「該当なし」と書く。件数を埋めるために優先度の低いものを挙げない）
 
----
-
-## フルスタックE2E移行ロードマップ
-
-現状の「フロントエンドのみ」から「フルスタック」に移行するためのステップ。
-
-1. **Playwright設定の追加** — `playwright.config.ts` にフルスタック用プロジェクトを追加
-2. **テスト用HTTPサーバーのセットアップ** — 観点I（実HTTPリクエスト）用のローカルテストサーバー
-3. **テスト用MQTTブローカーのセットアップ** — 観点H（MQTT実接続）用のローカルブローカー（例: Mosquitto）
-4. **データリセット機構** — テスト実行ごとにバックエンドのデータディレクトリをリセットする仕組み
+1. **（内容）**（観点 X）— 根拠: `ファイル名:行`、スイート: ...
 
 ---
 
 ## 総合評価
 
-**カバレッジ概算**: N%（ユーザーフロー N件中 N件をカバー）
-
-**信頼度**: 高 / 中 / 低
 **主なリスク**: （未テストのフローで起きうるリグレッション）
 **推奨アクション**:
 
-1. （具体的な次のステップ）
-2. ...
-
----
-
-## Playwright 実装ガイド（不足ケース追加時の参考）
-
-このアプリ固有の実装上の注意点。
-
-### セレクタの指定方針
-
-- プロトコル切り替えボタン: `page.getByRole("button", { name: "MQTT" })`
-- リネーム入力: `page.getByRole("textbox")` — インライン入力のためlabelなし
-- ConfirmDialog の確認ボタン: `page.getByRole("button", { name: "確認" })`
-
-### 非同期待機
-
-- WailsはHTTP APIではなくIPCを使うため、`page.waitForResponse()` はWailsバインディング呼び出しには使えない（フロントエンドのみ・フルスタック両モードとも）
-- バックエンドからのデータは `window.runtime.EventsOn` 経由でフロントエンドに届き、UIが更新される。PlaywrightからはそのDOM変化を `await expect(locator).toBeVisible()` / `toHaveText()` 等で待つ
-- フルスタックモードで実際のHTTPサーバーへのリクエスト/レスポンスを待つ場合は `page.waitForResponse("https://example.com/**")` のように外部URLを指定する
-
-### テスト間のリセット（フロントエンドのみモード）
-
-- `localStorage` は `beforeEach` で `await page.evaluate(() => localStorage.clear())` でリセットする
-- ページリロードが必要なケースは `await page.reload()` を使う
-
-### テスト間のリセット（フルスタックモード）
-
-- `beforeEach` でバックエンドのデータディレクトリ（JSON保存先）をリセットする
-- または Wails が提供するテスト用エンドポイントでリセットする（実装が必要な場合は観点Mで言及する）
+1. （具体的な次の手順）
 ```
 
----
+## 実装上の注意（推奨テストを書くときに従う）
+
+- **test は fixture から import する**: UI e2e は `../../fixtures/ui`、フルスタックは `../../fixtures/integration`。`page.goto("/")` と localStorage の初期化は fixture が済ませているので、spec では行わない。`beforeEach` で `localStorage.clear()` を呼ぶと、リロード後の復元を見るテストが壊れる。
+- **操作は `App`（`fixtures/app.ts`）を通す**: 無い操作は `App` にメソッドを足す前提で書く。
+- **UI の文言は英語**（`Send`・`Cancel`・`Delete`・`Save`・`New Broker`・`New Target` など）。ロケーターは `getByRole`・`getByLabel`・`getByPlaceholder`・`getByTestId` を使う。
+- **待ち方**: RPC は Wails の IPC なので `page.waitForResponse()` では待てない。HTTP リクエストも Go 側から送るので、フルスタックでもブラウザのネットワークには現れない。画面の変化を `expect(locator)` で待つか、UI e2e なら `fake.waitForCalls("Binding名")` を使う。
+- **RPC に渡した値の検証**: UI e2e は `fake.args("Binding名")`、状態は `fake.snapshot()`。フルスタックは相手サーバー（`fixtures/http-server.ts`・`udp-server.ts`）が受けた内容か、ディスク上のファイルで見る。
+- **イベント**: UI e2e は `fake.emit(WailsEvents.xxx, payload)`。同じフレームに大量に流すときは `fake.emitAll`。
+- **初期データ**: UI e2e は `test.use({ seed: {...} })`。画面操作で作るのは、その操作自体を検証するテストだけにする。
+- **ドラッグ**: ツリー（コレクション・最近使ったファイル）は独自のマウス D&D なので `locator.dragTo()` は使えない。`app.dragTreeNode` を使う。ブローカー・ターゲットの一覧と MQTT のプリセット一覧は HTML5 D&D（`components/ui/list-reorder.tsx`）で `app.dragListRowBefore` を使う。
+- **クリップボード**: `context.grantPermissions(["clipboard-read", "clipboard-write"])` のあと `navigator.clipboard.readText()` で読む。
+- **フルスタックの後始末**: 観点 L の「フルスタックの後始末」のとおりに書く。保存データは名前を一意にして絞り込む。
 
 ## 制約事項
 
-- **コードを読まずに記載禁止**: 「一般的にこういうケースが必要」という一般論でなく、実際のコンポーネントのファイル名・行番号を根拠にすること
-- **モードを明記する**: 各不足ケースについて「フロントエンドのみモードで検証可能か」「フルスタックモードが必要か」を必ず記載する
-- **存在しないUIを「不足」と報告しない**: コードにUIが実装されていない機能はテスト不要
-- **limits.tsの定数を確認する**: 境界値テストは `frontend/src/config/limits.ts` の実際の値を使って記載する
+- **存在しない UI を「不足」と報告しない**: コードに実装されていない機能はテスト不要。
+- **既にあるテストを「不足」と報告しない**: 不足と書く前に、`e2e/ui/common/` と、もう一方のスイートを確認する。同じ内容が単体テスト（`*.test.ts`）で十分に検証されていて E2E で重ねる意味が薄いものは、優先度を 低 にしてその旨を書く。
 - **優先度の基準**:
-  - 高: ユーザーがアプリを使う上で必ず通るフロー（起動・主要操作・バックエンドとの連携）で未テスト
-  - 中: 重要な機能だが代替フローでカバーできる、または頻度が低い
-  - 低: エッジケース・アクセシビリティ・実装詳細に近い検証
-- **テスト構造の問題は観点Lで報告**: `waitForTimeout` 使用・ハードコードセレクタ・テスト間汚染などはすべて観点Lに集約する
-- **バックエンド統合テストは観点Mで報告**: Wailsバインディング・永続化・実通信に関わるすべての不足は観点Mに集約する
+  - 高: ユーザーが必ず通るフロー、またはデータを失う・壊す可能性のある挙動が未テスト
+  - 中: 重要な機能だが、別のテストで間接的に通っている、または使用頻度が低い
+  - 低: エッジケース、実装の詳細に近い検証、単体テストで検証済みのもの
+- **テスト構造の問題は観点 L、バックエンド統合の不足は観点 M、偽バックエンドのずれは観点 N に集約する**。
+- **テストは実行しなくてよい**: 静的に読んで分析する。実行して確かめた場合は、どのコマンドを実行したかをレポートに書く。
