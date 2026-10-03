@@ -6,15 +6,9 @@ import {
   type Setter,
   useContext,
 } from "solid-js";
-import {
-  createConnectionsState,
-  type MqttMessageView,
-} from "../../application/mqtt/connections";
+import { createConnectionsState } from "../../application/mqtt/connections";
 import { createMessagesState } from "../../application/mqtt/messages";
-import {
-  createPresetsState,
-  type PublishDraft,
-} from "../../application/mqtt/presets";
+import { createPresetsState } from "../../application/mqtt/presets";
 import { createProfilesState } from "../../application/mqtt/profiles";
 import { createPublishState } from "../../application/mqtt/publish";
 import { createSubscriptionsState } from "../../application/mqtt/subscriptions";
@@ -23,9 +17,6 @@ import { MQTT_MAX_MESSAGES, MQTT_MAX_TOPICS } from "../../config/limits";
 import type {
   BrokerProfile,
   ConnectionState,
-  PublishPreset,
-  Qos,
-  Subscription,
   Tab,
 } from "../../domain/mqtt/types";
 import { createLogger } from "../../infrastructure/logger/client";
@@ -60,54 +51,18 @@ export interface ConnectionContextValue {
   reorderProfiles: (fromIndex: number, toIndex: number) => void;
 }
 
-// --- MqttSubscribeContext ---
-export interface SubscribeContextValue {
-  subscriptions: Accessor<Subscription[]>;
-  newTopic: Accessor<string>;
-  setNewTopic: Setter<string>;
-  newQos: Accessor<Qos>;
-  setNewQos: Setter<Qos>;
-  addSubscription: (topic?: string, qos?: Qos) => Promise<void>;
-  removeSubscription: (id: string) => Promise<void>;
-  toggleMute: (id: string) => void;
-  brokerTopics: Accessor<string[]>;
-  isScanning: Accessor<boolean>;
-  setIsScanning: (
-    value: boolean | ((prev: boolean) => boolean),
-  ) => Promise<void>;
-}
+// 以下の 3 つは application の state をそのまま公開するので、型も戻り値から作る
+// (application 側に項目を足せば、コンポーネントからも見える)。
+export type SubscribeContextValue = ReturnType<typeof createSubscriptionsState>;
 
-// --- MqttMessagesContext ---
-export interface MessagesContextValue {
-  /** トピックフィルターを通した、一覧に表示するメッセージ。 */
-  visibleMessages: Accessor<MqttMessageView[]>;
-  topicFilter: Accessor<string>;
-  setTopicFilter: Setter<string>;
-  filterTopics: Accessor<string[]>;
-  selectedMessage: Accessor<MqttMessageView | null>;
-  autoFollow: Accessor<boolean>;
-  setSelectedMessage: (msg: MqttMessageView | null) => void;
-  setAutoFollow: (value: boolean | ((prev: boolean) => boolean)) => void;
-  clearMessages: () => void;
-}
+// 一覧に出すのは visibleMessages なので、フィルター前の messages は公開しない。
+export type MessagesContextValue = Omit<
+  ReturnType<typeof createMessagesState>,
+  "messages"
+>;
 
-// --- MqttPublishContext ---
-export interface PublishContextValue {
-  presets: Accessor<PublishPreset[]>;
-  addPreset: () => void;
-  removePreset: (id: string) => void;
-  updatePreset: (
-    id: string,
-    updates: Partial<Omit<PublishPreset, "id">>,
-  ) => void;
-  reorderPresets: (fromIndex: number, toIndex: number) => void;
-  selectedPresetId: Accessor<string | null>;
-  selectPreset: (id: string) => void;
-  draft: Accessor<PublishDraft>;
-  updateDraft: (patch: Partial<PublishDraft>) => void;
-  /** フォームの内容をアクティブな接続へ送信する。 */
-  publishDraft: () => Promise<void>;
-}
+export type PublishContextValue = ReturnType<typeof createPresetsState> &
+  ReturnType<typeof createPublishState>;
 
 type MqttContextValue = ConnectionContextValue &
   SubscribeContextValue &
@@ -149,7 +104,6 @@ export function MqttProvider(props: { children: JSX.Element }) {
     connState.activeConnection,
     connState.updateConnection,
   );
-  // 一覧に出すのは visibleMessages なので、フィルター前の messages はコンテキストに出さない。
   const { messages: _messages, ...messagesContext } = msgState;
   const presetState = createPresetsState(createPresetsStorage());
   const publishState = createPublishState(
@@ -199,28 +153,24 @@ export function MqttProvider(props: { children: JSX.Element }) {
 }
 
 // Hooks
-export function useMqttConnection(): ConnectionContextValue {
+function useMqttContext(hookName: string): MqttContextValue {
   const ctx = useContext(MqttContext);
-  if (!ctx)
-    throw new Error("useMqttConnection must be used within MqttProvider");
+  if (!ctx) throw new Error(`${hookName} must be used within MqttProvider`);
   return ctx;
+}
+
+export function useMqttConnection(): ConnectionContextValue {
+  return useMqttContext("useMqttConnection");
 }
 
 export function useMqttSubscribe(): SubscribeContextValue {
-  const ctx = useContext(MqttContext);
-  if (!ctx)
-    throw new Error("useMqttSubscribe must be used within MqttProvider");
-  return ctx;
+  return useMqttContext("useMqttSubscribe");
 }
 
 export function useMqttMessages(): MessagesContextValue {
-  const ctx = useContext(MqttContext);
-  if (!ctx) throw new Error("useMqttMessages must be used within MqttProvider");
-  return ctx;
+  return useMqttContext("useMqttMessages");
 }
 
 export function useMqttPublish(): PublishContextValue {
-  const ctx = useContext(MqttContext);
-  if (!ctx) throw new Error("useMqttPublish must be used within MqttProvider");
-  return ctx;
+  return useMqttContext("useMqttPublish");
 }
