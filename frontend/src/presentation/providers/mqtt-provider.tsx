@@ -146,6 +146,7 @@ export function MqttProvider(props: { children: JSX.Element }) {
     connState.activeConnection,
     connState.updateConnection,
     mqttClient,
+    onMqttEvent,
     mqttLogger,
     notify,
   );

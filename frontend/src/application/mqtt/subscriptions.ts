@@ -1,8 +1,9 @@
-import { createSignal } from "solid-js";
+import { createSignal, onCleanup } from "solid-js";
 import type { Logger } from "../../application/logger";
 import type { Notifier } from "../../domain/ui/ports";
 import { errorMessage } from "../../shared/error";
-import type { ConnectionStateExt } from "./connections";
+import { WailsEvents } from "../../shared/wails-events";
+import type { ConnectionStateExt, MqttEventListener } from "./connections";
 import { makeSubscription } from "./subscription";
 
 export interface SubscriptionApi {
@@ -12,6 +13,20 @@ export interface SubscriptionApi {
   stopTopicScan(connectionId: string): Promise<void>;
 }
 
+/** mqtt:subscription-dropped のペイロード。 */
+interface SubscriptionDropped {
+  connectionId: string;
+  topic: string;
+  error: string;
+}
+
+/** 実行中の購読の RPC。dropped は、実行中に mqtt:subscription-dropped が届いたかを表す。 */
+interface PendingSubscribe {
+  connectionId: string;
+  topic: string;
+  dropped: boolean;
+}
+
 export function createSubscriptionsState(
   activeConnection: () => ConnectionStateExt | null,
   updateConnection: (
@@ -19,6 +34,7 @@ export function createSubscriptionsState(
     updater: (state: ConnectionStateExt) => ConnectionStateExt,
   ) => void,
   api: SubscriptionApi,
+  onEvent: MqttEventListener,
   logger: Logger,
   notifier: Notifier,
 ) {
@@ -28,6 +44,41 @@ export function createSubscriptionsState(
   const subscriptions = () => activeConnection()?.subscriptions ?? [];
   const brokerTopics = () => activeConnection()?.brokerTopics ?? [];
   const isScanning = () => activeConnection()?.isScanning ?? false;
+
+  // 確立前の Subscribe は登録だけして返り、確立時の張り直しで拒否されると mqtt:subscription-dropped が届く。
+  // RPC の応答とイベントの届く順序は決まっていないので、イベントが先に届いた購読は、応答の後に行を足さない。
+  const pendingSubscribes = new Set<PendingSubscribe>();
+
+  // 張り直しに失敗してバックエンドが外した購読の行を外す。
+  const cancelDropped = onEvent(WailsEvents.mqttSubscriptionDropped, (data) => {
+    const { connectionId, topic, error } = data as SubscriptionDropped;
+    let pending = false;
+    for (const p of pendingSubscribes) {
+      if (p.connectionId === connectionId && p.topic === topic) {
+        p.dropped = true;
+        pending = true;
+      }
+    }
+    // updateConnection は updater を同期で呼ぶ。
+    let removed = false;
+    updateConnection(connectionId, (state) => {
+      const subs = state.subscriptions.filter((s) => s.topic !== topic);
+      if (subs.length === state.subscriptions.length) return state;
+      removed = true;
+      return { ...state, subscriptions: subs };
+    });
+    // 行も実行中の RPC も無い (タブを閉じた後など) なら知らせない。
+    if (!removed && !pending) return;
+    logger.error("MQTT subscription dropped", {
+      connection_id: connectionId,
+      topic,
+      error,
+    });
+    notifier.error(`Subscription to ${topic} was dropped`, error, {
+      key: `${connectionId}:${topic}`,
+    });
+  });
+  onCleanup(cancelDropped);
 
   const addSubscription = async (topic?: string, qos?: number) => {
     const t = (topic ?? newTopic()).trim();
@@ -41,6 +92,12 @@ export function createSubscriptionsState(
     }
     const q = qos ?? newQos();
     if (connId) {
+      const pending: PendingSubscribe = {
+        connectionId: connId,
+        topic: t,
+        dropped: false,
+      };
+      pendingSubscribes.add(pending);
       try {
         await api.subscribe(connId, t, q);
         logger.info("MQTT subscribed", {
@@ -56,7 +113,11 @@ export function createSubscriptionsState(
         });
         notifier.error(`Failed to subscribe to ${t}`, errorMessage(err));
         return;
+      } finally {
+        pendingSubscribes.delete(pending);
       }
+      // 応答より先に、確立時の張り直しで外れていた。通知はリスナーが出している。
+      if (pending.dropped) return;
       const newSub = makeSubscription(t, q);
       updateConnection(connId, (state) => ({
         ...state,

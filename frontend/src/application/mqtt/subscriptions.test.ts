@@ -2,8 +2,13 @@ import { createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { BrokerProfile } from "../../domain/mqtt/types";
 import type { Notifier } from "../../domain/ui/ports";
+import { WailsEvents } from "../../shared/wails-events";
 import type { Logger } from "../logger";
-import type { ConnectionStateExt } from "./connections";
+import type {
+  ConnectionStateExt,
+  MqttEventListener,
+  MqttEventName,
+} from "./connections";
 import { makeSubscription } from "./subscription";
 import {
   createSubscriptionsState,
@@ -69,6 +74,13 @@ function harness(initial: ConnectionStateExt) {
     warning: vi.fn(),
   };
   const logger = { info: vi.fn(), error: vi.fn() } satisfies Logger;
+  const handlers = new Map<MqttEventName, (data: unknown) => void>();
+  const onEvent: MqttEventListener = (event, handler) => {
+    handlers.set(event, handler);
+    return () => handlers.delete(event);
+  };
+  const emit = (event: MqttEventName, data: unknown) =>
+    handlers.get(event)?.(data);
   return createRoot((dispose) => {
     const state = createSubscriptionsState(
       () => conn,
@@ -76,6 +88,7 @@ function harness(initial: ConnectionStateExt) {
         if (id === conn.connectionId) conn = updater(conn);
       },
       api,
+      onEvent,
       logger,
       notifier,
     );
@@ -92,6 +105,8 @@ function harness(initial: ConnectionStateExt) {
       logger,
       subscriptionId,
       topics,
+      emit,
+      handlers,
       conn: () => conn,
       dispose,
     };
@@ -280,5 +295,72 @@ describe("createSubscriptionsState removeSubscription", () => {
     expect(h.api.unsubscribe).not.toHaveBeenCalled();
     expect(h.topics()).toEqual(["b/#"]);
     h.dispose();
+  });
+});
+
+describe("createSubscriptionsState mqtt:subscription-dropped", () => {
+  const dropped = (topic: string, connectionId = "c1") => ({
+    connectionId,
+    topic,
+    error: "subscription rejected by broker",
+  });
+
+  it("removes only the dropped row and notifies once", () => {
+    const h = harness(onlineTab(true));
+
+    h.emit(WailsEvents.mqttSubscriptionDropped, dropped("b/#"));
+
+    expect(h.topics()).toEqual(["a"]);
+    expect(h.notifier.error).toHaveBeenCalledTimes(1);
+    expect(h.notifier.error).toHaveBeenCalledWith(
+      "Subscription to b/# was dropped",
+      "subscription rejected by broker",
+      { key: "c1:b/#" },
+    );
+    h.dispose();
+  });
+
+  it("does nothing for an unknown connection or topic", () => {
+    const h = harness(onlineTab(true));
+
+    h.emit(WailsEvents.mqttSubscriptionDropped, dropped("a", "other"));
+    h.emit(WailsEvents.mqttSubscriptionDropped, dropped("c"));
+
+    expect(h.topics()).toEqual(["a", "b/#"]);
+    expect(h.notifier.error).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it("does not add the row when the event arrives before the subscribe RPC returns", async () => {
+    const h = harness(onlineTab(false));
+    const subscribe = deferred();
+    h.api.subscribe.mockReturnValueOnce(subscribe.promise);
+
+    const adding = h.state.addSubscription("c", 0);
+    await vi.waitFor(() => expect(h.api.subscribe).toHaveBeenCalled());
+    h.emit(WailsEvents.mqttSubscriptionDropped, dropped("c"));
+    subscribe.resolve();
+    await adding;
+
+    expect(h.topics()).toEqual(["a", "b/#"]);
+    expect(h.notifier.error).toHaveBeenCalledTimes(1);
+    expect(h.notifier.error).toHaveBeenCalledWith(
+      "Subscription to c was dropped",
+      "subscription rejected by broker",
+      { key: "c1:c" },
+    );
+
+    // 印は残さないので、同じトピックをもう一度追加すると行が足される。
+    await h.state.addSubscription("c", 0);
+
+    expect(h.topics()).toEqual(["a", "b/#", "c"]);
+    h.dispose();
+  });
+
+  it("stops listening when disposed", () => {
+    const h = harness(onlineTab(true));
+    h.dispose();
+
+    expect(h.handlers.has(WailsEvents.mqttSubscriptionDropped)).toBe(false);
   });
 });
