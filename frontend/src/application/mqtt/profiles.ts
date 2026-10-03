@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createSignal, untrack } from "solid-js";
 import type { ProfileOrderStorage } from "../../domain/mqtt/ports";
 import type { BrokerProfile } from "../../domain/mqtt/types";
 import type { Notifier } from "../../domain/ui/ports";
@@ -35,6 +35,17 @@ export function createProfilesState(
 ) {
   const [profiles, setProfiles] = createSignal<BrokerProfile[]>([]);
 
+  // 一覧を更新して並び順を保存する。update が null を返したら何もしない。
+  // 保存してから signal に入れる（保存より前に effect を走らせない）。
+  function commit(
+    update: (prev: BrokerProfile[]) => BrokerProfile[] | null,
+  ): void {
+    const next = update(untrack(profiles));
+    if (!next) return;
+    orderStorage.save(next.map((p) => p.id));
+    setProfiles(next);
+  }
+
   async function loadProfiles(): Promise<void> {
     const loaded = await api.getProfiles();
     const order = orderStorage.load();
@@ -56,15 +67,11 @@ export function createProfilesState(
       });
       throw err;
     }
-    setProfiles((prev) => {
-      const idx = prev.findIndex((p) => p.id === saved.id);
-      const next =
-        idx >= 0
-          ? prev.map((p) => (p.id === saved.id ? saved : p))
-          : [...prev, saved];
-      orderStorage.save(next.map((p) => p.id));
-      return next;
-    });
+    commit((prev) =>
+      prev.some((p) => p.id === saved.id)
+        ? prev.map((p) => (p.id === saved.id ? saved : p))
+        : [...prev, saved],
+    );
     return saved;
   }
 
@@ -73,20 +80,11 @@ export function createProfilesState(
     await notifyOnError(notifier, "Failed to delete broker", () =>
       api.deleteProfile(id),
     );
-    setProfiles((prev) => {
-      const next = prev.filter((p) => p.id !== id);
-      orderStorage.save(next.map((p) => p.id));
-      return next;
-    });
+    commit((prev) => prev.filter((p) => p.id !== id));
   }
 
   function reorderProfiles(fromIndex: number, toIndex: number): void {
-    setProfiles((prev) => {
-      const next = moveItem(prev, fromIndex, toIndex);
-      if (!next) return prev;
-      orderStorage.save(next.map((p) => p.id));
-      return next;
-    });
+    commit((prev) => moveItem(prev, fromIndex, toIndex));
   }
 
   return {

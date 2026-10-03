@@ -1,16 +1,11 @@
-import { createSignal } from "solid-js";
+import { createSignal, untrack } from "solid-js";
 import type { PresetStorage } from "../../domain/mqtt/ports";
-import type { PublishPreset, Qos } from "../../domain/mqtt/types";
+import type { PublishPreset } from "../../domain/mqtt/types";
 import { moveItem } from "../../shared/array";
 import { generateId } from "../../shared/id";
 
 /** Publish フォームの編集中の値。プリセット未選択でも publish できるよう独立させる。 */
-export interface PublishDraft {
-  topic: string;
-  payload: string;
-  qos: Qos;
-  retain: boolean;
-}
+export type PublishDraft = Omit<PublishPreset, "id" | "name">;
 
 function emptyDraft(): PublishDraft {
   return { topic: "", payload: "", qos: 0, retain: false };
@@ -23,15 +18,22 @@ export function createPresetsState(storage: PresetStorage) {
   );
   const [draft, setDraft] = createSignal<PublishDraft>(emptyDraft());
 
+  // 一覧を更新して保存する。update が null を返したら何もしない。
+  // 保存してから signal に入れる（保存より前に effect を走らせない）。
+  function commit(
+    update: (prev: PublishPreset[]) => PublishPreset[] | null,
+  ): void {
+    const next = update(untrack(presets));
+    if (!next) return;
+    storage.save(next);
+    setPresets(next);
+  }
+
   function loadDraftFromPreset(id: string): void {
     const preset = presets().find((p) => p.id === id);
     if (!preset) return;
-    setDraft({
-      topic: preset.topic,
-      payload: preset.payload,
-      qos: preset.qos,
-      retain: preset.retain,
-    });
+    const { id: _id, name: _name, ...rest } = preset;
+    setDraft(rest);
   }
 
   /** プリセットを選択し、その内容をフォームへ読み込む。 */
@@ -56,49 +58,25 @@ export function createPresetsState(storage: PresetStorage) {
     id: string,
     updates: Partial<Omit<PublishPreset, "id">>,
   ) {
-    setPresets((prev) => {
-      const next = prev.map((p) => (p.id === id ? { ...p, ...updates } : p));
-      storage.save(next);
-      return next;
-    });
+    commit((prev) => prev.map((p) => (p.id === id ? { ...p, ...updates } : p)));
   }
 
   function removePreset(id: string) {
-    setPresets((prev) => {
-      const next = prev.filter((p) => p.id !== id);
-      storage.save(next);
-      return next;
-    });
+    commit((prev) => prev.filter((p) => p.id !== id));
     setSelectedPresetId((prev) => (prev === id ? null : prev));
   }
 
   function addPreset() {
     const id = generateId();
-    const newPreset: PublishPreset = {
-      id,
-      name: "no name",
-      topic: "",
-      payload: "",
-      qos: 0,
-      retain: false,
-    };
-    setPresets((prev) => {
-      const next = [...prev, newPreset];
-      storage.save(next);
-      return next;
-    });
+    const newPreset: PublishPreset = { id, name: "no name", ...emptyDraft() };
+    commit((prev) => [...prev, newPreset]);
     setSelectedPresetId(id);
     // 追加直後のプリセットは空なので、フォームも空に戻す。
     setDraft(emptyDraft());
   }
 
   function reorderPresets(fromIndex: number, toIndex: number): void {
-    setPresets((prev) => {
-      const next = moveItem(prev, fromIndex, toIndex);
-      if (!next) return prev;
-      storage.save(next);
-      return next;
-    });
+    commit((prev) => moveItem(prev, fromIndex, toIndex));
   }
 
   return {
