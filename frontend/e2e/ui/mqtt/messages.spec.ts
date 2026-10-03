@@ -300,6 +300,39 @@ test("topic filter narrows the list and Clear empties it", async ({
   await expect(app.mqttSubscription("sensors/#")).toBeVisible();
 });
 
+// 共有購読の選択肢は接頭辞の付いた購読の文字列で、照合は接頭辞を外して行う。
+test("topic filter narrows by a shared subscription and its concrete topics", async ({
+  page,
+  app,
+  fake,
+}) => {
+  await subscribe(app, "$share/group/sensors/#");
+  await fake.emitAll(WailsEvents.mqttMessage, [
+    message("sensors/temp", "t-1"),
+    message("sensors/humidity", "h-1"),
+  ]);
+  const temp = app.mqttMessage("t-1");
+  const humidity = app.mqttMessage("h-1");
+  await expect(temp).toBeVisible();
+  await expect(humidity).toBeVisible();
+
+  const filter = page.getByRole("combobox", { name: "Filter by topic" });
+  await expect(filter.getByRole("option")).toHaveText([
+    "All topics",
+    "$share/group/sensors/#",
+    "sensors/humidity",
+    "sensors/temp",
+  ]);
+
+  await filter.selectOption("$share/group/sensors/#");
+  await expect(filter).toHaveValue("$share/group/sensors/#");
+  await expect(app.mqttMessages).toHaveCount(2);
+
+  await filter.selectOption("sensors/temp");
+  await expect(temp).toBeVisible();
+  await expect(humidity).toBeHidden();
+});
+
 // ── 観点H: 一覧のレイアウト ──────────────────────────────────────────────────
 
 /**
