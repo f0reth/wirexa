@@ -1,7 +1,8 @@
 import { clsx } from "clsx";
 import { Wifi, WifiOff, Zap } from "lucide-solid";
-import { createEffect, createSignal, on, Show } from "solid-js";
+import { createEffect, createSignal, For, on, Show } from "solid-js";
 import {
+  BROKER_SCHEMES,
   composeBrokerUrl,
   defaultPort,
   parseBrokerUrl,
@@ -102,11 +103,9 @@ export function BrokerManager() {
                         handleSchemeChange(e.currentTarget.value)
                       }
                     >
-                      <option value="mqtt">mqtt</option>
-                      <option value="mqtts">mqtts</option>
-                      <option value="tcp">tcp</option>
-                      <option value="ws">ws</option>
-                      <option value="wss">wss</option>
+                      <For each={BROKER_SCHEMES}>
+                        {(s) => <option value={s}>{s}</option>}
+                      </For>
                     </select>
                     <Input
                       class={styles.connectionInfoHostInput}

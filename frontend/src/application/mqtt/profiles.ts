@@ -6,13 +6,14 @@ import { moveItem } from "../../shared/array";
 import { errorMessage } from "../../shared/error";
 import { applyOrder } from "../shared/order";
 import { notifyOnError } from "../ui/guard";
+import { DEFAULT_BROKER_URL } from "./broker-url";
 
 /** 新規作成ダイアログの初期プロファイル。ID はサーバが採番するので空にする。 */
 export function createEmptyProfile(): BrokerProfile {
   return {
     id: "",
     name: "",
-    broker: "mqtt://localhost:1883",
+    broker: DEFAULT_BROKER_URL,
     clientId: "",
     username: "",
     password: "",

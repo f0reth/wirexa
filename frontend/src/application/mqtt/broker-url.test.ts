@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { composeBrokerUrl, defaultPort, parseBrokerUrl } from "./broker-url";
+import {
+  BROKER_SCHEMES,
+  composeBrokerUrl,
+  DEFAULT_BROKER_URL,
+  defaultPort,
+  parseBrokerUrl,
+} from "./broker-url";
 
 describe("defaultPort", () => {
   it("returns the well-known port per scheme", () => {
@@ -13,6 +19,27 @@ describe("defaultPort", () => {
   it("falls back to 1883 for unknown schemes", () => {
     expect(defaultPort("http")).toBe("1883");
     expect(defaultPort("")).toBe("1883");
+  });
+});
+
+describe("BROKER_SCHEMES", () => {
+  // 選べるスキームは、保存した URL から読み戻せなければならない。
+  it.each(BROKER_SCHEMES)("reads back a url with the %s scheme", (scheme) => {
+    expect(parseBrokerUrl(composeBrokerUrl(scheme, "host", "1234"))).toEqual({
+      scheme,
+      host: "host",
+      port: "1234",
+    });
+  });
+});
+
+describe("DEFAULT_BROKER_URL", () => {
+  it("is the url an unreadable value falls back to", () => {
+    expect(DEFAULT_BROKER_URL).toBe("mqtt://localhost:1883");
+    const parts = parseBrokerUrl("not a url");
+    expect(composeBrokerUrl(parts.scheme, parts.host, parts.port)).toBe(
+      DEFAULT_BROKER_URL,
+    );
   });
 });
 

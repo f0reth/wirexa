@@ -1,4 +1,9 @@
-const DEFAULT_PORT_MAP: Record<string, string> = {
+// ブローカー URL のスキーム。入力欄の選択肢、既定のポート、parseBrokerUrl の正規表現はここから作る。
+export const BROKER_SCHEMES = ["mqtt", "mqtts", "tcp", "ws", "wss"] as const;
+
+type BrokerScheme = (typeof BROKER_SCHEMES)[number];
+
+const DEFAULT_PORT_MAP: Record<BrokerScheme, string> = {
   mqtt: "1883",
   mqtts: "8883",
   tcp: "1883",
@@ -6,17 +11,40 @@ const DEFAULT_PORT_MAP: Record<string, string> = {
   wss: "8884",
 };
 
-export function defaultPort(scheme: string): string {
-  return DEFAULT_PORT_MAP[scheme] ?? "1883";
+function isBrokerScheme(scheme: string): scheme is BrokerScheme {
+  return (BROKER_SCHEMES as readonly string[]).includes(scheme);
 }
 
-export function parseBrokerUrl(url: string): {
+export function defaultPort(scheme: string): string {
+  return isBrokerScheme(scheme) ? DEFAULT_PORT_MAP[scheme] : "1883";
+}
+
+interface BrokerUrlParts {
   scheme: string;
   host: string;
   port: string;
-} {
-  const match = url.match(/^(mqtt|mqtts|tcp|ws|wss):\/\/([^:]+)(?::(\d+))?$/);
-  if (!match) return { scheme: "mqtt", host: "localhost", port: "1883" };
+}
+
+// 新規プロファイルの初期値。読めない URL もこの値として扱う。
+const DEFAULT_BROKER: Readonly<BrokerUrlParts> = {
+  scheme: "mqtt",
+  host: "localhost",
+  port: "1883",
+};
+
+export const DEFAULT_BROKER_URL = composeBrokerUrl(
+  DEFAULT_BROKER.scheme,
+  DEFAULT_BROKER.host,
+  DEFAULT_BROKER.port,
+);
+
+const BROKER_URL_PATTERN = new RegExp(
+  `^(${BROKER_SCHEMES.join("|")})://([^:]+)(?::(\\d+))?$`,
+);
+
+export function parseBrokerUrl(url: string): BrokerUrlParts {
+  const match = url.match(BROKER_URL_PATTERN);
+  if (!match) return { ...DEFAULT_BROKER };
   return {
     scheme: match[1],
     host: match[2],

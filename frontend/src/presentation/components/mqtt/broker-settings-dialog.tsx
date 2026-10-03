@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import {
+  BROKER_SCHEMES,
   composeBrokerUrl,
   defaultPort,
   parseBrokerUrl,
@@ -22,13 +23,10 @@ export function BrokerSettingsDialog(props: {
 }) {
   let cardRef: HTMLDivElement | undefined;
 
-  const [draft, setDraft] = createSignal<BrokerProfile>(
-    props.profile ? { ...props.profile } : createEmptyProfile(),
-  );
+  const initial = props.profile ? { ...props.profile } : createEmptyProfile();
+  const [draft, setDraft] = createSignal<BrokerProfile>(initial);
 
-  const initialParts = parseBrokerUrl(
-    props.profile?.broker ?? "mqtt://localhost:1883",
-  );
+  const initialParts = parseBrokerUrl(initial.broker);
   const [scheme, setScheme] = createSignal(initialParts.scheme);
   const [host, setHost] = createSignal(initialParts.host);
   const [port, setPort] = createSignal(initialParts.port);
@@ -53,20 +51,19 @@ export function BrokerSettingsDialog(props: {
     }),
   );
 
+  const buildProfile = (): BrokerProfile => ({
+    ...draft(),
+    broker: composeBrokerUrl(scheme(), host(), port()),
+  });
+
   const handleSave = () => {
     if (!isValid()) return;
-    props.onSave({
-      ...draft(),
-      broker: composeBrokerUrl(scheme(), host(), port()),
-    });
+    props.onSave(buildProfile());
   };
 
   const handleSaveAndConnect = () => {
     if (!isValid()) return;
-    props.onSaveAndConnect?.({
-      ...draft(),
-      broker: composeBrokerUrl(scheme(), host(), port()),
-    });
+    props.onSaveAndConnect?.(buildProfile());
   };
 
   const { onKeyDown } = createFocusTrap(
@@ -118,11 +115,9 @@ export function BrokerSettingsDialog(props: {
                   value={scheme()}
                   onChange={(e) => handleSchemeChange(e.currentTarget.value)}
                 >
-                  <option value="mqtt">mqtt</option>
-                  <option value="mqtts">mqtts</option>
-                  <option value="tcp">tcp</option>
-                  <option value="ws">ws</option>
-                  <option value="wss">wss</option>
+                  <For each={BROKER_SCHEMES}>
+                    {(s) => <option value={s}>{s}</option>}
+                  </For>
                 </select>
                 <Input
                   id="broker-host"
