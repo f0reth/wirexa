@@ -165,18 +165,10 @@ function PresetsPanel(props: { addPreset: () => void }) {
 
 function PublishForm() {
   const { activeConnection } = useMqttConnection();
-  const { publish, draft, updateDraft } = useMqttPublish();
+  const { publishDraft, draft, updateDraft } = useMqttPublish();
   const isConnected = () => {
     const conn = activeConnection();
     return conn?.type === "online" && conn.connected;
-  };
-
-  const handlePublish = async () => {
-    const { topic, payload, qos, retain } = draft();
-    if (!topic.trim()) return;
-    // retain 付きの空ペイロードは retained メッセージの削除を意味するので許可する。
-    if (!retain && !payload.trim()) return;
-    await publish(topic, payload, qos, retain);
   };
 
   return (
@@ -214,7 +206,7 @@ function PublishForm() {
           class={styles.publishPayload}
         />
 
-        <Button onClick={handlePublish} disabled={!isConnected()}>
+        <Button onClick={() => publishDraft()} disabled={!isConnected()}>
           <Send size={16} />
           Publish
         </Button>

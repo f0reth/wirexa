@@ -16,8 +16,8 @@ import {
   type PublishDraft,
 } from "../../application/mqtt/presets";
 import { createProfilesState } from "../../application/mqtt/profiles";
+import { createPublishState } from "../../application/mqtt/publish";
 import { createSubscriptionsState } from "../../application/mqtt/subscriptions";
-import { runGuarded } from "../../application/ui/guard";
 import { notify } from "../../application/ui/notifications";
 import { MQTT_MAX_MESSAGES, MQTT_MAX_TOPICS } from "../../config/limits";
 import type {
@@ -106,12 +106,8 @@ export interface PublishContextValue {
   selectPreset: (id: string) => void;
   draft: Accessor<PublishDraft>;
   updateDraft: (patch: Partial<PublishDraft>) => void;
-  publish: (
-    topic: string,
-    payload: string,
-    qos: number,
-    retain: boolean,
-  ) => Promise<void>;
+  /** フォームの内容をアクティブな接続へ送信する。 */
+  publishDraft: () => Promise<void>;
 }
 
 type MqttContextValue = ConnectionContextValue &
@@ -155,6 +151,12 @@ export function MqttProvider(props: { children: JSX.Element }) {
     connState.updateConnection,
   );
   const presetState = createPresetsState(createPresetsStorage());
+  const publishState = createPublishState(
+    mqttClient,
+    connState.activeConnection,
+    presetState.draft,
+    notify,
+  );
 
   onMount(async () => {
     // プロファイルをロードしてからバックエンドの実接続状態を復元する。
@@ -164,19 +166,6 @@ export function MqttProvider(props: { children: JSX.Element }) {
       presetState.addPreset();
     }
   });
-
-  const publish = async (
-    topic: string,
-    payload: string,
-    qos: number,
-    retain: boolean,
-  ): Promise<void> => {
-    const connId = connState.activeConnectionId();
-    if (!connId) return;
-    await runGuarded(notify, "Failed to publish message", () =>
-      mqttClient.publish(connId, topic, payload, qos, retain),
-    );
-  };
 
   return (
     <MqttContext.Provider
@@ -200,7 +189,7 @@ export function MqttProvider(props: { children: JSX.Element }) {
         ...subsState,
         ...msgState,
         ...presetState,
-        publish,
+        ...publishState,
       }}
     >
       {props.children}
