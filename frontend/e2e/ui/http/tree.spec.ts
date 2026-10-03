@@ -205,3 +205,63 @@ test("collapsed collections stay collapsed after reload", async ({
   await expect(app.collection(COLLECTION)).toBeVisible();
   await expect(app.request(/Tree Request/)).toBeHidden();
 });
+
+// ── 起動時の読み込みの失敗 ──────────────────────────────────────────────────
+
+test.describe("when loading collections fails on startup", () => {
+  const COLLECTION_ID = "col-load-failure";
+  const REQUEST_ID = "req-load-failure";
+  const ACTIVE_REQUEST_KEY = "wirexa:http:activeRequest";
+
+  // 失敗させるのは最後の GetSidebarLayout。collections は読めているので、誤って復元すれば
+  // URL の入力欄に値が入る (url を省くと空文字になり、復元されても区別できない)。
+  test.use({
+    seed: {
+      collections: [
+        {
+          id: COLLECTION_ID,
+          name: COLLECTION,
+          requests: [
+            { id: REQUEST_ID, name: REQUEST, url: "https://example.test/saved" },
+          ],
+        },
+      ],
+      getSidebarLayoutError: "rpc down",
+    },
+  });
+
+  test("shows an error toast and does not restore the active request", async ({
+    page,
+    app,
+  }) => {
+    // createActiveRequestStorage の保存形式
+    const saved = JSON.stringify({
+      requestId: REQUEST_ID,
+      collectionId: COLLECTION_ID,
+    });
+    await page.evaluate(
+      ([key, value]) => localStorage.setItem(key, value),
+      [ACTIVE_REQUEST_KEY, saved] as const,
+    );
+
+    // fixture は goto を済ませているので、reload で起動時の失敗をもう一度起こす。
+    const pageErrors: string[] = [];
+    page.on("pageerror", (err) => pageErrors.push(err.message));
+    await page.reload();
+
+    // HttpProvider は起動時にマウントされるので、HTTP の画面に切り替える前に出る。
+    const toast = page
+      .getByRole("alert")
+      .filter({ hasText: "Failed to load collections" });
+    await expect(toast).toHaveCount(1);
+    await expect(toast).toContainText("rpc down");
+
+    await app.switchTo("HTTP");
+    await expect(page.getByText("No collections yet")).toBeVisible();
+    await expect(app.urlInput).toHaveValue("");
+    expect(
+      await page.evaluate((key) => localStorage.getItem(key), ACTIVE_REQUEST_KEY),
+    ).toBe(saved);
+    expect(pageErrors).toEqual([]);
+  });
+});

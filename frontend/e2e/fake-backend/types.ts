@@ -28,6 +28,8 @@ export interface FakeSeed {
       body?: RequestBody;
     }>;
   }>;
+  /** GetSidebarLayout を必ず失敗させる (起動時の読み込みが途中で失敗する場合を模す)。 */
+  getSidebarLayoutError?: string;
   /** OpenFilePicker (ファイルダイアログ) で選ばれたことにするファイル。未設定ならキャンセル。 */
   pickedFile?: { token: string; name: string; contentType: string };
   udpTargets?: Array<{ id?: string; name: string; host: string; port: number }>;

@@ -309,7 +309,13 @@ const HttpHandler = {
     clone(collection(ROOT_COLLECTION_ID).items),
   ),
 
-  GetSidebarLayout: counted("GetSidebarLayout", async () => clone(db.sidebar)),
+  // seed.getSidebarLayoutError で RPC 自体の失敗 (Wails のランタイムの不調など) を模す。
+  GetSidebarLayout: counted("GetSidebarLayout", async () => {
+    if (seed.getSidebarLayoutError) {
+      throw new Error(seed.getSidebarLayoutError);
+    }
+    return clone(db.sidebar);
+  }),
 
   CreateCollection: mutates("CreateCollection", (name: string) => {
     const col: Collection = { id: newId("col"), name, items: [] };
