@@ -3,13 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionPersistence } from "../../domain/mqtt/ports";
 import type { BrokerProfile, ConnectionStatus } from "../../domain/mqtt/types";
 import type { Notifier } from "../../domain/ui/ports";
-import { WailsEvents } from "../../shared/wails-events";
+import { type MqttEventName, WailsEvents } from "../../shared/wails-events";
 import type { Logger } from "../logger";
 import {
   createConnectionsState,
   type MqttConnectionApi,
   type MqttEventListener,
-  type MqttEventName,
 } from "./connections";
 
 const noopLogger: Logger = { info: () => {}, error: () => {} };
@@ -240,7 +239,8 @@ function makeEvents() {
   const handlers = new Map<MqttEventName, (data: unknown) => void>();
   const unsubscribed: MqttEventName[] = [];
   const onEvent: MqttEventListener = (event, handler) => {
-    handlers.set(event, handler);
+    // ペイロードの型は emit に渡す値で決まるので、ここでは unknown で持つ。
+    handlers.set(event, handler as (data: unknown) => void);
     return () => {
       unsubscribed.push(event);
       handlers.delete(event);

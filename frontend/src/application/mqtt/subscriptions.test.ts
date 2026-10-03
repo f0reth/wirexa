@@ -2,13 +2,9 @@ import { createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { BrokerProfile } from "../../domain/mqtt/types";
 import type { Notifier } from "../../domain/ui/ports";
-import { WailsEvents } from "../../shared/wails-events";
+import { type MqttEventName, WailsEvents } from "../../shared/wails-events";
 import type { Logger } from "../logger";
-import type {
-  ConnectionStateExt,
-  MqttEventListener,
-  MqttEventName,
-} from "./connections";
+import type { ConnectionStateExt, MqttEventListener } from "./connections";
 import { makeSubscription } from "./subscription";
 import {
   createSubscriptionsState,
@@ -76,7 +72,8 @@ function harness(initial: ConnectionStateExt) {
   const logger = { info: vi.fn(), error: vi.fn() } satisfies Logger;
   const handlers = new Map<MqttEventName, (data: unknown) => void>();
   const onEvent: MqttEventListener = (event, handler) => {
-    handlers.set(event, handler);
+    // ペイロードの型は emit に渡す値で決まるので、ここでは unknown で持つ。
+    handlers.set(event, handler as (data: unknown) => void);
     return () => handlers.delete(event);
   };
   const emit = (event: MqttEventName, data: unknown) =>

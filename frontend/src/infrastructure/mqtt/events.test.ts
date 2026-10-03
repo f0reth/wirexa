@@ -5,8 +5,7 @@ vi.mock("../../../wailsjs/runtime/runtime", () => ({
 }));
 
 import * as Runtime from "../../../wailsjs/runtime/runtime";
-import { WailsEvents } from "../../shared/wails-events";
-import type { MqttEventName } from "./events";
+import { type MqttEventName, WailsEvents } from "../../shared/wails-events";
 import { onMqttEvent } from "./events";
 
 // 生成されたイベント名から作り、Go 側で MQTT のイベントが増えても追従する。

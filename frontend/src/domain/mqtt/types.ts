@@ -20,6 +20,56 @@ export interface ConnectionStatus {
   scanning: boolean;
 }
 
+/** mqtt:message のペイロード (Go の MQTTMessage)。 */
+export interface MqttRawMessage {
+  connectionId: string;
+  topic: string;
+  payload: string;
+  payloadBase64?: boolean;
+  qos: number;
+  timestamp: number;
+}
+
+/** mqtt:scan-topic のペイロード。 */
+export interface ScannedTopic {
+  connectionId: string;
+  topic: string;
+}
+
+/** mqtt:subscription-dropped のペイロード。 */
+export interface SubscriptionDropped {
+  connectionId: string;
+  topic: string;
+  error: string;
+}
+
+/** mqtt:connected・mqtt:disconnected のペイロード。 */
+export interface ConnectionEvent {
+  connectionId: string;
+}
+
+/** mqtt:connection-lost・mqtt:connection-failed・mqtt:scan-stopped のペイロード。 */
+export interface ConnectionErrorEvent {
+  connectionId: string;
+  error: string;
+}
+
+/**
+ * イベント名 (shared/wails-events の MqttEventName) からペイロード型への対応表。
+ * Go 側は internal/application/mqtt の Emit の呼び出し。MQTT のイベントが増えてここに無いと、
+ * MqttEventPayloads[E] を使う箇所で tsc がエラーにする。
+ */
+export interface MqttEventPayloads {
+  "mqtt:connected": ConnectionEvent;
+  "mqtt:disconnected": ConnectionEvent;
+  "mqtt:connection-lost": ConnectionErrorEvent;
+  "mqtt:connection-failed": ConnectionErrorEvent;
+  "mqtt:message": MqttRawMessage;
+  "mqtt:scan-topic": ScannedTopic;
+  "mqtt:scan-stopped": ConnectionErrorEvent;
+  "mqtt:subscription-dropped": SubscriptionDropped;
+}
+
 export interface MqttMessage {
   topic: string;
   payload: string;

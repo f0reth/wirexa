@@ -13,13 +13,6 @@ export interface SubscriptionApi {
   stopTopicScan(connectionId: string): Promise<void>;
 }
 
-/** mqtt:subscription-dropped のペイロード。 */
-interface SubscriptionDropped {
-  connectionId: string;
-  topic: string;
-  error: string;
-}
-
 /** 実行中の購読の RPC。dropped は、実行中に mqtt:subscription-dropped が届いたかを表す。 */
 interface PendingSubscribe {
   connectionId: string;
@@ -51,7 +44,7 @@ export function createSubscriptionsState(
 
   // 張り直しに失敗してバックエンドが外した購読の行を外す。
   const cancelDropped = onEvent(WailsEvents.mqttSubscriptionDropped, (data) => {
-    const { connectionId, topic, error } = data as SubscriptionDropped;
+    const { connectionId, topic, error } = data;
     let pending = false;
     for (const p of pendingSubscribes) {
       if (p.connectionId === connectionId && p.topic === topic) {

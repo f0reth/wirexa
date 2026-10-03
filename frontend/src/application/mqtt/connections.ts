@@ -12,9 +12,12 @@ import { topicMatchesParts } from "../../domain/mqtt/topic";
 import type {
   BrokerProfile,
   ConnectionStatus,
+  MqttEventPayloads,
   MqttMessage,
+  MqttRawMessage,
   OfflineConnectionState,
   OnlineConnectionState,
+  ScannedTopic,
   Subscription,
   Tab,
 } from "../../domain/mqtt/types";
@@ -48,11 +51,10 @@ export type OfflineStateExt = OfflineConnectionState & ConnectionRuntimeState;
 export type OnlineStateExt = OnlineConnectionState & ConnectionRuntimeState;
 export type ConnectionStateExt = OfflineStateExt | OnlineStateExt;
 
-export type { MqttEventName };
-
-export type MqttEventListener = (
-  event: MqttEventName,
-  handler: (data: unknown) => void,
+/** イベントの購読を登録し、解除する関数を返す。ペイロードの型はイベント名で決まる。 */
+export type MqttEventListener = <E extends MqttEventName>(
+  event: E,
+  handler: (data: MqttEventPayloads[E]) => void,
 ) => () => void;
 
 export interface MqttConnectionApi {
@@ -62,20 +64,6 @@ export interface MqttConnectionApi {
   unsubscribe(connectionId: string, topic: string): Promise<void>;
   stopTopicScan(connectionId: string): Promise<void>;
   getConnections(): Promise<ConnectionStatus[]>;
-}
-
-interface ScannedTopic {
-  connectionId: string;
-  topic: string;
-}
-
-interface RawMessage {
-  connectionId: string;
-  topic: string;
-  payload: string;
-  payloadBase64?: boolean;
-  qos: number;
-  timestamp: number;
 }
 
 // オフライン接続の ID 生成ロジックをここに集約
@@ -171,7 +159,7 @@ export function createConnectionsState(
   }
 
   // Micro-batch: buffer incoming messages and flush once per animation frame.
-  const messageBuffer: RawMessage[] = [];
+  const messageBuffer: MqttRawMessage[] = [];
   // スキャンで見つかったトピック (mqtt:scan-topic)。メッセージと同じフレームでまとめて反映する。
   const topicBuffer: ScannedTopic[] = [];
   let flushScheduled = false;
@@ -227,7 +215,7 @@ export function createConnectionsState(
   function flushMessages() {
     if (messageBuffer.length === 0) return;
 
-    const grouped = new Map<string, RawMessage[]>();
+    const grouped = new Map<string, MqttRawMessage[]>();
     for (const msg of messageBuffer) {
       let arr = grouped.get(msg.connectionId);
       if (!arr) {
@@ -279,7 +267,7 @@ export function createConnectionsState(
   // Wails イベントリスナー登録 → onCleanup で解除
   const cancelMessage = onEvent(WailsEvents.mqttMessage, (data) => {
     if (messageBuffer.length < 5000) {
-      messageBuffer.push(data as RawMessage);
+      messageBuffer.push(data);
     }
     scheduleFlush();
   });
@@ -287,17 +275,14 @@ export function createConnectionsState(
   // Broker Topics の一覧はスキャン用の接続が見つけたトピックから作る (mqtt:message からは作らない)。
   const cancelScanTopic = onEvent(WailsEvents.mqttScanTopic, (data) => {
     if (topicBuffer.length < 5000) {
-      topicBuffer.push(data as ScannedTopic);
+      topicBuffer.push(data);
     }
     scheduleFlush();
   });
 
   // スキャン用の接続が切れてスキャンが止まった (自動では再開しない)。
   const cancelScanStopped = onEvent(WailsEvents.mqttScanStopped, (data) => {
-    const { connectionId, error } = data as {
-      connectionId: string;
-      error: string;
-    };
+    const { connectionId, error } = data;
     notifier.error("MQTT topic scan stopped", error, { key: connectionId });
     updateConnection(connectionId, (state) => ({
       ...state,
@@ -306,7 +291,7 @@ export function createConnectionsState(
   });
 
   const cancelConnected = onEvent(WailsEvents.mqttConnected, (data) => {
-    const { connectionId } = data as { connectionId: string };
+    const { connectionId } = data;
     updateConnection(connectionId, (state) => {
       if (state.type !== "online") return state;
       return { ...state, connected: true };
@@ -314,7 +299,7 @@ export function createConnectionsState(
   });
 
   const cancelDisconnected = onEvent(WailsEvents.mqttDisconnected, (data) => {
-    const { connectionId } = data as { connectionId: string };
+    const { connectionId } = data;
     updateConnection(connectionId, (state) => {
       if (state.type !== "online") return state;
       return { ...state, connected: false, isScanning: false };
@@ -324,10 +309,7 @@ export function createConnectionsState(
   const cancelConnectionLost = onEvent(
     WailsEvents.mqttConnectionLost,
     (data) => {
-      const { connectionId, error } = data as {
-        connectionId: string;
-        error: string;
-      };
+      const { connectionId, error } = data;
       console.error("[MQTT] Connection lost:", error);
       notifier.error("MQTT connection lost", error, { key: connectionId });
       updateConnection(connectionId, (state) => {
@@ -340,10 +322,7 @@ export function createConnectionsState(
   const cancelConnectionFailed = onEvent(
     WailsEvents.mqttConnectionFailed,
     (data) => {
-      const { connectionId, error } = data as {
-        connectionId: string;
-        error: string;
-      };
+      const { connectionId, error } = data;
       console.error("[MQTT] Connection failed:", error);
       notifier.error("MQTT connection failed", error, { key: connectionId });
       updateConnection(connectionId, (state) => {
