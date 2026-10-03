@@ -15,6 +15,10 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 )
 
+// disconnectQuiesce は接続を切断する (Disconnect・Shutdown) ときの待機時間 (ms)。
+// 不要になったクライアントを捨てるだけの経路 (割り込まれた接続・失敗したスキャン) は Disconnect(0) で待たない。
+const disconnectQuiesce = 1000
+
 const (
 	// scanFilter は Broker Topics のスキャンが購読するフィルター。
 	scanFilter = "#"
@@ -315,7 +319,7 @@ func (s *MQTTService) Disconnect(connectionID string) error {
 
 	conn.opMu.Lock()
 	defer conn.opMu.Unlock()
-	conn.client.Disconnect(1000)
+	conn.client.Disconnect(disconnectQuiesce)
 
 	conn.stateMu.Lock()
 	defer conn.stateMu.Unlock()
@@ -334,13 +338,13 @@ func (s *MQTTService) detach(id string) (*connection, domain.BrokerClient, error
 	defer s.mu.Unlock()
 	conn, ok := s.conns[id]
 	if !ok {
-		return nil, nil, &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: id}
+		return nil, nil, connNotFound(id)
 	}
 	conn.stateMu.Lock()
 	defer conn.stateMu.Unlock()
 	// 接続失敗経路が stateClosed にしてから map から外すまでの隙間。
 	if conn.terminal() {
-		return nil, nil, &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: id}
+		return nil, nil, connNotFound(id)
 	}
 	conn.state = stateDisconnecting
 	scanClient := conn.detachScan()
@@ -348,14 +352,29 @@ func (s *MQTTService) detach(id string) (*connection, domain.BrokerClient, error
 	return conn, scanClient, nil
 }
 
-// withConn は接続を引いて opMu を取り、切断が確定していないことを確認してから fn を呼ぶ。
-// fn の実行中は同じ接続の Disconnect が client を切断しない。
-func (s *MQTTService) withConn(id string, fn func(conn *connection) error) error {
+// connNotFound は接続が見つからない (切断が確定済みを含む) ことを表すエラーを返す。
+func connNotFound(id string) error {
+	return &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: id}
+}
+
+// lookup は接続を引く。無ければ connNotFound のエラーを返す。mu は引く間だけ RLock で取る。
+// mu を保持したまま続きの処理をする場合 (detach・reserveScan) は使わない。
+func (s *MQTTService) lookup(id string) (*connection, error) {
 	s.mu.RLock()
 	conn, ok := s.conns[id]
 	s.mu.RUnlock()
 	if !ok {
-		return &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: id}
+		return nil, connNotFound(id)
+	}
+	return conn, nil
+}
+
+// withConn は接続を引いて opMu を取り、切断が確定していないことを確認してから fn を呼ぶ。
+// fn の実行中は同じ接続の Disconnect が client を切断しない。
+func (s *MQTTService) withConn(id string, fn func(conn *connection) error) error {
+	conn, err := s.lookup(id)
+	if err != nil {
+		return err
 	}
 	conn.opMu.Lock()
 	defer conn.opMu.Unlock()
@@ -364,7 +383,7 @@ func (s *MQTTService) withConn(id string, fn func(conn *connection) error) error
 	closed := conn.terminal()
 	conn.stateMu.RUnlock()
 	if closed {
-		return &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: id}
+		return connNotFound(id)
 	}
 	return fn(conn)
 }
@@ -518,11 +537,12 @@ func (s *MQTTService) Unsubscribe(connectionID, topic string) error {
 // 既にスキャンがあれば (開始中・稼働中) クライアントを増やさず、その開始の結果を返す。
 // opMu は取らないので、スキャンの接続待ちが Publish / Subscribe を止めない。
 func (s *MQTTService) StartTopicScan(connectionID string) error {
-	conn, scan, ctx, err := s.reserveScan(connectionID)
+	r, err := s.reserveScan(connectionID)
 	if err != nil {
 		return err
 	}
-	if ctx == nil {
+	conn, scan := r.conn, r.scan
+	if r.joined {
 		<-scan.done
 		return scan.err
 	}
@@ -537,7 +557,7 @@ func (s *MQTTService) StartTopicScan(connectionID string) error {
 		func() {},
 		func(err error) { s.onScanConnectionLost(connectionID, conn, scan, err) },
 	)
-	err = scan.client.Connect(ctx)
+	err = scan.client.Connect(r.ctx)
 	// Connect 復帰後は ctx を使わないので、ここで資源を解放する。
 	scan.cancel()
 	if err != nil {
@@ -576,43 +596,51 @@ func (s *MQTTService) StartTopicScan(connectionID string) error {
 	return err
 }
 
+// scanReservation は reserveScan の結果。
+type scanReservation struct {
+	// ctx は新しく予約したスキャンの Connect 用 context。joined なら nil。
+	ctx  context.Context
+	conn *connection
+	scan *topicScan
+	// joined は既にスキャンがあり (開始中・稼働中)、新しく始めずにその開始の結果を待つことを表す。
+	joined bool
+}
+
 // reserveScan は I/O の前にスキャンを予約する。予約できたら Connect 用の ctx を返し、connWg に計上する
-// (呼び出し元が Done する)。既にスキャンがあればそれを返し、ctx は nil。
+// (呼び出し元が Done する)。既にスキャンがあればそれを joined で返し、connWg には計上しない。
 // 予約と connWg への計上は、Connect と同じく mu の保持中に closed を確かめてから行う。
 // 分けると、Shutdown が Wait した後に計上する窓ができる。
-func (s *MQTTService) reserveScan(connectionID string) (*connection, *topicScan, context.Context, error) {
+func (s *MQTTService) reserveScan(connectionID string) (scanReservation, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.closed {
-		return nil, nil, nil, errShuttingDown
+		return scanReservation{}, errShuttingDown
 	}
 	conn, ok := s.conns[connectionID]
 	if !ok {
-		return nil, nil, nil, &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: connectionID}
+		return scanReservation{}, connNotFound(connectionID)
 	}
 	conn.stateMu.Lock()
 	defer conn.stateMu.Unlock()
 	if conn.terminal() {
-		return nil, nil, nil, &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: connectionID}
+		return scanReservation{}, connNotFound(connectionID)
 	}
 	if conn.scan != nil {
-		return conn, conn.scan, nil, nil
+		return scanReservation{conn: conn, scan: conn.scan, joined: true}, nil
 	}
 	ctx, cancel := context.WithCancel(s.root)
 	scan := &topicScan{cancel: cancel, done: make(chan struct{})}
 	conn.scan = scan
 	s.connWg.Add(1)
-	return conn, scan, ctx, nil
+	return scanReservation{ctx: ctx, conn: conn, scan: scan}, nil
 }
 
 // StopTopicScan は Broker Topics のスキャンを止める。スキャンしていなければ何もしない。
 // 開始中のスキャンは打ち切り、その StartTopicScan はエラーを返す。
 func (s *MQTTService) StopTopicScan(connectionID string) error {
-	s.mu.RLock()
-	conn, ok := s.conns[connectionID]
-	s.mu.RUnlock()
-	if !ok {
-		return &cmn.NotFoundError{Resource: cmn.ResourceConnection, ID: connectionID}
+	conn, err := s.lookup(connectionID)
+	if err != nil {
+		return err
 	}
 	conn.stateMu.Lock()
 	stopped := conn.scan != nil
@@ -751,7 +779,7 @@ func (s *MQTTService) Shutdown(timeout time.Duration) bool {
 			wg.Go(func() {
 				conn.opMu.Lock()
 				defer conn.opMu.Unlock()
-				conn.client.Disconnect(1000)
+				conn.client.Disconnect(disconnectQuiesce)
 				conn.stateMu.Lock()
 				conn.state = stateClosed
 				conn.stateMu.Unlock()
