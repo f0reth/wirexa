@@ -204,6 +204,62 @@ test.describe("save failure", () => {
   });
 });
 
+// ── 観点E: 起動時の読み込みの失敗 ────────────────────────────────────────────
+
+test.describe("when loading brokers fails on startup", () => {
+  const LAST_PROFILE_KEY = "mqtt:lastActiveProfileId";
+  const PRESETS_KEY = "mqtt:presets";
+
+  test.use({ seed: { mqttProfiles: [ALPHA], getProfilesError: "rpc down" } });
+
+  test("shows an error toast, keeps the last broker and still creates a preset", async ({
+    page,
+    fake,
+  }) => {
+    // saveToStorage の保存形式 (JSON)
+    const saved = JSON.stringify(ALPHA.id);
+    // 最初の goto でも読み込みに失敗して初期プリセットができている。消しておかないと、
+    // reload のあとの 1 件が保存済みを読んだだけなのか、この起動で作ったのか区別できない。
+    await page.evaluate(
+      ([lastKey, value, presetsKey]) => {
+        localStorage.setItem(lastKey, value);
+        localStorage.removeItem(presetsKey);
+      },
+      [LAST_PROFILE_KEY, saved, PRESETS_KEY] as const,
+    );
+
+    // fixture は goto を済ませているので、reload で起動時の失敗をもう一度起こす。
+    const pageErrors: string[] = [];
+    page.on("pageerror", (err) => pageErrors.push(err.message));
+    await page.reload();
+
+    const toast = page
+      .getByRole("alert")
+      .filter({ hasText: "Failed to load brokers" });
+    await expect(toast).toHaveCount(1);
+    await expect(toast).toContainText("rpc down");
+    await expect(page.getByText("No brokers yet")).toBeVisible();
+
+    // プリセットの初期作成は RPC に依存しないので、読み込みに失敗しても実行する
+    // (onMount の続きで作るので、トーストの表示より後になることがある)。
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (key) => JSON.parse(localStorage.getItem(key) ?? "[]").length,
+          PRESETS_KEY,
+        ),
+      )
+      .toBe(1);
+
+    // restore() を呼ばないので、最後に選んだブローカーの保存値は消えない。
+    expect(await fake.calls("GetConnections")).toBe(0);
+    expect(
+      await page.evaluate((key) => localStorage.getItem(key), LAST_PROFILE_KEY),
+    ).toBe(saved);
+    expect(pageErrors).toEqual([]);
+  });
+});
+
 test.describe("delete failure", () => {
   test.use({
     seed: {

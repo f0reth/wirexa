@@ -41,6 +41,8 @@ export interface FakeSeed {
    * - "reject": Connect の RPC 自体を失敗させる。
    */
   mqttConnect?: "ok" | "reject";
+  /** MQTT の GetProfiles を必ず失敗させる (起動時の読み込みの失敗を模す)。 */
+  getProfilesError?: string;
   /** MQTT の SaveProfile を必ず失敗させる (ディスクへの書き込みの失敗などを模す)。 */
   saveProfileError?: string;
   /** MQTT の DeleteProfile を必ず失敗させる。 */

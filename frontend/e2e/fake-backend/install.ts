@@ -659,7 +659,11 @@ function mqttConnection(id: string): ConnectionStatus {
 }
 
 const MqttHandler = {
-  GetProfiles: counted("GetProfiles", async () => clone(db.mqttProfiles)),
+  // seed.getProfilesError で RPC 自体の失敗 (Wails のランタイムの不調など) を模す。
+  GetProfiles: counted("GetProfiles", async () => {
+    if (seed.getProfilesError) throw new Error(seed.getProfilesError);
+    return clone(db.mqttProfiles);
+  }),
 
   // seed.saveProfileError で書き込みの失敗 (ディスクの I/O エラーなど) を模す。
   SaveProfile: mutates("SaveProfile", (profile: BrokerProfile) => {
