@@ -137,6 +137,50 @@ test.describe("with saved targets", () => {
   });
 });
 
+// ── 観点E: 起動時の読み込みの失敗 ────────────────────────────────────────────
+
+test.describe("when loading targets fails on startup", () => {
+  const TARGET_ORDER_KEY = "udp:targetOrder";
+
+  test.use({
+    seed: { udpTargets: [ALPHA, BETA], getTargetsError: "rpc down" },
+  });
+
+  test("shows an error toast and keeps the saved order and targets", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    const saved = JSON.stringify([BETA.id, ALPHA.id]);
+    await page.evaluate(
+      ([key, value]) => localStorage.setItem(key, value),
+      [TARGET_ORDER_KEY, saved] as const,
+    );
+
+    // fixture は goto を済ませているので、reload で起動時の失敗をもう一度起こす。
+    const pageErrors: string[] = [];
+    page.on("pageerror", (err) => pageErrors.push(err.message));
+    await page.reload();
+
+    // UdpProvider は起動時にマウントされるので、UDP の画面に切り替える前に出る。
+    const toast = page
+      .getByRole("alert")
+      .filter({ hasText: "Failed to load targets" });
+    await expect(toast).toHaveCount(1);
+    await expect(toast).toContainText("rpc down");
+
+    await app.switchTo("UDP");
+    await expect(page.getByText("No targets yet")).toBeVisible();
+    expect(pageErrors).toEqual([]);
+
+    // 読み込みに失敗しても、保存済みの並び順とバックエンドのターゲットは消えない。
+    expect(
+      await page.evaluate((key) => localStorage.getItem(key), TARGET_ORDER_KEY),
+    ).toBe(saved);
+    expect((await fake.snapshot()).udpTargets).toEqual([ALPHA, BETA]);
+  });
+});
+
 // ── 観点D: バックエンドの検証エラー ──────────────────────────────────────────
 // ダイアログ側では検証せず、Go の UDPTarget.Validate (偽バックエンドも同じ規則) が拒否する。
 // 失敗はトーストで通知され、入力をやり直せるようダイアログは開いたままになる。

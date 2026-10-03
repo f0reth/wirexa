@@ -530,7 +530,11 @@ function delay(ms: number | undefined): Promise<void> {
 }
 
 const UdpHandler = {
-  GetTargets: counted("GetTargets", async () => clone(db.udpTargets)),
+  // seed.getTargetsError で RPC 自体の失敗 (Wails のランタイムの不調など) を模す。
+  GetTargets: counted("GetTargets", async () => {
+    if (seed.getTargetsError) throw new Error(seed.getTargetsError);
+    return clone(db.udpTargets);
+  }),
 
   SaveTarget: mutates("SaveTarget", (target: UdpTarget) => {
     // Go の TargetService.SaveTarget と同じく、保存より先に検証する。
