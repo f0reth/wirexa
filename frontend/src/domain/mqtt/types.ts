@@ -4,6 +4,12 @@
 // 実行する（再生成忘れは CI のバインディング鮮度チェックが検知する）。
 // 生成型 → この型の変換は infrastructure/mqtt/client.ts で行う。
 
+export type Qos = 0 | 1 | 2;
+
+export function isQos(v: unknown): v is Qos {
+  return v === 0 || v === 1 || v === 2;
+}
+
 export interface SubscriptionInfo {
   topic: string;
   qos: number;
@@ -74,7 +80,7 @@ export interface MqttMessage {
   topic: string;
   payload: string;
   payloadBase64: boolean;
-  qos: 0 | 1 | 2;
+  qos: Qos;
   timestamp: Date;
 }
 
@@ -91,7 +97,7 @@ export interface BrokerProfile {
 export interface Subscription {
   id: string;
   topic: string;
-  qos: 0 | 1 | 2;
+  qos: Qos;
   patternParts?: string[];
   muted: boolean;
 }
@@ -101,7 +107,7 @@ export interface PublishPreset {
   name: string;
   topic: string;
   payload: string;
-  qos: 0 | 1 | 2;
+  qos: Qos;
   retain: boolean;
 }
 

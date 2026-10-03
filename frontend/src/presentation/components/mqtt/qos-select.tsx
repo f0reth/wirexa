@@ -5,18 +5,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../components/ui/select";
+import { isQos, type Qos } from "../../../domain/mqtt/types";
 import styles from "./mqtt.module.css";
 
 interface QosSelectProps {
-  value: number;
-  onChange: (qos: number) => void;
+  value: Qos;
+  onChange: (qos: Qos) => void;
 }
 
 export function QosSelect(props: QosSelectProps) {
   return (
     <Select
       value={props.value.toString()}
-      onValueChange={(v) => props.onChange(parseInt(v, 10))}
+      onValueChange={(v) => {
+        const qos = parseInt(v, 10);
+        if (isQos(qos)) props.onChange(qos);
+      }}
     >
       <SelectTrigger class={styles.qosSelect}>
         <SelectValue placeholder="QoS" />

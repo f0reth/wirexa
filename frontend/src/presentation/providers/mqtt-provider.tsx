@@ -24,6 +24,7 @@ import type {
   BrokerProfile,
   ConnectionState,
   PublishPreset,
+  Qos,
   Subscription,
   Tab,
 } from "../../domain/mqtt/types";
@@ -64,9 +65,9 @@ export interface SubscribeContextValue {
   subscriptions: Accessor<Subscription[]>;
   newTopic: Accessor<string>;
   setNewTopic: Setter<string>;
-  newQos: Accessor<number>;
-  setNewQos: Setter<number>;
-  addSubscription: (topic?: string, qos?: number) => Promise<void>;
+  newQos: Accessor<Qos>;
+  setNewQos: Setter<Qos>;
+  addSubscription: (topic?: string, qos?: Qos) => Promise<void>;
   removeSubscription: (id: string) => Promise<void>;
   toggleMute: (id: string) => void;
   brokerTopics: Accessor<string[]>;

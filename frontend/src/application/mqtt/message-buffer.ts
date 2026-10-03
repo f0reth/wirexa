@@ -1,4 +1,8 @@
-import type { MqttRawMessage, ScannedTopic } from "../../domain/mqtt/types";
+import type {
+  MqttRawMessage,
+  Qos,
+  ScannedTopic,
+} from "../../domain/mqtt/types";
 import { generateId } from "../../shared/id";
 import type { ConnectionStateExt, MqttMessageView } from "./connection-state";
 import { subscriptionMatches } from "./subscription";
@@ -106,7 +110,8 @@ export function createEventBuffer(
               topic: data.topic,
               payload: data.payload,
               payloadBase64: data.payloadBase64 ?? false,
-              qos: data.qos as 0 | 1 | 2,
+              // イベントの qos は number で届く。
+              qos: data.qos as Qos,
               timestamp: new Date(data.timestamp),
               direction: "incoming",
             });

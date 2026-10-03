@@ -1,5 +1,6 @@
 import { createSignal, onCleanup } from "solid-js";
 import type { Logger } from "../../application/logger";
+import type { Qos } from "../../domain/mqtt/types";
 import type { Notifier } from "../../domain/ui/ports";
 import { errorMessage } from "../../shared/error";
 import { WailsEvents } from "../../shared/wails-events";
@@ -32,7 +33,7 @@ export function createSubscriptionsState(
   notifier: Notifier,
 ) {
   const [newTopic, setNewTopic] = createSignal("");
-  const [newQos, setNewQos] = createSignal<number>(0);
+  const [newQos, setNewQos] = createSignal<Qos>(0);
 
   const subscriptions = () => activeConnection()?.subscriptions ?? [];
   const brokerTopics = () => activeConnection()?.brokerTopics ?? [];
@@ -73,7 +74,7 @@ export function createSubscriptionsState(
   });
   onCleanup(cancelDropped);
 
-  const addSubscription = async (topic?: string, qos?: number) => {
+  const addSubscription = async (topic?: string, qos?: Qos) => {
     const t = (topic ?? newTopic()).trim();
     if (!t) return;
     const conn = activeConnection();

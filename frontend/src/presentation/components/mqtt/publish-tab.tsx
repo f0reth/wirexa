@@ -187,7 +187,7 @@ function PublishForm() {
           />
           <QosSelect
             value={draft().qos}
-            onChange={(qos) => updateDraft({ qos: qos as 0 | 1 | 2 })}
+            onChange={(qos) => updateDraft({ qos })}
           />
           <label class={styles.retainCheckboxLabel} for="publish-retain">
             <input

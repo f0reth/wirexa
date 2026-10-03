@@ -13,6 +13,7 @@ import {
   type ConnectionStatus,
   isConnected,
   type MqttEventPayloads,
+  type Qos,
   type Subscription,
   type Tab,
 } from "../../domain/mqtt/types";
@@ -218,8 +219,9 @@ export function createConnectionsState(
             synthesizeProfile(status);
           const st = makeOnlineState(status.id, profile);
           st.connected = status.connected;
+          // RPC の qos は number で届く。
           st.subscriptions = status.subscriptions.map((s) =>
-            makeSubscription(s.topic, s.qos),
+            makeSubscription(s.topic, s.qos as Qos),
           );
           s[status.id] = st;
           onlineProfileIds.add(profile.id);

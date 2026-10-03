@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import type { PresetStorage } from "../../domain/mqtt/ports";
-import type { PublishPreset } from "../../domain/mqtt/types";
+import type { PublishPreset, Qos } from "../../domain/mqtt/types";
 import { moveItem } from "../../shared/array";
 import { generateId } from "../../shared/id";
 
@@ -10,7 +10,7 @@ export type { PresetStorage };
 export interface PublishDraft {
   topic: string;
   payload: string;
-  qos: 0 | 1 | 2;
+  qos: Qos;
   retain: boolean;
 }
 

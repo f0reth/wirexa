@@ -3,7 +3,7 @@ import {
   stripSharedPrefix,
   topicMatchesParts,
 } from "../../domain/mqtt/topic";
-import type { Subscription } from "../../domain/mqtt/types";
+import type { Qos, Subscription } from "../../domain/mqtt/types";
 import { generateId } from "../../shared/id";
 
 /**
@@ -11,7 +11,7 @@ import { generateId } from "../../shared/id";
  * 共有購読の patternParts は接頭辞を外したフィルターから作る (受信したトピックには接頭辞が付かない)。
  * topic は表示と RPC に使うので、入力のまま保つ。
  */
-export function makeSubscription(topic: string, qos: number): Subscription {
+export function makeSubscription(topic: string, qos: Qos): Subscription {
   const matchFilter = stripSharedPrefix(topic);
   const isPattern =
     matchFilter !== topic ||
@@ -20,7 +20,7 @@ export function makeSubscription(topic: string, qos: number): Subscription {
   return {
     id: generateId(),
     topic,
-    qos: qos as 0 | 1 | 2,
+    qos,
     patternParts: isPattern ? compilePattern(matchFilter) : undefined,
     muted: false,
   };

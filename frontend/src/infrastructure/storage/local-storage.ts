@@ -4,7 +4,7 @@ import type {
   PresetStorage,
   ProfileOrderStorage,
 } from "../../domain/mqtt/ports";
-import type { PublishPreset } from "../../domain/mqtt/types";
+import { isQos, type PublishPreset } from "../../domain/mqtt/types";
 import type { TargetOrderStorage } from "../../domain/udp/ports";
 import type { Theme, ThemeStorage } from "../../domain/ui/ports";
 
@@ -55,7 +55,7 @@ function isStoredPreset(v: unknown): v is StoredPreset {
     isString(v.name) &&
     isString(v.topic) &&
     isString(v.payload) &&
-    (v.qos === 0 || v.qos === 1 || v.qos === 2) &&
+    isQos(v.qos) &&
     (v.retain === undefined || typeof v.retain === "boolean")
   );
 }
