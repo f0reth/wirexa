@@ -107,11 +107,12 @@ func (p *pahoClient) setRoute(filter string, handler domain.MessageHandler) (rep
 	return false
 }
 
-func (p *pahoClient) removeRoutes(filters ...string) {
+// removeRoute は filter のハンドラの登録を外す。
+func (p *pahoClient) removeRoute(filter string) {
 	p.routesMu.Lock()
 	defer p.routesMu.Unlock()
 	p.routes = slices.DeleteFunc(p.routes, func(r route) bool {
-		return slices.Contains(filters, r.filter)
+		return r.filter == filter
 	})
 }
 
@@ -262,7 +263,7 @@ func (p *pahoClient) Subscribe(topic string, qos byte, handler domain.MessageHan
 	// 登録を残す (接続中の QoS 変更が拒否された場合、元の購読は続いているため)。
 	// 再接続時の張り直しを拒否された購読の後始末は、呼び出し側が Unsubscribe で行う。
 	if err != nil && !replaced {
-		p.removeRoutes(topic)
+		p.removeRoute(topic)
 	}
 	return err
 }
@@ -288,19 +289,19 @@ func (p *pahoClient) subscribe(topic string, qos byte) error {
 	return nil
 }
 
-func (p *pahoClient) Unsubscribe(topics ...string) error {
-	token := p.client.Unsubscribe(topics...)
+func (p *pahoClient) Unsubscribe(topic string) error {
+	token := p.client.Unsubscribe(topic)
 	if !token.WaitTimeout(p.tokenTimeout) {
 		// ブローカーが解除したかどうかは分からない。解除していた場合に購読中のまま届かない状態を
 		// 残さないよう、解除した側に倒して振り分け先を外す。ブローカー側に購読が残っていても、
 		// 届いたメッセージは dispatch が捨てる。
-		p.removeRoutes(topics...)
+		p.removeRoute(topic)
 		return fmt.Errorf("unsubscribe was not acknowledged in time: %w", domain.ErrAckTimeout)
 	}
 	if err := token.Error(); err != nil {
 		return err
 	}
-	p.removeRoutes(topics...)
+	p.removeRoute(topic)
 	return nil
 }
 

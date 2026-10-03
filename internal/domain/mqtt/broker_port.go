@@ -41,7 +41,7 @@ type BrokerClient interface {
 	Subscribe(topic string, qos byte, handler MessageHandler) error
 	// Unsubscribe は指定トピックの購読を解除する。ブローカーの応答を時間内に確認できなければ
 	// ErrAckTimeout を返すが、そのときも解除したものとして扱い、以後そのトピックの handler は呼ばない。
-	Unsubscribe(topics ...string) error
+	Unsubscribe(topic string) error
 	// IsConnected は現在接続中かどうかを返す。接続が切れて自動再接続を試みている間は false。
 	IsConnected() bool
 }

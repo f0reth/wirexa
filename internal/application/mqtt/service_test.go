@@ -53,7 +53,7 @@ type mockBrokerClient struct {
 	disconnectFn  func(quiesce uint)
 	publishFn     func(topic string, qos byte, retained bool, payload string) error
 	subscribeFn   func(topic string, qos byte, handler domain.MessageHandler) error
-	unsubscribeFn func(topics ...string) error
+	unsubscribeFn func(topic string) error
 	isConnectedFn func() bool
 }
 
@@ -84,9 +84,9 @@ func (m *mockBrokerClient) Subscribe(topic string, qos byte, handler domain.Mess
 	return nil
 }
 
-func (m *mockBrokerClient) Unsubscribe(topics ...string) error {
+func (m *mockBrokerClient) Unsubscribe(topic string) error {
 	if m.unsubscribeFn != nil {
-		return m.unsubscribeFn(topics...)
+		return m.unsubscribeFn(topic)
 	}
 	return nil
 }
@@ -337,7 +337,7 @@ func TestMQTTService_InvalidTopics_RejectedBeforeClient(t *testing.T) {
 			calls.Add(1)
 			return nil
 		},
-		unsubscribeFn: func(...string) error { calls.Add(1); return nil },
+		unsubscribeFn: func(string) error { calls.Add(1); return nil },
 	}
 	svc := newTestService(t, &mockEmitter{}, factoryWith(client))
 	id, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
@@ -587,8 +587,8 @@ func TestMQTTService_Unsubscribe_Success(t *testing.T) {
 	var unsubscribedTopics []string
 	client := &mockBrokerClient{
 		connectFn: func(context.Context) error { close(done); return nil },
-		unsubscribeFn: func(topics ...string) error {
-			unsubscribedTopics = topics
+		unsubscribeFn: func(topic string) error {
+			unsubscribedTopics = append(unsubscribedTopics, topic)
 			return nil
 		},
 	}
@@ -874,7 +874,7 @@ func TestMQTTService_Unsubscribe_ClientError(t *testing.T) {
 	wantErr := errors.New("unsubscribe failed")
 	client := &mockBrokerClient{
 		connectFn:     func(context.Context) error { close(done); return nil },
-		unsubscribeFn: func(_ ...string) error { return wantErr },
+		unsubscribeFn: func(string) error { return wantErr },
 	}
 	svc := newTestService(t, &mockEmitter{}, factoryWith(client))
 	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
@@ -898,7 +898,7 @@ func TestMQTTService_Unsubscribe_ClientError(t *testing.T) {
 // client は振り分け先を外しているので、残すと購読中と表示されたままメッセージが届かない。
 func TestMQTTService_Unsubscribe_AckTimeout_RemovesSubscription(t *testing.T) {
 	client := &mockBrokerClient{
-		unsubscribeFn: func(...string) error { return fmt.Errorf("unsubscribe: %w", domain.ErrAckTimeout) },
+		unsubscribeFn: func(string) error { return fmt.Errorf("unsubscribe: %w", domain.ErrAckTimeout) },
 	}
 	svc := newTestService(t, &mockEmitter{}, factoryWith(client))
 	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
@@ -1807,10 +1807,10 @@ func TestMQTTService_Reconnect_ResubscribeFailures(t *testing.T) {
 					}
 					return nil
 				},
-				unsubscribeFn: func(topics ...string) error {
+				unsubscribeFn: func(topic string) error {
 					mu.Lock()
 					defer mu.Unlock()
-					unsubscribed = append(unsubscribed, topics...)
+					unsubscribed = append(unsubscribed, topic)
 					return tc.unsubscribeErr
 				},
 				isConnectedFn: func() bool { return !failing.Load() || !tc.lost },
@@ -1890,10 +1890,10 @@ func newPendingConn(t *testing.T, emitter cmn.Emitter, onSubscribe func(subscrib
 			}
 			return p.rec.subscribeFn(topic, qos, handler)
 		},
-		unsubscribeFn: func(topics ...string) error {
+		unsubscribeFn: func(topic string) error {
 			p.mu.Lock()
 			defer p.mu.Unlock()
-			p.unsubscribes = append(p.unsubscribes, topics...)
+			p.unsubscribes = append(p.unsubscribes, topic)
 			return nil
 		},
 	}
