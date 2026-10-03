@@ -1521,6 +1521,72 @@ func TestMQTTService_Shutdown_TimesOutWhenConnectHangs(t *testing.T) {
 	}
 }
 
+// blockingDisconnect は client.Disconnect の中で止まっている Disconnect を作る。
+// 返った release を閉じると client.Disconnect が復帰し、result に Disconnect の戻り値が届く。
+func blockingDisconnect(t *testing.T, emitter cmn.Emitter) (svc *MQTTService, release chan struct{}, result <-chan error) {
+	t.Helper()
+	entered := make(chan struct{})
+	release = make(chan struct{})
+	var once sync.Once
+	client := &mockBrokerClient{
+		disconnectFn: func(uint) {
+			once.Do(func() {
+				close(entered)
+				<-release
+			})
+		},
+	}
+	svc = newTestService(t, emitter, factoryWith(client))
+	id, _ := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"})
+	waitEstablished(t, svc, 1)
+
+	disconnected := make(chan error, 1)
+	go func() { disconnected <- svc.Disconnect(id) }()
+	waitForEvent(t, entered, time.Second, "client.Disconnect did not start")
+	return svc, release, disconnected
+}
+
+// Shutdown は実行中の Disconnect の完了を待ち、復帰後に mqtt:disconnected を出させないこと。
+func TestMQTTService_Shutdown_WaitsForInFlightDisconnect(t *testing.T) {
+	emitter := &mockEmitter{}
+	svc, release, disconnected := blockingDisconnect(t, emitter)
+
+	result := make(chan bool, 1)
+	go func() { result <- svc.Shutdown(time.Second) }()
+	assertBlocked(t, result, "Shutdown returned while Disconnect was in flight")
+	close(release)
+
+	if !<-result {
+		t.Error("expected Shutdown to drain within timeout")
+	}
+	if err := <-disconnected; err != nil {
+		t.Errorf("Disconnect: %v", err)
+	}
+	if n := emitter.count(cmn.EventMQTTDisconnected); n != 0 {
+		t.Errorf("mqtt:disconnected emitted %d times after Shutdown, want 0", n)
+	}
+}
+
+// 実行中の Disconnect が上限内に終わらなければ Shutdown は false を返し、その後に Disconnect が
+// 終わってもイベントを出さないこと。
+func TestMQTTService_Shutdown_TimesOutWhenDisconnectHangs(t *testing.T) {
+	emitter := &mockEmitter{}
+	svc, release, disconnected := blockingDisconnect(t, emitter)
+
+	if svc.Shutdown(50 * time.Millisecond) {
+		t.Error("expected Shutdown to time out while Disconnect hangs")
+	}
+	close(release)
+
+	if err := <-disconnected; err != nil {
+		t.Errorf("Disconnect: %v", err)
+	}
+	waitConnGoroutines(t, svc)
+	if n := emitter.count(""); n != 0 {
+		t.Errorf("expected no events, got %d (%v)", n, emitter.snapshot())
+	}
+}
+
 // -race 下で全操作・全 callback を並行に実行し、データ競合が無く、切断後・終了後にイベントが出ないこと。
 func TestMQTTService_ConcurrentOperations(t *testing.T) {
 	const connCount = 4

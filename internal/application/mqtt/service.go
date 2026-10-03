@@ -79,7 +79,10 @@ type MQTTService struct {
 	// conns と closed は mu で保護する。closed は mu 配下以外で読まない
 	// (shutdown は各接続の terminal 状態として観測する)。
 	conns map[string]*connection
-	// connWg は接続 goroutine とスキャンの開始 (= paho 側の接続試行) の生存を追跡する。
+	// closing は detach で conns から外し、Disconnect がまだ終わっていない接続 (mu で保護)。
+	// Shutdown はこれらも終端状態にして、実行中の Disconnect のイベントを止める。
+	closing map[*connection]struct{}
+	// connWg は接続 goroutine・スキャンの開始 (= paho 側の接続試行)・実行中の Disconnect の生存を追跡する。
 	connWg sync.WaitGroup
 	mu     sync.RWMutex
 	// nextSeq は次に登録する接続の作成順 (mu で保護)。
@@ -98,6 +101,7 @@ func NewMQTTService(parent context.Context, emitter cmn.Emitter, clientFactory d
 		root:          root,
 		stop:          stop,
 		conns:         make(map[string]*connection),
+		closing:       make(map[*connection]struct{}),
 	}
 }
 
@@ -224,31 +228,54 @@ func (s *MQTTService) onConnectionLost(connID string, conn *connection, err erro
 }
 
 // Disconnect は指定した接続を切断する。実行中の client 操作があれば、その完了を待ってから切断する。
+// 実行中に Shutdown が始まった場合は、切断はするが mqtt:disconnected は出さない。
 func (s *MQTTService) Disconnect(connectionID string) error {
 	conn, scanClient, err := s.detach(connectionID)
 	if err != nil {
 		return err
 	}
+	// opMu・stateMu を放してから mu を取る (ロック順序 mu → opMu → stateMu を守る)。
+	defer s.finishClosing(conn)
 	// 進行中の Connect を打ち切る。接続 goroutine の完了は待たない。
 	conn.cancel()
 	disconnectScan(scanClient)
+	s.closeDetached(connectionID, conn)
+	return nil
+}
 
+// closeDetached は detach 済みの接続の client を切断し、終端状態にして mqtt:disconnected を出す。
+// Shutdown が先に終端状態にしていたら、イベントは出さない。
+func (s *MQTTService) closeDetached(connectionID string, conn *connection) {
 	conn.opMu.Lock()
 	defer conn.opMu.Unlock()
 	conn.client.Disconnect(disconnectQuiesce)
 
 	conn.stateMu.Lock()
 	defer conn.stateMu.Unlock()
+	if conn.state == stateClosed {
+		s.logger.Info("MQTT disconnected during shutdown", "source", "mqtt", "connection_id", connectionID)
+		return
+	}
 	conn.state = stateClosed
 	s.logger.Info("MQTT disconnected", "source", "mqtt", "connection_id", connectionID)
 	s.emitter.Emit(cmn.EventMQTTDisconnected, domain.ConnectionEvent{ConnectionID: connectionID})
-	return nil
+}
+
+// finishClosing は Disconnect の完了を記録する (detach の計上と対になる)。
+func (s *MQTTService) finishClosing(conn *connection) {
+	s.mu.Lock()
+	delete(s.closing, conn)
+	s.mu.Unlock()
+	s.connWg.Done()
 }
 
 // detach は接続を map から外し、同じ区間で stateDisconnecting へ遷移させる。
 // 遷移を opMu の取得より前に行うことで、opMu 待ちの操作は状態を見て即座に弾かれ、
 // Disconnect が待つのは実行中の 1 操作だけになる。
 // スキャンも同じ区間で外し、切断が要るスキャン用クライアントを返す (無ければ nil)。
+// 外した接続は closing に入れて connWg に計上する (呼び出し元が finishClosing する)。
+// Connect と同じく mu の保持中に計上するので、Shutdown が Wait した後に計上する窓はできない
+// (closed の後は conns が空なので、ここに来ない)。
 func (s *MQTTService) detach(id string) (*connection, domain.BrokerClient, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -265,6 +292,8 @@ func (s *MQTTService) detach(id string) (*connection, domain.BrokerClient, error
 	conn.state = stateDisconnecting
 	scanClient := conn.detachScan()
 	delete(s.conns, id)
+	s.closing[conn] = struct{}{}
+	s.connWg.Add(1)
 	return conn, scanClient, nil
 }
 
@@ -348,10 +377,11 @@ func (s *MQTTService) GetConnections() []domain.ConnectionStatus {
 }
 
 // Shutdown は全接続を先に終端状態にしてイベントを止め、進行中の Connect を打ち切ってから
-// 切断し、接続 goroutine の完了を合計 timeout まで待つ。以後の Connect は拒否する。
-// true は全接続を切断し全接続 goroutine が復帰したこと (paho 側の接続試行も終了済み)、
-// false は上限内に排水できなかったことを表す。false でもイベント発行と状態変更は止まっており、
-// 残った接続試行は BrokerClient.Connect の契約により接続を確立せずに終わる。
+// 切断し、接続 goroutine と実行中の Disconnect の完了を合計 timeout まで待つ。以後の Connect は拒否する。
+// true は全接続 (実行中の Disconnect が切断中の接続を含む) を切断し、全接続 goroutine が
+// 復帰したこと (paho 側の接続試行も終了済み)、false は上限内に排水できなかったことを表す。
+// false でもイベント発行と状態変更は止まっており、残った接続試行は BrokerClient.Connect の契約により
+// 接続を確立せずに終わる。
 // アプリケーションのライフサイクルは合成ルートの責務なので、RPC 面には公開しない。
 func (s *MQTTService) Shutdown(timeout time.Duration) bool {
 	s.mu.Lock()
@@ -362,6 +392,13 @@ func (s *MQTTService) Shutdown(timeout time.Duration) bool {
 	s.closed = true
 	// map から外すのと terminal への遷移を同じ区間で行う。遷移の Lock は実行中のイベント発行の
 	// 完了を待つので、この区間を抜けた後はこの service からイベントは発行されない。
+	// 実行中の Disconnect の接続は stateClosed にして mqtt:disconnected を止める。
+	// client の切断はその Disconnect が行うので、ここでは connWg で完了を待つだけにする。
+	for conn := range s.closing {
+		conn.stateMu.Lock()
+		conn.state = stateClosed
+		conn.stateMu.Unlock()
+	}
 	conns := make([]*connection, 0, len(s.conns))
 	var scanClients []domain.BrokerClient
 	for _, conn := range s.conns {
@@ -400,6 +437,7 @@ func (s *MQTTService) Shutdown(timeout time.Duration) bool {
 		wg.Wait()
 		// 接続 goroutine とスキャンの開始は paho の接続試行の終了まで復帰しないので、
 		// これが「paho 側に接続試行が残っていない」ことの根拠になる。
+		// 実行中の Disconnect も client の切断を終えるまで復帰しない。
 		s.connWg.Wait()
 		close(done)
 	}()
