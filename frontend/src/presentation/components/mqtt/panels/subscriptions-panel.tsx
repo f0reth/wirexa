@@ -5,6 +5,7 @@ import { Badge } from "../../../../components/ui/badge";
 import { Button } from "../../../../components/ui/button";
 import { Input } from "../../../../components/ui/input";
 import { ScrollArea } from "../../../../components/ui/scroll-area";
+import { isConnected } from "../../../../domain/mqtt/types";
 import {
   useMqttConnection,
   useMqttSubscribe,
@@ -25,9 +26,9 @@ export function SubscriptionsPanel() {
     toggleMute,
   } = useMqttSubscribe();
   const { activeConnection } = useMqttConnection();
-  const isConnected = () => {
+  const canSubscribe = () => {
     const conn = activeConnection();
-    return conn?.type === "online" && conn.connected;
+    return conn !== null && isConnected(conn);
   };
 
   return (
@@ -53,7 +54,7 @@ export function SubscriptionsPanel() {
               size="sm"
               onClick={() => addSubscription()}
               class={styles.subscribeButton}
-              disabled={!isConnected()}
+              disabled={!canSubscribe()}
             >
               <Plus size={16} />
               Subscribe

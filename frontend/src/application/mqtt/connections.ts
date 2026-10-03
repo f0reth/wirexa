@@ -8,12 +8,13 @@ import {
 import { createStore, produce } from "solid-js/store";
 import type { Logger } from "../../application/logger";
 import type { ConnectionPersistence } from "../../domain/mqtt/ports";
-import type {
-  BrokerProfile,
-  ConnectionStatus,
-  MqttEventPayloads,
-  Subscription,
-  Tab,
+import {
+  type BrokerProfile,
+  type ConnectionStatus,
+  isConnected,
+  type MqttEventPayloads,
+  type Subscription,
+  type Tab,
 } from "../../domain/mqtt/types";
 import type { Notifier } from "../../domain/ui/ports";
 import { errorMessage } from "../../shared/error";
@@ -256,7 +257,7 @@ export function createConnectionsState(
 
   const updateConnectionBroker = (connectionId: string, broker: string) => {
     const conn = connections[connectionId];
-    if (!conn || (conn.type === "online" && conn.connected)) return;
+    if (!conn || isConnected(conn)) return;
     const updatedProfile = { ...conn.profile, broker };
     updateConnection(connectionId, (state) => ({
       ...state,

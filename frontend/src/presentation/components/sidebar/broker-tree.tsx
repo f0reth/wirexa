@@ -1,9 +1,10 @@
 import { clsx } from "clsx";
 import { createMemo, createSignal, Show } from "solid-js";
 import { Portal } from "solid-js/web";
-import type {
-  BrokerProfile,
-  ConnectionState,
+import {
+  type BrokerProfile,
+  type ConnectionState,
+  isConnected,
 } from "../../../domain/mqtt/types";
 import { useMqttConnection } from "../../providers/mqtt-provider";
 import { BrokerSettingsDialog } from "../mqtt/broker-settings-dialog";
@@ -40,7 +41,7 @@ export function BrokerTree() {
 
   const isProfileConnected = (profileId: string) => {
     const conn = connectionByProfileId().get(profileId);
-    return conn?.type === "online" && conn.connected;
+    return conn !== undefined && isConnected(conn);
   };
 
   const getConnectionForProfile = (profileId: string) =>

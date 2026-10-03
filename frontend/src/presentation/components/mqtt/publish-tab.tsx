@@ -16,6 +16,7 @@ import {
 } from "../../../components/ui/resizable";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Textarea } from "../../../components/ui/textarea";
+import { isConnected } from "../../../domain/mqtt/types";
 import {
   useMqttConnection,
   useMqttPublish,
@@ -166,9 +167,9 @@ function PresetsPanel(props: { addPreset: () => void }) {
 function PublishForm() {
   const { activeConnection } = useMqttConnection();
   const { publishDraft, draft, updateDraft } = useMqttPublish();
-  const isConnected = () => {
+  const canSend = () => {
     const conn = activeConnection();
-    return conn?.type === "online" && conn.connected;
+    return conn !== null && isConnected(conn);
   };
 
   return (
@@ -206,7 +207,7 @@ function PublishForm() {
           class={styles.publishPayload}
         />
 
-        <Button onClick={() => publishDraft()} disabled={!isConnected()}>
+        <Button onClick={() => publishDraft()} disabled={!canSend()}>
           <Send size={16} />
           Publish
         </Button>
