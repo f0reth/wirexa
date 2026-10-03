@@ -15,6 +15,7 @@ import {
   createRequestState,
   type ResponseSaveState,
 } from "../../application/http/request";
+import { notifyOnError } from "../../application/ui/guard";
 import { notify } from "../../application/ui/notifications";
 import type {
   Collection,
@@ -181,8 +182,16 @@ export function HttpProvider(props: { children: JSX.Element }) {
 
   // 起動時のシーケンスはここに集約する（表示中のサイドバーに依存させない）。
   onMount(async () => {
-    await collectionsState.refreshCollections();
-    restoreActiveRequest();
+    // 読み込めなかったときは、途中まで読めた一覧からアクティブリクエストを復元しない。
+    const loaded = await notifyOnError(
+      notify,
+      "Failed to load collections",
+      collectionsState.refreshCollections,
+    ).then(
+      () => true,
+      () => false,
+    );
+    if (loaded) restoreActiveRequest();
   });
 
   const contextValue: RequestContextValue = { ...requestState };
