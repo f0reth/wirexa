@@ -97,10 +97,10 @@ func newMQTTMockEmitter() *mqttMockEmitter {
 // connectionId を取り出す。
 func eventConnID(data any) string {
 	switch d := data.(type) {
-	case map[string]any:
-		if id, ok := d["connectionId"].(string); ok {
-			return id
-		}
+	case mqttdomain.ConnectionEvent:
+		return d.ConnectionID
+	case mqttdomain.ConnectionErrorEvent:
+		return d.ConnectionID
 	case mqttdomain.ScannedTopic:
 		return d.ConnectionID
 	}
@@ -183,12 +183,10 @@ func (e *mqttMockEmitter) Emit(event string, data any) {
 		}
 	}
 	if event == cmndomain.EventMQTTConnectionFailed {
-		if m, ok := data.(map[string]any); ok {
-			if id, ok := m["connectionId"].(string); ok {
-				select {
-				case e.failCh <- id:
-				default:
-				}
+		if ev, ok := data.(mqttdomain.ConnectionErrorEvent); ok {
+			select {
+			case e.failCh <- ev.ConnectionID:
+			default:
 			}
 		}
 	}

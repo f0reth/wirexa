@@ -15,8 +15,6 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/mqtt"
 )
 
-const keyConnectionID = "connectionId"
-
 const (
 	// scanFilter は Broker Topics のスキャンが購読するフィルター。
 	scanFilter = "#"
@@ -250,10 +248,7 @@ func (s *MQTTService) runConnect(ctx context.Context, connID string, conn *conne
 		conn.state = stateClosed
 		scanClient := conn.detachScan()
 		s.logger.Error("MQTT connection failed", "source", "mqtt", "connection_id", connID, "error", err)
-		s.emitter.Emit(cmn.EventMQTTConnectionFailed, map[string]any{
-			keyConnectionID: connID,
-			"error":         err.Error(),
-		})
+		s.emitter.Emit(cmn.EventMQTTConnectionFailed, domain.ConnectionErrorEvent{ConnectionID: connID, Error: err.Error()})
 		conn.stateMu.Unlock()
 		disconnectScan(scanClient)
 
@@ -287,9 +282,7 @@ func (s *MQTTService) onConnected(connID string, conn *connection) {
 	}
 	conn.state = stateConnected
 	s.logger.Info("MQTT connected", "source", "mqtt", "connection_id", connID, "broker", conn.config.Broker)
-	s.emitter.Emit(cmn.EventMQTTConnected, map[string]any{
-		keyConnectionID: connID,
-	})
+	s.emitter.Emit(cmn.EventMQTTConnected, domain.ConnectionEvent{ConnectionID: connID})
 	subs := conn.orderedSubs()
 	conn.stateMu.Unlock()
 
@@ -307,10 +300,7 @@ func (s *MQTTService) onConnectionLost(connID string, conn *connection, err erro
 		return
 	}
 	s.logger.Error("MQTT connection lost", "source", "mqtt", "connection_id", connID, "error", err)
-	s.emitter.Emit(cmn.EventMQTTConnectionLost, map[string]any{
-		keyConnectionID: connID,
-		"error":         err.Error(),
-	})
+	s.emitter.Emit(cmn.EventMQTTConnectionLost, domain.ConnectionErrorEvent{ConnectionID: connID, Error: err.Error()})
 }
 
 // Disconnect は指定した接続を切断する。実行中の client 操作があれば、その完了を待ってから切断する。
@@ -331,9 +321,7 @@ func (s *MQTTService) Disconnect(connectionID string) error {
 	defer conn.stateMu.Unlock()
 	conn.state = stateClosed
 	s.logger.Info("MQTT disconnected", "source", "mqtt", "connection_id", connectionID)
-	s.emitter.Emit(cmn.EventMQTTDisconnected, map[string]any{
-		keyConnectionID: connectionID,
-	})
+	s.emitter.Emit(cmn.EventMQTTDisconnected, domain.ConnectionEvent{ConnectionID: connectionID})
 	return nil
 }
 
@@ -674,10 +662,7 @@ func (s *MQTTService) onScanConnectionLost(connID string, conn *connection, scan
 	}
 	conn.scan = nil
 	s.logger.Error("MQTT topic scan connection lost", "source", "mqtt", "connection_id", connID, "error", err)
-	s.emitter.Emit(cmn.EventMQTTScanStopped, map[string]any{
-		keyConnectionID: connID,
-		"error":         err.Error(),
-	})
+	s.emitter.Emit(cmn.EventMQTTScanStopped, domain.ConnectionErrorEvent{ConnectionID: connID, Error: err.Error()})
 	conn.stateMu.Unlock()
 	scan.client.Disconnect(0)
 }

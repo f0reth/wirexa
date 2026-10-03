@@ -1007,9 +1007,10 @@ func (e *mockEmitter) snapshot() []emittedEvent {
 // eventConnID はイベントの対象接続 ID を返す。
 func eventConnID(ev emittedEvent) string {
 	switch data := ev.data.(type) {
-	case map[string]any:
-		id, _ := data[keyConnectionID].(string)
-		return id
+	case domain.ConnectionEvent:
+		return data.ConnectionID
+	case domain.ConnectionErrorEvent:
+		return data.ConnectionID
 	case domain.MQTTMessage:
 		return data.ConnectionID
 	case domain.ScannedTopic:
@@ -1616,12 +1617,9 @@ func TestMQTTService_ConnectionLost_EmitsEventWithError(t *testing.T) {
 		if ev.event != cmn.EventMQTTConnectionLost {
 			continue
 		}
-		data, ok := ev.data.(map[string]any)
-		if !ok {
-			t.Fatalf("event data = %T, want map[string]any", ev.data)
-		}
-		if data[keyConnectionID] != id || data["error"] != "broker went away" {
-			t.Errorf("event data = %v, want connectionId %s and error %q", data, id, "broker went away")
+		want := domain.ConnectionErrorEvent{ConnectionID: id, Error: "broker went away"}
+		if ev.data != want {
+			t.Errorf("event data = %#v, want %#v", ev.data, want)
 		}
 	}
 	// paho が自動再接続するので、接続は追跡したまま残す。
@@ -1648,12 +1646,9 @@ func TestMQTTService_Connect_FailureEventCarriesError(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("events = %v, want only connection-failed", events)
 	}
-	data, ok := events[0].data.(map[string]any)
-	if !ok {
-		t.Fatalf("event data = %T, want map[string]any", events[0].data)
-	}
-	if data[keyConnectionID] != id || data["error"] != "connection refused" {
-		t.Errorf("event data = %v, want connectionId %s and error %q", data, id, "connection refused")
+	want := domain.ConnectionErrorEvent{ConnectionID: id, Error: "connection refused"}
+	if events[0].data != want {
+		t.Errorf("event data = %#v, want %#v", events[0].data, want)
 	}
 }
 
@@ -2707,9 +2702,8 @@ func TestMQTTService_TopicScan_ConnectionLost_StopsScan(t *testing.T) {
 	if len(stopped) != 1 {
 		t.Fatalf("mqtt:scan-stopped emitted %d times, want 1", len(stopped))
 	}
-	data, ok := stopped[0].(map[string]any)
-	if !ok || data[keyConnectionID] != id || data["error"] != "broker went away" {
-		t.Errorf("event data = %v, want connectionId %s and error %q", stopped[0], id, "broker went away")
+	if want := (domain.ConnectionErrorEvent{ConnectionID: id, Error: "broker went away"}); stopped[0] != want {
+		t.Errorf("event data = %#v, want %#v", stopped[0], want)
 	}
 	if n := emitter.count(cmn.EventMQTTScanTopic); n != 0 {
 		t.Errorf("mqtt:scan-topic emitted %d times after the scan stopped, want 0", n)

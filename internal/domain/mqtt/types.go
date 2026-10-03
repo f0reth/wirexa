@@ -58,6 +58,20 @@ type ScannedTopic struct {
 	Topic        string `json:"topic"`
 }
 
+// ConnectionEvent はエラーを伴わない接続のライフサイクルイベント (mqtt:connected・mqtt:disconnected) の
+// ペイロードを表す。
+type ConnectionEvent struct {
+	ConnectionID string `json:"connectionId"`
+}
+
+// ConnectionErrorEvent はエラーを伴う接続のライフサイクルイベント (mqtt:connection-failed・
+// mqtt:connection-lost・mqtt:scan-stopped) のペイロードを表す。
+// Error に omitempty を付けない。文言が空でも error キーを残し、配線形式を変えないため。
+type ConnectionErrorEvent struct {
+	ConnectionID string `json:"connectionId"`
+	Error        string `json:"error"`
+}
+
 // BrokerProfile は MQTT ブローカーへの接続プロファイルを表す。
 type BrokerProfile struct {
 	ID       string `json:"id"`
