@@ -140,6 +140,163 @@ test.describe("editing a broker", () => {
   });
 });
 
+// ── 観点H: スキーム・クライアント ID・認証情報・TLS ───────────────────────────
+
+test.describe("broker url scheme", () => {
+  test.use({ seed: { mqttProfiles: [ALPHA] } });
+
+  test("changing the scheme resets the port to its default and saves the broker URL", async ({
+    app,
+    fake,
+  }) => {
+    await app.selectBroker(ALPHA.name);
+    const lastSaved = async () =>
+      (await fake.args("SaveProfile")).at(-1)?.[0];
+
+    // 接続バーは入力のたびに保存する。
+    await app.brokerSchemeSelect().selectOption("mqtts");
+    await expect(app.brokerPortInput()).toHaveValue("8883");
+    await expect(app.broker(ALPHA.name)).toContainText(
+      "mqtts://alpha.local:8883",
+    );
+    expect(await lastSaved()).toMatchObject({
+      id: ALPHA.id,
+      broker: "mqtts://alpha.local:8883",
+    });
+
+    await app.brokerSchemeSelect().selectOption("ws");
+    await expect(app.brokerPortInput()).toHaveValue("9001");
+    await expect(app.broker(ALPHA.name)).toContainText("ws://alpha.local:9001");
+    expect(await lastSaved()).toMatchObject({
+      broker: "ws://alpha.local:9001",
+    });
+    const savesFromBar = await fake.calls("SaveProfile");
+
+    // ダイアログは Save を押すまで保存しない。
+    const dialog = await app.openBrokerEditDialog(ALPHA.name);
+    await expect(app.brokerSchemeSelect(dialog)).toHaveValue("ws");
+    await app.brokerSchemeSelect(dialog).selectOption("wss");
+    await expect(app.brokerPortInput(dialog)).toHaveValue("8884");
+    expect(await fake.calls("SaveProfile")).toBe(savesFromBar);
+    await saveButton(dialog).click();
+    await expect(dialog).toBeHidden();
+
+    await expect(app.broker(ALPHA.name)).toContainText(
+      "wss://alpha.local:8884",
+    );
+    await expect(app.brokerSchemeSelect()).toHaveValue("wss");
+    await expect(app.brokerPortInput()).toHaveValue("8884");
+    expect((await fake.snapshot()).mqttProfiles[0].broker).toBe(
+      "wss://alpha.local:8884",
+    );
+  });
+});
+
+test.describe("client id, credentials and TLS", () => {
+  const SECURE = {
+    id: "profile-secure",
+    name: "Secure Broker",
+    broker: "mqtts://secure.local:8883",
+    clientId: "wirexa-e2e",
+    username: "alice",
+    password: "s3cret",
+    useTls: true,
+  };
+
+  test.describe("new broker", () => {
+    test.use({ seed: { mqttConnect: "ok" } });
+
+    test("client id, credentials and TLS from the dialog reach SaveProfile and Connect", async ({
+      page,
+      app,
+      fake,
+    }) => {
+      await page.getByRole("button", { name: "New Broker" }).click();
+      const dialog = app.brokerDialog("New Profile");
+      await dialog.getByLabel("Name", { exact: true }).fill(SECURE.name);
+      await app.brokerSchemeSelect(dialog).selectOption("mqtts");
+      await app.brokerHostInput(dialog).fill("secure.local");
+      await dialog.getByLabel("Client ID").fill(SECURE.clientId);
+      await dialog.getByLabel("Username").fill(SECURE.username);
+      await dialog.getByLabel("Password").fill(SECURE.password);
+      await dialog.getByLabel("Use TLS").check();
+      await dialog.getByRole("button", { name: "Save & Connect" }).click();
+      await expect(dialog).toBeHidden();
+
+      await expect(app.mqttStatus("Connected")).toBeVisible();
+      const { id: _id, ...fields } = SECURE;
+      expect(await fake.args("SaveProfile")).toEqual([[{ id: "", ...fields }]]);
+      // 接続は保存後のプロファイル (採番された ID) で行う。
+      const [saved] = (await fake.snapshot()).mqttProfiles;
+      expect(saved).toEqual({ ...fields, id: saved.id });
+      expect(saved.id).not.toBe("");
+      const { name, broker, clientId, username, password, useTls } = SECURE;
+      expect(await fake.args("Connect")).toEqual([
+        [
+          {
+            name,
+            broker,
+            clientId,
+            username,
+            password,
+            useTls,
+            profileId: saved.id,
+          },
+        ],
+      ]);
+    });
+  });
+
+  test.describe("saved broker", () => {
+    test.use({ seed: { mqttProfiles: [SECURE] } });
+
+    test("edit dialog loads the saved client id, credentials and TLS", async ({
+      app,
+      fake,
+    }) => {
+      const dialog = await app.openBrokerEditDialog(SECURE.name);
+
+      await expect(app.brokerSchemeSelect(dialog)).toHaveValue("mqtts");
+      await expect(app.brokerHostInput(dialog)).toHaveValue("secure.local");
+      await expect(app.brokerPortInput(dialog)).toHaveValue("8883");
+      await expect(dialog.getByLabel("Client ID")).toHaveValue(SECURE.clientId);
+      await expect(dialog.getByLabel("Username")).toHaveValue(SECURE.username);
+      await expect(dialog.getByLabel("Password")).toHaveValue(SECURE.password);
+      await expect(dialog.getByLabel("Use TLS")).toBeChecked();
+
+      // 触っていない欄は、読み込んだ値のまま保存する。
+      await dialog.getByLabel("Username").fill("bob");
+      await saveButton(dialog).click();
+      await expect(dialog).toBeHidden();
+      expect(await fake.args("SaveProfile")).toEqual([
+        [{ ...SECURE, username: "bob" }],
+      ]);
+    });
+  });
+
+  // 画面のスキームはどれも TLS で使えるので、この検証は画面からは通らない。バインディングを直接呼ぶ。
+  test("Connect rejects a scheme that cannot be used with TLS", async ({
+    app,
+    fake,
+  }) => {
+    expect(
+      await app.mqttConnectError({
+        broker: "http://127.0.0.1:1883",
+        useTls: true,
+      }),
+    ).toContain("invalid broker URL: scheme cannot be used with TLS");
+    expect((await fake.snapshot()).mqttConnections).toEqual([]);
+
+    // TLS を使わなければ、スキームは検証しない。
+    expect(
+      await app.mqttConnectError({
+        broker: "http://127.0.0.1:1883",
+        useTls: false,
+      }),
+    ).toBeNull();
+  });
+});
+
 // ── 観点H: 接続が生きているブローカーの編集 ──────────────────────────────────
 // バックエンドに接続が残っている間 (Connected・確立待ち・自動再接続中) は、ダイアログの Save と
 // 接続バーの入力欄を使えない。編集前の宛先に繋がったまま、編集後の宛先を表示しないため。
@@ -690,5 +847,40 @@ test.describe("multiple brokers", () => {
       [ALPHA.id, ALPHA.broker],
       [BETA.id, "mqtts://beta.local:9999"],
     ]);
+  });
+});
+
+// ── 観点H: 接続中のブローカーの削除 ──────────────────────────────────────────
+
+test.describe("deleting a connected broker", () => {
+  test.use({ seed: { mqttProfiles: [ALPHA, BETA], mqttConnect: "ok" } });
+
+  test("deleting a connected broker disconnects it and closes its tab", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.connectBroker(ALPHA.name);
+    const connectionId = (await fake.snapshot()).mqttConnections[0].id;
+
+    await (await app.brokerRowAction(ALPHA.name, "Delete broker")).click();
+    await app.confirmDelete();
+
+    await expect(app.broker(ALPHA.name)).toHaveCount(0);
+    // バックエンドに接続を残さない。
+    await fake.waitForCalls("Disconnect");
+    expect(await fake.args("Disconnect")).toEqual([[connectionId]]);
+    expect(await fake.args("DeleteProfile")).toEqual([[ALPHA.id]]);
+    const { mqttConnections, mqttProfiles } = await fake.snapshot();
+    expect(mqttConnections).toEqual([]);
+    expect(mqttProfiles.map((p) => p.id)).toEqual([BETA.id]);
+
+    // 残ったブローカーが選ばれ、接続バーにその URL が出る。
+    await expect(app.brokerConnectButton).toBeVisible();
+    await expect(app.mqttStatus("Disconnected")).toBeVisible();
+    await expect(app.brokerSchemeSelect()).toHaveValue("mqtts");
+    await expect(app.brokerHostInput()).toHaveValue("beta.local");
+    await expect(app.brokerPortInput()).toHaveValue("8883");
+    await expect(page.getByRole("alert")).toHaveCount(0);
   });
 });

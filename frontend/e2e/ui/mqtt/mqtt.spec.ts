@@ -283,4 +283,57 @@ test.describe("broker topics scan", () => {
       page.getByRole("alert").filter({ hasText: "MQTT topic scan stopped" }),
     ).toContainText("EOF");
   });
+
+  test("a scanned topic can be subscribed from the list", async ({
+    app,
+    fake,
+  }) => {
+    await app.connectBroker(BROKER.name);
+    const connectionId = (await fake.snapshot()).mqttConnections[0].id;
+    const panel = app.mqttSection("Broker Topics");
+    await app.mqttScanButton.click();
+    await expect(app.mqttStopScanButton).toBeVisible();
+    await fake.emit(WailsEvents.mqttScanTopic, {
+      connectionId,
+      topic: "sensors/temp",
+    });
+    await expect(panel.getByText("sensors/temp", { exact: true })).toBeVisible();
+
+    await panel.getByTitle("Subscribe", { exact: true }).click();
+
+    // 一覧からの購読は QoS 0 で送る。
+    await expect(app.mqttSubscription("sensors/temp")).toContainText("QoS 0");
+    expect(await fake.args("Subscribe")).toEqual([
+      [connectionId, "sensors/temp", 0],
+    ]);
+    await expect(panel.getByTitle("Subscribe", { exact: true })).toHaveCount(0);
+    await expect(panel.getByTitle("Already subscribed")).toBeDisabled();
+
+    // 購読を外すと、また一覧から購読できる。
+    await app.removeMqttSubscriptionButton("sensors/temp").click();
+    await expect(panel.getByTitle("Subscribe", { exact: true })).toBeEnabled();
+  });
+
+  // 未接続のタブの接続 ID (offline-<プロファイル ID>) はバックエンドに無い。
+  test("starting a scan on a disconnected broker shows an error and returns to Scan", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.selectBroker(BROKER.name);
+
+    await app.mqttScanButton.click();
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Failed to start topic scan" }),
+    ).toContainText("connection not found");
+    await expect(app.mqttScanButton).toBeVisible();
+    await expect(app.mqttStopScanButton).toBeHidden();
+    await expect(
+      app.mqttSection("Broker Topics").getByText("No topics found"),
+    ).toBeVisible();
+    expect(await fake.args("StartTopicScan")).toEqual([
+      [`offline-${BROKER.id}`],
+    ]);
+  });
 });

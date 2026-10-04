@@ -630,6 +630,41 @@ export class App {
   }
 
   /**
+   * 画面を通さずに Connect のバインディングを直接呼ぶ。失敗したらそのメッセージを、成功したら
+   * null を返す。画面から送れない値 (TLS で使えないスキームなど) の検証を確かめるのに使う。
+   */
+  async mqttConnectError(config: {
+    broker: string;
+    useTls: boolean;
+  }): Promise<string | null> {
+    return this.page.evaluate(async (c) => {
+      const { MQTTHandler } = (
+        window as unknown as {
+          go: {
+            adapters: {
+              MQTTHandler: { Connect(config: unknown): Promise<string> };
+            };
+          };
+        }
+      ).go.adapters;
+      try {
+        await MQTTHandler.Connect({
+          name: "direct",
+          clientId: "",
+          username: "",
+          password: "",
+          profileId: "",
+          ...c,
+        });
+        return null;
+      } catch (err) {
+        // Wails はエラーを文字列で、偽バックエンドは Error で返す。
+        return err instanceof Error ? err.message : String(err);
+      }
+    }, config);
+  }
+
+  /**
    * 見出し (Subscriptions / Messages / Publish など) を持つ MQTT のパネル。
    * 見出し → 見出し行 → パネル、と上がる。非表示のタブの見出しは getByRole が拾わないので、
    * Publish タブにも同名の "Messages" があっても表示中のタブの方だけが当たる。
