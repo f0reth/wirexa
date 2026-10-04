@@ -7,6 +7,8 @@ import {
   mqttBrokerControlPort,
   mqttBrokerControlUrl,
   mqttBrokerPort,
+  mqttBrokerTlsPort,
+  mqttBrokerWsPort,
 } from "./e2e/fixtures/mqtt-broker";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -98,7 +100,7 @@ export default defineConfig({
       // MQTT の spec が接続するブローカー (e2e/fixtures/mqtt-broker.ts)。実行ごとに起動し直すので
       // retained メッセージが次の実行に残らない。
       cwd: repoRoot,
-      command: `go run ./tools/e2e-broker -mqtt 127.0.0.1:${mqttBrokerPort} -http 127.0.0.1:${mqttBrokerControlPort}`,
+      command: `go run ./tools/e2e-broker -mqtt 127.0.0.1:${mqttBrokerPort} -ws 127.0.0.1:${mqttBrokerWsPort} -tls 127.0.0.1:${mqttBrokerTlsPort} -http 127.0.0.1:${mqttBrokerControlPort}`,
       url: `${mqttBrokerControlUrl}/healthz`,
       // Go のコンパイルを含むため長めのタイムアウトを設定
       timeout: 120 * 1000,

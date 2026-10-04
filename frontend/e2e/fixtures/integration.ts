@@ -139,6 +139,23 @@ export async function disconnectMqttConnections(page: Page): Promise<void> {
   });
 }
 
+/**
+ * 画面を通さずに Disconnect のバインディングを直接呼ぶ。画面は自分で押した Disconnect の応答で
+ * タブを未接続にするので、mqtt:disconnected が届くことはこちらで確かめる。
+ */
+export async function disconnectMqttConnection(
+  page: Page,
+  connectionId: string,
+): Promise<void> {
+  await page.evaluate(
+    (id) =>
+      (window as unknown as { go: WailsGo }).go.adapters.MQTTHandler.Disconnect(
+        id,
+      ),
+    connectionId,
+  );
+}
+
 /** Go 側の MQTT 接続の状態 (GetConnections) を返す。 */
 export async function mqttConnections(page: Page) {
   return page.evaluate(() =>

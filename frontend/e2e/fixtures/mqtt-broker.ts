@@ -14,6 +14,15 @@ export const mqttBrokerControlPort = 18831;
  */
 export const mqttUnusedPort = 18832;
 
+/** ブローカーの MQTT (WebSocket) の待ち受けポート。 */
+export const mqttBrokerWsPort = 18833;
+
+/**
+ * ブローカーの MQTT (TLS) の待ち受けポート。証明書は自己署名で、アプリからは信頼されない
+ * (証明書の検証で接続が失敗する宛先として使う)。
+ */
+export const mqttBrokerTlsPort = 18834;
+
 /** ブローカーの操作用 HTTP のベース URL。 */
 export const mqttBrokerControlUrl = `http://127.0.0.1:${mqttBrokerControlPort}`;
 
@@ -51,6 +60,29 @@ async function control(
   if (!res.ok) {
     throw new Error(`${action} failed: ${res.status} ${await res.text()}`);
   }
+}
+
+/** ブローカーから見た、接続中のクライアント 1 件 (GET /clients)。 */
+export interface BrokerClient {
+  id: string;
+  username: string;
+  password: string;
+  /** 接続したリスナー。TCP は "e2e"、WebSocket は "e2e-ws"、TLS は "e2e-tls"。 */
+  listener: string;
+  /** フィルターの順に並ぶ。 */
+  subscriptions: Array<{ filter: string; qos: number }>;
+}
+
+/**
+ * ブローカーに接続中のクライアントと、その購読を返す (ID の順)。アプリの接続のほかに、スキャン中なら
+ * スキャン用の接続も含む。切断はブローカーが処理するまで反映されないので、expect.poll で待つ。
+ */
+export async function brokerClients(): Promise<BrokerClient[]> {
+  const res = await fetch(`${mqttBrokerControlUrl}/clients`);
+  if (!res.ok) {
+    throw new Error(`list clients failed: ${res.status} ${await res.text()}`);
+  }
+  return (await res.json()) as BrokerClient[];
 }
 
 /**
