@@ -11,7 +11,7 @@ import type { ConnectionPersistence } from "../../domain/mqtt/ports";
 import {
   type BrokerProfile,
   type ConnectionStatus,
-  isConnected,
+  hasLiveConnection,
   type MqttEventPayloads,
   type Qos,
   type Subscription,
@@ -98,12 +98,13 @@ export function createConnectionsState(
     );
   }
 
-  // オンラインのタブを未接続にする。stopScan が true なら、スキャン中の表示も止める。
-  function markOffline(connId: string, opts: { stopScan: boolean }) {
+  // オンラインのタブを未接続にする。closed が true なら、バックエンドの接続が終わったものとして
+  // スキャン中の表示も止める。false は自動再接続に任せる場合で、接続は生きたままにする。
+  function markOffline(connId: string, opts: { closed: boolean }) {
     updateConnection(connId, (state) => {
       if (state.type !== "online") return state;
-      return opts.stopScan
-        ? { ...state, connected: false, isScanning: false }
+      return opts.closed
+        ? { ...state, connected: false, isScanning: false, closed: true }
         : { ...state, connected: false };
     });
   }
@@ -127,13 +128,14 @@ export function createConnectionsState(
   const cancelConnected = onEvent(WailsEvents.mqttConnected, (data) => {
     const { connectionId } = data;
     updateConnection(connectionId, (state) => {
-      if (state.type !== "online") return state;
+      // 切断の直前に出た確立イベントが遅れて届いても、Connected に戻さない。
+      if (state.type !== "online" || state.closed) return state;
       return { ...state, connected: true };
     });
   });
 
   const cancelDisconnected = onEvent(WailsEvents.mqttDisconnected, (data) => {
-    markOffline(data.connectionId, { stopScan: true });
+    markOffline(data.connectionId, { closed: true });
   });
 
   const cancelConnectionLost = onEvent(
@@ -142,8 +144,8 @@ export function createConnectionsState(
       const { connectionId, error } = data;
       console.error("[MQTT] Connection lost:", error);
       notifier.error("MQTT connection lost", error, { key: connectionId });
-      // スキャンの状態は変えない。
-      markOffline(connectionId, { stopScan: false });
+      // paho が自動再接続するので、接続は生きたままにする。スキャンの状態も変えない。
+      markOffline(connectionId, { closed: false });
     },
   );
 
@@ -153,7 +155,7 @@ export function createConnectionsState(
       const { connectionId, error } = data;
       console.error("[MQTT] Connection failed:", error);
       notifier.error("MQTT connection failed", error, { key: connectionId });
-      markOffline(connectionId, { stopScan: true });
+      markOffline(connectionId, { closed: true });
     },
   );
 
@@ -251,7 +253,8 @@ export function createConnectionsState(
 
   const updateConnectionBroker = (connectionId: string, broker: string) => {
     const conn = connections[connectionId];
-    if (!conn || isConnected(conn)) return;
+    // 接続が生きている間に宛先を書き換えると、確立したときに繋がっていない宛先を Connected と表示する。
+    if (!conn || hasLiveConnection(conn)) return;
     const updatedProfile = { ...conn.profile, broker };
     updateConnection(connectionId, (state) => ({
       ...state,
@@ -266,6 +269,31 @@ export function createConnectionsState(
     const entry = makeOfflineState(profile);
     replaceProfileTab(profile.id, entry);
     setActiveConnectionId(entry.connectionId);
+  };
+
+  // 保存したプロファイルをタブに反映する。タブは作り直さないので、購読の行と受信済みメッセージは残る。
+  const applySavedProfile = (profile: BrokerProfile) => {
+    const conn = Object.values(connections).find(
+      (c) => c.profileId === profile.id,
+    );
+    if (!conn) {
+      createOfflineConnection(profile);
+      return;
+    }
+    const connId = conn.connectionId;
+    // 画面からは接続が生きている間は保存できない。それ以外の経路で通った場合に、繋がっていない宛先を
+    // Connected と表示しないよう、接続を止めてから差し替える。
+    if (hasLiveConnection(conn)) {
+      api.disconnect(connId).catch((err) => {
+        notifier.error("Failed to disconnect", errorMessage(err));
+      });
+      markOffline(connId, { closed: true });
+    }
+    updateConnection(connId, (state) => ({
+      ...state,
+      profile: { ...profile },
+    }));
+    setActiveConnectionId(connId);
   };
 
   const handleConnect = async (profileId: string) => {
@@ -303,7 +331,7 @@ export function createConnectionsState(
       });
       notifier.error("Failed to disconnect", errorMessage(err));
     }
-    markOffline(connId, { stopScan: true });
+    markOffline(connId, { closed: true });
   };
 
   // profile を渡すと、タブが持つプロファイルの代わりにそれで接続し、タブのプロファイルも置き換える
@@ -333,6 +361,7 @@ export function createConnectionsState(
             connectionId: newConnId,
             profile,
             connected: false,
+            closed: false,
             // スキャンは前の接続と一緒に止まっている。
             isScanning: false,
           };
@@ -431,6 +460,7 @@ export function createConnectionsState(
     updateConnection,
     switchConnection,
     createOfflineConnection,
+    applySavedProfile,
     handleConnect,
     handleDisconnect,
     handleReconnect,

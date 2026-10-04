@@ -141,6 +141,13 @@
     inset 0 1px 2px var(--inset-shadow-focus);
 }
 
+/* 接続が生きている間は Save を押せない理由を、ボタンの上に出す。 */
+.dialogNotice {
+  margin: 1rem 0 0;
+  font-size: 0.75rem;
+  color: var(--color-muted-foreground);
+}
+
 /* 共有 dialog.actions と併用し、フォームからの上マージンのみ補う。 */
 .dialogActions {
   margin-top: 1.25rem;

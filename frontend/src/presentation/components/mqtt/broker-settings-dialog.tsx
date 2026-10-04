@@ -17,6 +17,8 @@ import styles from "./broker.module.css";
 
 export function BrokerSettingsDialog(props: {
   profile?: BrokerProfile;
+  /** 編集中のプロファイルの接続が生きているか。真の間は Save を押せない（Save & Connect で張り直す）。 */
+  connectionLive?: boolean;
   onSave: (profile: BrokerProfile) => void;
   onSaveAndConnect?: (profile: BrokerProfile) => void;
   onClose: () => void;
@@ -57,7 +59,7 @@ export function BrokerSettingsDialog(props: {
   });
 
   const handleSave = () => {
-    if (!isValid()) return;
+    if (!isValid() || props.connectionLive) return;
     props.onSave(buildProfile());
   };
 
@@ -182,6 +184,13 @@ export function BrokerSettingsDialog(props: {
             </label>
           </div>
 
+          <Show when={props.connectionLive}>
+            <p class={styles.dialogNotice}>
+              This broker has an active connection. Use Save & Connect to apply
+              changes.
+            </p>
+          </Show>
+
           <div class={clsx(dialog.actions, styles.dialogActions)}>
             <Button variant="outline" onClick={() => props.onClose()}>
               Cancel
@@ -195,7 +204,10 @@ export function BrokerSettingsDialog(props: {
                 Save & Connect
               </Button>
             </Show>
-            <Button onClick={handleSave} disabled={!isValid()}>
+            <Button
+              onClick={handleSave}
+              disabled={!isValid() || props.connectionLive}
+            >
               Save
             </Button>
           </div>

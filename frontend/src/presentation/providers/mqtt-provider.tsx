@@ -40,6 +40,7 @@ export interface ConnectionContextValue {
   activeTab: Accessor<Tab>;
   setActiveTab: Setter<Tab>;
   createOfflineConnection: (profile: BrokerProfile) => void;
+  applySavedProfile: (profile: BrokerProfile) => void;
   handleConnect: (profileId: string) => Promise<void>;
   handleDisconnect: (connectionId: string) => Promise<void>;
   handleReconnect: (
@@ -144,6 +145,7 @@ export function MqttProvider(props: { children: JSX.Element }) {
         activeTab: connState.activeTab,
         setActiveTab: connState.setActiveTab,
         createOfflineConnection: connState.createOfflineConnection,
+        applySavedProfile: connState.applySavedProfile,
         handleConnect: connState.handleConnect,
         handleDisconnect: connState.handleDisconnect,
         handleReconnect: connState.handleReconnect,

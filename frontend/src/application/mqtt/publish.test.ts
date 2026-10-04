@@ -21,6 +21,7 @@ function onlineTab(connected: boolean): ConnectionState {
     profileId: profile.id,
     profile,
     connected,
+    closed: false,
   };
 }
 

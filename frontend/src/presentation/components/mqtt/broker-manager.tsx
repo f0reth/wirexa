@@ -9,7 +9,7 @@ import {
 } from "../../../application/mqtt/broker-url";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { isConnected } from "../../../domain/mqtt/types";
+import { hasLiveConnection, isConnected } from "../../../domain/mqtt/types";
 import { useMqttConnection } from "../../providers/mqtt-provider";
 import styles from "./broker.module.css";
 
@@ -46,6 +46,10 @@ export function BrokerManager() {
             { defer: true },
           ),
         );
+
+        // 確立待ち・自動再接続中。バックエンドに接続が残っているので、宛先は編集させない。
+        const isPending = () =>
+          hasLiveConnection(conn()) && !isConnected(conn());
 
         const handleSchemeChange = (s: string) => {
           const p = defaultPort(s);
@@ -99,6 +103,7 @@ export function BrokerManager() {
                     <select
                       class={styles.connectionInfoSchemeSelect}
                       value={scheme()}
+                      disabled={isPending()}
                       onChange={(e) =>
                         handleSchemeChange(e.currentTarget.value)
                       }
@@ -110,6 +115,7 @@ export function BrokerManager() {
                     <Input
                       class={styles.connectionInfoHostInput}
                       value={host()}
+                      disabled={isPending()}
                       onInput={(e) => handleHostChange(e.currentTarget.value)}
                       placeholder="localhost"
                     />
@@ -119,6 +125,7 @@ export function BrokerManager() {
                       min={1}
                       max={65535}
                       value={port()}
+                      disabled={isPending()}
                       onInput={(e) => handlePortChange(e.currentTarget.value)}
                       placeholder="1883"
                     />
@@ -134,13 +141,28 @@ export function BrokerManager() {
               <Show
                 when={isConnected(conn())}
                 fallback={
-                  <Button
-                    size="sm"
-                    onClick={() => handleReconnect(conn().connectionId)}
+                  <Show
+                    when={isPending()}
+                    fallback={
+                      <Button
+                        size="sm"
+                        onClick={() => handleReconnect(conn().connectionId)}
+                      >
+                        <Zap size={12} />
+                        Connect
+                      </Button>
+                    }
                   >
-                    <Zap size={12} />
-                    Connect
-                  </Button>
+                    {/* 押すと接続を中止する。文言だけでは押せることが分からないので title で補う。 */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      title="Cancel connection"
+                      onClick={() => handleDisconnect(conn().connectionId)}
+                    >
+                      Connecting…
+                    </Button>
+                  </Show>
                 }
               >
                 <Button

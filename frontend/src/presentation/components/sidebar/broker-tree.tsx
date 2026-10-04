@@ -4,6 +4,7 @@ import { Portal } from "solid-js/web";
 import {
   type BrokerProfile,
   type ConnectionState,
+  hasLiveConnection,
   isConnected,
 } from "../../../domain/mqtt/types";
 import { useMqttConnection } from "../../providers/mqtt-provider";
@@ -17,6 +18,7 @@ export function BrokerTree() {
     connections,
     activeConnection,
     createOfflineConnection,
+    applySavedProfile,
     handleConnect,
     handleReconnect,
     switchConnection,
@@ -57,13 +59,21 @@ export function BrokerTree() {
     }
   };
 
-  // 新規作成では ID がサーバ採番されるため、保存後の戻り値で接続を作る。
+  // 編集中のプロファイルの接続が生きている間は、ダイアログの Save を押せなくする。
+  const isEditingLiveConnection = () => {
+    const editing = editingProfile();
+    if (editing === null || editing === "new") return false;
+    const conn = getConnectionForProfile(editing.id);
+    return conn !== undefined && hasLiveConnection(conn);
+  };
+
+  // 新規作成では ID がサーバ採番されるため、保存後の戻り値をタブに反映する。
   // 保存に失敗したらダイアログを開いたままにする（通知は saveProfile が出す）。
   const handleProfileSave = async (profile: BrokerProfile) => {
     const saved = await saveProfile(profile).catch(() => null);
     if (!saved) return;
     setEditingProfile(null);
-    createOfflineConnection(saved);
+    applySavedProfile(saved);
   };
 
   const handleProfileSaveAndConnect = async (profile: BrokerProfile) => {
@@ -139,6 +149,7 @@ export function BrokerTree() {
                 ? undefined
                 : (editingProfile() as BrokerProfile)
             }
+            connectionLive={isEditingLiveConnection()}
             onSave={handleProfileSave}
             onSaveAndConnect={handleProfileSaveAndConnect}
             onClose={() => setEditingProfile(null)}

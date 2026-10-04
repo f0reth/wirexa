@@ -125,6 +125,11 @@ export interface OnlineConnectionState extends BaseConnectionState {
   readonly type: "online";
   connectionId: string;
   connected: boolean;
+  /**
+   * バックエンドの接続が終わった（手動切断・接続失敗）か。偽で connected も偽なら、
+   * 確立待ちか自動再接続中で、バックエンドには接続が残っている。
+   */
+  closed: boolean;
 }
 
 export type ConnectionState = OfflineConnectionState | OnlineConnectionState;
@@ -132,6 +137,11 @@ export type ConnectionState = OfflineConnectionState | OnlineConnectionState;
 /** オンライン接続かつ connected === true かどうかを返す */
 export function isConnected(conn: ConnectionState): boolean {
   return conn.type === "online" && conn.connected;
+}
+
+/** バックエンドに接続が残っているか（Connected・確立待ち・自動再接続中）を返す */
+export function hasLiveConnection(conn: ConnectionState): boolean {
+  return conn.type === "online" && !conn.closed;
 }
 
 export type Tab = "subscribe" | "publish";

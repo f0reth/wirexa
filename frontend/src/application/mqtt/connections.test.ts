@@ -1,7 +1,11 @@
 import { createEffect, createRoot } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionPersistence } from "../../domain/mqtt/ports";
-import type { BrokerProfile, ConnectionStatus } from "../../domain/mqtt/types";
+import {
+  type BrokerProfile,
+  type ConnectionStatus,
+  hasLiveConnection,
+} from "../../domain/mqtt/types";
 import type { Notifier } from "../../domain/ui/ports";
 import { type MqttEventName, WailsEvents } from "../../shared/wails-events";
 import type { Logger } from "../logger";
@@ -703,6 +707,78 @@ describe("createConnectionsState lifecycle events", () => {
     h.dispose();
   });
 
+  it("keeps the connection live while it is pending, connected or reconnecting", async () => {
+    const h = await setupOnlineAndOffline();
+    expect(hasLiveConnection(h.state.connections.c1)).toBe(true);
+
+    h.events.emit(WailsEvents.mqttConnected, { connectionId: "c1" });
+    expect(hasLiveConnection(h.state.connections.c1)).toBe(true);
+
+    h.events.emit(WailsEvents.mqttConnectionLost, {
+      connectionId: "c1",
+      error: "EOF",
+    });
+    expect(hasLiveConnection(h.state.connections.c1)).toBe(true);
+    // オフラインのタブには接続が無い。
+    expect(hasLiveConnection(h.state.connections["offline-p2"])).toBe(false);
+    h.dispose();
+  });
+
+  it.each([
+    [
+      "mqtt:disconnected",
+      (h: ReturnType<typeof harness>) =>
+        h.events.emit(WailsEvents.mqttDisconnected, { connectionId: "c1" }),
+    ],
+    [
+      "mqtt:connection-failed",
+      (h: ReturnType<typeof harness>) =>
+        h.events.emit(WailsEvents.mqttConnectionFailed, {
+          connectionId: "c1",
+          error: "refused",
+        }),
+    ],
+    [
+      "handleDisconnect",
+      (h: ReturnType<typeof harness>) => h.state.handleDisconnect("c1"),
+    ],
+  ] as const)("closes the connection on %s", async (_, close) => {
+    const h = await setupOnlineAndOffline();
+
+    await close(h);
+
+    expect(hasLiveConnection(h.state.connections.c1)).toBe(false);
+    expect(onlineState(h, "c1")).toMatchObject({
+      connected: false,
+      closed: true,
+    });
+    h.dispose();
+  });
+
+  // 切断の直前に出た確立イベントが遅れて届く場合。
+  it("does not mark a closed connection connected", async () => {
+    const h = await setupOnlineAndOffline();
+    await h.state.handleDisconnect("c1");
+
+    h.events.emit(WailsEvents.mqttConnected, { connectionId: "c1" });
+
+    expect(onlineState(h, "c1")).toMatchObject({
+      connected: false,
+      closed: true,
+    });
+    h.dispose();
+  });
+
+  it("makes a closed connection live again on reconnect", async () => {
+    const h = await setupOnlineAndOffline();
+    await h.state.handleDisconnect("c1");
+
+    await h.state.handleReconnect("c1");
+
+    expect(hasLiveConnection(h.state.connections["new-id"])).toBe(true);
+    h.dispose();
+  });
+
   it("unsubscribes every event on dispose", () => {
     const h = harness();
     expect(h.events.handlers.size).toBe(7);
@@ -1094,26 +1170,40 @@ describe("createConnectionsState tabs and profiles", () => {
     h.dispose();
   });
 
-  it("does not change the broker of a connected tab", async () => {
-    const h = harness({ live: [liveStatus("c1", "p1")] });
+  // 接続が生きている間に宛先を書き換えると、確立したときに繋がっていない宛先を Connected と表示する。
+  it.each([
+    ["connected", true, false],
+    ["pending", false, false],
+    ["reconnecting", true, true],
+  ] as const)("does not change the broker of a %s tab", async (_, connected, lost) => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const h = harness({ live: [liveStatus("c1", "p1", [], connected)] });
     await h.state.restore();
+    if (lost) {
+      h.events.emit(WailsEvents.mqttConnectionLost, {
+        connectionId: "c1",
+        error: "EOF",
+      });
+    }
 
     h.state.updateConnectionBroker("c1", "tcp://changed:1883");
 
     expect(h.state.connections.c1.profile.broker).toBe("tcp://p1:1883");
     expect(h.saveProfile).not.toHaveBeenCalled();
     h.dispose();
+    vi.restoreAllMocks();
   });
 
   it.each([
     ["an offline tab", "offline-p2", []],
-    ["a disconnected online tab", "c1", [liveStatus("c1", "p1", [], false)]],
+    ["a manually disconnected online tab", "c1", [liveStatus("c1", "p1")]],
   ] as const)("updates and saves the broker of %s", async (_, connId, live) => {
     const h = harness({
       live: [...live],
       profiles: [makeProfile("p1"), makeProfile("p2")],
     });
     await h.state.restore();
+    if (live.length > 0) await h.state.handleDisconnect(connId);
 
     h.state.updateConnectionBroker(connId, "tcp://changed:1883");
 
@@ -1159,6 +1249,118 @@ describe("createConnectionsState tabs and profiles", () => {
       "tcp://changed:1883",
     );
     dispose();
+  });
+
+  it("applies a saved profile to a manually disconnected tab without recreating it", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1", ["a", "b/#"])] });
+    await h.state.restore();
+    const message = {
+      id: "m1",
+      direction: "incoming" as const,
+      topic: "a",
+      payload: "x",
+      payloadBase64: false,
+      qos: 0 as const,
+      timestamp: new Date(0),
+    };
+    h.state.updateConnection("c1", (s) => ({ ...s, messages: [message] }));
+    await h.state.handleDisconnect("c1");
+    vi.mocked(h.api.disconnect).mockClear();
+    const edited = { ...makeProfile("p1", "renamed"), clientId: "edited" };
+
+    h.state.applySavedProfile(edited);
+
+    const conn = h.state.connections.c1;
+    expect(conn.profile).toEqual(edited);
+    expect(conn.subscriptions.map((s) => s.topic)).toEqual(["a", "b/#"]);
+    expect(conn.messages).toEqual([message]);
+    expect(h.state.connections["offline-p1"]).toBeUndefined();
+    expect(h.state.activeConnectionId()).toBe("c1");
+    expect(h.api.disconnect).not.toHaveBeenCalled();
+
+    // 次の Connect は差し替えたプロファイルで接続する。
+    await h.state.handleReconnect("c1");
+    expect(h.api.connect).toHaveBeenCalledWith(edited);
+    h.dispose();
+  });
+
+  it("applies a saved profile to an offline tab and keeps its subscription rows", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1", ["a"])] });
+    await h.state.restore();
+    // 購読の行を持つオフラインのタブを作る。
+    const sub = { ...h.state.connections.c1.subscriptions[0] };
+    h.state.createOfflineConnection(makeProfile("p1"));
+    h.state.updateConnection("offline-p1", (s) => ({
+      ...s,
+      subscriptions: [sub],
+    }));
+    const edited = makeProfile("p1", "renamed");
+
+    h.state.applySavedProfile(edited);
+
+    const conn = h.state.connections["offline-p1"];
+    expect(conn.type).toBe("offline");
+    expect(conn.profile).toEqual(edited);
+    expect(conn.subscriptions).toEqual([sub]);
+    expect(h.api.disconnect).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
+  it("creates and selects an offline tab for a saved profile without a tab", async () => {
+    const h = harness({ profiles: [makeProfile("p1")] });
+    await h.state.restore();
+    const created = makeProfile("p9");
+
+    h.state.applySavedProfile(created);
+
+    expect(h.state.connections["offline-p9"]).toMatchObject({
+      type: "offline",
+      profile: created,
+    });
+    expect(h.state.connections["offline-p1"]).toBeDefined();
+    expect(h.state.activeConnectionId()).toBe("offline-p9");
+    h.dispose();
+  });
+
+  // 画面からは通らない経路。編集後の宛先を Connected と表示しない。
+  it("disconnects a pending tab before applying a saved profile", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1", [], false)] });
+    await h.state.restore();
+    const edited = makeProfile("p1", "renamed");
+
+    h.state.applySavedProfile(edited);
+
+    expect(h.api.disconnect).toHaveBeenCalledTimes(1);
+    expect(h.api.disconnect).toHaveBeenCalledWith("c1");
+    expect(h.state.connections.c1.profile).toEqual(edited);
+    expect(hasLiveConnection(h.state.connections.c1)).toBe(false);
+
+    h.events.emit(WailsEvents.mqttConnected, { connectionId: "c1" });
+
+    expect(h.state.connections.c1).toMatchObject({
+      connected: false,
+      closed: true,
+    });
+    h.dispose();
+  });
+
+  it("notifies when disconnecting a live tab for a saved profile fails", async () => {
+    const h = harness({ live: [liveStatus("c1", "p1")] });
+    await h.state.restore();
+    h.api.disconnect = vi.fn(async () => {
+      throw new Error("not connected");
+    });
+
+    h.state.applySavedProfile(makeProfile("p1", "renamed"));
+
+    await vi.waitFor(() =>
+      expect(h.notifier.error).toHaveBeenCalledWith(
+        "Failed to disconnect",
+        "not connected",
+      ),
+    );
+    expect(hasLiveConnection(h.state.connections.c1)).toBe(false);
+    h.dispose();
   });
 
   it("ignores a broker update for an unknown tab", () => {

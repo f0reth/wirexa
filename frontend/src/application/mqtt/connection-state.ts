@@ -66,6 +66,7 @@ export function makeOnlineState(
     profileId: profile.id,
     profile: { ...profile },
     connected: false,
+    closed: false,
     ...emptyRuntimeState(),
   };
 }

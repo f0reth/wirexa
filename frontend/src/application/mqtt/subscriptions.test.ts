@@ -40,6 +40,7 @@ function onlineTab(connected: boolean): ConnectionStateExt {
     profileId: profile.id,
     profile,
     connected,
+    closed: false,
     ...runtime(),
   };
 }
