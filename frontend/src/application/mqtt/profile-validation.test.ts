@@ -1,6 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { composeBrokerUrl, parseBrokerUrl } from "./broker-url";
-import { isValidBrokerPort, isValidProfileDraft } from "./profile-validation";
+import {
+  isValidBrokerAddress,
+  isValidBrokerPort,
+  isValidProfileDraft,
+} from "./profile-validation";
+
+describe("isValidBrokerAddress", () => {
+  it("accepts a host with a port up to 65535", () => {
+    expect(isValidBrokerAddress("alpha.local", "1883")).toBe(true);
+    expect(isValidBrokerAddress("10.0.0.1", "65535")).toBe(true);
+  });
+
+  it.each([
+    "",
+    "   ",
+    "al pha",
+    "host:1883",
+    "::1",
+  ])("rejects the host %j", (host) => {
+    expect(isValidBrokerAddress(host, "1883")).toBe(false);
+  });
+
+  it.each(["0", "65536", "", "1e3"])("rejects the port %j", (port) => {
+    expect(isValidBrokerAddress("alpha.local", port)).toBe(false);
+  });
+});
 
 describe("isValidBrokerPort", () => {
   it("accepts ports within 1-65535", () => {

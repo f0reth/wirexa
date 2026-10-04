@@ -1363,6 +1363,27 @@ describe("createConnectionsState tabs and profiles", () => {
     h.dispose();
   });
 
+  // 読み戻せない URL を保存すると、接続バーが既定値を表示して保存値と食い違う。
+  it.each([
+    "tcp://:1883",
+    "tcp://host:70000",
+    "tcp://host:1e3",
+    "tcp://host:0",
+    "tcp://ho st:1883",
+    "not-a-url",
+  ])("does not save the broker %j, which cannot be read back", async (broker) => {
+    const h = harness();
+    await h.state.restore();
+
+    h.state.updateConnectionBroker("offline-p1", broker);
+
+    expect(h.state.connections["offline-p1"].profile.broker).toBe(
+      "tcp://p1:1883",
+    );
+    expect(h.saveProfile).not.toHaveBeenCalled();
+    h.dispose();
+  });
+
   it("ignores a broker update for an unknown tab", () => {
     const h = harness();
 

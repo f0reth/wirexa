@@ -88,6 +88,14 @@
   font-size: 0.75rem;
 }
 
+/* 読み戻せないホスト・ポートを入力している間（保存していない）の表示。 */
+.connectionInfoHostInput[aria-invalid="true"],
+.connectionInfoHostInput[aria-invalid="true"]:focus,
+.connectionInfoPortInput[aria-invalid="true"],
+.connectionInfoPortInput[aria-invalid="true"]:focus {
+  border-color: var(--color-destructive);
+}
+
 .connectionInfoActions {
   display: flex;
   align-items: center;

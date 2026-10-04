@@ -24,10 +24,13 @@ function isValidBrokerHost(host: string): boolean {
   return /^[^\s:/]+$/.test(host);
 }
 
+/** ホストとポートが、broker URL に組み立てて保存したあと読み戻せる値かを返す。 */
+export function isValidBrokerAddress(host: string, port: string): boolean {
+  return isValidBrokerHost(host) && isValidBrokerPort(port);
+}
+
 export function isValidProfileDraft(input: ProfileDraftInput): boolean {
   return (
-    input.name.trim().length > 0 &&
-    isValidBrokerHost(input.host) &&
-    isValidBrokerPort(input.port)
+    input.name.trim().length > 0 && isValidBrokerAddress(input.host, input.port)
   );
 }

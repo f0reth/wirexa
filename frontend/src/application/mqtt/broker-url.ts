@@ -42,14 +42,20 @@ const BROKER_URL_PATTERN = new RegExp(
   `^(${BROKER_SCHEMES.join("|")})://([^:]+)(?::(\\d+))?$`,
 );
 
-export function parseBrokerUrl(url: string): BrokerUrlParts {
+// 読めない URL は null。保存する前に、読み戻せる URL かを確かめるのに使う。
+export function tryParseBrokerUrl(url: string): BrokerUrlParts | null {
   const match = url.match(BROKER_URL_PATTERN);
-  if (!match) return { ...DEFAULT_BROKER };
+  if (!match) return null;
   return {
     scheme: match[1],
     host: match[2],
     port: match[3] ?? defaultPort(match[1]),
   };
+}
+
+// 表示用。読めない URL は既定値で埋める。
+export function parseBrokerUrl(url: string): BrokerUrlParts {
+  return tryParseBrokerUrl(url) ?? { ...DEFAULT_BROKER };
 }
 
 export function composeBrokerUrl(

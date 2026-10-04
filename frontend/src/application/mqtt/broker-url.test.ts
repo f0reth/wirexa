@@ -5,6 +5,7 @@ import {
   DEFAULT_BROKER_URL,
   defaultPort,
   parseBrokerUrl,
+  tryParseBrokerUrl,
 } from "./broker-url";
 
 describe("defaultPort", () => {
@@ -97,6 +98,26 @@ describe("parseBrokerUrl", () => {
       host: "host/path",
       port: "1883",
     });
+  });
+});
+
+describe("tryParseBrokerUrl", () => {
+  it.each([
+    "tcp://:1883",
+    "not-a-url",
+    "tcp://host:1e3",
+    "http://host:1883",
+    "",
+  ])("returns null for %j", (url) => {
+    expect(tryParseBrokerUrl(url)).toBeNull();
+  });
+
+  it.each([
+    "tcp://alpha.local:1883",
+    "mqtts://broker.example.com",
+    "ws://10.0.0.1:9001",
+  ])("returns the same parts as parseBrokerUrl for %j", (url) => {
+    expect(tryParseBrokerUrl(url)).toEqual(parseBrokerUrl(url));
   });
 });
 

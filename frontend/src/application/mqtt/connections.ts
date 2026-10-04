@@ -20,6 +20,7 @@ import {
 import type { Notifier } from "../../domain/ui/ports";
 import { errorMessage } from "../../shared/error";
 import { type MqttEventName, WailsEvents } from "../../shared/wails-events";
+import { tryParseBrokerUrl } from "./broker-url";
 import {
   type ConnectionStateExt,
   makeOfflineState,
@@ -28,6 +29,7 @@ import {
   synthesizeProfile,
 } from "./connection-state";
 import { createEventBuffer } from "./message-buffer";
+import { isValidBrokerAddress } from "./profile-validation";
 import { makeSubscription } from "./subscription";
 
 export type { ConnectionStateExt, MqttMessageView } from "./connection-state";
@@ -255,6 +257,9 @@ export function createConnectionsState(
     const conn = connections[connectionId];
     // 接続が生きている間に宛先を書き換えると、確立したときに繋がっていない宛先を Connected と表示する。
     if (!conn || hasLiveConnection(conn)) return;
+    // 読み戻せない URL を保存すると、次に開いたとき既定値として表示され、保存値と食い違う。
+    const parts = tryParseBrokerUrl(broker);
+    if (!parts || !isValidBrokerAddress(parts.host, parts.port)) return;
     const updatedProfile = { ...conn.profile, broker };
     updateConnection(connectionId, (state) => ({
       ...state,

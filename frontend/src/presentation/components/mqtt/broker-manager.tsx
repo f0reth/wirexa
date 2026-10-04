@@ -7,6 +7,7 @@ import {
   defaultPort,
   parseBrokerUrl,
 } from "../../../application/mqtt/broker-url";
+import { isValidBrokerAddress } from "../../../application/mqtt/profile-validation";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { hasLiveConnection, isConnected } from "../../../domain/mqtt/types";
@@ -51,28 +52,30 @@ export function BrokerManager() {
         const isPending = () =>
           hasLiveConnection(conn()) && !isConnected(conn());
 
-        const handleSchemeChange = (s: string) => {
-          const p = defaultPort(s);
-          setScheme(s);
-          setPort(p);
+        // 読み戻せないホストとポートは保存しない。Connect は最後に保存した URL で接続するので、
+        // 入力欄と違う宛先へ繋がないよう、無効な間は Connect も押せなくする。
+        const isAddressValid = () => isValidBrokerAddress(host(), port());
+
+        // 入力欄の値は打っている途中でも巻き戻さず、有効なときだけ保存する。
+        const saveBroker = () => {
+          if (!isAddressValid()) return;
           updateConnectionBroker(
             conn().connectionId,
-            composeBrokerUrl(s, host(), p),
+            composeBrokerUrl(scheme(), host(), port()),
           );
+        };
+        const handleSchemeChange = (s: string) => {
+          setScheme(s);
+          setPort(defaultPort(s));
+          saveBroker();
         };
         const handleHostChange = (h: string) => {
           setHost(h);
-          updateConnectionBroker(
-            conn().connectionId,
-            composeBrokerUrl(scheme(), h, port()),
-          );
+          saveBroker();
         };
         const handlePortChange = (p: string) => {
           setPort(p);
-          updateConnectionBroker(
-            conn().connectionId,
-            composeBrokerUrl(scheme(), host(), p),
-          );
+          saveBroker();
         };
 
         return (
@@ -116,6 +119,7 @@ export function BrokerManager() {
                       class={styles.connectionInfoHostInput}
                       value={host()}
                       disabled={isPending()}
+                      aria-invalid={!isAddressValid()}
                       onInput={(e) => handleHostChange(e.currentTarget.value)}
                       placeholder="localhost"
                     />
@@ -126,6 +130,7 @@ export function BrokerManager() {
                       max={65535}
                       value={port()}
                       disabled={isPending()}
+                      aria-invalid={!isAddressValid()}
                       onInput={(e) => handlePortChange(e.currentTarget.value)}
                       placeholder="1883"
                     />
@@ -146,6 +151,7 @@ export function BrokerManager() {
                     fallback={
                       <Button
                         size="sm"
+                        disabled={!isAddressValid()}
                         onClick={() => handleReconnect(conn().connectionId)}
                       >
                         <Zap size={12} />
