@@ -411,10 +411,12 @@ func copyResponseFile(src, dst string) error {
 
 // sessionSecret は baseDir 直下に永続化された、インストールごとの乱数シークレットを返す。
 // 既に存在すればその内容を読み、無ければ crypto/rand で生成して 0600 で新規作成する。
+// 長さが不正なファイル (空など) は新しいシークレットで上書きする。
+// 上書きの前に作られた session directory は marker が一致しなくなり、sweep されずに残る。
 func sessionSecret(baseDir string) ([]byte, error) {
 	path := filepath.Join(baseDir, sessionSecretFile)
-	if content, err := os.ReadFile(path); err == nil && len(content) == sessionSecretSize { //nolint:gosec // G304: path は baseDir 直下の固定ファイル名
-		return content, nil
+	if secret, ok := readSessionSecret(path); ok {
+		return secret, nil
 	}
 	if err := os.MkdirAll(baseDir, 0o700); err != nil {
 		return nil, err
@@ -424,11 +426,14 @@ func sessionSecret(baseDir string) ([]byte, error) {
 		return nil, err
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: path は baseDir 直下の固定ファイル名
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			// 単一インスタンスロックにより通常起こらないが、念のため先着プロセスの値を読み直す。
-			return os.ReadFile(path) //nolint:gosec // G304: path は baseDir 直下の固定ファイル名
+	if errors.Is(err, os.ErrExist) {
+		// 単一インスタンスロックにより通常起こらないが、念のため先着プロセスの値を読み直す。
+		if existing, ok := readSessionSecret(path); ok {
+			return existing, nil
 		}
+		f, err = os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec // G304: path は baseDir 直下の固定ファイル名
+	}
+	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }() //nolint:errcheck // 後始末。失敗は無視してよい
@@ -439,6 +444,15 @@ func sessionSecret(baseDir string) ([]byte, error) {
 		return nil, err
 	}
 	return secret, nil
+}
+
+// readSessionSecret はシークレットファイルを読み、長さが sessionSecretSize のときだけ返す。
+func readSessionSecret(path string) ([]byte, bool) {
+	content, err := os.ReadFile(path) //nolint:gosec // G304: path は baseDir 直下の固定ファイル名
+	if err != nil || len(content) != sessionSecretSize {
+		return nil, false
+	}
+	return content, true
 }
 
 // SweepStaleTempFiles は前回のセッションが baseDir 配下に残した session directory を削除する。

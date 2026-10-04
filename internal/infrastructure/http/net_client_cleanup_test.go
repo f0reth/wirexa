@@ -348,3 +348,49 @@ func TestWriteSpill_ReadErrorIsNotWriteError(t *testing.T) {
 		t.Fatalf("writeSpill error = %v, want a wrapped read error", err)
 	}
 }
+
+// シークレットファイルの長さが不正 (空など) なら作り直す。
+// 空のシークレットを返すと marker が一致せず、sweep が session directory を消せなくなる。
+func TestSessionSecret_RecreatesWhenLengthIsInvalid(t *testing.T) {
+	baseDir := t.TempDir()
+	secretPath := filepath.Join(baseDir, sessionSecretFile)
+	if err := os.WriteFile(secretPath, nil, 0o600); err != nil {
+		t.Fatalf("write empty secret: %v", err)
+	}
+
+	secret, err := sessionSecret(baseDir)
+	if err != nil {
+		t.Fatalf("sessionSecret: %v", err)
+	}
+	if len(secret) != sessionSecretSize {
+		t.Fatalf("len(secret) = %d, want %d", len(secret), sessionSecretSize)
+	}
+	stored, err := os.ReadFile(secretPath)
+	if err != nil {
+		t.Fatalf("read secret: %v", err)
+	}
+	if !bytes.Equal(stored, secret) {
+		t.Fatal("the secret file must be overwritten with the returned secret")
+	}
+
+	// 作り直したあとに作った session directory は sweep で消える。
+	store := NewResponseStore(baseDir)
+	if err := store.Begin("exec-1"); err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if err := store.Spill("exec-1", 1, "text/plain", func(f *os.File) (int64, error) {
+		n, werr := f.WriteString("x")
+		return int64(n), werr
+	}); err != nil {
+		t.Fatalf("Spill: %v", err)
+	}
+	if files := tempFilesIn(t, baseDir); len(files) != 1 {
+		t.Fatalf("expected 1 temp file before the sweep, found %v", files)
+	}
+
+	SweepStaleTempFiles(baseDir)
+
+	if dirs, _ := filepath.Glob(filepath.Join(baseDir, responseSessionDirPrefix+"*")); len(dirs) != 0 {
+		t.Fatalf("expected the session dir swept, found %v", dirs)
+	}
+}
