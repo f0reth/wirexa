@@ -9,7 +9,6 @@ import (
 )
 
 // HTTPTransport はHTTPリクエスト実行を担うポート。
-// Application層はこのインターフェースを通じてネットワークI/Oを行う。
 // executionID は送信ごとの実行 ID で、打ち切り時の一時ファイルはこの ID で追跡する。
 // req.ID は保存済みリクエストの永続 ID であり、実行の識別には使わない。
 type HTTPTransport interface {

@@ -17,7 +17,6 @@ var ErrSubscriptionRejected = errors.New("subscription rejected by broker")
 type MessageHandler func(topic string, payload []byte, qos byte, retained bool)
 
 // BrokerClient は MQTT ブローカー接続のトランスポート抽象。
-// 実装は infrastructure 層 (例: Paho) が提供する。
 type BrokerClient interface {
 	// Connect はブローカーへの接続を試み、成功・失敗・打ち切りのいずれかまでブロックする。
 	//   - ctx が切れたとき、または実装固有の上限時間を超えたときはエラーを返すが、

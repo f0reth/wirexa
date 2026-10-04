@@ -2,7 +2,7 @@ package httpdomain
 
 import "testing"
 
-// buildTree constructs a test collection:
+// buildTree はテスト用のコレクションを組み立てる。
 //
 //	col
 //	├── f1 (folder)
@@ -22,14 +22,14 @@ func buildTree() *Collection {
 func TestCollection_FindNode_Found(t *testing.T) {
 	tests := []struct {
 		id           string
-		wantParentID string // "" means parent should be nil (root)
+		wantParentID string // "" は親が nil (ルート直下)
 		hasParent    bool
 	}{
-		{"f1", "", false},  // root folder
-		{"r3", "", false},  // root request
-		{"r1", "f1", true}, // nested under f1
-		{"f2", "f1", true}, // nested folder under f1
-		{"r2", "f2", true}, // deeply nested
+		{"f1", "", false},  // ルート直下のフォルダ
+		{"r3", "", false},  // ルート直下のリクエスト
+		{"r1", "f1", true}, // f1 の下
+		{"f2", "f1", true}, // f1 の下のフォルダ
+		{"r2", "f2", true}, // 2 段下
 	}
 
 	for _, tt := range tests {
@@ -74,7 +74,6 @@ func TestCollection_FindNode_EmptyCollection(t *testing.T) {
 
 func TestCollection_RemoveNode_RootItem(t *testing.T) {
 	col := buildTree()
-	// Remove r3 (root request)
 	ok := col.RemoveNode("r3")
 	if !ok {
 		t.Fatal("expected RemoveNode to return true")
@@ -82,7 +81,6 @@ func TestCollection_RemoveNode_RootItem(t *testing.T) {
 	if _, _, found := col.FindNode("r3"); found {
 		t.Error("r3 should not exist after removal")
 	}
-	// f1 should still exist
 	if _, _, found := col.FindNode("f1"); !found {
 		t.Error("f1 should still exist")
 	}
@@ -93,7 +91,7 @@ func TestCollection_RemoveNode_RootItem(t *testing.T) {
 
 func TestCollection_RemoveNode_RootFolder(t *testing.T) {
 	col := buildTree()
-	// Removing f1 should remove entire subtree
+	// f1 を消すと、サブツリーごと消える。
 	ok := col.RemoveNode("f1")
 	if !ok {
 		t.Fatal("expected RemoveNode to return true")
@@ -104,7 +102,6 @@ func TestCollection_RemoveNode_RootFolder(t *testing.T) {
 	if col.Items[0].ID != "r3" {
 		t.Errorf("expected r3, got %q", col.Items[0].ID)
 	}
-	// r1, f2, r2 should all be gone
 	for _, id := range []string{"f1", "r1", "f2", "r2"} {
 		if _, _, found := col.FindNode(id); found {
 			t.Errorf("%q should not exist after removing parent f1", id)
@@ -121,7 +118,7 @@ func TestCollection_RemoveNode_NestedItem(t *testing.T) {
 	if _, _, found := col.FindNode("r1"); found {
 		t.Error("r1 should not exist after removal")
 	}
-	// Parent f1 should still exist with only f2
+	// 親の f1 は残り、子は f2 だけになる。
 	node, _, found := col.FindNode("f1")
 	if !found {
 		t.Fatal("f1 should still exist")
@@ -140,7 +137,6 @@ func TestCollection_RemoveNode_DeeplyNested(t *testing.T) {
 	if _, _, found := col.FindNode("r2"); found {
 		t.Error("r2 should not exist after removal")
 	}
-	// f2 should be empty now
 	f2, _, found := col.FindNode("f2")
 	if !found {
 		t.Fatal("f2 should still exist")
@@ -270,7 +266,7 @@ func TestCollection_InsertItem_NegativePosition_AppendsToEnd(t *testing.T) {
 func TestCollection_InsertItem_ParentIsRequest(t *testing.T) {
 	col := buildTree()
 	newItem := &TreeItem{Type: ItemTypeRequest, ID: "ins6", Name: "Ins6", Children: []*TreeItem{}}
-	// r3 はリクエスト型なので親として指定するとfalseを返す
+	// r3 はリクエスト型なので親として指定するとfalseを返す。
 	ok := col.InsertItem("r3", newItem, 0)
 	if ok {
 		t.Error("expected InsertItem to return false when parent is a request")

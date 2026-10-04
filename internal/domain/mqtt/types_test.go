@@ -20,7 +20,7 @@ func marshalToMap(t *testing.T, v any) map[string]any {
 	return m
 }
 
-// ライフサイクルイベントの配線形式は、型付きにする前の map[string]any と同じキーに保つ。
+// ライフサイクルイベントの配線形式のキーを固定する。
 // テストのエミッターは Go の値をそのまま記録して JSON 化を通さないので、json タグはここで守る。
 func TestLifecycleEvents_WireFormat(t *testing.T) {
 	tests := []struct {

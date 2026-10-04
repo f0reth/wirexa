@@ -489,7 +489,7 @@ func TestPadTo(t *testing.T) {
 	}
 }
 
-// bytesEqual は2つのバイト列が等しいことを確認する
+// bytesEqual は2つのバイト列が等しいことを確認する。
 func bytesEqual(a, b []byte) bool {
 	if len(a) != len(b) {
 		return false

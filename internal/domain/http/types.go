@@ -11,12 +11,8 @@ import (
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 )
 
-// このパッケージの型は業務概念と不変条件を表し、Wails RPC とイベントの配線型を兼ねる
-// (adapters に RPC 用の DTO は作らない)。json タグは RPC とイベントの配線形式だけを表す。
-// 永続化形式は infrastructure のリポジトリにある storedXxx DTO が持つので、タグを変えても
-// 保存形式は変わらない。保存対象のフィールドを足すときは stored DTO と変換関数にも足す。
-// ドメイン型に載せてよいのは RPC で受け渡す業務上の値だけで、パスや一時的なハンドルのような
-// infrastructure 内部の状態は載せない。
+// このパッケージの型は Wails RPC とイベントの配線型を兼ねる。
+// 永続化形式との境界は AGENTS.md の「Boundaries between domain types, RPC and persistence」に従う。
 
 // BodyType 定数のうち、行編集 UI を持つ form 系ボディの種別。
 const (
@@ -224,7 +220,6 @@ func EncodeFormPairs(pairs []FormRow) string {
 
 // GuessFileContentType は拡張子からファイルの Content-Type を推定する。
 // 判定できない場合はバイナリとして扱う。
-// 送信時の自動付与と UI のヒント表示の両方がこれを使い、判定を一箇所に寄せる。
 func GuessFileContentType(path string) string {
 	if ct := mime.TypeByExtension(filepath.Ext(path)); ct != "" {
 		return ct
@@ -286,7 +281,6 @@ const (
 )
 
 // RootCollectionID はルートリクエスト置き場として使用する予約済みコレクション ID。
-// コレクションとしての削除・リネームは application 層で拒否する。中のアイテムは通常どおり操作できる。
 // Name は作成時に ID と同じ値を入れるが、どこからも参照されない。
 const RootCollectionID = "__root__"
 
@@ -298,7 +292,6 @@ type SidebarEntry struct {
 
 // Clone はコレクションのディープコピーを返す。
 // 返り値は元のコレクションと一切の可変状態を共有しない。
-// 変更系ユースケースはコピー上で変更し、永続化が成功してからキャッシュへ差し替える。
 func (c *Collection) Clone() *Collection {
 	if c == nil {
 		return nil

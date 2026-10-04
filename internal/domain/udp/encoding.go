@@ -148,7 +148,7 @@ func encodeNumericField(field FixedLengthField, spec numericSpec, byteOrder bina
 		if err != nil {
 			return nil, invalidValueErr(field, err)
 		}
-		// 負値は 2 の補数として下位ビットに残り、putUint の切り詰めで型幅に収まる
+		// 負値は 2 の補数として下位ビットに残り、putUint の切り詰めで型幅に収まる。
 		raw = uint64(v) //nolint:gosec // ビットパターンの再解釈が目的であり値の大小は意味を持たない
 	case kindFloat:
 		v, err := strconv.ParseFloat(field.Value, bits)
