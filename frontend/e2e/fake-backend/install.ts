@@ -122,12 +122,13 @@ function seeded(seed: FakeSeed): Db {
       id: p.id ?? newId("profile"),
       name: p.name,
       broker: p.broker ?? "tcp://localhost:1883",
-      clientId: "",
-      username: "",
-      password: "",
-      useTls: false,
+      clientId: p.clientId ?? "",
+      username: p.username ?? "",
+      password: p.password ?? "",
+      useTls: p.useTls ?? false,
     });
   }
+  fresh.mqttConnections = clone(seed.mqttConnections ?? []);
   for (const f of seed.openApiFiles ?? []) {
     fresh.files[f.path] = f.content;
     addOpenApiRecent(f.path);
@@ -538,6 +539,14 @@ function delay(ms: number | undefined): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms ?? 0));
 }
 
+/**
+ * seed の遅延 (ms)。未設定ならタスクを跨がずに続ける。delay は未設定でも次のタスクまで待つので、
+ * 遅延を仕込まないテストで RPC の完了の順序を変えたくない箇所はこちらを使う。
+ */
+async function delayIfSet(ms: number | undefined): Promise<void> {
+  if (ms !== undefined) await delay(ms);
+}
+
 const UdpHandler = {
   // seed.getTargetsError で RPC 自体の失敗 (Wails のランタイムの不調など) を模す。
   GetTargets: counted("GetTargets", async () => {
@@ -671,6 +680,35 @@ function mqttConnection(id: string): ConnectionStatus {
   return conn;
 }
 
+/** seed.subscribeError で、ブローカーがそのトピックの購読を拒否することにしているか。 */
+function subscriptionRejected(topic: string): boolean {
+  return seed.subscribeError?.topic === topic;
+}
+
+// Go の resubscribe: 確立したときに、確立前に受け付けた購読を張る。ブローカーが拒否した購読は外して
+// mqtt:subscription-dropped を出す (mqtt:connected のあとに呼ぶ)。
+function resubscribe(conn: ConnectionStatus): void {
+  for (const sub of [...conn.subscriptions]) {
+    if (!subscriptionRejected(sub.topic)) continue;
+    conn.subscriptions = conn.subscriptions.filter((s) => s !== sub);
+    save();
+    emitEvent(WailsEvents.mqttSubscriptionDropped, {
+      connectionId: conn.id,
+      topic: sub.topic,
+      error: seed.subscribeError?.message,
+    });
+  }
+}
+
+// 開始中 (seed.startTopicScanDelayMs で待っている間) のスキャン。接続 ID → 止められたか。
+const startingScans = new Map<string, { stopped: boolean }>();
+
+/** 開始中のスキャンを打ち切る (Go の StopTopicScan・Disconnect が開始中のスキャンに対してすること)。 */
+function stopStartingScan(connectionId: string): void {
+  const starting = startingScans.get(connectionId);
+  if (starting) starting.stopped = true;
+}
+
 const MqttHandler = {
   // seed.getProfilesError で RPC 自体の失敗 (Wails のランタイムの不調など) を模す。
   GetProfiles: counted("GetProfiles", async () => {
@@ -705,9 +743,11 @@ const MqttHandler = {
     db.mqttProfiles = db.mqttProfiles.filter((p) => p.id !== id);
   }),
 
-  GetConnections: counted("GetConnections", async () =>
-    clone(db.mqttConnections),
-  ),
+  // seed.getConnectionsError で RPC 自体の失敗を模す。
+  GetConnections: counted("GetConnections", async () => {
+    if (seed.getConnectionsError) throw new Error(seed.getConnectionsError);
+    return clone(db.mqttConnections);
+  }),
 
   // Go の MQTTService.Connect (internal/application/mqtt/service.go) と同じく接続 ID を先に返し、
   // 結果はあとからイベントで知らせる。UI は戻り値で接続を作ってからイベントを受けるので、
@@ -718,6 +758,8 @@ const MqttHandler = {
   // - seed.mqttConnect が "reject": RPC 自体を失敗させる (Go では終了処理中の Connect に当たる)。
   // - seed.mqttConnect が "pending": 接続を一覧に残したままイベントを出さない (Go で確立待ちが
   //   続いている状態。GetConnections は connected: false で返す)。
+  // seed.mqttConnectDelayMs は接続 ID を返すまで、seed.mqttConnectResultDelayMs は返してから結果の
+  // イベントを出すまでの時間。
   // 引数は生成された配線型で受ける。Go の json タグが変わって再生成されれば、ここで tsc が検出する。
   Connect: counted(
     "Connect",
@@ -727,6 +769,7 @@ const MqttHandler = {
       }
       validateBrokerScheme(config.broker, config.useTls);
       if (seed.mqttConnect === "reject") throw new Error("connection refused");
+      await delayIfSet(seed.mqttConnectDelayMs);
       const conn: ConnectionStatus = {
         id: newId("conn"),
         name: config.name,
@@ -757,13 +800,18 @@ const MqttHandler = {
         live.connected = true;
         save();
         emitEvent(WailsEvents.mqttConnected, { connectionId: conn.id });
-      });
+        resubscribe(live);
+      }, seed.mqttConnectResultDelayMs ?? 0);
       return conn.id;
     },
   ),
 
+  // seed.disconnectError で RPC 自体の失敗を模す (接続は残る)。Go の Disconnect は、ある接続に
+  // 対しては失敗しない。
   Disconnect: mutates("Disconnect", (connectionId: string) => {
+    if (seed.disconnectError) throw new Error(seed.disconnectError);
     mqttConnection(connectionId);
+    stopStartingScan(connectionId);
     db.mqttConnections = db.mqttConnections.filter(
       (c) => c.id !== connectionId,
     );
@@ -771,12 +819,19 @@ const MqttHandler = {
   }),
 
   // ブローカーが無いのでメッセージは届かない。受信はテストが mqtt:message を emit して模す。
+  // seed.subscribeError のトピックはブローカーが拒否する。確立済みの接続ではここで失敗し、確立前は
+  // Go と同じく登録して成功を返す (確立したときに resubscribe が外す)。
   Subscribe: mutates(
     "Subscribe",
     (connectionId: string, topic: string, qos: number) => {
       validateTopicFilter(topic);
       validateQos(qos);
       const conn = mqttConnection(connectionId);
+      if (conn.connected && subscriptionRejected(topic)) {
+        throw new Error(
+          `failed to subscribe: ${seed.subscribeError?.message}`,
+        );
+      }
       // Go の setSub と同じく、購読中のトピックは位置を保って QoS を上書きする。
       const existing = conn.subscriptions.find((s) => s.topic === topic);
       if (existing) existing.qos = qos;
@@ -784,22 +839,47 @@ const MqttHandler = {
     },
   ),
 
-  Unsubscribe: mutates("Unsubscribe", (connectionId: string, topic: string) => {
-    validateTopicFilter(topic);
-    const conn = mqttConnection(connectionId);
-    conn.subscriptions = conn.subscriptions.filter((s) => s.topic !== topic);
-  }),
+  // seed.unsubscribeError は、確立済みの接続でブローカーの応答を確認できなかった場合 (Go の
+  // ErrAckTimeout) を模す。Go と同じく購読は外してからエラーを返す。失敗しても外した購読を
+  // 書き戻すよう、mutates ではなく自分で save する。
+  Unsubscribe: counted(
+    "Unsubscribe",
+    async (connectionId: string, topic: string) => {
+      validateTopicFilter(topic);
+      const conn = mqttConnection(connectionId);
+      conn.subscriptions = conn.subscriptions.filter((s) => s.topic !== topic);
+      save();
+      if (conn.connected && seed.unsubscribeError) {
+        throw new Error(`failed to unsubscribe: ${seed.unsubscribeError}`);
+      }
+    },
+  ),
 
   // Go はスキャン用の接続で # を購読するが、ここでは scanning を切り替えるだけ (購読は増えない)。
   // 見つかったトピックはテストが mqtt:scan-topic を、スキャン用の接続の切断は mqtt:scan-stopped を
   // emit して模す。
-  StartTopicScan: mutates("StartTopicScan", (connectionId: string) => {
+  // seed.startTopicScanDelayMs はスキャン用の接続が購読を終えるまでの時間。待つ間は scanning を偽の
+  // ままにし (GetConnections の scanning は稼働中だけ真)、その間に StopTopicScan か Disconnect が
+  // 来たら Go の errScanStopped と同じ文言で失敗させる。待ったあとに状態を書くので、mutates ではなく
+  // 自分で save する。
+  StartTopicScan: counted("StartTopicScan", async (connectionId: string) => {
+    mqttConnection(connectionId);
+    const starting = { stopped: false };
+    startingScans.set(connectionId, starting);
+    await delayIfSet(seed.startTopicScanDelayMs);
+    if (startingScans.get(connectionId) === starting) {
+      startingScans.delete(connectionId);
+    }
+    if (starting.stopped) throw new Error("topic scan was stopped");
     mqttConnection(connectionId).scanning = true;
+    save();
   }),
 
-  // Go と同じく、スキャンしていなければ何もしない。
+  // Go と同じく、スキャンしていなければ何もしない。開始中のスキャンは打ち切る。
   StopTopicScan: mutates("StopTopicScan", (connectionId: string) => {
-    mqttConnection(connectionId).scanning = false;
+    const conn = mqttConnection(connectionId);
+    stopStartingScan(connectionId);
+    conn.scanning = false;
   }),
 
   // ループバックはしない。送った内容は fake.args("Publish") で確かめる。
@@ -905,6 +985,10 @@ const App = { ConfirmQuit: counted("ConfirmQuit", async () => {}) };
 // Wails ランタイム (runtime/desktop/js の events.js) と同じ意味論で購読を持つ。
 // maxCallbacks が -1 なら無制限、正の数ならその回数だけ呼んだら外れる。
 // テストは window.__wirexaFake.emit で、バックエンドが発火したイベントを模す。
+// emit は購読者を呼ぶだけで、偽バックエンドの状態 (db) は変えない。Go は mqtt:connection-lost・
+// mqtt:subscription-dropped・mqtt:scan-stopped と一緒に状態も変える (connected・購読・scanning) ので、
+// これらを流したあとの db は Go と食い違う。流したテストは画面の反応だけを見て、そのあとのリロードと、
+// 流したイベントに関わる snapshot() の検証はしない (バックエンドの状態はフルスタック e2e が見る)。
 interface EventListener {
   callback: (...data: unknown[]) => void;
   remaining: number;

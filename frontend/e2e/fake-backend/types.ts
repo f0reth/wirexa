@@ -35,7 +35,21 @@ export interface FakeSeed {
   udpTargets?: Array<{ id?: string; name: string; host: string; port: number }>;
   /** UDP の GetTargets を必ず失敗させる (起動時の読み込みの失敗を模す)。 */
   getTargetsError?: string;
-  mqttProfiles?: Array<{ id?: string; name: string; broker?: string }>;
+  /** broker を省くと tcp://localhost:1883、clientId・username・password は空、useTls は false。 */
+  mqttProfiles?: Array<{
+    id?: string;
+    name: string;
+    broker?: string;
+    clientId?: string;
+    username?: string;
+    password?: string;
+    useTls?: boolean;
+  }>;
+  /**
+   * 起動時からバックエンドにある MQTT 接続 (GetConnections が返す)。リロードを跨いで残った接続や、
+   * プロファイルが削除済みの接続を模す。
+   */
+  mqttConnections?: ConnectionStatus[];
   /**
    * MQTT の Connect の結果。
    * - 未設定: 接続 ID を返してから mqtt:connection-failed を発火する (繋がるブローカーが無い状態)。
@@ -44,6 +58,30 @@ export interface FakeSeed {
    * - "pending": 接続 ID を返したあと、確立も失敗もしない (確立待ちが続いている状態)。
    */
   mqttConnect?: "ok" | "reject" | "pending";
+  /** Connect の RPC が接続 ID を返すまでの遅延 (ms)。応答を待つ間の操作の検証に使う。 */
+  mqttConnectDelayMs?: number;
+  /** Connect が接続 ID を返してから、結果のイベントを出すまでの遅延 (ms)。 */
+  mqttConnectResultDelayMs?: number;
+  /** MQTT の GetConnections を必ず失敗させる (起動時の復元の失敗を模す)。 */
+  getConnectionsError?: string;
+  /** MQTT の Disconnect を必ず失敗させ、接続は残す (RPC 自体の失敗を模す)。 */
+  disconnectError?: string;
+  /**
+   * ブローカーが topic の購読を拒否する。確立済みの接続への Subscribe は
+   * "failed to subscribe: <message>" で失敗する。確立前の Subscribe は登録して成功を返し、確立した
+   * ときに mqtt:connected のあとで購読を外して mqtt:subscription-dropped (error は message) を出す。
+   */
+  subscribeError?: { topic: string; message: string };
+  /**
+   * 確立済みの接続への Unsubscribe が、購読を外してから "failed to unsubscribe: <この文字列>" で
+   * 失敗する (ブローカーの応答を確認できなかった場合を模す)。
+   */
+  unsubscribeError?: string;
+  /**
+   * StartTopicScan が解決するまでの遅延 (ms)。待つ間に StopTopicScan か Disconnect が来たら、
+   * "topic scan was stopped" で失敗する。
+   */
+  startTopicScanDelayMs?: number;
   /** MQTT の GetProfiles を必ず失敗させる (起動時の読み込みの失敗を模す)。 */
   getProfilesError?: string;
   /** MQTT の SaveProfile を必ず失敗させる (ディスクへの書き込みの失敗などを模す)。 */
@@ -81,7 +119,10 @@ export interface FakeBackend {
   calls: Record<string, number>;
   /** バインディング名 → 呼び出しごとの引数。RPC 境界に何が渡ったかを検証する。 */
   args: Record<string, unknown[][]>;
-  /** バックエンドからのイベント発火を模し、EventsOn の購読者に data を渡す。 */
+  /**
+   * バックエンドからのイベント発火を模し、EventsOn の購読者に data を渡す。
+   * 偽バックエンドの状態は変えない (install.ts のイベントの節のコメントを参照)。
+   */
   emit(name: string, ...data: unknown[]): void;
   /** 現在の状態のスナップショット (構造化クローン可能な形)。 */
   snapshot(): {
