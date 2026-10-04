@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
@@ -455,17 +457,22 @@ func readSessionSecret(path string) ([]byte, bool) {
 	return content, true
 }
 
+// removeSessionDir は session directory の削除。テストで失敗を注入するために差し替える。
+var removeSessionDir = os.RemoveAll
+
 // SweepStaleTempFiles は前回のセッションが baseDir 配下に残した session directory を削除する。
 // session directory は isWirexaSessionDir で確かめてから削除する。
 // 同じ OS ユーザーの別プロセスが接頭辞を真似たディレクトリを消さないため。
 // シークレットを読み書きできない場合は sweep を諦める。
-// 失敗はログに出さず、次回起動時の sweep に任せる。
-func SweepStaleTempFiles(baseDir string) {
+// 失敗は logger に記録して続行し、残ったものは次回起動時の sweep に任せる。
+// logger が nil の場合は記録しない。記録にパスは含めない。
+func SweepStaleTempFiles(baseDir string, logger cmn.Logger) {
 	if info, err := os.Stat(baseDir); err != nil || !info.IsDir() {
 		return
 	}
 	secret, err := sessionSecret(baseDir)
 	if err != nil {
+		logSweepError(logger, "http: skipping sweep of stale response files: session secret unavailable", "error", withoutPath(err))
 		return
 	}
 	dirs, err := filepath.Glob(filepath.Join(baseDir, responseSessionDirPrefix+"*"))
@@ -473,10 +480,29 @@ func SweepStaleTempFiles(baseDir string) {
 		return
 	}
 	for _, d := range dirs {
-		if isWirexaSessionDir(d, secret) {
-			_ = os.RemoveAll(d) //nolint:errcheck // 後始末。失敗は無視してよい
+		if !isWirexaSessionDir(d, secret) {
+			continue
+		}
+		if err := removeSessionDir(d); err != nil {
+			logSweepError(logger, "http: failed to remove stale response session dir", "dir", filepath.Base(d), "error", withoutPath(err))
 		}
 	}
+}
+
+// logSweepError は logger が設定されている場合だけエラーを記録する。
+func logSweepError(logger cmn.Logger, msg string, args ...any) {
+	if logger != nil {
+		logger.Error(msg, args...)
+	}
+}
+
+// withoutPath は OS エラーからパスを除いた原因だけを返す。
+// *fs.PathError の文言は操作対象のパスを含むため、ログにそのまま出さない。
+func withoutPath(err error) error {
+	if pathErr, ok := errors.AsType[*fs.PathError](err); ok {
+		return pathErr.Err
+	}
+	return err
 }
 
 // isWirexaSessionDir は d が Wirexa 自身が作成した session directory であることを確認する。

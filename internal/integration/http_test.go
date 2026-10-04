@@ -2032,7 +2032,7 @@ func TestHTTP_StaleResponseFilesSweptOnRestart(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	httpinfra.SweepStaleTempFiles(sessions)
+	httpinfra.SweepStaleTempFiles(sessions, nil)
 
 	if _, err = os.Stat(stale[0]); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("stale session dir should be swept: %v", err)

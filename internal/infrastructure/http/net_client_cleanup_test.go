@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
@@ -64,7 +67,8 @@ func TestSweepStaleTempFiles(t *testing.T) {
 		t.Fatalf("write %s: %v", keep, err)
 	}
 
-	SweepStaleTempFiles(baseDir)
+	// logger が nil でも panic しない。
+	SweepStaleTempFiles(baseDir, nil)
 
 	if _, err := os.Stat(sessionDir); !os.IsNotExist(err) {
 		t.Fatalf("expected stale session dir removed, err=%v", err)
@@ -388,9 +392,89 @@ func TestSessionSecret_RecreatesWhenLengthIsInvalid(t *testing.T) {
 		t.Fatalf("expected 1 temp file before the sweep, found %v", files)
 	}
 
-	SweepStaleTempFiles(baseDir)
+	SweepStaleTempFiles(baseDir, nil)
 
 	if dirs, _ := filepath.Glob(filepath.Join(baseDir, responseSessionDirPrefix+"*")); len(dirs) != 0 {
 		t.Fatalf("expected the session dir swept, found %v", dirs)
+	}
+}
+
+// sweepLogger は Error の呼び出しを 1 行ずつ記録するテスト用ロガー。
+type sweepLogger struct{ errors []string }
+
+var _ cmn.Logger = (*sweepLogger)(nil)
+
+func (l *sweepLogger) Info(string, ...any)  {}
+func (l *sweepLogger) Debug(string, ...any) {}
+func (l *sweepLogger) Error(msg string, args ...any) {
+	l.errors = append(l.errors, msg+" "+fmt.Sprint(args...))
+}
+
+// newStaleSessionDir は baseDir に、sweep の対象になる session directory を作って返す。
+func newStaleSessionDir(t *testing.T, baseDir, name string) string {
+	t.Helper()
+	secret, err := sessionSecret(baseDir)
+	if err != nil {
+		t.Fatalf("sessionSecret: %v", err)
+	}
+	dir := filepath.Join(baseDir, name)
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatalf("mkdir session dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, sessionMarkerFile), secret, 0o600); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+	return dir
+}
+
+// session directory を削除できないときは、パスを含めずに 1 件記録して残りの sweep を続ける。
+func TestSweepStaleTempFiles_LogsRemoveFailureWithoutPath(t *testing.T) {
+	baseDir := t.TempDir()
+	locked := newStaleSessionDir(t, baseDir, "wirexa-http-locked")
+	removable := newStaleSessionDir(t, baseDir, "wirexa-http-removable")
+
+	orig := removeSessionDir
+	removeSessionDir = func(path string) error {
+		if path == locked {
+			return &fs.PathError{Op: "unlinkat", Path: path, Err: fs.ErrPermission}
+		}
+		return orig(path)
+	}
+	t.Cleanup(func() { removeSessionDir = orig })
+
+	logger := &sweepLogger{}
+	SweepStaleTempFiles(baseDir, logger)
+
+	if len(logger.errors) != 1 {
+		t.Fatalf("expected 1 logged error, got %v", logger.errors)
+	}
+	got := logger.errors[0]
+	if strings.Contains(got, baseDir) {
+		t.Fatalf("log must not contain the path: %q", got)
+	}
+	if !strings.Contains(got, "wirexa-http-locked") || !strings.Contains(got, fs.ErrPermission.Error()) {
+		t.Fatalf("log must name the dir by basename and carry the cause: %q", got)
+	}
+	if _, err := os.Stat(removable); !os.IsNotExist(err) {
+		t.Fatalf("the sweep must continue after a failure, err=%v", err)
+	}
+}
+
+// シークレットを読み書きできないときは、パスを含めずに 1 件記録して sweep を諦める。
+func TestSweepStaleTempFiles_LogsSecretFailureWithoutPath(t *testing.T) {
+	baseDir := t.TempDir()
+	// シークレットのパスをディレクトリにして、読み込みも作成も失敗させる。
+	if err := os.Mkdir(filepath.Join(baseDir, sessionSecretFile), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	logger := &sweepLogger{}
+	SweepStaleTempFiles(baseDir, logger)
+
+	if len(logger.errors) != 1 {
+		t.Fatalf("expected 1 logged error, got %v", logger.errors)
+	}
+	if strings.Contains(logger.errors[0], baseDir) {
+		t.Fatalf("log must not contain the path: %q", logger.errors[0])
 	}
 }

@@ -128,7 +128,7 @@ func (a *App) initialize(ctx context.Context) error {
 	)
 
 	// 前回のセッションが残した、打ち切りレスポンスの一時ファイルを掃除する。
-	httpinfra.SweepStaleTempFiles(sessionDir)
+	httpinfra.SweepStaleTempFiles(sessionDir, logger)
 
 	// MQTT / UDP の両サービスで共有する (ctx を保持するだけのステートレスな型)。
 	emitter := infra.NewWailsEmitter(ctx)
