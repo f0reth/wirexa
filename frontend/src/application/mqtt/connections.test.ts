@@ -1391,6 +1391,22 @@ describe("createConnectionsState events before the tab exists", () => {
     h.dispose();
   });
 
+  it("applies the result to the original tab after switching to another broker", async () => {
+    const h = harness({ profiles: [makeProfile("p1"), makeProfile("p2")] });
+    await h.state.restore();
+    await h.state.handleReconnect("offline-p1");
+    h.state.switchConnection("new-id");
+
+    // 結果を待つ間に別のブローカーへ切り替える。
+    h.state.switchConnection("offline-p2");
+    h.events.emit(WailsEvents.mqttConnected, { connectionId: "new-id" });
+
+    expect(h.state.connections["new-id"]).toMatchObject({ connected: true });
+    expect(h.state.connections["offline-p2"].type).toBe("offline");
+    expect(h.state.activeConnectionId()).toBe("offline-p2");
+    h.dispose();
+  });
+
   it("does not remember events that arrive while no tab is being created", async () => {
     const h = harness();
     await h.state.restore();

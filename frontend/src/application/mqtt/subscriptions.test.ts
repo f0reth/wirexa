@@ -362,3 +362,77 @@ describe("createSubscriptionsState mqtt:subscription-dropped", () => {
     expect(h.handlers.has(WailsEvents.mqttSubscriptionDropped)).toBe(false);
   });
 });
+
+describe("createSubscriptionsState addSubscription", () => {
+  it("subscribes the typed topic without surrounding whitespace and clears the field", async () => {
+    const h = harness(onlineTab(true));
+    h.state.setNewTopic("  sensors/temp \t");
+    h.state.setNewQos(1);
+
+    await h.state.addSubscription();
+
+    expect(h.api.subscribe).toHaveBeenCalledTimes(1);
+    expect(h.api.subscribe).toHaveBeenCalledWith("c1", "sensors/temp", 1);
+    expect(h.topics()).toEqual(["a", "b/#", "sensors/temp"]);
+    expect(h.state.newTopic()).toBe("");
+    h.dispose();
+  });
+
+  it("does not subscribe an already subscribed topic and clears the field", async () => {
+    const h = harness(onlineTab(true));
+    h.state.setNewTopic(" b/# ");
+
+    await h.state.addSubscription();
+
+    expect(h.api.subscribe).not.toHaveBeenCalled();
+    expect(h.topics()).toEqual(["a", "b/#"]);
+    expect(h.state.newTopic()).toBe("");
+    h.dispose();
+  });
+
+  it("does nothing for a topic of only whitespace", async () => {
+    const h = harness(onlineTab(true));
+    h.state.setNewTopic("   ");
+
+    await h.state.addSubscription();
+
+    expect(h.api.subscribe).not.toHaveBeenCalled();
+    expect(h.topics()).toEqual(["a", "b/#"]);
+    expect(h.state.newTopic()).toBe("   ");
+    h.dispose();
+  });
+
+  it("keeps the typed topic when subscribing fails", async () => {
+    const h = harness(onlineTab(true));
+    h.api.subscribe = vi.fn(async () => {
+      throw new Error("not authorized");
+    });
+    h.state.setNewTopic("c");
+
+    await h.state.addSubscription();
+
+    expect(h.notifier.error).toHaveBeenCalledWith(
+      "Failed to subscribe to c",
+      "not authorized",
+    );
+    expect(h.topics()).toEqual(["a", "b/#"]);
+    expect(h.state.newTopic()).toBe("c");
+    h.dispose();
+  });
+
+  // スキャン結果の一覧からの購読。入力途中のトピックを消さない。
+  it("keeps the field when the topic is given as an argument", async () => {
+    const h = harness(onlineTab(true));
+    h.state.setNewTopic("typing");
+
+    await h.state.addSubscription("found/topic", 0);
+    // 既に購読しているトピックを渡した場合も同じ。
+    await h.state.addSubscription("a", 0);
+
+    expect(h.api.subscribe).toHaveBeenCalledTimes(1);
+    expect(h.api.subscribe).toHaveBeenCalledWith("c1", "found/topic", 0);
+    expect(h.topics()).toEqual(["a", "b/#", "found/topic"]);
+    expect(h.state.newTopic()).toBe("typing");
+    h.dispose();
+  });
+});
