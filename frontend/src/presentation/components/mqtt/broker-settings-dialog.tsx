@@ -114,6 +114,7 @@ export function BrokerSettingsDialog(props: {
                 <select
                   id="broker-scheme"
                   class={styles.brokerSchemeSelect}
+                  aria-label="Broker scheme"
                   value={scheme()}
                   onChange={(e) => handleSchemeChange(e.currentTarget.value)}
                 >
@@ -124,6 +125,7 @@ export function BrokerSettingsDialog(props: {
                 <Input
                   id="broker-host"
                   class={styles.brokerHostInput}
+                  aria-label="Broker host"
                   value={host()}
                   onInput={(e) => setHost(e.currentTarget.value)}
                   placeholder="localhost"
@@ -131,6 +133,7 @@ export function BrokerSettingsDialog(props: {
                 <Input
                   id="broker-port"
                   class={styles.brokerPortInput}
+                  aria-label="Broker port"
                   type="number"
                   min={1}
                   max={65535}

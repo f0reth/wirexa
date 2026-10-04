@@ -105,6 +105,7 @@ export function BrokerManager() {
                   <div class={styles.connectionInfoBrokerRow}>
                     <select
                       class={styles.connectionInfoSchemeSelect}
+                      aria-label="Broker scheme"
                       value={scheme()}
                       disabled={isPending()}
                       onChange={(e) =>
@@ -117,6 +118,7 @@ export function BrokerManager() {
                     </select>
                     <Input
                       class={styles.connectionInfoHostInput}
+                      aria-label="Broker host"
                       value={host()}
                       disabled={isPending()}
                       aria-invalid={!isAddressValid()}
@@ -125,6 +127,7 @@ export function BrokerManager() {
                     />
                     <Input
                       class={styles.connectionInfoPortInput}
+                      aria-label="Broker port"
                       type="number"
                       min={1}
                       max={65535}

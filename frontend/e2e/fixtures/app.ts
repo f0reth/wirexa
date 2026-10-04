@@ -506,19 +506,37 @@ export class App {
   // ── MQTT ────────────────────────────────────────────────────────────────────
 
   /**
-   * New Broker のダイアログでプロファイルを作り、action のボタンで閉じる。host と port を省くと
-   * ダイアログの既定値 (mqtt://localhost:1883) のまま保存する。
+   * New Broker のダイアログでプロファイルを作り、action のボタンで閉じる。scheme・host・port を
+   * 省くとダイアログの既定値 (mqtt://localhost:1883) のまま、clientId・username・password を省くと
+   * 空のまま保存する。
    */
   async createBrokerProfile(
     name: string,
     options: {
+      scheme?: "mqtt" | "mqtts" | "tcp" | "ws" | "wss";
       host?: string;
       port?: number;
+      clientId?: string;
+      username?: string;
+      password?: string;
       action?: "Save" | "Save & Connect";
     } = {},
   ): Promise<void> {
     const dialog = await this.openNewBrokerDialog();
     await dialog.getByLabel("Name", { exact: true }).fill(name);
+    // スキームを変えるとポートが既定値に戻るので、ポートより先に選ぶ。
+    if (options.scheme !== undefined) {
+      await this.brokerSchemeSelect(dialog).selectOption(options.scheme);
+    }
+    if (options.clientId !== undefined) {
+      await dialog.getByLabel("Client ID").fill(options.clientId);
+    }
+    if (options.username !== undefined) {
+      await dialog.getByLabel("Username").fill(options.username);
+    }
+    if (options.password !== undefined) {
+      await dialog.getByLabel("Password").fill(options.password);
+    }
     if (options.host !== undefined) {
       await this.brokerHostInput(dialog).fill(options.host);
     }
@@ -604,27 +622,20 @@ export class App {
 
   /**
    * ブローカー URL のホスト欄。scope を省くと接続バー、ダイアログを渡すとダイアログの欄。
-   * スキーム・ホスト・ポートは "Broker URL" の 1 行に並び、個別のラベルを持たないので placeholder で取る。
-   * 接続バーとダイアログの欄は同じ placeholder なので、接続バーの欄はダイアログを閉じた状態で使う。
+   * 接続バーとダイアログの欄は同じラベルなので、接続バーの欄はダイアログを閉じた状態で使う。
    */
   brokerHostInput(scope: Locator | Page = this.page): Locator {
-    return scope.getByPlaceholder("localhost");
+    return scope.getByLabel("Broker host");
   }
 
   /** ブローカー URL のポート欄。scope は brokerHostInput と同じ。 */
   brokerPortInput(scope: Locator | Page = this.page): Locator {
-    return scope.getByPlaceholder("1883");
+    return scope.getByLabel("Broker port");
   }
 
-  /**
-   * ブローカー URL のスキーム欄 (ネイティブ select)。scope は brokerHostInput と同じ。
-   * ラベルが無く、画面にはほかの select (Messages のトピックの絞り込み) もあるので、
-   * ホスト欄の直前に並ぶ select として取る。
-   */
+  /** ブローカー URL のスキーム欄 (ネイティブ select)。scope は brokerHostInput と同じ。 */
   brokerSchemeSelect(scope: Locator | Page = this.page): Locator {
-    return this.brokerHostInput(scope).locator(
-      "xpath=preceding-sibling::select",
-    );
+    return scope.getByLabel("Broker scheme");
   }
 
   /** サイドバーの行の Edit ボタンからブローカーの編集ダイアログを開き、ダイアログを返す。 */
