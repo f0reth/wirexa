@@ -255,7 +255,6 @@ func TestMQTTService_Connect_FailureRemovesConnection(t *testing.T) {
 
 	waitForEvent(t, failedCh, time.Second, "timeout waiting for connection-failed event")
 
-	// After failure, connection should be removed
 	conns := svc.GetConnections()
 	if len(conns) != 0 {
 		t.Errorf("expected 0 connections after failure, got %d", len(conns))
@@ -675,7 +674,6 @@ func TestMQTTService_GetConnections_TracksProfileIDAndSubscriptions(t *testing.T
 		t.Error("expected sensors/# subscription to be tracked")
 	}
 
-	// Unsubscribe removes the topic from tracking.
 	if err := svc.Unsubscribe(id, "sensors/temp"); err != nil {
 		t.Fatalf("Unsubscribe: %v", err)
 	}
@@ -792,7 +790,7 @@ func TestMQTTService_Shutdown_DisconnectsAll(t *testing.T) {
 
 func TestMQTTService_Shutdown_NoConnections(t *testing.T) {
 	svc := newTestService(t, &mockEmitter{}, factoryWith(&mockBrokerClient{}))
-	// パニックもブロックもせずに true を返す
+	// パニックもブロックもせずに true を返す。
 	if !svc.Shutdown(time.Second) {
 		t.Error("expected Shutdown to drain within timeout")
 	}

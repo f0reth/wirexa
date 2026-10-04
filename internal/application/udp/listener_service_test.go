@@ -55,7 +55,7 @@ func (m *mockUDPConn) ReadFrom(b []byte) (int, string, error) {
 		n := copy(b, m.packets[i].data)
 		return n, m.packets[i].addr, nil
 	}
-	// ブロックして Close() を待つ
+	// ブロックして Close() を待つ。
 	<-m.done
 	m.mu.Lock()
 	m.readErrs++

@@ -9,10 +9,8 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
-// SidebarLayoutService はサイドバーレイアウト（コレクション/ルートアイテムの並び順）の
-// 永続化と操作を担う。CollectionService から分離することで、コレクションキャッシュ用の
-// ロックとレイアウト用のロックを別構造体に分け、1構造体に二重ミューテックスを抱える
-// 状態（ロック順序依存によるデッドロック危険）を構造的に排除する。
+// SidebarLayoutService はサイドバーレイアウト（コレクション/ルートアイテムの並び順）を
+// 永続化し、操作する。
 //
 // レイアウトはコレクションから再生成できるデータ（store.PolicyRegenerable）として扱う。
 // ファイルが壊れていれば退避してから空レイアウトとして扱い、次の保存で再生成した内容に置き換える。
@@ -31,8 +29,6 @@ func NewSidebarLayoutService(repo domain.SidebarLayoutRepository, logger cmn.Log
 
 // layoutMutator は読み込み済みレイアウトから保存すべきレイアウトを組み立てる。
 // エントリが見つからないなどの業務エラーはここで返し、ファイルは書き換えない。
-// 純関数としてロックの外でも単体で検証できるようにし、ロード〜保存の I/O は
-// Update 側にだけ置く。
 type layoutMutator func([]domain.SidebarEntry) ([]domain.SidebarEntry, error)
 
 // layoutAppend はレイアウトの末尾にエントリを追加する。
@@ -93,7 +89,7 @@ func layoutInsertItem(itemID string, position int) layoutMutator {
 
 // loadLocked はレイアウトを読み込む。壊れていれば退避してから空レイアウトを返す
 // （起動後に外部から壊された場合も、次の操作で同じように復旧する）。
-// 破損以外の読み込み失敗はエラーとして返す。呼び出し側で l.mu をロック済み。
+// 破損以外の読み込み失敗はエラーとして返す。l.mu 保持中に呼ぶ。
 func (l *SidebarLayoutService) loadLocked() ([]domain.SidebarEntry, error) {
 	layout, _, err := store.LoadSingleFile(l.repo, store.PolicyRegenerable, l.logger, "sidebar_layout")
 	if err != nil {

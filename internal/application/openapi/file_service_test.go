@@ -306,8 +306,7 @@ func TestMoveRecentIndexBeyondLenAppendsToEnd(t *testing.T) {
 	assertRecentOrder(t, s, "b.yaml", "c.yaml", "a.yaml")
 }
 
-// 負の index は末尾に追加する。domain.InsertAt が定める挿入契約であり、
-// insertAt / insertEntryAt 由来の 2 箇所と揃えるために先頭挿入から変更した。
+// 負の index は末尾に追加する (domain.InsertAt が定める挿入契約)。
 func TestMoveRecentNegativeIndexAppendsToEnd(t *testing.T) {
 	s := newRecentsABC(t)
 	if err := s.MoveRecent(spec("a.yaml"), -1); err != nil {

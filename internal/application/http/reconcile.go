@@ -96,7 +96,6 @@ func reconcileSidebarLayout(
 		next = append(next, e)
 	}
 
-	// レイアウトに無いものを末尾へ追加する。コレクションは名前順、アイテムはツリー順。
 	sorted := append([]*domain.Collection(nil), cols...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
 	appendMissing := func(e domain.SidebarEntry) {

@@ -370,7 +370,6 @@ func TestCollectionService_AddFolder_ToParentFolder(t *testing.T) {
 	if child.Name != "Child" {
 		t.Errorf("expected Child, got %q", child.Name)
 	}
-	// verify in state
 	cols := svc.GetCollections()
 	parentNode := cols[0].Items[0]
 	if len(parentNode.Children) != 1 || parentNode.Children[0].ID != child.ID {
@@ -914,7 +913,6 @@ func TestCollectionService_MoveItem_TargetParentNotFolder(t *testing.T) {
 	if err == nil {
 		t.Error("expected error when target parent is not folder, got nil")
 	}
-	// #6: 検証失敗時に r2 が失われていないこと。
 	if _, _, ok := findColItem(t, svc, col.ID, r2); !ok {
 		t.Error("r2 was lost from source collection after failed move")
 	}
@@ -925,7 +923,6 @@ func TestCollectionService_MoveItem_TargetParentNotFound_PreservesItem(t *testin
 	col := mustCreate(t, svc, "Col")
 	r1 := mustAddRequest(t, svc, col.ID, "", "R1")
 
-	// 存在しない親を指定した移動はエラーになり、アイテムは残る (#6)。
 	err := svc.MoveItem(col.ID, r1, col.ID, "nonexistent-parent", 0)
 	if err == nil {
 		t.Fatal("expected error for nonexistent target parent, got nil")
@@ -954,7 +951,7 @@ func TestCollectionService_MoveItem_IntoOwnSubtree_Rejected(t *testing.T) {
 	if _, ok := errors.AsType[*cmn.ValidationError](err); !ok {
 		t.Errorf("expected ValidationError, got %T: %v", err, err)
 	}
-	// F とその中身が温存されていること (#6)。
+	// F とその中身が残っていること。
 	if _, _, ok := findColItem(t, svc, col.ID, f.ID); !ok {
 		t.Error("F was lost after rejected self-subtree move")
 	}
@@ -1280,7 +1277,7 @@ func TestCollectionService_AddRequest_ToRootCollection_UpdatesLayout(t *testing.
 // --- DeleteItem from RootCollection updates layout ---
 
 func TestCollectionService_DeleteItem_FromRootCollection_UpdatesLayout(t *testing.T) {
-	// Pre-populate root collection with an item and layout with the corresponding entry.
+	// root コレクションにアイテムを、レイアウトに対応するエントリを用意しておく。
 	root := &domain.Collection{
 		ID:   domain.RootCollectionID,
 		Name: domain.RootCollectionID,

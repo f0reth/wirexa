@@ -332,7 +332,7 @@ func TestHTTPRequestService_CancelBeforeSend_DoesNotReachTransport(t *testing.T)
 		t.Fatalf("transport must not be called, got %v", got)
 	}
 
-	// 墓標は 1 回で消費されるので、同じ execution ID での再送は通常どおり送信される。
+	// 登録前キャンセルは 1 回で消費されるので、同じ execution ID での再送は通常どおり送信される。
 	if _, err := svc.SendRequest("exec-1", domain.HTTPRequest{Method: "GET", URL: "http://example.com"}); err != nil {
 		t.Fatalf("re-send after the tombstone was consumed: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestHTTPRequestService_CancelBeforeSend_DoesNotReachTransport(t *testing.T)
 	}
 }
 
-// TTL を過ぎた墓標は送信を止めない。
+// TTL を過ぎた登録前キャンセルは送信を止めない。
 func TestHTTPRequestService_CancelBeforeSend_ExpiresAfterTTL(t *testing.T) {
 	transport := &mockTransport{}
 	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
@@ -359,7 +359,7 @@ func TestHTTPRequestService_CancelBeforeSend_ExpiresAfterTTL(t *testing.T) {
 	}
 }
 
-// 墓標の保持件数は上限で頭打ちになり、超えた分は最古から捨てられる。
+// 登録前キャンセルの保持件数は上限で頭打ちになり、超えた分は最古から捨てられる。
 func TestHTTPRequestService_CancelBeforeSend_BoundedByMaxPending(t *testing.T) {
 	transport := &mockTransport{}
 	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
@@ -388,7 +388,7 @@ func TestHTTPRequestService_CancelBeforeSend_BoundedByMaxPending(t *testing.T) {
 	}
 }
 
-// 形式を満たさない execution ID へのキャンセルは墓標を作らない。
+// 形式を満たさない execution ID へのキャンセルは pending に記録しない。
 func TestHTTPRequestService_CancelBeforeSend_IgnoresInvalidID(t *testing.T) {
 	transport := &mockTransport{}
 	svc := NewHTTPRequestService(context.Background(), transport, testutil.NoopLogger{})
@@ -404,7 +404,7 @@ func TestHTTPRequestService_CancelBeforeSend_IgnoresInvalidID(t *testing.T) {
 	}
 }
 
-// Shutdown 後のキャンセルは墓標を残さない。
+// Shutdown 後のキャンセルは pending に残さない。
 func TestHTTPRequestService_CancelAfterShutdown_RecordsNothing(t *testing.T) {
 	svc := NewHTTPRequestService(context.Background(), &mockTransport{}, testutil.NoopLogger{})
 	if !svc.Shutdown(time.Second) {

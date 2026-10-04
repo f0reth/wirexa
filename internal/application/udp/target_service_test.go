@@ -205,7 +205,7 @@ func TestTargetService_DeleteTarget_NotFound(t *testing.T) {
 }
 
 func TestTargetService_DeleteTarget_DoesNotCallRepoForMissingID(t *testing.T) {
-	// TargetService は in-memory で存在確認するので、repo.Delete は呼ばれない
+	// TargetService は in-memory で存在確認するので、repo.Delete は呼ばれない。
 	repo := newTargetRepo()
 	repo.delErr = errors.New("should not be called")
 	svc, _ := NewTargetService(repo)

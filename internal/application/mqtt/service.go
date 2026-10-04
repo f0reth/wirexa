@@ -91,7 +91,6 @@ type MQTTService struct {
 }
 
 // NewMQTTService は MQTTService を生成する。
-// parent から cancel 可能なルート context を派生させ、接続ごとの Connect 用 context をその子にする。
 func NewMQTTService(parent context.Context, emitter cmn.Emitter, clientFactory domain.BrokerClientFactory, logger cmn.Logger) *MQTTService {
 	root, stop := context.WithCancel(parent)
 	return &MQTTService{
@@ -113,7 +112,6 @@ func (s *MQTTService) Connect(config domain.ConnectionConfig) (string, error) {
 
 	connID := uuid.NewString()
 
-	// ClientID が未指定の場合は自動生成
 	if config.ClientID == "" {
 		config.ClientID = "wirexa-" + connID[:8]
 	}
@@ -382,7 +380,6 @@ func (s *MQTTService) GetConnections() []domain.ConnectionStatus {
 // 復帰したこと (paho 側の接続試行も終了済み)、false は上限内に排水できなかったことを表す。
 // false でもイベント発行と状態変更は止まっており、残った接続試行は BrokerClient.Connect の契約により
 // 接続を確立せずに終わる。
-// アプリケーションのライフサイクルは合成ルートの責務なので、RPC 面には公開しない。
 func (s *MQTTService) Shutdown(timeout time.Duration) bool {
 	s.mu.Lock()
 	if s.closed {

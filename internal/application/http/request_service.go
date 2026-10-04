@@ -49,7 +49,6 @@ type HTTPRequestService struct {
 }
 
 // NewHTTPRequestService は HTTPRequestService を生成する。
-// parent から cancel 可能なルート context を派生させ、実行ごとの context をその子にする。
 func NewHTTPRequestService(parent context.Context, transport domain.HTTPTransport, logger cmn.Logger) *HTTPRequestService {
 	root, stop := context.WithCancel(parent)
 	return &HTTPRequestService{
@@ -133,9 +132,9 @@ func (s *HTTPRequestService) SendRequest(executionID string, req domain.HTTPRequ
 }
 
 // CancelRequest は指定 execution ID の実行中 HTTP リクエストをキャンセルする。
-// SendRequest がまだ登録していない場合は墓標として短時間だけ記録し、
-// 登録時に消費させる。SendRequest と CancelRequest は別々の RPC で到着順が前後するため、
-// 記録しないと送信前のキャンセルが黙って捨てられる。
+// SendRequest がまだ登録していない場合は、pending に pendingCancelTTL の間だけ記録する。
+// SendRequest と CancelRequest は別々の RPC で、到着順が前後する。
+// 記録しないと、送信前のキャンセルが黙って捨てられる。
 func (s *HTTPRequestService) CancelRequest(executionID string) {
 	if !validExecutionID(executionID) {
 		return
@@ -146,7 +145,7 @@ func (s *HTTPRequestService) CancelRequest(executionID string) {
 		cancel()
 		return
 	}
-	// 終了処理中は墓標を残さない。実行中のものは Shutdown が一括でキャンセルする。
+	// 終了処理中は pending に残さない。実行中のものは Shutdown が一括でキャンセルする。
 	if s.closed {
 		s.mu.Unlock()
 		return
@@ -156,8 +155,8 @@ func (s *HTTPRequestService) CancelRequest(executionID string) {
 	s.mu.Unlock()
 }
 
-// takePendingLocked は墓標があれば消費して、期限内なら true を返す。
-// 呼び出し元は s.mu を保持していること。
+// takePendingLocked は登録前キャンセルがあれば消費し、期限内なら true を返す。
+// s.mu 保持中に呼ぶ。
 func (s *HTTPRequestService) takePendingLocked(executionID string) bool {
 	at, ok := s.pending[executionID]
 	if !ok {
@@ -167,8 +166,8 @@ func (s *HTTPRequestService) takePendingLocked(executionID string) bool {
 	return s.now().Sub(at) < pendingCancelTTL
 }
 
-// sweepPendingLocked は期限切れの墓標を捨て、上限に達していれば最古から捨てる。
-// 呼び出し元は s.mu を保持していること。
+// sweepPendingLocked は期限切れの登録前キャンセルを捨て、上限に達していれば最古から捨てる。
+// s.mu 保持中に呼ぶ。
 func (s *HTTPRequestService) sweepPendingLocked() {
 	now := s.now()
 	for id, at := range s.pending {

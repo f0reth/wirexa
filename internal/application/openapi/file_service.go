@@ -183,7 +183,7 @@ func (s *FileService) checkGranted(path string) (string, bool) {
 // addRecentLocked はパスを recents へ追加する。既存なら LastOpenedAt だけ更新する。
 // 上限超過時は LastOpenedAt が古いものから間引き、保存に成功したら間引いたパスの許可を取り消す。
 // 保存失敗はログに残すだけにする（recents は変わらないので許可も取り消さない）。
-// 呼び出し側で lock 済み。
+// s.mu 保持中に呼ぶ。
 func (s *FileService) addRecentLocked(path string) {
 	now := s.now().UTC().Format(time.RFC3339)
 	next := slices.Clone(s.recents)
@@ -218,7 +218,7 @@ func (s *FileService) addRecentLocked(path string) {
 
 // commitLocked は next を保存してから recents を差し替える (コピーオンライト)。
 // 保存に失敗した場合は recents を変更しない。persist が false の間は保存せずに差し替える。
-// 呼び出し側で lock 済み。
+// s.mu 保持中に呼ぶ。
 func (s *FileService) commitLocked(next []domain.OpenAPIRecent) error {
 	if s.persist {
 		if err := s.repo.Save(next); err != nil {

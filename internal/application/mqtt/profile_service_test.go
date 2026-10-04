@@ -80,7 +80,7 @@ func TestProfileService_NewProfileService_RepoLoadError(t *testing.T) {
 }
 
 func TestProfileService_NewProfileService_NilLoadReturnsEmpty(t *testing.T) {
-	// repo.Load() が nil を返した場合、空スライスとして扱う
+	// repo.Load() が nil を返した場合、空スライスとして扱う。
 	repo := &inMemoryProfileRepo{profiles: map[string]*domain.BrokerProfile{}}
 	svc, err := NewProfileService(repo)
 	if err != nil {
@@ -190,7 +190,7 @@ func TestProfileService_DeleteProfile_Existing(t *testing.T) {
 }
 
 func TestProfileService_DeleteProfile_NonExistentID(t *testing.T) {
-	// IDが存在しない場合は NotFoundError を返す
+	// IDが存在しない場合は NotFoundError を返す。
 	svc, _ := NewProfileService(newProfileRepo())
 	err := svc.DeleteProfile("nonexistent")
 	if err == nil {
@@ -202,7 +202,7 @@ func TestProfileService_DeleteProfile_NonExistentID(t *testing.T) {
 }
 
 func TestProfileService_DeleteProfile_DoesNotCallRepoForMissingID(t *testing.T) {
-	// ProfileService は in-memory で存在確認するので、repo.Delete は呼ばれない
+	// ProfileService は in-memory で存在確認するので、repo.Delete は呼ばれない。
 	repo := newProfileRepo()
 	repo.delErr = errors.New("should not be called")
 	svc, _ := NewProfileService(repo)
@@ -218,7 +218,7 @@ func TestProfileService_DeleteProfile_DoesNotCallRepoForMissingID(t *testing.T) 
 }
 
 func TestProfileService_SaveProfile_GeneratesIDWhenEmpty(t *testing.T) {
-	// ID が空の場合は自動採番され、戻り値に入る
+	// ID が空の場合は自動採番され、戻り値に入る。
 	svc, _ := NewProfileService(newProfileRepo())
 	saved, err := svc.SaveProfile(domain.BrokerProfile{Name: "NoID", Broker: "tcp://localhost:1883"})
 	if err != nil {

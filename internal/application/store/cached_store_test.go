@@ -175,7 +175,7 @@ func TestCachedStore_Save_RepoError(t *testing.T) {
 	if _, err := cs.Save(item{ID: "x"}); err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	// repo.Save が失敗したらキャッシュは更新されない
+	// repo.Save が失敗したらキャッシュは更新されない。
 	if got := cs.GetAll(); len(got) != 1 || got[0].Name != "Old" {
 		t.Errorf("cache should not be updated on repo save error, got %+v", got)
 	}
@@ -200,7 +200,7 @@ func TestCachedStore_Delete_NotFound(t *testing.T) {
 	if _, ok := errors.AsType[*cmn.NotFoundError](err); !ok {
 		t.Errorf("expected NotFoundError, got %T: %v", err, err)
 	}
-	// 存在確認で弾かれるので repo.Delete は呼ばれない
+	// 存在確認で弾かれるので repo.Delete は呼ばれない。
 	if len(repo.delIDs) != 0 {
 		t.Errorf("repo.Delete should not be called, got %v", repo.delIDs)
 	}
@@ -218,7 +218,7 @@ func TestCachedStore_Delete_RepoError(t *testing.T) {
 	if _, ok := errors.AsType[*cmn.NotFoundError](err); ok {
 		t.Error("expected repo error, got NotFoundError")
 	}
-	// repo エラー時はキャッシュに残る
+	// repo エラー時はキャッシュに残る。
 	if len(cs.GetAll()) != 1 {
 		t.Error("cache should not be updated on repo delete error")
 	}

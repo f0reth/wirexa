@@ -24,11 +24,6 @@ const (
 // サイドバーレイアウトの操作は SidebarLayoutService に委譲し、
 // 自身はコレクションキャッシュ用のロック(mu)のみを保持する。
 //
-// 変更系メソッドは copy-on-write で動く。キャッシュ上のコレクションを直接
-// 書き換えず、Clone したコピーへ変更を適用し、永続化がすべて成功してから
-// キャッシュのエントリを丸ごと差し替える。これによりエラーを返した操作は
-// メモリ上にも何も残さない。
-//
 // 境界では所有権を切る。公開メソッドの戻り値はキャッシュを Clone したもので、
 // 引数で受け取った可変データも Clone してから取り込む。呼び出し側（adapter や
 // Wails の JSON 化）がロック外で戻り値を読み書きしても、キャッシュには触れない。
@@ -47,7 +42,8 @@ type CollectionService struct {
 	logger cmn.Logger
 	// cache はコレクション ID → コレクション。
 	// 不変条件: キャッシュに載せた（公開した）コレクションとその配下は以後変更しない。
-	// 変更は Clone したコピーに対して行い、エントリごと差し替える。snapshotForLayout は
+	// 変更は Clone したコピーに対して行い、永続化がすべて成功してからエントリごと差し替える。
+	// そのため、エラーを返した操作はメモリ上にも何も残さない。snapshotForLayout は
 	// この不変条件を前提にロック外で読むため、直接書き換える変更を入れてはならない。
 	// 例外は NewCollectionService 内の正規化・重複回収で、サービスを返す前
 	// （どのゴルーチンにも公開される前）なので不変条件に反しない。
@@ -56,7 +52,6 @@ type CollectionService struct {
 }
 
 // NewCollectionService は CollectionService を生成する。
-// コンストラクタ内でリポジトリからコレクションを読み込む。
 // 失敗として返すのはコレクションの読み込み自体の失敗と、__root__ の新規作成の失敗だけで、
 // サイドバーレイアウトの破損・読み込み失敗では起動を止めない（reconcileLayoutAtStartup を参照）。
 // logger は nil を許容し、その場合 best-effort な処理の失敗記録をスキップする。
@@ -75,8 +70,6 @@ func NewCollectionService(
 	if err != nil {
 		return nil, fmt.Errorf("failed to load collections: %w", err)
 	}
-	// ここと recoverDuplicateItems はキャッシュを直接変更するが、
-	// サービスを返す前なので cache の不変条件に反しない。
 	for i := range cols {
 		c := cols[i]
 		normalizeItemForms(c.Items)
@@ -174,7 +167,6 @@ func normalizeItemForms(items []*domain.TreeItem) {
 }
 
 // GetCollections は全コレクションを名前順で返す（__root__ を除く）。
-// 戻り値はキャッシュと可変状態を共有しないディープコピー。
 func (s *CollectionService) GetCollections() []domain.Collection {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -192,7 +184,6 @@ func (s *CollectionService) GetCollections() []domain.Collection {
 }
 
 // GetRootItems はルートコレクション（__root__）のアイテム一覧を返す。
-// 戻り値はキャッシュと可変状態を共有しないディープコピー。
 func (s *CollectionService) GetRootItems() []*domain.TreeItem {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -224,7 +215,6 @@ func (s *CollectionService) CreateCollection(name string) (domain.Collection, er
 	}
 	s.cache[c.ID] = c
 
-	// レイアウトファイルに末尾エントリを追加する。
 	s.applyLayoutBestEffort(layoutAppend(domain.SidebarEntry{Kind: sidebarKindCollection, ID: c.ID}))
 	return *c.Clone(), nil
 }
@@ -301,7 +291,6 @@ func (s *CollectionService) AddFolder(collectionID, parentID, name string) (*dom
 }
 
 // AddRequest はコレクションにリクエストを追加する。
-// req は複製してから取り込むため、呼び出し側の req（Contents map など）は書き換えない。
 // ID は呼び出し側の値を使わず常に採番する。RPC から既存アイテムと同じ ID を渡されると、
 // 次回起動時の重複回収 (recoverDuplicateItems) がどちらかを黙って削除するため。
 func (s *CollectionService) AddRequest(collectionID, parentID string, req domain.HTTPRequest) (*domain.TreeItem, error) {
@@ -341,15 +330,14 @@ func (s *CollectionService) addItem(collectionID, parentID string, item *domain.
 	}
 	s.cache[collectionID] = next
 
-	// root コレクションのルート直下に追加した場合、サイドバーレイアウトにも追加する。
+	// サイドバーに並ぶのは __root__ 直下のアイテムだけ。
 	if collectionID == domain.RootCollectionID && parentID == "" {
 		s.applyLayoutBestEffort(layoutAppend(domain.SidebarEntry{Kind: sidebarKindItem, ID: item.ID}))
 	}
 	return item.Clone(), nil
 }
 
-// UpdateRequest はコレクション内のリクエストを更新する。
-// req は複製してから取り込むため、呼び出し側の req（Contents map など）は書き換えない。
+// UpdateRequest はコレクション内のリクエストを更新する。名前は変えない（RenameItem で変える）。
 func (s *CollectionService) UpdateRequest(collectionID string, req domain.HTTPRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -412,10 +400,9 @@ func (s *CollectionService) RenameItem(collectionID, itemID, name string) error 
 }
 
 // MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。
-// sourceCollectionID と targetCollectionID が同一の場合は同一コレクション内移動。
 // position は移動前の配列に対する挿入先インデックス（UI の挿入ゾーンの位置）。
 // 同一の親の中で後方へ移すときは、取り除いたぶんをここで補正する。
-// -1 または範囲外の場合は末尾に追加する。
+// 負または範囲外の場合は末尾に追加する。
 func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -429,9 +416,7 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 		return &cmn.NotFoundError{Resource: sidebarKindCollection, ID: targetCollectionID}
 	}
 
-	// 同一コレクション内移動では1つのクローンを src/dst 兼用にする。
-	// コレクションを跨ぐ場合は両方をクローンし、src のクローンから外したノードを
-	// dst のクローンへ挿入する。
+	// 同一コレクション内の移動では、取り外しと挿入を同じクローンに適用する。
 	sameCollection := sourceCollectionID == targetCollectionID
 	srcNext := src.Clone()
 	dstNext := srcNext
@@ -444,7 +429,7 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 		return &cmn.NotFoundError{Resource: sidebarKindItem, ID: itemID}
 	}
 
-	// 挿入先を RemoveNode の前に検証する。失敗時はソースを一切変更しない (#6)。
+	// 挿入先を RemoveNode の前に検証する。
 	if targetParentID != "" {
 		parent, _, ok := dstNext.FindNode(targetParentID)
 		if !ok || parent.Type != domain.ItemTypeFolder {
@@ -456,7 +441,7 @@ func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectio
 		}
 	}
 
-	// 同一コレクション内移動の場合、削除前に挿入先インデックスを補正する。
+	// position は移動前の配列に対する位置なので、同じ親の中で後方へ移すときは 1 つ詰める。
 	if sameCollection && position > 0 {
 		var targetItems []*domain.TreeItem
 		if targetParentID == "" {
@@ -640,7 +625,6 @@ func (s *CollectionService) DeleteItem(collectionID, itemID string) error {
 	}
 	s.cache[collectionID] = next
 
-	// root コレクションのアイテムはサイドバーレイアウトからも削除する。
 	if collectionID == domain.RootCollectionID {
 		s.applyLayoutBestEffort(layoutRemove(sidebarKindItem, itemID))
 	}
