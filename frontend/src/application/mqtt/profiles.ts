@@ -34,6 +34,9 @@ export function createProfilesState(
   orderStorage: ProfileOrderStorage,
 ) {
   const [profiles, setProfiles] = createSignal<BrokerProfile[]>([]);
+  // 読み込みに成功するまで、一覧は保存済みのプロファイルを含まない。その一覧で並び順を保存すると、
+  // 読み込めなかったプロファイルの並びを消してしまう。
+  let loaded = false;
 
   // 一覧を更新して並び順を保存する。update が null を返したら何もしない。
   // 保存してから signal に入れる（保存より前に effect を走らせない）。
@@ -42,14 +45,15 @@ export function createProfilesState(
   ): void {
     const next = update(untrack(profiles));
     if (!next) return;
-    orderStorage.save(next.map((p) => p.id));
+    if (loaded) orderStorage.save(next.map((p) => p.id));
     setProfiles(next);
   }
 
   async function loadProfiles(): Promise<void> {
-    const loaded = await api.getProfiles();
+    const fetched = await api.getProfiles();
+    loaded = true;
     const order = orderStorage.load();
-    setProfiles(applyOrder(loaded, order));
+    setProfiles(applyOrder(fetched, order));
   }
 
   // 新規作成では ID がサーバ採番されるため、state と並び順には

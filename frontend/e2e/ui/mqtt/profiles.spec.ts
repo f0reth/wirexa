@@ -664,6 +664,27 @@ test.describe("when loading brokers fails on startup", () => {
     ).toBe(saved);
     expect(pageErrors).toEqual([]);
   });
+
+  // 読み込めなかった一覧には保存済みのブローカーが無い。その一覧で並び順を上書きすると、
+  // 次の起動で既存のブローカーの並びが ID 順に戻る。
+  test("saving a broker after a failed load keeps the stored broker order", async ({
+    page,
+    app,
+  }) => {
+    const ORDER_KEY = "mqtt:profileOrder";
+    const order = JSON.stringify(["profile-beta", ALPHA.id]);
+    await page.evaluate(
+      ([key, value]) => localStorage.setItem(key, value),
+      [ORDER_KEY, order] as const,
+    );
+
+    await app.createBrokerProfile("Created After Failure");
+
+    await expect(app.broker("Created After Failure")).toBeVisible();
+    expect(
+      await page.evaluate((key) => localStorage.getItem(key), ORDER_KEY),
+    ).toBe(order);
+  });
 });
 
 test.describe("delete failure", () => {

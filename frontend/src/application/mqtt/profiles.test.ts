@@ -178,6 +178,7 @@ describe("createProfilesState saveProfile", () => {
     await withState(
       makeApi(),
       async (state) => {
+        await state.loadProfiles();
         const saved = await state.saveProfile(createEmptyProfile());
 
         expect(saved.id).toBe("server-1");
@@ -226,6 +227,27 @@ describe("createProfilesState order", () => {
 
         await state.deleteProfile("p2");
         expect(stored()).toEqual(["p1"]);
+      },
+      storage,
+    );
+  });
+
+  // 読み込めなかった一覧は保存済みのプロファイルを含まないので、その一覧で並び順を上書きしない。
+  it("keeps the stored order when a profile is saved after a failed load", async () => {
+    const api = makeApi();
+    api.getProfiles = vi.fn(async () => {
+      throw new Error("rpc down");
+    });
+    const { storage, stored } = makeOrderStorage(["p2", "p1"]);
+    await withState(
+      api,
+      async (state) => {
+        await expect(state.loadProfiles()).rejects.toThrow("rpc down");
+
+        const saved = await state.saveProfile(createEmptyProfile());
+
+        expect(state.profiles()).toEqual([saved]);
+        expect(stored()).toEqual(["p2", "p1"]);
       },
       storage,
     );
