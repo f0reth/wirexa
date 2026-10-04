@@ -697,13 +697,38 @@ describe("createConnectionsState lifecycle events", () => {
     expect(h.notifier.error).toHaveBeenCalledWith(
       "MQTT topic scan stopped",
       "EOF",
-      { key: "c1" },
+      { key: "scan:c1" },
     );
     // 元の接続はそのまま。
     expect(onlineState(h, "c1")).toMatchObject({
       connected: true,
       isScanning: false,
     });
+    h.dispose();
+  });
+
+  // ブローカーが落ちると、元の接続とスキャン用の接続が一緒に切れる。通知は同じ key のものを
+  // 1 つにまとめるので、key が同じだと後から届いた方が出ない。
+  it("notifies a lost connection and a stopped scan under different keys", async () => {
+    const h = await setupOnlineAndOffline();
+    h.events.emit(WailsEvents.mqttConnected, { connectionId: "c1" });
+
+    h.events.emit(WailsEvents.mqttConnectionLost, {
+      connectionId: "c1",
+      error: "EOF",
+    });
+    h.events.emit(WailsEvents.mqttScanStopped, {
+      connectionId: "c1",
+      error: "EOF",
+    });
+
+    const keys = vi
+      .mocked(h.notifier.error)
+      .mock.calls.map(([title, , options]) => [title, options?.key]);
+    expect(keys).toEqual([
+      ["MQTT connection lost", "c1"],
+      ["MQTT topic scan stopped", "scan:c1"],
+    ]);
     h.dispose();
   });
 

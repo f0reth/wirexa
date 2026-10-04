@@ -168,7 +168,11 @@ export function createConnectionsState(
   // スキャン用の接続が切れてスキャンが止まった (自動では再開しない)。
   const cancelScanStopped = onEvent(WailsEvents.mqttScanStopped, (data) => {
     const { connectionId, error } = data;
-    notifier.error("MQTT topic scan stopped", error, { key: connectionId });
+    // 接続の通知 (mqtt:connection-lost など) とは別の key にする。同じ key だと、ブローカーが
+    // 落ちて両方の接続が一緒に切れたときに、後から届いた方の通知が重複として出ない。
+    notifier.error("MQTT topic scan stopped", error, {
+      key: `scan:${connectionId}`,
+    });
     updateConnection(connectionId, (state) => ({
       ...state,
       isScanning: false,
