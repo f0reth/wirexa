@@ -147,7 +147,7 @@ func TestUDP_SendFixed(t *testing.T) {
 	h, _ := newUDPHandler(t, emitter)
 
 	port := freeUDPPort(t)
-	// リスナーも fixed エンコードで起動し、受信ペイロードが hex 文字列になることを確認する
+	// リスナーも fixed エンコードで起動し、受信ペイロードが hex 文字列になることを確認する。
 	sess, err := h.StartListen(port, string(udpdomain.EncodingFixed))
 	if err != nil {
 		t.Fatalf("StartListen: %v", err)
@@ -199,7 +199,7 @@ func TestUDP_ListenerStartStop(t *testing.T) {
 		t.Fatalf("StopListen: %v", err)
 	}
 
-	// 二重停止はエラーになる
+	// 二重停止はエラーになる。
 	if err = h.StopListen(sess.ID); err == nil {
 		t.Error("expected error on double StopListen, got nil")
 	}
@@ -397,7 +397,7 @@ func TestUDP_StartListen_PortInUse(t *testing.T) {
 	emitter := newMockEmitter()
 	h, _ := newUDPHandler(t, emitter)
 
-	// 先にポートを OS レベルで全インターフェースで先占する
+	// 先にポートを OS レベルで全インターフェースで先占する。
 	prebound, err := net.ListenPacket("udp4", ":0")
 	if err != nil {
 		t.Fatalf("ListenPacket (pre-bind): %v", err)
@@ -474,7 +474,7 @@ func TestUDP_StartListen_AfterStop(t *testing.T) {
 		t.Fatalf("StopListen: %v", err)
 	}
 
-	// OS がポートを解放したことを確認するため、再 StartListen を試みる
+	// OS がポートを解放したことを確認するため、再 StartListen を試みる。
 	sess2, err := h.StartListen(port, string(udpdomain.EncodingText))
 	if err != nil {
 		t.Fatalf("second StartListen after stop: %v", err)
@@ -487,7 +487,7 @@ func TestUDP_Send_UnreachableHost(t *testing.T) {
 	emitter := newMockEmitter()
 	h, _ := newUDPHandler(t, emitter)
 
-	// 解決不能なホスト名を使い DNS 失敗を確実に引き起こす
+	// 解決不能なホスト名を使い DNS 失敗を確実に引き起こす。
 	_, err := h.Send(udpdomain.UDPSendRequest{
 		Host:     "invalid.hostname.that.does.not.exist.wirexa-test.invalid",
 		Port:     5000,
@@ -560,7 +560,7 @@ func TestUDP_EncodingMismatch(t *testing.T) {
 		t.Fatalf("Send: %v", err)
 	}
 
-	// リスナーは Text エンコードで受信するため、raw バイトをテキストとして表現する
+	// リスナーは Text エンコードで受信するため、raw バイトをテキストとして表現する。
 	msg := emitter.receiveMessage(t, 3*time.Second)
 	if msg.SessionID != sess.ID {
 		t.Errorf("SessionID = %q, want %q", msg.SessionID, sess.ID)
@@ -657,13 +657,13 @@ func TestUDP_Concurrent_StartStopListen(t *testing.T) {
 func TestUDP_CorruptStorage(t *testing.T) {
 	dir := t.TempDir()
 
-	// 壊れた JSON ファイルをストレージディレクトリに配置する
+	// 壊れた JSON ファイルをストレージディレクトリに配置する。
 	corruptFile := filepath.Join(dir, "corrupt.json")
 	if err := os.WriteFile(corruptFile, []byte("{invalid json}"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	// 破損ファイルは退避・スキップされ、NewTargetService は成功する
+	// 破損ファイルは退避・スキップされ、NewTargetService は成功する。
 	repo, err := udpinfra.NewTargetRepository(dir, nil)
 	if err != nil {
 		t.Fatalf("NewTargetRepository: %v", err)
@@ -672,7 +672,7 @@ func TestUDP_CorruptStorage(t *testing.T) {
 		t.Fatalf("NewTargetService should tolerate corrupt storage: %v", err)
 	}
 
-	// 破損ファイルは .corrupt へ退避されている
+	// 破損ファイルは .corrupt へ退避されている。
 	if _, statErr := os.Stat(corruptFile); !os.IsNotExist(statErr) {
 		t.Error("corrupt.json should have been quarantined")
 	}

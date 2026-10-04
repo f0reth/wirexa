@@ -450,7 +450,7 @@ func TestMQTT_Unsubscribe(t *testing.T) {
 		t.Fatalf("Subscribe: %v", err)
 	}
 
-	// 購読中はメッセージが届く
+	// 購読中はメッセージが届く。
 	if err := h.Publish(connID, "test/unsub", "before-unsub", 0, false); err != nil {
 		t.Fatalf("Publish before unsubscribe: %v", err)
 	}
@@ -461,7 +461,7 @@ func TestMQTT_Unsubscribe(t *testing.T) {
 		t.Fatalf("Unsubscribe: %v", err)
 	}
 
-	// 解除後はメッセージが届かない
+	// 解除後はメッセージが届かない。
 	if err := h.Publish(connID, "test/unsub", "after-unsub", 0, false); err != nil {
 		t.Fatalf("Publish after unsubscribe: %v", err)
 	}
@@ -708,13 +708,13 @@ func TestMQTT_ProfilePersistenceRoundTrip(t *testing.T) {
 // TestMQTT_Connect_UnreachableBroker は到達不能ブローカーへの接続失敗後に接続エントリが削除されることを確認する。
 func TestMQTT_Connect_UnreachableBroker(t *testing.T) {
 	emitter := newMQTTMockEmitter()
-	// 短いタイムアウトを設定してテストを高速化する
+	// 短いタイムアウトを設定してテストを高速化する。
 	h, _ := newMQTTHandlerWithConfig(t, emitter, mqttinfra.MQTTClientConfig{
 		ConnectTimeout: 1 * time.Second,
 		TokenTimeout:   3 * time.Second,
 	})
 
-	// 空きポート番号を取得し（何もリッスンしていない）、接続を試みる
+	// 空きポート番号を取得し（何もリッスンしていない）、接続を試みる。
 	port := freePort(t)
 	unreachableBroker := fmt.Sprintf("tcp://127.0.0.1:%d", port)
 
@@ -726,13 +726,13 @@ func TestMQTT_Connect_UnreachableBroker(t *testing.T) {
 		t.Fatalf("Connect returned unexpected synchronous error: %v", err)
 	}
 
-	// 接続失敗イベントを待機し connectionId が一致することを確認する
+	// 接続失敗イベントを待機し connectionId が一致することを確認する。
 	failedID := emitter.waitConnectionFailed(t, 10*time.Second)
 	if failedID != connID {
 		t.Errorf("connection-failed event ID = %q, want %q", failedID, connID)
 	}
 
-	// 接続エントリが s.conns から削除されていることを確認する
+	// 接続エントリが s.conns から削除されていることを確認する。
 	if conns := h.GetConnections(); len(conns) != 0 {
 		t.Errorf("expected 0 connections after failure, got %d", len(conns))
 	}

@@ -576,7 +576,7 @@ func TestHTTP_SidebarLayout(t *testing.T) {
 	col1, _ := h.CreateCollection("Alpha")
 	col2, _ := h.CreateCollection("Beta")
 
-	// GetSidebarLayout: 2 コレクションエントリが存在する
+	// GetSidebarLayout: 2 コレクションエントリが存在する。
 	layout, err := h.GetSidebarLayout()
 	if err != nil {
 		t.Fatalf("GetSidebarLayout: %v", err)
@@ -624,7 +624,7 @@ func TestHTTP_SidebarLayout(t *testing.T) {
 		t.Errorf("layout[0] = {Kind:%q ID:%q}, want {Kind:item ID:%q}", layout[0].Kind, layout[0].ID, item.ID)
 	}
 
-	// MoveItemToSidebar 後、アイテムは GetRootItems にも現れる
+	// MoveItemToSidebar 後、アイテムは GetRootItems にも現れる。
 	rootItems := h.GetRootItems()
 	found := false
 	for _, ri := range rootItems {
@@ -1231,7 +1231,7 @@ func TestHTTP_AddRequest_AfterDeleteCollection(t *testing.T) {
 func TestHTTP_CorruptStorage(t *testing.T) {
 	dir := t.TempDir()
 
-	// 壊れた JSON ファイルをストレージディレクトリに配置する
+	// 壊れた JSON ファイルをストレージディレクトリに配置する。
 	corruptFile := filepath.Join(dir, "corrupt.json")
 	if err := os.WriteFile(corruptFile, []byte("{invalid json}"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -1247,7 +1247,7 @@ func TestHTTP_CorruptStorage(t *testing.T) {
 		t.Fatalf("NewCollectionService should tolerate corrupt storage: %v", err)
 	}
 
-	// 破損ファイルは .corrupt へ退避されている
+	// 破損ファイルは .corrupt へ退避されている。
 	if _, statErr := os.Stat(corruptFile); !os.IsNotExist(statErr) {
 		t.Error("corrupt.json should have been quarantined")
 	}
@@ -1598,7 +1598,7 @@ func TestHTTP_CancelRequest_BeforeSend(t *testing.T) {
 		t.Fatalf("canceled request reached the server %d times", got)
 	}
 
-	// 墓標は 1 回で消費されるので、同じ execution ID での再送は通常どおり成功する。
+	// 登録前キャンセルは 1 回で消費されるので、同じ execution ID での再送は通常どおり成功する。
 	if _, err := h.SendRequest(executionID, httpdomain.HTTPRequest{ID: "saved-1", Method: "GET", URL: srv.URL}); err != nil {
 		t.Fatalf("re-send after the tombstone was consumed: %v", err)
 	}
@@ -2112,7 +2112,7 @@ func TestHTTP_Shutdown_CancelsInFlightThenCleansTempFiles(t *testing.T) {
 	if got := afterHits.Load(); got != 0 {
 		t.Errorf("request after Shutdown reached the server %d times", got)
 	}
-	// 終了処理中のキャンセルは何もせず、墓標も残さない。
+	// 終了処理中のキャンセルは何もせず、pending にも残さない。
 	f.h.CancelRequest("exec-after")
 
 	f.netClient.Cleanup()
