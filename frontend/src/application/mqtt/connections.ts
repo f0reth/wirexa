@@ -301,9 +301,15 @@ export function createConnectionsState(
     setActiveConnectionId(connId);
   };
 
+  // 実行中の handleConnect (プロファイル ID) と handleReconnect (接続 ID) の対象。応答を待つ間に
+  // 同じ対象でもう一度呼ばれても送らない。送ると、先の接続がタブを持たないままバックエンドに残る。
+  const connecting = new Set<string>();
+
   const handleConnect = async (profileId: string) => {
     const profile = profiles().find((p) => p.id === profileId);
     if (!profile) return;
+    if (connecting.has(profileId)) return;
+    connecting.add(profileId);
     logger.info("MQTT connecting", {
       broker: profile.broker,
       profile: profile.name,
@@ -322,6 +328,8 @@ export function createConnectionsState(
         error: String(err),
       });
       notifier.error("Failed to connect", errorMessage(err));
+    } finally {
+      connecting.delete(profileId);
     }
   };
 
@@ -347,6 +355,20 @@ export function createConnectionsState(
   ) => {
     const conn = connections[connectionId];
     if (!conn) return;
+    if (connecting.has(connectionId)) return;
+    connecting.add(connectionId);
+    try {
+      await reconnect(conn, newProfile);
+    } finally {
+      connecting.delete(connectionId);
+    }
+  };
+
+  async function reconnect(
+    conn: ConnectionStateExt,
+    newProfile?: BrokerProfile,
+  ) {
+    const connectionId = conn.connectionId;
     const profile = newProfile ? { ...newProfile } : conn.profile;
     if (conn.type === "online") {
       try {
@@ -395,7 +417,7 @@ export function createConnectionsState(
     } catch (err) {
       notifier.error("Failed to reconnect", errorMessage(err));
     }
-  };
+  }
 
   // handleReconnect で購読の RPC が失敗した行を、バックエンドの購読と突き合わせて片付ける。
   // 確立後の購読の失敗は張り直しを通らず mqtt:subscription-dropped も出ないので、ここで行を外す。

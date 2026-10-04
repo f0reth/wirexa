@@ -1153,6 +1153,104 @@ describe("createConnectionsState connection operations", () => {
   });
 });
 
+/** テストから解決・失敗させられる Promise。 */
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {};
+  let reject: (err: Error) => void = () => {};
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+describe("createConnectionsState connect in flight", () => {
+  // 応答を待つ間にもう一度送ると、先の接続がタブを持たないままバックエンドに残る。
+  it("ignores a second handleReconnect of the same tab until the first one ends", async () => {
+    const h = harness({ profiles: [makeProfile("p1"), makeProfile("p2")] });
+    await h.state.restore();
+    const connect = deferred<string>();
+    h.api.connect = vi.fn(() => connect.promise);
+
+    const first = h.state.handleReconnect("offline-p1");
+    const second = h.state.handleReconnect("offline-p1");
+    connect.resolve("new-id");
+    await Promise.all([first, second]);
+
+    expect(h.api.connect).toHaveBeenCalledTimes(1);
+    expect(Object.keys(h.state.connections).sort()).toEqual([
+      "new-id",
+      "offline-p2",
+    ]);
+    h.dispose();
+  });
+
+  it("ignores a second handleConnect of the same profile until the first one ends", async () => {
+    const h = harness({ profiles: [makeProfile("p1"), makeProfile("p2")] });
+    await h.state.restore();
+    const connect = deferred<string>();
+    h.api.connect = vi.fn(() => connect.promise);
+
+    const first = h.state.handleConnect("p1");
+    const second = h.state.handleConnect("p1");
+    connect.resolve("new-id");
+    await Promise.all([first, second]);
+
+    expect(h.api.connect).toHaveBeenCalledTimes(1);
+    expect(Object.keys(h.state.connections).sort()).toEqual([
+      "new-id",
+      "offline-p2",
+    ]);
+    h.dispose();
+  });
+
+  it("connects another tab while one is in flight", async () => {
+    const h = harness({ profiles: [makeProfile("p1"), makeProfile("p2")] });
+    await h.state.restore();
+    const pending = [deferred<string>(), deferred<string>()];
+    let call = 0;
+    h.api.connect = vi.fn(() => pending[call++].promise);
+
+    const first = h.state.handleReconnect("offline-p1");
+    const second = h.state.handleReconnect("offline-p2");
+    pending[0].resolve("c1");
+    pending[1].resolve("c2");
+    await Promise.all([first, second]);
+
+    expect(h.api.connect).toHaveBeenCalledTimes(2);
+    expect(Object.keys(h.state.connections).sort()).toEqual(["c1", "c2"]);
+    h.dispose();
+  });
+
+  it.each([
+    [
+      "handleReconnect",
+      (h: ReturnType<typeof harness>) => h.state.handleReconnect("offline-p1"),
+    ],
+    [
+      "handleConnect",
+      (h: ReturnType<typeof harness>) => h.state.handleConnect("p1"),
+    ],
+  ] as const)("accepts %s again after it failed", async (_, run) => {
+    const h = harness();
+    await h.state.restore();
+    h.api.connect = vi
+      .fn<MqttConnectionApi["connect"]>()
+      .mockRejectedValueOnce(new Error("refused"))
+      .mockResolvedValueOnce("new-id");
+
+    await run(h);
+    expect(h.notifier.error).toHaveBeenCalledTimes(1);
+    expect(h.state.connections["offline-p1"]).toBeDefined();
+
+    await run(h);
+
+    expect(h.api.connect).toHaveBeenCalledTimes(2);
+    expect(h.state.connections["new-id"]?.type).toBe("online");
+    h.dispose();
+  });
+});
+
 describe("createConnectionsState tabs and profiles", () => {
   it("replaces existing tabs of the same profile", async () => {
     const h = harness({
