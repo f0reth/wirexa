@@ -93,6 +93,21 @@ test("subscribing and unsubscribing reach the backend", async ({
   await expect(row).toBeHidden();
   await expect(panel.getByText("No subscriptions")).toBeVisible();
   expect(await fake.args("Unsubscribe")).toEqual([[connectionId, "sensors/#"]]);
+
+  // 選んだ QoS は次の購読にも残る。選び直さなければ QoS 0 で送る (別のテストの既定値)。
+  await app.chooseOption(panel, "1", "QoS 2");
+  await app.mqttTopicInput.fill("alerts/#");
+  await app.mqttSubscribeButton.click();
+  await expect(app.mqttSubscription("alerts/#")).toContainText("QoS 2");
+  await app.chooseOption(panel, "2", "QoS 0");
+  await app.mqttTopicInput.fill("logs/#");
+  await app.mqttSubscribeButton.click();
+  await expect(app.mqttSubscription("logs/#")).toContainText("QoS 0");
+  expect(await fake.args("Subscribe")).toEqual([
+    [connectionId, "sensors/#", 1],
+    [connectionId, "alerts/#", 2],
+    [connectionId, "logs/#", 0],
+  ]);
 });
 
 test("subscribing to an invalid filter shows the backend error", async ({

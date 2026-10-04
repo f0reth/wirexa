@@ -2,11 +2,35 @@ import { expect, test, WailsEvents } from "../../fixtures/ui";
 
 // MQTT パネルはデフォルトで表示される
 
-// ── 観点H-1: ブローカープロファイルの作成・削除 ──────────────────────────────
+const EMPTY_STATE =
+  "No active connection. Select a broker from the sidebar to connect.";
 
-test("can create a broker profile", async ({ page, app }) => {
+// ── 観点H: ブローカープロファイルの作成・削除 ────────────────────────────────
+
+test("can create a broker profile", async ({ app, fake }) => {
   await app.createBrokerProfile("Test Broker");
-  await expect(page.getByText("Test Broker")).toBeVisible();
+
+  // 新規作成は ID を空で送り、採番はバックエンドに任せる。URL はダイアログの既定値。
+  expect(await fake.args("SaveProfile")).toEqual([
+    [
+      {
+        id: "",
+        name: "Test Broker",
+        broker: "mqtt://localhost:1883",
+        clientId: "",
+        username: "",
+        password: "",
+        useTls: false,
+      },
+    ],
+  ]);
+  await expect(app.broker("Test Broker")).toContainText(
+    "mqtt://localhost:1883",
+  );
+  // 作ったブローカーが選ばれ、接続バーが出る。
+  await expect(app.brokerConnectButton).toBeVisible();
+  await expect(app.brokerHostInput()).toHaveValue("localhost");
+  await expect(app.brokerPortInput()).toHaveValue("1883");
 });
 
 test("new broker dialog save button is disabled when name is empty", async ({
@@ -54,18 +78,24 @@ test("new broker dialog rejects a port or host that cannot be read back", async 
   await expect(save).toBeEnabled();
 });
 
-test("can delete a broker profile", async ({ page, app }) => {
+test("can delete a broker profile", async ({ page, app, fake }) => {
   await app.createBrokerProfile("Delete Me");
-  await expect(page.getByText("Delete Me")).toBeVisible();
+  await expect(app.broker("Delete Me")).toBeVisible();
+  const [created] = (await fake.snapshot()).mqttProfiles;
 
   await (await app.brokerRowAction("Delete Me", "Delete broker")).click();
 
   await app.confirmDelete();
 
-  await expect(page.getByText("Delete Me")).toBeHidden();
+  await expect(app.broker("Delete Me")).toHaveCount(0);
+  expect(await fake.args("DeleteProfile")).toEqual([[created.id]]);
+  expect((await fake.snapshot()).mqttProfiles).toEqual([]);
+  // 最後の 1 件を消したので、空状態に戻る。
+  await expect(page.getByText("No brokers yet")).toBeVisible();
+  await expect(page.getByText(EMPTY_STATE)).toBeVisible();
 });
 
-// ── 観点H-2: Subscribe/Publish タブ切り替え ───────────────────────────────────
+// ── 観点H: Subscribe / Publish タブの切り替え ────────────────────────────────
 
 test("can switch between subscribe and publish tabs", async ({ page, app }) => {
   await app.createBrokerProfile("Tab Test Broker");
@@ -88,7 +118,7 @@ test("can switch between subscribe and publish tabs", async ({ page, app }) => {
   await expect(publishTab).toHaveAttribute("aria-selected", "false");
 });
 
-// ── 観点H-4: トピックのサブスクライブ UIフロー ────────────────────────────────
+// ── 観点H: 未接続のブローカーでの購読 ────────────────────────────────────────
 
 test("subscribe button is disabled when broker is not connected", async ({
   app,
@@ -103,31 +133,34 @@ test("subscribe button is disabled when broker is not connected", async ({
   await expect(app.mqttSubscribeButton).toBeDisabled();
 });
 
-// ── 観点H-5: QoS の選択（0/1/2） ──────────────────────────────────────────────
+// ── 観点H: 購読の QoS の選択 ─────────────────────────────────────────────────
+// 未接続のブローカーなので、トリガーの表示だけを見る。選んだ値が Subscribe に渡ることは
+// messages.spec.ts の "subscribing and unsubscribing reach the backend" が見る。
 
 test("can select QoS level 0, 1, and 2", async ({ page, app }) => {
   await app.createBrokerProfile("QoS Test Broker");
 
+  // トリガーには現在の値だけが出る。
   const qosTrigger = page.getByTestId("qos-select").getByRole("button");
-  await expect(qosTrigger).toBeVisible();
+  await expect(qosTrigger).toHaveText("0");
 
   // QoS 1 を選択
   await qosTrigger.click();
   await page.getByRole("button", { name: "QoS 1" }).click();
-  await expect(qosTrigger).toContainText("1");
+  await expect(qosTrigger).toHaveText("1");
 
   // QoS 2 を選択
   await qosTrigger.click();
   await page.getByRole("button", { name: "QoS 2" }).click();
-  await expect(qosTrigger).toContainText("2");
+  await expect(qosTrigger).toHaveText("2");
 
   // QoS 0 に戻す
   await qosTrigger.click();
   await page.getByRole("button", { name: "QoS 0" }).click();
-  await expect(qosTrigger).toContainText("0");
+  await expect(qosTrigger).toHaveText("0");
 });
 
-// ── 観点H-6: Publish の retain フラグ ────────────────────────────────────────
+// ── 観点H: Publish の retain フラグ ──────────────────────────────────────────
 
 test("can toggle the retain flag and it is stored on the selected preset", async ({
   page,
