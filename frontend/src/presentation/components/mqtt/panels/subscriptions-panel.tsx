@@ -42,7 +42,10 @@ export function SubscriptionsPanel() {
           <Input
             value={newTopic()}
             onInput={(e) => setNewTopic(e.currentTarget.value)}
-            onKeyDown={(e) => e.key === "Enter" && addSubscription()}
+            // Subscribe ボタンと同じく、未接続のときは購読しない。
+            onKeyDown={(e) =>
+              e.key === "Enter" && canSubscribe() && addSubscription()
+            }
             placeholder="Topic (e.g., sensors/#)"
             class={styles.monoInput}
           />
