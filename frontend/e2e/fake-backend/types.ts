@@ -62,6 +62,16 @@ export interface FakeSeed {
   mqttConnectDelayMs?: number;
   /** Connect が接続 ID を返してから、結果のイベントを出すまでの遅延 (ms)。 */
   mqttConnectResultDelayMs?: number;
+  /**
+   * Connect が接続 ID を返すより先に、結果のイベントを出す。Go は Connect が返る前に接続を
+   * 始めるので、実バックエンドでも応答より先に届くことがある。
+   */
+  mqttConnectResultBeforeResponse?: boolean;
+  /**
+   * Subscribe が検証のあと、接続を見るまでの遅延 (ms)。再接続の張り直しの購読を、接続が確立した
+   * あとに届かせるのに使う (確立済みの接続では subscribeError のトピックが RPC の失敗になる)。
+   */
+  mqttSubscribeDelayMs?: number;
   /** MQTT の GetConnections を必ず失敗させる (起動時の復元の失敗を模す)。 */
   getConnectionsError?: string;
   /** MQTT の Disconnect を必ず失敗させ、接続は残す (RPC 自体の失敗を模す)。 */

@@ -293,6 +293,54 @@ test.describe("broker topics scan", () => {
     ).toContainText("EOF");
   });
 
+  test("starting a scan again clears the previous topics, and topics arriving after Stop are ignored", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.connectBroker(BROKER.name);
+    const connectionId = (await fake.snapshot()).mqttConnections[0].id;
+    const panel = app.mqttSection("Broker Topics");
+    const found = (topic: string) => panel.getByText(topic, { exact: true });
+    await app.mqttScanButton.click();
+    await expect(app.mqttStopScanButton).toBeVisible();
+    await fake.emit(WailsEvents.mqttScanTopic, {
+      connectionId,
+      topic: "first/scan",
+    });
+    await expect(found("first/scan")).toBeVisible();
+    await app.mqttStopScanButton.click();
+    await expect(app.mqttScanButton).toBeVisible();
+
+    // 停止と行き違いで届いたトピックは足さない。受信は次のフレームで反映するので、
+    // フレームを待ってから無いことを見る。
+    await fake.emit(WailsEvents.mqttScanTopic, {
+      connectionId,
+      topic: "late/topic",
+    });
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect(found("late/topic")).toHaveCount(0);
+    await expect(found("first/scan")).toBeVisible();
+
+    // もう一度始めると、前回の一覧を消してから集め直す。
+    await app.mqttScanButton.click();
+
+    await expect(app.mqttStopScanButton).toBeVisible();
+    await expect(found("first/scan")).toHaveCount(0);
+    await expect(panel.getByText("Scanning...")).toBeVisible();
+    await fake.emit(WailsEvents.mqttScanTopic, {
+      connectionId,
+      topic: "second/scan",
+    });
+    await expect(found("second/scan")).toBeVisible();
+    await expect(found("first/scan")).toHaveCount(0);
+  });
+
   test("a scanned topic can be subscribed from the list", async ({
     app,
     fake,

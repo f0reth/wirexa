@@ -756,7 +756,8 @@ const MqttHandler = {
   // - seed.mqttConnect が "pending": 接続を一覧に残したままイベントを出さない (Go で確立待ちが
   //   続いている状態。GetConnections は connected: false で返す)。
   // seed.mqttConnectDelayMs は接続 ID を返すまで、seed.mqttConnectResultDelayMs は返してから結果の
-  // イベントを出すまでの時間。
+  // イベントを出すまでの時間。seed.mqttConnectResultBeforeResponse なら、接続 ID を返す前に結果の
+  // イベントを出す (Go は Connect が返る前に接続を始めるので、応答より先に届くことがある)。
   // 引数は生成された配線型で受ける。Go の json タグが変わって再生成されれば、ここで tsc が検出する。
   Connect: counted(
     "Connect",
@@ -779,7 +780,7 @@ const MqttHandler = {
       db.mqttConnections.push(conn);
       save();
       if (seed.mqttConnect === "pending") return conn.id;
-      setTimeout(() => {
+      const settle = () => {
         // 結果が出るより先に切断された接続はイベントを出さない (Go の runConnect / onConnected と同じ)。
         const live = db.mqttConnections.find((c) => c.id === conn.id);
         if (!live) return;
@@ -798,7 +799,9 @@ const MqttHandler = {
         save();
         emitEvent(WailsEvents.mqttConnected, { connectionId: conn.id });
         resubscribe(live);
-      }, seed.mqttConnectResultDelayMs ?? 0);
+      };
+      if (seed.mqttConnectResultBeforeResponse) settle();
+      else setTimeout(settle, seed.mqttConnectResultDelayMs ?? 0);
       return conn.id;
     },
   ),
@@ -818,11 +821,14 @@ const MqttHandler = {
   // ブローカーが無いのでメッセージは届かない。受信はテストが mqtt:message を emit して模す。
   // seed.subscribeError のトピックはブローカーが拒否する。確立済みの接続ではここで失敗し、確立前は
   // Go と同じく登録して成功を返す (確立したときに resubscribe が外す)。
-  Subscribe: mutates(
+  // seed.mqttSubscribeDelayMs は検証のあと接続を見るまでの時間。待ったあとに状態を書くので、
+  // mutates ではなく自分で save する。
+  Subscribe: counted(
     "Subscribe",
-    (connectionId: string, topic: string, qos: number) => {
+    async (connectionId: string, topic: string, qos: number) => {
       validateTopicFilter(topic);
       validateQos(qos);
+      await delayIfSet(seed.mqttSubscribeDelayMs);
       const conn = mqttConnection(connectionId);
       if (conn.connected && subscriptionRejected(topic)) {
         throw new Error(
@@ -833,6 +839,7 @@ const MqttHandler = {
       const existing = conn.subscriptions.find((s) => s.topic === topic);
       if (existing) existing.qos = qos;
       else conn.subscriptions.push({ topic, qos });
+      save();
     },
   ),
 
@@ -886,6 +893,7 @@ const MqttHandler = {
   }),
 
   // ループバックはしない。送った内容は fake.args("Publish") で確かめる。
+  // Go と同じく、確立していない接続 (確立待ち・自動再接続中) には送らずに失敗させる。
   Publish: counted(
     "Publish",
     async (
@@ -897,7 +905,9 @@ const MqttHandler = {
     ) => {
       validateTopicName(topic);
       validateQos(qos);
-      mqttConnection(connectionId);
+      if (!mqttConnection(connectionId).connected) {
+        throw new Error("failed to publish: not connected");
+      }
     },
   ),
 };

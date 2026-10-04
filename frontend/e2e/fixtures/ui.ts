@@ -1,4 +1,4 @@
-import { test as base, expect } from "@playwright/test";
+import { test as base, expect, type Page } from "@playwright/test";
 import { WailsEvents } from "../../src/shared/wails-events";
 import type { FakeBackend, FakeSeed } from "../fake-backend/types";
 import { App } from "./app";
@@ -8,14 +8,17 @@ export { App } from "./app";
 
 type WailsEventName = (typeof WailsEvents)[keyof typeof WailsEvents];
 
+// ページごとの未捕捉の例外。page の fixture が goto の前から集め、pageErrors の fixture が返す。
+const errorsByPage = new WeakMap<Page, string[]>();
+
 interface Fixtures {
   /** test.use({ seed: {...} }) で仕込む初期状態。ページ読み込み前に注入される。 */
   seed: FakeSeed;
   app: App;
   fake: FakeControl;
   /**
-   * 最初の読み込みのあとに起きた未捕捉の例外のメッセージ。自動では検査しないので、使うテストが
-   * 引数に取り、最後に expect(pageErrors).toEqual([]) で確かめる。
+   * 最初の読み込みから起きた未捕捉の例外のメッセージ (起動時の例外も含む)。自動では検査しないので、
+   * 使うテストが引数に取り、最後に expect(pageErrors).toEqual([]) で確かめる。
    */
   pageErrors: string[];
 }
@@ -108,6 +111,10 @@ export const test = base.extend<Fixtures>({
       }
       (window as unknown as { __wirexaSeed: FakeSeed }).__wirexaSeed = s;
     }, seed);
+    // 起動時の例外も拾えるよう、読み込む前から集める。
+    const errors: string[] = [];
+    errorsByPage.set(page, errors);
+    page.on("pageerror", (err) => errors.push(err.message));
     await page.goto("/");
     await use(page);
   },
@@ -121,8 +128,6 @@ export const test = base.extend<Fixtures>({
   },
 
   pageErrors: async ({ page }, use) => {
-    const errors: string[] = [];
-    page.on("pageerror", (err) => errors.push(err.message));
-    await use(errors);
+    await use(errorsByPage.get(page) ?? []);
   },
 });

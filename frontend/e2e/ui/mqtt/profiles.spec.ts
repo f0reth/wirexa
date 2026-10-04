@@ -282,6 +282,8 @@ test.describe("client id, credentials and TLS", () => {
   });
 
   // 画面のスキームはどれも TLS で使えるので、この検証は画面からは通らない。バインディングを直接呼ぶ。
+  // ここで確かめているのは偽バックエンドの検証で、フルスタックの同名のテスト
+  // (integration/mqtt/mqtt.spec.ts) と対にして、Go の文言とのずれを検出する。
   test("Connect rejects a scheme that cannot be used with TLS", async ({
     app,
     fake,
@@ -378,6 +380,36 @@ test.describe("editing a broker whose connection is pending", () => {
     await expect(dialog.getByText(LIVE_NOTICE)).toBeHidden();
     await saveButton(dialog).click();
     await expect(dialog).toBeHidden();
+  });
+});
+
+// 確立待ちのタブも、バックエンドには接続がある。切らずにタブを閉じると、画面から見えない接続が残る。
+test.describe("deleting a broker whose connection is pending", () => {
+  test.use({ seed: { mqttProfiles: [ALPHA, BETA], mqttConnect: "pending" } });
+
+  test("deleting a broker whose connection is pending disconnects it", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.selectBroker(ALPHA.name);
+    await app.brokerConnectButton.click();
+    await expect(connectingButton(page)).toBeVisible();
+    const [pending] = (await fake.snapshot()).mqttConnections;
+    expect(pending.connected).toBe(false);
+
+    await (await app.brokerRowAction(ALPHA.name, "Delete broker")).click();
+    await app.confirmDelete();
+
+    await expect(app.broker(ALPHA.name)).toHaveCount(0);
+    await fake.waitForCalls("Disconnect");
+    expect(await fake.args("Disconnect")).toEqual([[pending.id]]);
+    expect(await fake.args("DeleteProfile")).toEqual([[ALPHA.id]]);
+    expect((await fake.snapshot()).mqttConnections).toEqual([]);
+    // 残ったブローカーが選ばれる。
+    await expect(app.brokerConnectButton).toBeVisible();
+    await expect(app.brokerHostInput()).toHaveValue("beta.local");
+    await expect(page.getByRole("alert")).toHaveCount(0);
   });
 });
 
@@ -931,6 +963,32 @@ test.describe("broker rows", () => {
     expect((await fake.snapshot()).mqttProfiles).toHaveLength(2);
   });
 
+  test("deleting another broker keeps the selected broker", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.selectBroker(ALPHA.name);
+    await expect(app.brokerHostInput()).toHaveValue("alpha.local");
+
+    await (await app.brokerRowAction(BETA.name, "Delete broker")).click();
+    await app.confirmDelete();
+
+    await expect(app.broker(BETA.name)).toHaveCount(0);
+    expect(await fake.args("DeleteProfile")).toEqual([[BETA.id]]);
+    // 選択中のブローカーと接続バーはそのまま。
+    await expect(app.brokerConnectButton).toBeVisible();
+    await expect(app.brokerSchemeSelect()).toHaveValue("tcp");
+    await expect(app.brokerHostInput()).toHaveValue("alpha.local");
+    await expect(app.brokerPortInput()).toHaveValue("1883");
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("mqtt:lastActiveProfileId"),
+      ),
+    ).toBe(JSON.stringify(ALPHA.id));
+    expect(await fake.calls("Disconnect")).toBe(0);
+  });
+
   test("clicking a broker row selects it and the edit button does not", async ({
     app,
   }) => {
@@ -985,7 +1043,8 @@ test.describe("when GetConnections fails on startup", () => {
     await expect(app.mqttStatus("Disconnected")).toBeVisible();
     await expect(app.brokerHostInput()).toHaveValue("beta.local");
 
-    // 復元の失敗はログに残すだけで、通知しない。
+    // 復元の失敗はログに残すだけで、通知しない。起動時の例外も無い (pageErrors は最初の
+    // 読み込みから集めている)。
     await expect(page.getByRole("alert")).toHaveCount(0);
     expect(pageErrors).toEqual([]);
   });
@@ -1114,6 +1173,66 @@ test.describe("while a connect is in flight", () => {
       await expect(app.mqttStatus("Disconnected")).toBeVisible();
       await expect(app.brokerConnectButton).toBeVisible();
       await expect(app.brokerHostInput()).toHaveValue("beta.local");
+    });
+  });
+
+  // Go は Connect が返る前に接続を始めるので、結果のイベントが応答より先に届くことがある。
+  // そのときタブはまだ無いので、応答でタブを作るときに反映する。
+  test.describe("result before the response", () => {
+    test.describe("established", () => {
+      test.use({
+        seed: {
+          mqttProfiles: [ALPHA],
+          mqttConnect: "ok",
+          mqttConnectResultBeforeResponse: true,
+        },
+      });
+
+      test("a connected event that arrives before the Connect response shows Connected", async ({
+        page,
+        app,
+        fake,
+      }) => {
+        await app.connectBroker(ALPHA.name);
+
+        await app.subscribeMqtt("sensors/#");
+        const { mqttConnections } = await fake.snapshot();
+        expect(mqttConnections).toEqual([
+          expect.objectContaining({
+            connected: true,
+            subscriptions: [{ topic: "sensors/#", qos: 0 }],
+          }),
+        ]);
+        await expect(page.getByRole("alert")).toHaveCount(0);
+      });
+    });
+
+    test.describe("failed", () => {
+      test.use({
+        seed: {
+          mqttProfiles: [ALPHA],
+          mqttConnectResultBeforeResponse: true,
+        },
+      });
+
+      test("a connection-failed event that arrives before the Connect response leaves the broker disconnected", async ({
+        page,
+        app,
+        fake,
+      }) => {
+        await app.selectBroker(ALPHA.name);
+        await app.brokerConnectButton.click();
+
+        await expect(
+          page.getByRole("alert").filter({ hasText: "MQTT connection failed" }),
+        ).toContainText("connection refused");
+        await fake.waitForCalls("Connect");
+        // 確立待ちの表示のまま残らない。
+        await expect(app.brokerConnectButton).toBeEnabled();
+        await expect(app.mqttStatus("Disconnected")).toBeVisible();
+        await expect(app.brokerHostInput()).toBeEnabled();
+        expect((await fake.snapshot()).mqttConnections).toEqual([]);
+      });
     });
   });
 
