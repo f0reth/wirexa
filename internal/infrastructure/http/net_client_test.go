@@ -177,7 +177,7 @@ func TestNetClient_Timeout(t *testing.T) {
 }
 
 func TestNetClient_ImageBody_Base64(t *testing.T) {
-	// 画像は非 UTF-8 バイナリなので汎用 base64 経路を通る（image/* 特判の廃止を確認）。
+	// 画像は非 UTF-8 バイナリなので、他のバイナリと同じ base64 経路を通る。
 	png := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
 	res := doGet(t, png, "image/png")
 	if !res.BodyBase64 {

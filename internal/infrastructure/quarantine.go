@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// quarantine は JSONStore.Load と LoadWindowState が破損ファイルの退避に使う関数。
+// quarantine は破損ファイルを退避する関数。
 // 退避の失敗を OS に依存せず再現できるよう、テストから差し替えられる変数にしている。
 var quarantine = QuarantineFile
 

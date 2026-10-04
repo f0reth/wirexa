@@ -9,9 +9,6 @@ import (
 var _ domain.ProfileRepository = (*ProfileRepository)(nil)
 
 // ProfileRepository は MQTT ブローカープロファイルを JSON ファイルへ永続化する。
-//
-// ディスクへは永続化 DTO (storedBrokerProfile) を書き、domain 型の json タグ (RPC の配線形式) を
-// 変えても保存形式が変わらないようにする。変換はこの境界 1 か所で行う。
 type ProfileRepository struct {
 	store *infra.JSONStore[storedBrokerProfile]
 }
@@ -55,7 +52,6 @@ func (r *ProfileRepository) Delete(id string) error {
 
 // storedBrokerProfile は MQTT ブローカープロファイルの永続化 DTO。
 // フィールドと JSON 名は既存ファイルの形式 (testdata/profile.golden.json) に揃える。
-// domain 型は埋め込まない。
 type storedBrokerProfile struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`

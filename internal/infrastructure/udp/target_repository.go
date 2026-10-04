@@ -9,9 +9,6 @@ import (
 var _ domain.TargetRepository = (*TargetRepository)(nil)
 
 // TargetRepository は UDP 送信先プリセットを JSON ファイルへ永続化する。
-//
-// ディスクへは永続化 DTO (storedUDPTarget) を書き、domain 型の json タグ (RPC の配線形式) を
-// 変えても保存形式が変わらないようにする。変換はこの境界 1 か所で行う。
 type TargetRepository struct {
 	store *infra.JSONStore[storedUDPTarget]
 }
@@ -55,7 +52,6 @@ func (r *TargetRepository) Delete(id string) error {
 
 // storedUDPTarget は UDP 送信先プリセットの永続化 DTO。
 // フィールドと JSON 名は既存ファイルの形式 (testdata/target.golden.json) に揃える。
-// domain 型は埋め込まない。
 type storedUDPTarget struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`

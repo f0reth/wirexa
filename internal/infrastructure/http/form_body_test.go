@@ -144,8 +144,7 @@ func TestBuildMultipartBody_SkipsRows(t *testing.T) {
 	}
 }
 
-// Content-Type 未指定の text 行は行機能の追加前と同じ出力（パートに Content-Type を
-// 付けない）でなければならない。既存リクエストのワイヤ形式を変えないための保証。
+// Content-Type 未指定の text 行は、パートに Content-Type を付けない。
 func TestBuildMultipartBody_TextRow(t *testing.T) {
 	t.Run("Content-Type 未指定なら付けない", func(t *testing.T) {
 		parts := readParts(t, []domain.FormRow{
@@ -307,9 +306,9 @@ func readBody(t *testing.T, body *bodySegments) []byte {
 	return data
 }
 
-// ストリーミングにしても、multipart の出力は従来の bytes.Buffer 実装と 1 バイトも違わない。
-// 従来の実装 (パートヘッダを CreatePart で書き、text 行は WriteField、json と file 行は
-// 内容を part.Write) を同じ boundary で組み立てて比べる。
+// ファイル区間に分けて組み立てても、multipart の出力は全体をバッファに書いた場合と 1 バイトも違わない。
+// 比べる相手は同じ boundary で組み立てる。パートヘッダは CreatePart、text 行は WriteField、
+// json と file 行の内容は part.Write で書く。
 func TestBuildMultipartBody_MatchesBufferedOutput(t *testing.T) {
 	files := fakeFiles{
 		"tok-a":     {name: `ファイル "a".json`, contentType: "application/json", data: `{"from":"file"}`},

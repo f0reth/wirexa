@@ -5,12 +5,10 @@ import (
 	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 )
 
-// コンパイル時に domain.SidebarLayoutRepository を満たすことを検証
+// domain.SidebarLayoutRepository を満たすことを、コンパイル時に検証する。
 var _ domain.SidebarLayoutRepository = (*SidebarLayoutRepository)(nil)
 
 // SidebarLayoutRepository は sidebar_layout.json の読み書きリポジトリ。
-// ディスクへは永続化 DTO (storedSidebarEntry) を書き、domain 型の json タグ (RPC の配線形式) を
-// 変えても保存形式が変わらないようにする。
 type SidebarLayoutRepository struct {
 	path string
 }
@@ -52,7 +50,6 @@ func (r *SidebarLayoutRepository) Quarantine() (string, error) {
 
 // storedSidebarEntry はサイドバーレイアウト 1 エントリの永続化 DTO。
 // フィールドと JSON 名は既存ファイルの形式 (testdata/sidebar_layout.golden.json) に揃える。
-// domain 型は埋め込まない。
 type storedSidebarEntry struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id"`

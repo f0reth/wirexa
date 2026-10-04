@@ -35,9 +35,9 @@ type selectedFileEntry struct {
 
 // FileRegistry はファイルダイアログで選択されたファイルを session token で参照させる。
 //
-// token の発行源はダイアログの戻り値だけで、Register を呼ぶのは HTTPHandler のダイアログ処理に
-// 限る (RPC からパスと token の組を登録する経路は設けない)。token は現在のアプリセッションでだけ
-// 有効で、永続化しない。メモリには token とメタデータだけを持ち、ファイルの内容やハンドルは持たない。
+// Register へ渡してよいのはダイアログの戻り値だけ (RPC からパスを登録する経路は設けない)。
+// token は現在のアプリセッションでだけ有効で、永続化しない。
+// メモリには token とメタデータだけを持ち、ファイルの内容やハンドルは持たない。
 type FileRegistry struct {
 	now     func() time.Time
 	byToken map[string]*selectedFileEntry

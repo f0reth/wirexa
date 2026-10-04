@@ -20,8 +20,8 @@ var quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")
 // 成功したら返したボディの release を呼び出し側が呼ぶ。失敗したら開いたファイルはすべて閉じる。
 func buildMultipartBody(rows []domain.FormRow, files domain.SelectedFileOpener) (*bodySegments, string, error) {
 	body := &bodySegments{}
-	// multipart.Writer は boundary とパートヘッダを下位の writer に書くだけなので、
-	// バイト区間へ追記する body に向ければ、従来と同じバイト列を区間に分けて得られる。
+	// multipart.Writer は boundary とパートヘッダを下位の writer に書くだけ。
+	// バイト区間へ追記する body に向ければ、同じバイト列を区間に分けて得られる。
 	mw := multipart.NewWriter(body)
 	for i := range rows {
 		r := &rows[i]
@@ -73,9 +73,7 @@ func writeFormRow(mw *multipart.Writer, body *bodySegments, r *domain.FormRow, f
 		}
 		return writePart(mw, r.Key, "", contentType, []byte(r.Value))
 	default:
-		// Content-Type 未指定の text 行は WriteField に通す。パートに Content-Type を
-		// 付けないのが従来の出力で、行の追加機能のために既存リクエストのワイヤ形式を
-		// 変えてしまわないようにする。
+		// Content-Type 未指定の text 行は WriteField に通し、パートに Content-Type を付けない。
 		if r.ContentType == "" {
 			if err := mw.WriteField(r.Key, r.Value); err != nil {
 				return fmt.Errorf("failed to write form field: %w", err)

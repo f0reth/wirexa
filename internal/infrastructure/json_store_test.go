@@ -118,7 +118,7 @@ func TestJSONStore_Delete_RemovesFile(t *testing.T) {
 
 func TestJSONStore_Delete_NonExistentFile(t *testing.T) {
 	store := newTestStore(t)
-	// 存在しないIDを削除しようとするとエラーを返す
+	// 存在しないIDを削除しようとするとエラーを返す。
 	err := store.Delete("nonexistent")
 	if err == nil {
 		t.Error("expected error for non-existent file, got nil")
@@ -127,7 +127,6 @@ func TestJSONStore_Delete_NonExistentFile(t *testing.T) {
 
 func TestJSONStore_Load_SkipsNonJSONFiles(t *testing.T) {
 	store := newTestStore(t)
-	// JSONでないファイルを直接作成
 	dir := store.dir
 	if err := os.WriteFile(filepath.Join(dir, "ignored.txt"), []byte("text"), 0o600); err != nil {
 		t.Fatalf("write txt: %v", err)
@@ -136,7 +135,6 @@ func TestJSONStore_Load_SkipsNonJSONFiles(t *testing.T) {
 		t.Fatalf("write README: %v", err)
 	}
 
-	// JSONファイルも1つ追加
 	item := testItem{ID: "j1", Name: "JSON"}
 	store.Save(&item)
 
@@ -151,7 +149,6 @@ func TestJSONStore_Load_SkipsNonJSONFiles(t *testing.T) {
 
 func TestJSONStore_Load_SkipsSubdirectories(t *testing.T) {
 	store := newTestStore(t)
-	// サブディレクトリを作成
 	dir := store.dir
 	if err := os.Mkdir(filepath.Join(dir, "subdir"), 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -172,12 +169,11 @@ func TestJSONStore_Load_SkipsSubdirectories(t *testing.T) {
 func TestJSONStore_Load_CorruptedJSON(t *testing.T) {
 	store := newTestStore(t)
 	dir := store.dir
-	// 不正なJSONファイルを作成
 	if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte("not valid json {{{"), 0o600); err != nil {
 		t.Fatalf("write bad.json: %v", err)
 	}
 
-	// 破損ファイルはエラーにせず退避してスキップし、起動を継続する
+	// 破損ファイルはエラーにせず退避してスキップし、起動を継続する。
 	items, err := store.Load()
 	if err != nil {
 		t.Fatalf("Load should not fail on corrupt file: %v", err)
@@ -186,7 +182,7 @@ func TestJSONStore_Load_CorruptedJSON(t *testing.T) {
 		t.Errorf("expected 0 items (corrupt skipped), got %d", len(items))
 	}
 
-	// 元の bad.json は退避されている
+	// 元の bad.json は退避されている。
 	if _, statErr := os.Stat(filepath.Join(dir, "bad.json")); !os.IsNotExist(statErr) {
 		t.Error("bad.json should have been renamed away")
 	}
@@ -199,12 +195,10 @@ func TestJSONStore_Load_SkipsCorruptKeepsValid(t *testing.T) {
 	store := newTestStore(t)
 	dir := store.dir
 
-	// 有効なアイテムを1つ保存
 	valid := testItem{ID: "good", Name: "Valid"}
 	if err := store.Save(&valid); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	// 破損ファイルを混在させる
 	if err := os.WriteFile(filepath.Join(dir, "broken.json"), []byte("{{{"), 0o600); err != nil {
 		t.Fatalf("write broken.json: %v", err)
 	}
@@ -222,7 +216,7 @@ func TestJSONStore_Load_SkipsCorruptKeepsValid(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(dir, "broken.json.corrupt")); statErr != nil {
 		t.Errorf("broken.json.corrupt should exist: %v", statErr)
 	}
-	// 退避後の再ロードは .corrupt を無視して同じ結果になる
+	// 退避後の再ロードは .corrupt を無視して同じ結果になる。
 	items2, err := store.Load()
 	if err != nil {
 		t.Fatalf("Load (second): %v", err)

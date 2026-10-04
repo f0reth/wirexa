@@ -58,9 +58,9 @@ func TestSweepStaleTempFiles(t *testing.T) {
 		t.Fatalf("write %s: %v", foreignFile, err)
 	}
 
-	// 回帰テスト: 旧実装の固定 marker 文字列 (公開済みのソースから読める値) を書き込んだだけの
-	// ディレクトリ。乱数シークレットと一致しないため sweep で削除されてはならない
-	// -- 同じ OS ユーザーの別プロセスがこの固定値を真似ても偽装できないことを確認する。
+	// 固定の文字列を marker に書き込んだだけのディレクトリ。
+	// 乱数シークレットと一致しないので、sweep で削除されてはならない。
+	// 同じ OS ユーザーの別プロセスが marker を真似ても偽装できないことを確かめる。
 	forgedDir := filepath.Join(baseDir, "wirexa-http-forged")
 	if err := os.Mkdir(forgedDir, 0o700); err != nil {
 		t.Fatalf("mkdir forged dir: %v", err)

@@ -289,7 +289,7 @@ func TestApplyTLSScheme(t *testing.T) {
 		{"WS://broker:8080/mqtt", "wss://broker:8080/mqtt"},
 		// スキーム無しは paho が tcp:// を補うので、TLS のスキームを補う。
 		{"broker:1883", "ssl://broker:1883"},
-		// TLS にできないスキームはそのまま返す (MQTTService.Connect が先に拒否する)。
+		// TLS にできないスキームはそのまま返す (呼び出し側が先に拒否する)。
 		{"http://broker:1883", "http://broker:1883"},
 		{"", ""},
 	}

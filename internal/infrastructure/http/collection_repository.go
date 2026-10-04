@@ -14,10 +14,9 @@ var _ domain.CollectionRepository = (*CollectionRepository)(nil)
 
 // CollectionRepository は HTTP コレクションを JSON ファイルへ永続化する。
 //
-// runtime model (domain.Collection) は session token を持つが、ディスクへは
-// 永続化 DTO (storedCollection) を書く。変換をこの境界 1 か所で行うため、
-// CollectionService のどの保存経路 (追加・更新・名称変更・移動) からも
-// token と実パスは永続化されない。変換は deep copy で、呼び出し元の runtime model は変更しない。
+// ディスクへは永続化 DTO (storedCollection) を書く。
+// storedCollection は session token と実パスを表現できないので、どの保存経路からも永続化されない。
+// 変換は deep copy で、呼び出し元の domain.Collection は変更しない。
 type CollectionRepository struct {
 	store *infra.JSONStore[storedCollection]
 }
@@ -67,8 +66,6 @@ func (r *CollectionRepository) Exists(id string) (bool, error) {
 
 // ── 永続化 DTO ────────────────────────────────────────────────────────────────
 // フィールドと JSON 名は既存ファイルの形式 (testdata/collection.golden.json) に揃える。
-// どの階層でも domain 型を埋め込まない。埋め込むとその部分の保存形式が domain の
-// json タグ (RPC の配線形式) で決まり、RPC の変更が保存形式に波及する。
 // file 参照は storedFileReference でしか表現できず、token と実パスを書き出せない。
 
 type storedCollection struct {

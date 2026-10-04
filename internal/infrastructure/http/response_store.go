@@ -14,7 +14,7 @@ import (
 )
 
 // response 一時ファイルの上限。frontend が DiscardResponseBody を呼ぶことを前提にせず、
-// backend 側でディスク使用量を有界にする。値は安全側の内部定数から始める。
+// backend 側でディスク使用量を有界にする。
 const (
 	maxResponseFiles            = 8
 	maxResponseTotalBytes int64 = 2 << 30 // 2 GiB
@@ -186,11 +186,11 @@ func (s *ResponseStore) startSpill(executionID string, reserve int64) (string, e
 		}
 		secret, err := sessionSecret(s.baseDir)
 		if err != nil {
-			_ = os.RemoveAll(dir) //nolint:errcheck // best-effort cleanup; 残れば次回起動時 sweep で回収する
+			_ = os.RemoveAll(dir) //nolint:errcheck // 後始末。残れば次回起動時の sweep が回収する
 			return "", errSpillWrite
 		}
 		if err := os.WriteFile(filepath.Join(dir, sessionMarkerFile), secret, 0o600); err != nil {
-			_ = os.RemoveAll(dir) //nolint:errcheck // best-effort cleanup; 残れば次回起動時 sweep で回収する
+			_ = os.RemoveAll(dir) //nolint:errcheck // 後始末。残れば次回起動時の sweep が回収する
 			return "", errSpillWrite
 		}
 		s.dir = dir
@@ -206,7 +206,7 @@ func (s *ResponseStore) startSpill(executionID string, reserve int64) (string, e
 // abortSpill は書き込みに失敗した spill の予約を解放し、作りかけのファイルを削除する。
 func (s *ResponseStore) abortSpill(executionID, path string) {
 	if path != "" {
-		_ = s.ops.remove(path) //nolint:errcheck // best-effort cleanup; 残れば次回起動時 sweep で回収する
+		_ = s.ops.remove(path) //nolint:errcheck // 後始末。残れば次回起動時の sweep が回収する
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -229,7 +229,7 @@ func (s *ResponseStore) commitSpill(executionID, path string, written int64, con
 	e, ok := s.entries[executionID]
 	if s.closed || !ok || !e.spilling {
 		// 書き込み中に終了処理が走った。公開せずに回収する。
-		_ = s.ops.remove(path) //nolint:errcheck // best-effort cleanup; 残れば次回起動時 sweep で回収する
+		_ = s.ops.remove(path) //nolint:errcheck // 後始末。残れば次回起動時の sweep が回収する
 		return domain.ErrResponseUnavailable
 	}
 	e.spilling = false
@@ -283,7 +283,7 @@ func (s *ResponseStore) Discard(executionID string) error {
 
 // Cleanup は新規操作を停止し、saving 以外の一時ファイルを回収する。
 // saving の一時ファイルは保存処理と競合して削除せず、session directory ごと次回起動時 sweep に任せる。
-// 実行中リクエストのキャンセルと待機は呼び出し側 (HTTPRequestService.Shutdown) が先に行う。
+// 実行中リクエストのキャンセルと待機を先に済ませてから呼ぶ。
 func (s *ResponseStore) Cleanup() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -300,7 +300,7 @@ func (s *ResponseStore) Cleanup() {
 		s.dropLocked(id)
 	}
 	if !saving && s.dir != "" {
-		_ = os.RemoveAll(s.dir) //nolint:errcheck // best-effort cleanup; 残れば次回起動時 sweep で回収する
+		_ = os.RemoveAll(s.dir) //nolint:errcheck // 後始末。残れば次回起動時の sweep が回収する
 	}
 }
 
@@ -390,22 +390,22 @@ func (l *responseLease) restore() {
 
 // copyResponseFile は一時ファイルを保存先へコピーする。flush と close の失敗も失敗として扱う。
 func copyResponseFile(src, dst string) error {
-	in, err := os.Open(src) //nolint:gosec // G304: src is a temp file created and tracked by ResponseStore.
+	in, err := os.Open(src) //nolint:gosec // G304: src は ResponseStore が作成して追跡する一時ファイル
 	if err != nil {
 		return err
 	}
-	defer func() { _ = in.Close() }() //nolint:errcheck // best-effort cleanup
+	defer func() { _ = in.Close() }() //nolint:errcheck // 後始末。失敗は無視してよい
 
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // G304: dst comes from the OS save dialog.
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // G304: dst は OS の保存ダイアログの戻り値
 	if err != nil {
 		return err
 	}
 	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close() //nolint:errcheck // the copy error is reported instead
+		_ = out.Close() //nolint:errcheck // コピーのエラーを返すので、閉じる失敗は無視する
 		return err
 	}
 	if err := out.Sync(); err != nil {
-		_ = out.Close() //nolint:errcheck // the sync error is reported instead
+		_ = out.Close() //nolint:errcheck // Sync のエラーを返すので、閉じる失敗は無視する
 		return err
 	}
 	return out.Close()
@@ -413,11 +413,9 @@ func copyResponseFile(src, dst string) error {
 
 // sessionSecret は baseDir 直下に永続化された、インストールごとの乱数シークレットを返す。
 // 既に存在すればその内容を読み、無ければ crypto/rand で生成して 0600 で新規作成する。
-// ファイル名 (.session-secret) は wirexa-http-* の接頭辞に一致しないため、
-// SweepStaleTempFiles の session directory glob からは対象にならない。
 func sessionSecret(baseDir string) ([]byte, error) {
 	path := filepath.Join(baseDir, sessionSecretFile)
-	if content, err := os.ReadFile(path); err == nil && len(content) == sessionSecretSize { //nolint:gosec // G304: path is a fixed filename under baseDir.
+	if content, err := os.ReadFile(path); err == nil && len(content) == sessionSecretSize { //nolint:gosec // G304: path は baseDir 直下の固定ファイル名
 		return content, nil
 	}
 	if err := os.MkdirAll(baseDir, 0o700); err != nil {
@@ -427,15 +425,15 @@ func sessionSecret(baseDir string) ([]byte, error) {
 	if _, err := rand.Read(secret); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: path is a fixed filename under baseDir.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: path は baseDir 直下の固定ファイル名
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			// 単一インスタンスロックにより通常起こらないが、念のため先着プロセスの値を読み直す。
-			return os.ReadFile(path) //nolint:gosec // G304: path is a fixed filename under baseDir.
+			return os.ReadFile(path) //nolint:gosec // G304: path は baseDir 直下の固定ファイル名
 		}
 		return nil, err
 	}
-	defer func() { _ = f.Close() }() //nolint:errcheck // best-effort cleanup
+	defer func() { _ = f.Close() }() //nolint:errcheck // 後始末。失敗は無視してよい
 	if _, err := f.Write(secret); err != nil {
 		return nil, err
 	}
@@ -445,24 +443,19 @@ func sessionSecret(baseDir string) ([]byte, error) {
 	return secret, nil
 }
 
-// SweepStaleTempFiles は前回セッションで残った session directory (baseDir 配下) と、
-// session directory 導入前の flat な一時ファイル (os.TempDir() 直下の wirexa-response-*、
-// session directory とは無関係な旧移行経路) を削除する。baseDir は Wirexa 専用の
-// app 管理ディレクトリ (例: os.UserCacheDir()/Wirexa/http-sessions) で、OS 共有の temp
-// directory とは異なり他プロセス・他ユーザーが偶然書き込むことはない。それでも同一 OS
-// ユーザーに属する別プロセスが接頭辞を真似る可能性は残るため、session directory は
-// isWirexaSessionDir で、baseDir に永続化された乱数シークレットと marker file の内容を
-// 比較してから削除する。シークレットの読み書きに失敗した場合 (権限エラー等) は
-// session directory の sweep だけを諦め、legacy ファイルの sweep は継続する。
-// この関数は logger 構築前の起動シーケンス最初期に呼ぶため失敗をログへ出す先が無く、
-// 既存の他の best-effort cleanup と同様に沈黙して次回起動時の sweep に任せる。
+// SweepStaleTempFiles は前回のセッションが残した一時ファイルを削除する。
+// 対象は baseDir 配下の session directory と、os.TempDir() 直下の legacyResponseFilePrefix のファイル。
+// session directory は isWirexaSessionDir で確かめてから削除する。
+// 同じ OS ユーザーの別プロセスが接頭辞を真似たディレクトリを消さないため。
+// シークレットを読み書きできない場合は、session directory の sweep だけを諦める。
+// 失敗はログに出さず、次回起動時の sweep に任せる。
 func SweepStaleTempFiles(baseDir string) {
 	if info, err := os.Stat(baseDir); err == nil && info.IsDir() {
 		if secret, err := sessionSecret(baseDir); err == nil {
 			if dirs, err := filepath.Glob(filepath.Join(baseDir, responseSessionDirPrefix+"*")); err == nil {
 				for _, d := range dirs {
 					if isWirexaSessionDir(d, secret) {
-						_ = os.RemoveAll(d) //nolint:errcheck // best-effort cleanup
+						_ = os.RemoveAll(d) //nolint:errcheck // 後始末。失敗は無視してよい
 					}
 				}
 			}
@@ -473,7 +466,7 @@ func SweepStaleTempFiles(baseDir string) {
 	if files, err := filepath.Glob(filepath.Join(tmp, legacyResponseFilePrefix+"*")); err == nil {
 		for _, f := range files {
 			if info, err := os.Lstat(f); err == nil && info.Mode().IsRegular() {
-				_ = os.Remove(f) //nolint:errcheck // best-effort cleanup
+				_ = os.Remove(f) //nolint:errcheck // 後始末。失敗は無視してよい
 			}
 		}
 	}
@@ -481,13 +474,12 @@ func SweepStaleTempFiles(baseDir string) {
 
 // isWirexaSessionDir は d が Wirexa 自身が作成した session directory であることを確認する。
 // symlink ではない通常のディレクトリで、内部の marker file の内容がインストールごとの
-// 乱数シークレットと一致する場合のみ true を返す。固定の公開定数ではなく実行時に
-// baseDir から読み出した値と比較するため、値を知っているだけでは偽装できない。
+// 乱数シークレットと一致する場合のみ true を返す。
 func isWirexaSessionDir(d string, secret []byte) bool {
 	info, err := os.Lstat(d)
 	if err != nil || !info.Mode().IsDir() {
 		return false
 	}
-	content, err := os.ReadFile(filepath.Join(d, sessionMarkerFile)) //nolint:gosec // G304: d comes from a glob under baseDir and is verified to be a plain directory above.
+	content, err := os.ReadFile(filepath.Join(d, sessionMarkerFile)) //nolint:gosec // G304: d は baseDir 配下の glob の結果で、通常のディレクトリであることを上で確かめている
 	return err == nil && len(secret) > 0 && bytes.Equal(content, secret)
 }

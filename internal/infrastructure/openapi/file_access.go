@@ -8,7 +8,7 @@ import (
 	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 )
 
-// コンパイル時に domain.FileAccess を満たすことを検証
+// domain.FileAccess を満たすことを、コンパイル時に検証する。
 var _ domain.FileAccess = (*NativeFileAccess)(nil)
 
 // NativeFileAccess は OS のファイルシステムへ直接読み書きする FileAccess 実装。

@@ -17,7 +17,7 @@ type fileLogger struct {
 }
 
 // NewFileLogger はファイルローテーション付きのロガーを生成する。
-// logDir にログディレクトリを指定する（存在しない場合は自動作成）。
+// logDir が無ければ作る。
 func NewFileLogger(logDir string) (domain.Logger, error) {
 	if err := os.MkdirAll(logDir, 0o750); err != nil {
 		return nil, err

@@ -9,7 +9,7 @@ import (
 	"github.com/f0reth/Wirexa/internal/domain"
 )
 
-// コンパイル時に domain.Emitter を満たすことを検証
+// domain.Emitter を満たすことを、コンパイル時に検証する。
 var _ domain.Emitter = (*WailsEmitter)(nil)
 
 // WailsEmitter は Wails ランタイムを使ってフロントエンドへイベントを送信する。

@@ -5,12 +5,10 @@ import (
 	infra "github.com/f0reth/Wirexa/internal/infrastructure"
 )
 
-// コンパイル時に domain.RecentRepository を満たすことを検証
+// domain.RecentRepository を満たすことを、コンパイル時に検証する。
 var _ domain.RecentRepository = (*RecentRepository)(nil)
 
 // RecentRepository は openapi-recents.json の読み書きリポジトリ。
-// ディスクへは永続化 DTO (storedRecent) を書き、domain 型の json タグ (RPC の配線形式) を
-// 変えても保存形式が変わらないようにする。
 type RecentRepository struct {
 	path string
 }
@@ -51,7 +49,6 @@ func (r *RecentRepository) Quarantine() (string, error) {
 
 // storedRecent は recents 1 件の永続化 DTO。
 // フィールドと JSON 名は既存ファイルの形式 (testdata/recents.golden.json) に揃える。
-// domain 型は埋め込まない。
 type storedRecent struct {
 	Path         string `json:"path"`
 	Name         string `json:"name"`

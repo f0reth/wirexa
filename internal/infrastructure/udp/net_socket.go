@@ -26,7 +26,7 @@ func (s *NetSocket) Send(host string, port int, data []byte) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to connect: %w", err)
 	}
-	defer func() { _ = conn.Close() }() //nolint:errcheck // best-effort cleanup
+	defer func() { _ = conn.Close() }() //nolint:errcheck // 後始末。失敗は無視してよい
 	return conn.Write(data)
 }
 

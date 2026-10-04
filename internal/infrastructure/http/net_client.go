@@ -77,7 +77,7 @@ func (c *NetClient) Cleanup() {
 	c.closeTransportsLocked()
 }
 
-// closeTransportsLocked はキャッシュ済み Transport を全て破棄する。呼び出し元は c.mu を保持していること。
+// closeTransportsLocked はキャッシュ済み Transport を全て破棄する。c.mu 保持中に呼ぶ。
 func (c *NetClient) closeTransportsLocked() {
 	for k, t := range c.transports {
 		t.CloseIdleConnections()
@@ -94,8 +94,8 @@ func (c *NetClient) Do(ctx context.Context, executionID string, req domain.HTTPR
 	defer c.responses.Finish(executionID)
 
 	timeout := resolveTimeout(req.Settings)
-	// タイムアウトは http.Client.Timeout ではなく context で表現し、
-	// RequestUseCase 側のキャンセルと同じ経路に一本化する。
+	// タイムアウトは http.Client.Timeout ではなく context で表す。
+	// 呼び出し側のキャンセルと同じ経路で止まる。
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -161,7 +161,7 @@ func (c *NetClient) Do(ctx context.Context, executionID string, req domain.HTTPR
 		// NetClient 自身の参照。ハンドルはリーダーがすべて閉じられるまで閉じない。
 		defer reqBody.release()
 		if reqBody.length == 0 {
-			// 空ファイルは従来どおり http.NoBody で送る (Content-Length: 0)。
+			// 空ファイルは http.NoBody で送る (Content-Length: 0)。
 			bodyReader = http.NoBody
 		} else {
 			firstBody, err = reqBody.newReader(&bodyErr)
@@ -215,8 +215,6 @@ func (c *NetClient) Do(ctx context.Context, executionID string, req domain.HTTPR
 	elapsed := time.Since(start).Milliseconds()
 
 	if err != nil {
-		// context 由来のタイムアウトは "context deadline exceeded" としか出ないため、
-		// ユーザーに意味の伝わる文言へ置き換える。
 		if terr := wrapTimeout(err, timeout); terr != nil {
 			return domain.HTTPResponse{}, terr
 		}
@@ -227,7 +225,7 @@ func (c *NetClient) Do(ctx context.Context, executionID string, req domain.HTTPR
 		}
 		return domain.HTTPResponse{}, fmt.Errorf("request failed: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // best-effort cleanup
+	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // 後始末。失敗は無視してよい
 
 	// 表示用の maxBody 分だけを先にメモリへ読む。ここに収まるのが大多数のリクエストで、
 	// その場合はテンポラリファイルを一切作らない。

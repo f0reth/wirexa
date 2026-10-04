@@ -10,7 +10,7 @@ import (
 )
 
 // JSONStore は JSON ファイルによる汎用永続化ストア。
-// T は保存するドメイン型、getID は T から一意な ID を取得する関数。
+// T は保存する永続化 DTO、getID は T から一意な ID を取得する関数。
 type JSONStore[T any] struct {
 	logger domain.Logger
 	getID  func(*T) string

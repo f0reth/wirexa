@@ -8,8 +8,7 @@ import (
 	"github.com/f0reth/Wirexa/internal/domain"
 )
 
-// WindowManager はウィンドウのサイズ・位置・最大化状態の復元と保存を担う。
-// Wails ランタイム呼び出しと window-state.json の永続化を仲介する。
+// WindowManager はウィンドウのサイズ・位置・最大化状態を復元し、保存する。
 type WindowManager struct {
 	ctx       context.Context
 	logger    domain.Logger
@@ -43,9 +42,8 @@ func (m *WindowManager) Restore() {
 }
 
 // clamp は画面外にウィンドウが出ないようサイズ・位置を補正する。
-// 注: Wails v2.12 の Screen はスクリーン原点を公開しないため、位置クランプは
-// プライマリスクリーン基準の best-effort となる (マルチモニタの負座標はプライマリ側へ寄る)。
-// 画面外化を保守的に防ぐことを優先する。
+// Wails v2 の Screen はスクリーン原点を公開しない。そのため位置のクランプは
+// プライマリスクリーン基準の best-effort になる (マルチモニタの負座標はプライマリ側へ寄る)。
 func (m *WindowManager) clamp(ws WindowState) WindowState {
 	screens, err := runtime.ScreenGetAll(m.ctx)
 	if err != nil || len(screens) == 0 {
@@ -94,8 +92,8 @@ func (m *WindowManager) clamp(ws WindowState) WindowState {
 	return ws
 }
 
-// Save は現在のウィンドウ状態を永続化する。ウィンドウが生存している
-// beforeClose 内から呼ぶ。最大化中は通常時バウンズ (winState) を維持する。
+// Save は現在のウィンドウ状態を永続化する。ウィンドウが生存している間に呼ぶ。
+// 最大化中は通常時バウンズ (winState) を維持する。
 func (m *WindowManager) Save() {
 	if m.ctx == nil || m.path == "" {
 		return
@@ -110,5 +108,5 @@ func (m *WindowManager) Save() {
 		}
 	}
 	m.winState.Maximised = maximised
-	_ = SaveWindowState(m.path, m.winState) //nolint:errcheck // best-effort persistence
+	_ = SaveWindowState(m.path, m.winState) //nolint:errcheck // 保存はベストエフォート。失敗しても終了を止めない
 }
