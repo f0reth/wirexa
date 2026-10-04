@@ -6,7 +6,11 @@ import {
   test,
 } from "../../fixtures/integration";
 import {
+  allowBrokerFilters,
+  denyBrokerFilter,
+  disconnectBrokerClients,
   mqttBrokerPort,
+  mqttUnusedPort,
   publishFromBroker,
 } from "../../fixtures/mqtt-broker";
 
@@ -33,8 +37,13 @@ async function switchBroker(app: App, name: string): Promise<void> {
   await row.press("Enter");
 }
 
+/** paho の自動再接続を待つ時間。切断の検知と張り直しを含む。 */
+const RECONNECT_TIMEOUT = 30_000;
+
 test.afterEach(async ({ page }) => {
   await disconnectMqttConnections(page);
+  // 購読の拒否はブローカーに残るので、次のテストに持ち越さない。
+  await allowBrokerFilters();
 });
 
 // ── 観点H・M: 接続と切断 ─────────────────────────────────────────────────────
@@ -91,6 +100,74 @@ test("Save & Connect saves the profile and connects to it", async ({
   expect(await mqttConnections(page)).toEqual([
     expect.objectContaining({ name, broker: BROKER_URL, connected: true }),
   ]);
+});
+
+// 接続の失敗は、Connect が接続 ID を返したあとで mqtt:connection-failed として届く。
+test("connecting to an unreachable broker shows a connection failed toast and leaves no connection", async ({
+  page,
+  app,
+}) => {
+  const name = "E2E MQTT Unreachable";
+  await app.createBrokerProfile(name, {
+    host: "127.0.0.1",
+    port: mqttUnusedPort,
+  });
+  await app.selectBroker(name);
+
+  await app.brokerConnectButton.click();
+
+  await expect(
+    page.getByRole("alert").filter({ hasText: "MQTT connection failed" }),
+  ).toBeVisible({ timeout: RECONNECT_TIMEOUT });
+  await expect(app.mqttStatus("Disconnected")).toBeVisible();
+  await expect(app.brokerConnectButton).toBeVisible();
+  await expect(app.broker(name).getByTitle("Disconnected")).toBeAttached();
+  // 失敗した接続はバックエンドに残らない。
+  await expect.poll(() => mqttConnections(page)).toEqual([]);
+});
+
+// 画面のスキームはどれも TLS で使えるので、この検証は画面からは通らない。バインディングを直接呼ぶ。
+test("Connect rejects a scheme that cannot be used with TLS", async ({
+  page,
+  app,
+}) => {
+  expect(
+    await app.mqttConnectError({
+      broker: `http://127.0.0.1:${mqttBrokerPort}`,
+      useTls: true,
+    }),
+  ).toContain("invalid broker URL: scheme cannot be used with TLS");
+  expect(await mqttConnections(page)).toEqual([]);
+});
+
+// バックエンドの接続と購読は、ページを読み直しても残る。
+test("reloading the page keeps the connection and still receives subscribed topics", async ({
+  page,
+  app,
+}) => {
+  const name = "E2E MQTT Reload";
+  await connectNewBroker(app, name);
+  await app.subscribeMqtt("e2e/reload/#");
+  const [before] = await mqttConnections(page);
+
+  await page.reload();
+
+  await expect(app.mqttStatus("Connected")).toBeVisible();
+  await expect(app.broker(name).getByTitle("Connected")).toBeAttached();
+  await expect(app.mqttSubscription("e2e/reload/#")).toBeVisible();
+  // 同じ接続を復元していて、張り直してはいない。
+  expect(await mqttConnections(page)).toEqual([
+    expect.objectContaining({
+      id: before.id,
+      connected: true,
+      subscriptions: [{ topic: "e2e/reload/#", qos: 0 }],
+    }),
+  ]);
+
+  await publishFromBroker("e2e/reload/temp", "after-reload");
+  await expect(app.mqttMessage("after-reload")).toContainText(
+    "e2e/reload/temp",
+  );
 });
 
 // ── 観点H・M: 購読と受信 ─────────────────────────────────────────────────────
@@ -153,6 +230,86 @@ test("subscribing to 'a/#/b' shows a validation error toast", async ({
   await app.subscribeMqtt("e2e/invalid/ok");
   const [conn] = await mqttConnections(page);
   expect(conn.subscriptions).toEqual([{ topic: "e2e/invalid/ok", qos: 0 }]);
+});
+
+test("publishing to a topic with a wildcard shows the backend error", async ({
+  page,
+  app,
+}) => {
+  await connectNewBroker(app, "E2E MQTT Wildcard Publish");
+  await app.subscribeMqtt("e2e/wildcard/#");
+
+  await page.getByRole("tab", { name: "Publish" }).click();
+  const form = app.mqttSection("Publish");
+  await form.getByPlaceholder("Topic", { exact: true }).fill("e2e/wildcard/#");
+  await form.getByPlaceholder("Message payload").fill("never-sent");
+  await form.getByRole("button", { name: "Publish", exact: true }).click();
+
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Failed to publish message" }),
+  ).toContainText("invalid topic: must not contain wildcards (+ or #)");
+  // 検証で弾いただけなので接続は保たれ、ブローカーには何も送られていない。
+  await expect(app.mqttStatus("Connected")).toBeVisible();
+  await page.getByRole("tab", { name: "Subscribe" }).click();
+  await publishFromBroker("e2e/wildcard/marker", "marker");
+  await expect(app.mqttMessage("marker")).toBeVisible();
+  await expect(app.mqttMessages).toHaveCount(1);
+});
+
+// 最初の配信は、購読と同時に届く retained か、publish の折り返しかを区別できない。張り直した
+// 接続の購読に届く 2 件目は、ブローカーが保持していた retained メッセージ。
+test("a retained publish is delivered to a later subscription", async ({
+  page,
+  app,
+}) => {
+  const topic = "e2e/retained/state";
+  const payload = "retained-by-app";
+  await connectNewBroker(app, "E2E MQTT Retained Publish");
+  try {
+    await page.getByRole("tab", { name: "Publish" }).click();
+    const form = app.mqttSection("Publish");
+    await form.getByPlaceholder("Topic", { exact: true }).fill(topic);
+    await form.getByPlaceholder("Message payload").fill(payload);
+    await app.chooseOption(form, "0", "QoS 1");
+    await form.getByRole("checkbox", { name: "Retain" }).check();
+    await form.getByRole("button", { name: "Publish", exact: true }).click();
+
+    await page.getByRole("tab", { name: "Subscribe" }).click();
+    await app.subscribeMqtt(topic);
+    await expect(app.mqttMessage(payload)).toHaveCount(1);
+
+    await app.brokerDisconnectButton.click();
+    await expect(app.brokerConnectButton).toBeVisible();
+    await app.brokerConnectButton.click();
+    await expect(app.mqttStatus("Connected")).toBeVisible();
+
+    await expect(app.mqttMessage(payload)).toHaveCount(2);
+    await expect(app.mqttMessage(payload).last()).toContainText(topic);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  } finally {
+    // retain 付きの空ペイロードで retained メッセージを消し、後のテストに残さない。
+    await publishFromBroker(topic, "", { retain: true });
+  }
+});
+
+// UTF-8 でないペイロードは base64 で届き、一覧にはサイズだけを出す。
+test("a binary message from the broker is listed by its size", async ({
+  page,
+  app,
+}) => {
+  await connectNewBroker(app, "E2E MQTT Binary");
+  await app.subscribeMqtt("e2e/binary/#");
+
+  await publishFromBroker(
+    "e2e/binary/data",
+    new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
+  );
+
+  const item = app.mqttMessages.filter({ hasText: "e2e/binary/data" });
+  await expect(item).toContainText("[binary 4 bytes]");
+  await item.click();
+  await expect(page.getByText("Binary content (4 bytes)")).toBeVisible();
+  await expect(page.getByText("00000000  de ad be ef")).toBeVisible();
 });
 
 // 手動の Disconnect → Connect は新しい接続を作り、残っている購読の行をその接続へ張り直す。
@@ -264,4 +421,95 @@ test("scanning lists broker topics and subscribes from the list", async ({
     // retain 付きの空ペイロードで retained メッセージを消し、後のスキャンに残さない。
     await publishFromBroker(topic, "", { retain: true });
   }
+});
+
+// ── 観点E・M: ブローカー側の障害 ─────────────────────────────────────────────
+// ブローカーがクライアントを切ると、Go は mqtt:connection-lost を出し、paho が自動で張り直す。
+// 再接続した接続には購読が残っていない (CleanSession) ので、Go が張り直す。
+
+test("a connection dropped by the broker shows the lost toast and recovers", async ({
+  page,
+  app,
+}) => {
+  const topic = "e2e/lost/retained";
+  const payload = "after-auto-reconnect";
+  await connectNewBroker(app, "E2E MQTT Lost");
+  await app.subscribeMqtt(topic);
+  const [before] = await mqttConnections(page);
+  try {
+    await disconnectBrokerClients();
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "MQTT connection lost" }),
+    ).toBeVisible();
+    await expect
+      .poll(async () => (await mqttConnections(page))[0]?.connected, {
+        timeout: RECONNECT_TIMEOUT,
+      })
+      .toBe(true);
+    await expect(app.mqttStatus("Connected")).toBeVisible();
+    // 同じ接続のまま張り直している。
+    expect((await mqttConnections(page))[0].id).toBe(before.id);
+    await expect(app.mqttSubscription(topic)).toBeVisible();
+
+    // 購読の張り直しの完了は画面から待てないので、retained で置く (張り直しが後でも届く)。
+    await publishFromBroker(topic, payload, { retain: true });
+    await expect(app.mqttMessage(payload).first()).toContainText(topic);
+  } finally {
+    await publishFromBroker(topic, "", { retain: true });
+  }
+});
+
+// スキャン用の接続は自動では張り直さないので、切れたらスキャンは止まる。
+test("a scan stopped by the broker returns to Scan with a toast", async ({
+  page,
+  app,
+}) => {
+  await connectNewBroker(app, "E2E MQTT Scan Stopped");
+  await app.mqttScanButton.click();
+  // Stop の表示は開始の完了を待たずに出る。開始中に切ると Go は mqtt:scan-stopped を出さず、
+  // 開始の失敗になるので、稼働するまで待つ。
+  await expect
+    .poll(async () => (await mqttConnections(page))[0]?.scanning)
+    .toBe(true);
+
+  await disconnectBrokerClients();
+
+  await expect(
+    page.getByRole("alert").filter({ hasText: "MQTT topic scan stopped" }),
+  ).toBeVisible();
+  await expect(app.mqttScanButton).toBeVisible();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Failed to start topic scan" }),
+  ).toHaveCount(0);
+  await expect
+    .poll(async () => (await mqttConnections(page))[0]?.scanning)
+    .toBe(false);
+});
+
+test("a subscription rejected on reconnect is removed and notified", async ({
+  page,
+  app,
+}) => {
+  const kept = "e2e/deny/kept";
+  const dropped = "e2e/deny/dropped";
+  await connectNewBroker(app, "E2E MQTT Denied Resubscribe");
+  await app.subscribeMqtt(kept);
+  await app.subscribeMqtt(dropped);
+
+  // 購読済みの購読は残る。次の張り直しから拒否される。
+  await denyBrokerFilter(dropped);
+  await disconnectBrokerClients();
+
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: `Subscription to ${dropped} was dropped` }),
+  ).toBeVisible({ timeout: RECONNECT_TIMEOUT });
+  await expect(app.mqttSubscription(dropped)).toHaveCount(0);
+  await expect(app.mqttSubscription(kept)).toBeVisible();
+  await expect(app.mqttStatus("Connected")).toBeVisible();
+  await expect
+    .poll(async () => (await mqttConnections(page))[0]?.subscriptions)
+    .toEqual([{ topic: kept, qos: 0 }]);
 });

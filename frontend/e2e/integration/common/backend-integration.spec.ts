@@ -177,6 +177,45 @@ test.describe("M-3: MQTT broker profile persistence", () => {
       shapeOf(readGolden("mqtt", "profile")),
     );
   });
+
+  test("editing and deleting a broker updates and removes its file", async ({
+    app,
+  }) => {
+    const name = "E2E Disk Edited Broker";
+    const renamed = "E2E Disk Renamed Broker";
+    type Stored = { id: string; name: string; broker: string };
+    const files = () =>
+      readStoredEntities<Stored>("mqtt-profiles").map((e) => e.file);
+    await app.createBrokerProfile(name);
+    await expect
+      .poll(() => findStored<Stored>("mqtt-profiles", name)?.data.name)
+      .toBe(name);
+    const created = storedEntity(findStored<Stored>("mqtt-profiles", name));
+    const filesBefore = files();
+
+    const dialog = await app.openBrokerEditDialog(name);
+    await dialog.getByLabel("Name", { exact: true }).fill(renamed);
+    await app.brokerHostInput(dialog).fill("edited.local");
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(dialog).toBeHidden();
+
+    // 同じファイルを書き換え、新しいファイルは作らない。
+    await expect
+      .poll(() => findStored<Stored>("mqtt-profiles", renamed)?.data)
+      .toMatchObject({ id: created.data.id, broker: "mqtt://edited.local:1883" });
+    expect(storedEntity(findStored<Stored>("mqtt-profiles", renamed)).file).toBe(
+      created.file,
+    );
+    expect(findStored<Stored>("mqtt-profiles", name)).toBeUndefined();
+    expect(files()).toEqual(filesBefore);
+
+    await (await app.brokerRowAction(renamed, "Delete broker")).click();
+    await app.confirmDelete();
+
+    await expect(app.broker(renamed)).toHaveCount(0);
+    await expect.poll(files).not.toContain(created.file);
+    expect(files()).toHaveLength(filesBefore.length - 1);
+  });
 });
 
 // ── 観点M-4: UDP ターゲットの永続化 ──────────────────────────────────────────
