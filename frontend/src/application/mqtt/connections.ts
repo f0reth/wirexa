@@ -48,6 +48,20 @@ export interface MqttConnectionApi {
   getConnections(): Promise<ConnectionStatus[]>;
 }
 
+/** タブを作る前に届いた接続状態のイベントが表す状態。オンラインのタブの connected・closed に当たる。 */
+interface EarlyConnectionState {
+  connected: boolean;
+  closed: boolean;
+}
+
+const EARLY_CONNECTED: EarlyConnectionState = {
+  connected: true,
+  closed: false,
+};
+// 自動再接続に任せるので、接続は生きたまま。
+const EARLY_LOST: EarlyConnectionState = { connected: false, closed: false };
+const EARLY_CLOSED: EarlyConnectionState = { connected: false, closed: true };
+
 export function createConnectionsState(
   api: MqttConnectionApi,
   onEvent: MqttEventListener,
@@ -111,6 +125,40 @@ export function createConnectionsState(
     });
   }
 
+  // Go は Connect の return の前に接続の goroutine を始めるので、接続状態のイベントが RPC の応答より
+  // 先に届きうる。起動時の GetConnections も、取得のあとに出たイベントが応答より先に届きうる。
+  // どちらもタブがまだ無いので、タブを作る RPC の実行中に届いた分だけ覚えておき、タブを作るときに反映する
+  // (購読の側は subscriptions.ts の pendingSubscribes で同じ順序の問題を扱っている)。
+  // 同じ接続 ID のイベントが続けて届いたら、最後のものが残る (確立して切れた接続を Connected にしない)。
+  const earlyStates = new Map<string, EarlyConnectionState>();
+  let tabRpcs = 0;
+
+  function rememberEarly(connId: string, state: EarlyConnectionState) {
+    if (tabRpcs === 0) return;
+    if (untrack(() => connections[connId])) return;
+    earlyStates.set(connId, state);
+  }
+
+  // タブを作る RPC を実行し、その結果で createTabs を呼ぶ。createTabs には RPC の実行中に届いていた
+  // 接続状態を渡す。通知はイベントの受信時に出しているので、createTabs では出さない。
+  async function withEarlyStates<T>(
+    rpc: () => Promise<T>,
+    createTabs: (
+      result: T,
+      early: ReadonlyMap<string, EarlyConnectionState>,
+    ) => void,
+  ): Promise<T> {
+    tabRpcs++;
+    try {
+      const result = await rpc();
+      createTabs(result, earlyStates);
+      return result;
+    } finally {
+      // 実行中の RPC が無くなったら捨てる (他で作られた接続やタブを閉じた後の接続の ID を持ち続けない)。
+      if (--tabRpcs === 0) earlyStates.clear();
+    }
+  }
+
   // Wails イベントリスナー登録 → onCleanup で解除
   const cancelMessage = onEvent(WailsEvents.mqttMessage, buffer.pushMessage);
 
@@ -129,6 +177,7 @@ export function createConnectionsState(
 
   const cancelConnected = onEvent(WailsEvents.mqttConnected, (data) => {
     const { connectionId } = data;
+    rememberEarly(connectionId, EARLY_CONNECTED);
     updateConnection(connectionId, (state) => {
       // 切断の直前に出た確立イベントが遅れて届いても、Connected に戻さない。
       if (state.type !== "online" || state.closed) return state;
@@ -137,6 +186,7 @@ export function createConnectionsState(
   });
 
   const cancelDisconnected = onEvent(WailsEvents.mqttDisconnected, (data) => {
+    rememberEarly(data.connectionId, EARLY_CLOSED);
     markOffline(data.connectionId, { closed: true });
   });
 
@@ -146,6 +196,7 @@ export function createConnectionsState(
       const { connectionId, error } = data;
       console.error("[MQTT] Connection lost:", error);
       notifier.error("MQTT connection lost", error, { key: connectionId });
+      rememberEarly(connectionId, EARLY_LOST);
       // paho が自動再接続するので、接続は生きたままにする。スキャンの状態も変えない。
       markOffline(connectionId, { closed: false });
     },
@@ -157,6 +208,7 @@ export function createConnectionsState(
       const { connectionId, error } = data;
       console.error("[MQTT] Connection failed:", error);
       notifier.error("MQTT connection failed", error, { key: connectionId });
+      rememberEarly(connectionId, EARLY_CLOSED);
       markOffline(connectionId, { closed: true });
     },
   );
@@ -184,12 +236,46 @@ export function createConnectionsState(
     if (restored) return;
     restored = true;
 
-    let live: ConnectionStatus[] = [];
-    try {
-      live = await api.getConnections();
-    } catch (err) {
-      logger.error("MQTT restore failed", { error: String(err) });
-    }
+    const ps = profiles();
+    const live = await withEarlyStates(
+      async (): Promise<ConnectionStatus[]> => {
+        try {
+          return await api.getConnections();
+        } catch (err) {
+          logger.error("MQTT restore failed", { error: String(err) });
+          return [];
+        }
+      },
+      (live, early) => {
+        const onlineProfileIds = new Set<string>();
+        setConnections(
+          produce((s) => {
+            for (const status of live) {
+              const profile =
+                ps.find((p) => p.id === status.profileId) ??
+                synthesizeProfile(status);
+              const st = makeOnlineState(status.id, profile);
+              // 応答を待つ間に届いた状態は取得より後のものなので、取得した値より優先する。
+              Object.assign(
+                st,
+                early.get(status.id) ?? { connected: status.connected },
+              );
+              // RPC の qos は number で届く。
+              st.subscriptions = status.subscriptions.map((s) =>
+                makeSubscription(s.topic, s.qos as Qos),
+              );
+              s[status.id] = st;
+              onlineProfileIds.add(profile.id);
+            }
+            for (const profile of ps) {
+              if (onlineProfileIds.has(profile.id)) continue;
+              const entry = makeOfflineState(profile);
+              s[entry.connectionId] = entry;
+            }
+          }),
+        );
+      },
+    );
 
     // スキャン中だった接続のスキャンは止め、スキャン中としては復元しない。Broker Topics の一覧は
     // フロントエンドだけが持つのでリロードで消え、スキャン用の接続が続いていても retained メッセージは
@@ -203,32 +289,6 @@ export function createConnectionsState(
         }),
       );
     }
-
-    const ps = profiles();
-    const onlineProfileIds = new Set<string>();
-
-    setConnections(
-      produce((s) => {
-        for (const status of live) {
-          const profile =
-            ps.find((p) => p.id === status.profileId) ??
-            synthesizeProfile(status);
-          const st = makeOnlineState(status.id, profile);
-          st.connected = status.connected;
-          // RPC の qos は number で届く。
-          st.subscriptions = status.subscriptions.map((s) =>
-            makeSubscription(s.topic, s.qos as Qos),
-          );
-          s[status.id] = st;
-          onlineProfileIds.add(profile.id);
-        }
-        for (const profile of ps) {
-          if (onlineProfileIds.has(profile.id)) continue;
-          const entry = makeOfflineState(profile);
-          s[entry.connectionId] = entry;
-        }
-      }),
-    );
 
     const savedProfileId = persistence.loadLastProfileId();
     if (savedProfileId) {
@@ -315,8 +375,15 @@ export function createConnectionsState(
       profile: profile.name,
     });
     try {
-      const connId = await api.connect(profile);
-      replaceProfileTab(profile.id, makeOnlineState(connId, profile));
+      const connId = await withEarlyStates(
+        () => api.connect(profile),
+        (connId, early) => {
+          replaceProfileTab(profile.id, {
+            ...makeOnlineState(connId, profile),
+            ...early.get(connId),
+          });
+        },
+      );
       setActiveConnectionId(connId);
       logger.info("MQTT connect initiated", {
         connection_id: connId,
@@ -378,21 +445,26 @@ export function createConnectionsState(
       }
     }
     try {
-      const newConnId = await api.connect(profile);
-      setConnections(
-        produce((s) => {
-          delete s[connectionId];
-          s[newConnId] = {
-            ...conn,
-            type: "online" as const,
-            connectionId: newConnId,
-            profile,
-            connected: false,
-            closed: false,
-            // スキャンは前の接続と一緒に止まっている。
-            isScanning: false,
-          };
-        }),
+      const newConnId = await withEarlyStates(
+        () => api.connect(profile),
+        (newConnId, early) => {
+          setConnections(
+            produce((s) => {
+              delete s[connectionId];
+              s[newConnId] = {
+                ...conn,
+                type: "online" as const,
+                connectionId: newConnId,
+                profile,
+                connected: false,
+                closed: false,
+                ...early.get(newConnId),
+                // スキャンは前の接続と一緒に止まっている。
+                isScanning: false,
+              };
+            }),
+          );
+        },
       );
       if (activeConnectionId() === connectionId) {
         setActiveConnectionId(newConnId);

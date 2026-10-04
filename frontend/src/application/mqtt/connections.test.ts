@@ -1251,6 +1251,172 @@ describe("createConnectionsState connect in flight", () => {
   });
 });
 
+// Go は Connect の return の前に接続を始めるので、接続状態のイベントが RPC の応答より先に届きうる。
+describe("createConnectionsState events before the tab exists", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** connect の応答を待っている状態にする。 */
+  async function connectInFlight(
+    run: (h: ReturnType<typeof harness>) => Promise<void>,
+  ) {
+    const h = harness();
+    await h.state.restore();
+    const connect = deferred<string>();
+    h.api.connect = vi.fn(() => connect.promise);
+    const running = run(h);
+    const respond = async () => {
+      connect.resolve("new-id");
+      await running;
+    };
+    return { h, respond };
+  }
+
+  const operations = [
+    [
+      "handleReconnect",
+      (h: ReturnType<typeof harness>) => h.state.handleReconnect("offline-p1"),
+    ],
+    [
+      "handleConnect",
+      (h: ReturnType<typeof harness>) => h.state.handleConnect("p1"),
+    ],
+  ] as const;
+
+  it.each(
+    operations,
+  )("marks the tab connected when mqtt:connected arrives before the %s response", async (_, run) => {
+    const { h, respond } = await connectInFlight(run);
+
+    h.events.emit(WailsEvents.mqttConnected, { connectionId: "new-id" });
+    await respond();
+
+    expect(h.state.connections["new-id"]).toMatchObject({
+      type: "online",
+      connected: true,
+      closed: false,
+    });
+    h.dispose();
+  });
+
+  it.each(
+    operations,
+  )("leaves the tab closed when mqtt:connection-failed arrives before the %s response", async (_, run) => {
+    const { h, respond } = await connectInFlight(run);
+
+    h.events.emit(WailsEvents.mqttConnectionFailed, {
+      connectionId: "new-id",
+      error: "refused",
+    });
+    await respond();
+
+    expect(h.state.connections["new-id"]).toMatchObject({
+      type: "online",
+      connected: false,
+      closed: true,
+    });
+    // 通知はイベントの受信時の 1 回だけ。
+    expect(h.notifier.error).toHaveBeenCalledTimes(1);
+    expect(h.notifier.error).toHaveBeenCalledWith(
+      "MQTT connection failed",
+      "refused",
+      { key: "new-id" },
+    );
+    h.dispose();
+  });
+
+  // 最後のイベントが残る。mqtt:connected だけを覚えると、応答の前に切れた接続を Connected と表示する。
+  it("leaves the tab disconnected when the connection is lost before the response", async () => {
+    const { h, respond } = await connectInFlight(operations[0][1]);
+
+    h.events.emit(WailsEvents.mqttConnected, { connectionId: "new-id" });
+    h.events.emit(WailsEvents.mqttConnectionLost, {
+      connectionId: "new-id",
+      error: "EOF",
+    });
+    await respond();
+
+    // 自動再接続に任せるので、接続は生きたまま。
+    expect(h.state.connections["new-id"]).toMatchObject({
+      connected: false,
+      closed: false,
+    });
+    h.dispose();
+  });
+
+  /** getConnections の応答を待っている状態にする。 */
+  function restoreInFlight(status: ConnectionStatus) {
+    const h = harness();
+    const getConnections = deferred<ConnectionStatus[]>();
+    h.api.getConnections = vi.fn(() => getConnections.promise);
+    const restoring = h.state.restore();
+    const respond = async () => {
+      getConnections.resolve([status]);
+      await restoring;
+    };
+    return { h, respond };
+  }
+
+  it("prefers mqtt:connected over a pending status fetched by restore", async () => {
+    const { h, respond } = restoreInFlight(liveStatus("c1", "p1", [], false));
+
+    h.events.emit(WailsEvents.mqttConnected, { connectionId: "c1" });
+    await respond();
+
+    expect(h.state.connections.c1).toMatchObject({ connected: true });
+    h.dispose();
+  });
+
+  it("prefers mqtt:connection-lost over a connected status fetched by restore", async () => {
+    const { h, respond } = restoreInFlight(liveStatus("c1", "p1", ["a"]));
+
+    h.events.emit(WailsEvents.mqttConnectionLost, {
+      connectionId: "c1",
+      error: "EOF",
+    });
+    await respond();
+
+    expect(h.state.connections.c1).toMatchObject({
+      connected: false,
+      closed: false,
+    });
+    expect(h.state.connections.c1.subscriptions.map((s) => s.topic)).toEqual([
+      "a",
+    ]);
+    h.dispose();
+  });
+
+  it("does not remember events that arrive while no tab is being created", async () => {
+    const h = harness();
+    await h.state.restore();
+
+    // 他で作られた接続やタブを閉じた後の接続のイベント。
+    h.events.emit(WailsEvents.mqttConnected, { connectionId: "new-id" });
+    await h.state.handleReconnect("offline-p1");
+
+    expect(h.state.connections["new-id"]).toMatchObject({ connected: false });
+    h.dispose();
+  });
+
+  it("forgets remembered events once the response has arrived", async () => {
+    const { h, respond } = await connectInFlight(operations[0][1]);
+    // 応答で作られるタブとは別の接続のイベント。
+    h.events.emit(WailsEvents.mqttConnected, { connectionId: "other" });
+    await respond();
+    h.api.connect = vi.fn(async () => "other");
+
+    await h.state.handleReconnect("new-id");
+
+    expect(h.state.connections.other).toMatchObject({ connected: false });
+    h.dispose();
+  });
+});
+
 describe("createConnectionsState tabs and profiles", () => {
   it("replaces existing tabs of the same profile", async () => {
     const h = harness({
