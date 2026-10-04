@@ -548,7 +548,7 @@ func TestHTTP_MoveItem(t *testing.T) {
 	}
 
 	// col1 → col2 へ移動
-	if err := h.MoveItem(col1.ID, item.ID, col2.ID, "", -1); err != nil {
+	if err := h.MoveItem(col1.ID, item.ID, col2.ID, "", cmndomain.PositionEnd); err != nil {
 		t.Fatalf("MoveItem: %v", err)
 	}
 
@@ -1864,7 +1864,7 @@ func TestHTTP_MoveItem_ReorderAndIntoFolder(t *testing.T) {
 	}
 	assertShapes("after reorder", map[string]string{src.ID: "r2 r1 r3 F[fc SF[]]", dst.ID: ""})
 
-	if err = h.MoveItem(src.ID, r3, src.ID, folder.ID, -1); err != nil {
+	if err = h.MoveItem(src.ID, r3, src.ID, folder.ID, cmndomain.PositionEnd); err != nil {
 		t.Fatalf("MoveItem (into folder): %v", err)
 	}
 	assertShapes("after moving into the folder", map[string]string{src.ID: "r2 r1 F[fc SF[] r3]", dst.ID: ""})
@@ -1888,7 +1888,7 @@ func TestHTTP_MoveItem_ReorderAndIntoFolder(t *testing.T) {
 	}
 
 	// 子を持つフォルダをコレクションごと移す。
-	if err := h.MoveItem(src.ID, folder.ID, dst.ID, "", -1); err != nil {
+	if err := h.MoveItem(src.ID, folder.ID, dst.ID, "", cmndomain.PositionEnd); err != nil {
 		t.Fatalf("MoveItem (across collections): %v", err)
 	}
 	want := map[string]string{src.ID: "r2 r1", dst.ID: "F[fc SF[] r3]"}
@@ -2150,7 +2150,7 @@ func TestHTTP_MoveItem_ThroughRootCollection(t *testing.T) {
 		t.Errorf("MoveSidebarEntry(__root__): want NotFoundError, got %v", err)
 	}
 
-	if err = h.MoveItem(col.ID, item.ID, httpdomain.RootCollectionID, "", -1); err != nil {
+	if err = h.MoveItem(col.ID, item.ID, httpdomain.RootCollectionID, "", cmndomain.PositionEnd); err != nil {
 		t.Fatalf("MoveItem into __root__: %v", err)
 	}
 	if items := h.GetRootItems(); len(items) != 1 || items[0].ID != item.ID {
@@ -2171,7 +2171,7 @@ func TestHTTP_MoveItem_ThroughRootCollection(t *testing.T) {
 		t.Errorf("MoveItem should not write the layout (the entry comes from reconciliation):\n%s", raw)
 	}
 
-	if err = h.MoveItem(httpdomain.RootCollectionID, item.ID, col.ID, "", -1); err != nil {
+	if err = h.MoveItem(httpdomain.RootCollectionID, item.ID, col.ID, "", cmndomain.PositionEnd); err != nil {
 		t.Fatalf("MoveItem out of __root__: %v", err)
 	}
 	layout, err = h.GetSidebarLayout()

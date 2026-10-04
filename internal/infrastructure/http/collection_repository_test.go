@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	httpapp "github.com/f0reth/Wirexa/internal/application/http"
+	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 	"github.com/f0reth/Wirexa/internal/testutil"
 )
@@ -321,7 +322,7 @@ func TestCollectionRepository_NoSavePathPersistsTokens(t *testing.T) {
 		{name: "UpdateRequest", run: func() error { return svc.UpdateRequest(col.ID, withToken(r1)) }},
 		{name: "RenameItem", run: func() error { return svc.RenameItem(col.ID, r1, "renamed") }},
 		{name: "RenameCollection", run: func() error { return svc.RenameCollection(col.ID, "A2") }},
-		{name: "MoveItem", run: func() error { return svc.MoveItem(col.ID, r1, other.ID, "", -1) }},
+		{name: "MoveItem", run: func() error { return svc.MoveItem(col.ID, r1, other.ID, "", cmn.PositionEnd) }},
 		{name: "MoveItemToSidebar", run: func() error { return svc.MoveItemToSidebar(other.ID, r1, 0) }},
 	}
 	for _, step := range steps {

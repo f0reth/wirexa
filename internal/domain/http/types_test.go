@@ -1,6 +1,10 @@
 package httpdomain
 
-import "testing"
+import (
+	"testing"
+
+	cmn "github.com/f0reth/Wirexa/internal/domain"
+)
 
 // buildTree はテスト用のコレクションを組み立てる。
 //
@@ -254,7 +258,7 @@ func TestCollection_InsertItem_ParentNotFound(t *testing.T) {
 func TestCollection_InsertItem_NegativePosition_AppendsToEnd(t *testing.T) {
 	col := buildTree()
 	newItem := &TreeItem{Type: ItemTypeRequest, ID: "ins5", Name: "Ins5", Children: []*TreeItem{}}
-	ok := col.InsertItem("", newItem, -1)
+	ok := col.InsertItem("", newItem, cmn.PositionEnd)
 	if !ok {
 		t.Fatal("expected InsertItem to return true")
 	}

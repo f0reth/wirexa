@@ -1,4 +1,5 @@
 import { onCleanup, onMount } from "solid-js";
+import { APPEND_POSITION } from "../../../application/http/collections";
 import {
   type DragItem,
   dragItem,
@@ -17,6 +18,10 @@ import {
   TREE_ITEM_INDEX_ATTR,
   TREE_ITEM_PARENT_ID_ATTR,
 } from "./tree-item-node";
+
+// NO_POSITION は要素に DROP_POSITION_ATTR が無い (ドロップ先ではない) ことを表す。
+// 値は同じ -1 でも、末尾追加の APPEND_POSITION とは別の意味。
+const NO_POSITION = -1;
 
 // TreeDragDropDeps はドロップ確定時に呼ぶコレクション操作コールバック。
 export interface TreeDragDropDeps {
@@ -52,15 +57,15 @@ export function useTreeDragDrop(deps: TreeDragDropDeps): void {
             kind: "item",
             collectionId,
             parentId: "",
-            position: -1,
+            position: APPEND_POSITION,
           });
           return;
         }
         const position = parseInt(
-          zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
+          zone.getAttribute(DROP_POSITION_ATTR) ?? String(NO_POSITION),
           10,
         );
-        if (position === -1) {
+        if (position === NO_POSITION) {
           setDropTarget(null);
           return;
         }
@@ -108,13 +113,19 @@ export function useTreeDragDrop(deps: TreeDragDropDeps): void {
           if (zoneKind === "collection-header" && di.kind === "item") {
             const collectionId =
               zone.getAttribute(DROP_COLLECTION_ID_ATTR) ?? "";
-            deps.onMoveItem(di.collectionId, di.itemId, collectionId, "", -1);
+            deps.onMoveItem(
+              di.collectionId,
+              di.itemId,
+              collectionId,
+              "",
+              APPEND_POSITION,
+            );
           } else {
             const position = parseInt(
-              zone.getAttribute(DROP_POSITION_ATTR) ?? "-1",
+              zone.getAttribute(DROP_POSITION_ATTR) ?? String(NO_POSITION),
               10,
             );
-            if (position !== -1) {
+            if (position !== NO_POSITION) {
               if (zoneKind === "sidebar") {
                 deps.onDropToSidebar(di, position);
               } else if (zoneKind === "item" && di.kind === "item") {

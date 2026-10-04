@@ -62,7 +62,7 @@ type HTTPCollectionItemUseCase interface {
 	// MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。
 	// targetParentID が空の場合はターゲットコレクションルートへ移動する。
 	// position は移動前の配列に対する挿入先インデックス（UI の挿入ゾーンの位置）。
-	// 負または範囲外の場合は末尾に追加する。
+	// 負 (domain.PositionEnd) または範囲外の場合は末尾に追加する。
 	MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error
 }
 
@@ -287,7 +287,8 @@ func (h *HTTPHandler) DeleteItem(collectionID, itemID string) error {
 
 // MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。
 // targetParentID が空文字の場合はターゲットコレクションルートへ移動する。
-// position は移動前の配列に対する挿入先インデックス。負または範囲外の場合は末尾に追加する。
+// position は移動前の配列に対する挿入先インデックス。
+// 負 (domain.PositionEnd) または範囲外の場合は末尾に追加する。
 func (h *HTTPHandler) MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error {
 	return h.itemSvc.MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID, position)
 }

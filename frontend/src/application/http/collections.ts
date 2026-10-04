@@ -44,6 +44,12 @@ export function findRequestById(
   return walk(collection.items);
 }
 
+/**
+ * moveItem の position に渡すと、移動先の末尾に追加する。
+ * Go 側の domain.PositionEnd (internal/domain/slices.go) と同じ値にする。
+ */
+export const APPEND_POSITION = -1;
+
 export interface CollectionsApi {
   getCollections(): Promise<Collection[]>;
   getRootItems(): Promise<TreeItem[]>;

@@ -402,7 +402,7 @@ func (s *CollectionService) RenameItem(collectionID, itemID, name string) error 
 // MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。
 // position は移動前の配列に対する挿入先インデックス（UI の挿入ゾーンの位置）。
 // 同一の親の中で後方へ移すときは、取り除いたぶんをここで補正する。
-// 負または範囲外の場合は末尾に追加する。
+// 負 (cmn.PositionEnd) または範囲外の場合は末尾に追加する。
 func (s *CollectionService) MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

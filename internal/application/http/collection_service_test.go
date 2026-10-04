@@ -1582,7 +1582,7 @@ func TestCollectionService_MoveItemToSidebar_NegativePosition_AppendsToEnd(t *te
 	col := mustCreate(t, svc, "Col")
 	r1 := mustAddRequest(t, svc, col.ID, "", "R1")
 
-	if err := svc.MoveItemToSidebar(col.ID, r1, -1); err != nil {
+	if err := svc.MoveItemToSidebar(col.ID, r1, cmn.PositionEnd); err != nil {
 		t.Fatalf("MoveItemToSidebar: %v", err)
 	}
 	layout, _ := svc.GetSidebarLayout()
@@ -1597,7 +1597,7 @@ func TestCollectionService_MoveItemToSidebar_NegativePosition_AppendsToEnd(t *te
 func TestCollectionService_MoveSidebarEntry_OutOfBoundsPosition_AppendsToEnd(t *testing.T) {
 	svc, _ := newSvcWithOrderedLayout(t, "c1", "c2", "c3")
 	// position < 0 → 末尾追加
-	if err := svc.MoveSidebarEntry(sidebarKindCollection, "c1", -1); err != nil {
+	if err := svc.MoveSidebarEntry(sidebarKindCollection, "c1", cmn.PositionEnd); err != nil {
 		t.Fatalf("MoveSidebarEntry: %v", err)
 	}
 	layout, _ := svc.GetSidebarLayout()
@@ -1788,7 +1788,7 @@ func TestCollectionService_MoveItem_SourceSaveError_RollsBackTarget(t *testing.T
 	r1 := mustAddRequest(t, svc, src.ID, "", "R1")
 	repo.failSaveAlways(src.ID)
 
-	if err := svc.MoveItem(src.ID, r1, dst.ID, "", -1); err == nil {
+	if err := svc.MoveItem(src.ID, r1, dst.ID, "", cmn.PositionEnd); err == nil {
 		t.Fatal("expected error from repo.Save, got nil")
 	}
 	// キャッシュは操作前のまま。
@@ -1864,7 +1864,7 @@ func TestCollectionService_MoveItem_AcrossCollections_WritesTargetFirst(t *testi
 	dst := mustCreate(t, svc, "Dst")
 	r1 := mustAddRequest(t, svc, src.ID, "", "R1")
 
-	if err := svc.MoveItem(src.ID, r1, dst.ID, "", -1); err != nil {
+	if err := svc.MoveItem(src.ID, r1, dst.ID, "", cmn.PositionEnd); err != nil {
 		t.Fatalf("MoveItem: %v", err)
 	}
 	// クラッシュ時の残骸が喪失ではなく重複になることの根拠なので順序を直接固定する。
@@ -1903,7 +1903,7 @@ func TestCollectionService_MoveItem_RollbackFailure_ReturnsOriginalErrorAndLogs(
 	repo.failSaveAlways(src.ID)
 	logger.errors = 0
 
-	err := svc.MoveItem(src.ID, r1, dst.ID, "", -1)
+	err := svc.MoveItem(src.ID, r1, dst.ID, "", cmn.PositionEnd)
 	if !errors.Is(err, errFakeSave) {
 		t.Fatalf("MoveItem error = %v, want the original save error", err)
 	}
@@ -2181,7 +2181,7 @@ func TestCollectionService_ConcurrentMarshalAndUpdate(t *testing.T) {
 			if i%2 == 0 {
 				parentID = rootFolder.ID
 			}
-			if err := svc.MoveItem(domain.RootCollectionID, r2, domain.RootCollectionID, parentID, -1); err != nil {
+			if err := svc.MoveItem(domain.RootCollectionID, r2, domain.RootCollectionID, parentID, cmn.PositionEnd); err != nil {
 				t.Errorf("MoveItem: %v", err)
 			}
 		}
