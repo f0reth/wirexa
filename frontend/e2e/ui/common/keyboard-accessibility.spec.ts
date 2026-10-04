@@ -72,6 +72,39 @@ test("Escape closes the confirm dialog without deleting", async ({
   expect(await fake.calls("DeleteCollection")).toBe(0);
 });
 
+test("Escape and a backdrop click close the broker dialog without saving", async ({
+  page,
+  app,
+  fake,
+}) => {
+  const dialog = app.brokerDialog("New Profile");
+  const open = async () => {
+    await page.getByRole("button", { name: "New Broker" }).click();
+    await dialog.getByLabel("Name", { exact: true }).fill("Not Saved");
+  };
+
+  await open();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+
+  // ダイアログの外側 (背景の端) をクリックする。
+  await open();
+  await page
+    .getByRole("button", { name: "Close dialog" })
+    .click({ position: { x: 5, y: 5 } });
+  await expect(dialog).toBeHidden();
+
+  // ダイアログの中のクリックでは閉じない。
+  await open();
+  await dialog.getByRole("heading", { name: "New Profile" }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+
+  await expect(app.broker("Not Saved")).toHaveCount(0);
+  expect(await fake.calls("SaveProfile")).toBe(0);
+});
+
 test("Tab cycles focus inside the broker dialog", async ({ page }) => {
   await page.getByRole("button", { name: "New Broker" }).click();
   const dialog = page.getByRole("dialog");
@@ -223,5 +256,47 @@ test.describe("udp tabs", () => {
         .getByRole("tabpanel", { name: "Listen", exact: true })
         .getByRole("button", { name: "Start", exact: true }),
     ).toBeVisible();
+  });
+});
+
+test.describe("mqtt tabs", () => {
+  test.use({
+    seed: { mqttProfiles: [{ id: "profile-tabs", name: "Tabs Broker" }] },
+  });
+
+  test("mqtt subscribe and publish are exposed as tabs with named panels", async ({
+    page,
+    app,
+  }) => {
+    await app.selectBroker("Tabs Broker");
+    const panel = page.getByTestId("mqtt-panel");
+    const subscribeTab = panel.getByRole("tab", { name: "Subscribe" });
+    const publishTab = panel.getByRole("tab", { name: "Publish" });
+
+    // 表示中のパネルは、自分のタブの名前で引ける。
+    await expect(subscribeTab).toHaveAttribute("aria-selected", "true");
+    await expect(panel.getByRole("tabpanel")).toHaveAccessibleName("Subscribe");
+    await expect(
+      panel
+        .getByRole("tabpanel", { name: "Subscribe", exact: true })
+        .getByRole("heading", { name: "Subscriptions" }),
+    ).toBeVisible();
+
+    await publishTab.click();
+    await expect(publishTab).toHaveAttribute("aria-selected", "true");
+    await expect(subscribeTab).toHaveAttribute("aria-selected", "false");
+    await expect(panel.getByRole("tabpanel")).toHaveAccessibleName("Publish");
+    // Publish タブと送信ボタンは同名だが、role で区別できる。
+    await expect(
+      panel
+        .getByRole("tabpanel", { name: "Publish", exact: true })
+        .getByRole("button", { name: "Publish", exact: true }),
+    ).toBeVisible();
+
+    const ids = await panel
+      .locator("[id]")
+      .evaluateAll((els) => els.map((el) => el.id));
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
   });
 });

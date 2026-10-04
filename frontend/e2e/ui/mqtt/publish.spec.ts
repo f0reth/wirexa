@@ -175,3 +175,147 @@ test("Enter on a focused preset selects it", async ({ app }) => {
   await expect(presetA.getByRole("textbox")).toBeVisible();
   await expect(app.mqttPreset("sensors/b").getByRole("textbox")).toHaveCount(0);
 });
+
+test("Escape while renaming a preset restores its name", async ({
+  page,
+  app,
+}) => {
+  const { topic } = publishForm(app);
+  await topic.fill("sensors/a");
+  await renameSelectedPreset(app, "sensors/a", "Preset A");
+  const presetA = app.mqttPreset("sensors/a");
+  const input = presetA.getByRole("textbox");
+  const storedNames = async () =>
+    ((await storedPresets(page)) as Array<{ name: string }>).map((p) => p.name);
+
+  // Escape は入力を捨てる。
+  await input.fill("Discarded");
+  await input.press("Escape");
+  await expect(input).not.toBeFocused();
+  await expect(input).toHaveValue("Preset A");
+  expect(await storedNames()).toEqual(["Preset A"]);
+
+  // フォーカスした行は Space でも選べる。
+  await app.addMqttPresetButton.click();
+  await expect(app.mqttPresets).toHaveCount(2);
+  await expect(topic).toHaveValue("");
+  await presetA.focus();
+  await presetA.press("Space");
+  await expect(topic).toHaveValue("sensors/a");
+  await expect(input).toHaveValue("Preset A");
+
+  // 空の名前では確定しない。選択を外すと、元の名前で表示される。
+  await input.fill("");
+  await input.press("Enter");
+  await expect(input).not.toBeFocused();
+  expect(await storedNames()).toEqual(["Preset A", "no name"]);
+  await app.mqttPresets.filter({ hasNotText: "sensors/a" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(presetA).toContainText("Preset A");
+});
+
+// ── 観点H: 選択中のプリセットの削除 ──────────────────────────────────────────
+
+test("form edits after deleting the selected preset are not written to another preset", async ({
+  page,
+  app,
+}) => {
+  const { topic, payload } = publishForm(app);
+  await topic.fill("sensors/a");
+  await payload.fill("payload-a");
+  await renameSelectedPreset(app, "sensors/a", "Preset A");
+  await app.addMqttPresetButton.click();
+  await topic.fill("sensors/b");
+  await expect(app.mqttPresets).toHaveCount(2);
+  const kept = [
+    expect.objectContaining({
+      name: "Preset A",
+      topic: "sensors/a",
+      payload: "payload-a",
+    }),
+  ];
+
+  // 選択中のプリセットを消す。
+  await app.deleteMqttPresetButton("sensors/b").click();
+  await expect(app.mqttPresets).toHaveCount(1);
+  expect(await storedPresets(page)).toEqual(kept);
+
+  // どのプリセットも選ばれていないので、フォームの入力はどこにも書き戻さない。
+  await topic.fill("sensors/edited");
+  await payload.fill("payload-edited");
+
+  await expect(app.mqttPreset("sensors/a")).toContainText("Preset A");
+  await expect(app.mqttPreset("sensors/edited")).toHaveCount(0);
+  expect(await storedPresets(page)).toEqual(kept);
+});
+
+// ── 観点F: 壊れた保存値 ──────────────────────────────────────────────────────
+// localStorage の値は形を確かめて読み、読めない値は既定値として扱う (local-storage.ts)。
+
+test.describe("malformed localStorage", () => {
+  const VALID = {
+    id: "preset-valid",
+    name: "Valid Preset",
+    topic: "sensors/valid",
+    payload: "ok",
+    qos: 1,
+    retain: true,
+  };
+
+  /** 保存値を raw (JSON にしない文字列) で書いて読み込み直す。 */
+  async function reloadWithStorage(
+    page: Page,
+    values: Record<string, string>,
+  ): Promise<void> {
+    await page.evaluate((entries) => {
+      for (const [key, value] of entries) localStorage.setItem(key, value);
+    }, Object.entries(values));
+    await page.reload();
+  }
+
+  test("malformed mqtt values in localStorage fall back to defaults", async ({
+    page,
+    app,
+    pageErrors,
+  }) => {
+    // 配列の中の形の違う要素だけを捨て、読めるプリセットは残す。
+    await reloadWithStorage(page, {
+      "mqtt:presets": JSON.stringify([
+        { ...VALID, id: "preset-bad-qos", qos: 3 },
+        VALID,
+        "not-a-preset",
+        null,
+        { id: "preset-no-topic", name: "No Topic", payload: "", qos: 0 },
+      ]),
+      "mqtt:profileOrder": JSON.stringify({ not: "an array" }),
+      "mqtt:lastActiveProfileId": JSON.stringify({ not: "a string" }),
+    });
+
+    // 最後に選んだブローカーは読めないので、どれも選ばれない。一覧は出る。
+    await expect(app.broker(BROKER.name)).toBeVisible();
+    await expect(app.brokerConnectButton).toBeHidden();
+    await app.selectBroker(BROKER.name);
+    await page.getByRole("tab", { name: "Publish" }).click();
+    await expect(app.mqttPresets).toHaveText([/Valid Preset.*sensors\/valid/]);
+    await expect(app.mqttPreset("sensors/valid")).toContainText("QoS 1");
+    await expect(app.mqttPreset("sensors/valid")).toContainText("Retained");
+
+    // 配列でない値と、JSON として読めない値は空の一覧として扱う。
+    for (const raw of [JSON.stringify({ not: "an array" }), "not-json{"]) {
+      await reloadWithStorage(page, {
+        "mqtt:presets": raw,
+        "mqtt:profileOrder": "not-json{",
+        "mqtt:lastActiveProfileId": "not-json{",
+      });
+      await expect(app.broker(BROKER.name)).toBeVisible();
+      await app.selectBroker(BROKER.name);
+      await page.getByRole("tab", { name: "Publish" }).click();
+      // 空のときは、初回起動と同じく既定のプリセットを 1 件作る。
+      await expect(app.mqttPresets).toHaveCount(1);
+      await expect(app.mqttPresets.getByRole("textbox")).toHaveValue("no name");
+    }
+
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect(pageErrors).toEqual([]);
+  });
+});

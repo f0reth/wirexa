@@ -125,6 +125,33 @@ test("subscribing to an invalid filter shows the backend error", async ({
     page.getByRole("alert").filter({ hasText: "Failed to subscribe to a/#/b" }),
   ).toContainText("invalid topic: # must occupy the last level entirely");
   await expect(panel.getByText("No subscriptions")).toBeVisible();
+
+  await app.mqttTopicInput.fill("a+/b");
+  await app.mqttSubscribeButton.click();
+
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Failed to subscribe to a+/b" }),
+  ).toContainText("invalid topic: + must occupy an entire level");
+  await expect(panel.getByText("No subscriptions")).toBeVisible();
+  // 失敗した入力は消さない。
+  await expect(app.mqttTopicInput).toHaveValue("a+/b");
+});
+
+// ── 観点G: Enter での購読 ────────────────────────────────────────────────────
+
+test("Enter in the topic field subscribes", async ({
+  app,
+  fake,
+  connectionId,
+}) => {
+  await app.mqttTopicInput.fill("sensors/temp");
+  await app.mqttTopicInput.press("Enter");
+
+  await expect(app.mqttSubscription("sensors/temp")).toContainText("QoS 0");
+  await expect(app.mqttTopicInput).toHaveValue("");
+  expect(await fake.args("Subscribe")).toEqual([
+    [connectionId, "sensors/temp", 0],
+  ]);
 });
 
 test("subscribing to an already subscribed topic sends nothing and clears the field", async ({
@@ -292,6 +319,16 @@ test("shared subscription shows its messages", async ({
     "sensors/temp",
   );
   await expect(app.mqttMessage("not-subscribed")).toHaveCount(0);
+
+  // $queue/ も共有購読の接頭辞 (グループ名を持たない)。
+  await app.subscribeMqtt("$queue/alerts/#");
+  await fake.emitAll(WailsEvents.mqttMessage, [
+    message(connectionId, "other/topic", "still-not-subscribed"),
+    message(connectionId, "alerts/fire", "queued-alert"),
+  ]);
+
+  await expect(app.mqttMessage("queued-alert")).toContainText("alerts/fire");
+  await expect(app.mqttMessage("still-not-subscribed")).toHaveCount(0);
 });
 
 // 張り直しでバックエンドが外した購読 (mqtt:subscription-dropped) は、行が消えて通知が出る。
@@ -816,4 +853,227 @@ test("a lost connection shows one toast and returns to Connected when the backen
   await expect(app.mqttStatus("Connected")).toBeVisible();
   await expect(app.mqttSubscribeButton).toBeEnabled();
   await expect(app.mqttSubscription("sensors/#")).toBeVisible();
+});
+
+// ── 観点H: 詳細と絞り込みの後始末 ────────────────────────────────────────────
+
+test("removing the filtered subscription resets the topic filter", async ({
+  page,
+  app,
+  fake,
+  connectionId,
+}) => {
+  await app.subscribeMqtt("sensors/#");
+  await app.subscribeMqtt("alerts/#");
+  await fake.emitAll(WailsEvents.mqttMessage, [
+    message(connectionId, "sensors/temp", "t-1"),
+    message(connectionId, "alerts/fire", "a-1"),
+  ]);
+  const placeholder = page.getByText("Select a message to view details");
+  await app.mqttMessage("t-1").click();
+  await expect(placeholder).toBeHidden();
+
+  // Clear は選択も外す。
+  await app.mqttMessagesAction("Clear").click();
+  await expect(app.mqttMessages).toHaveCount(0);
+  await expect(placeholder).toBeVisible();
+
+  await fake.emitAll(WailsEvents.mqttMessage, [
+    message(connectionId, "sensors/temp", "t-2"),
+    message(connectionId, "alerts/fire", "a-2"),
+  ]);
+  const filter = page.getByRole("combobox", { name: "Filter by topic" });
+  await filter.selectOption("sensors/#");
+  await expect(app.mqttMessage("t-2")).toBeVisible();
+  await expect(app.mqttMessage("a-2")).toBeHidden();
+
+  // 絞り込みに使っている購読を外すと、選択肢から消えるので絞り込みも外れる。
+  await app.removeMqttSubscriptionButton("sensors/#").click();
+
+  await expect(filter).toHaveValue("");
+  await expect(filter.getByRole("option", { name: "sensors/#" })).toHaveCount(0);
+  await expect(app.mqttMessage("a-2")).toBeVisible();
+});
+
+// ── 観点B: 別のプロトコルを表示している間の受信 ──────────────────────────────
+
+test("mqtt messages received while another protocol is shown are listed after switching back", async ({
+  app,
+  fake,
+  connectionId,
+}) => {
+  await app.subscribeMqtt("sensors/#");
+  await app.mqttTopicInput.fill("draft/topic");
+
+  await app.switchTo("HTTP");
+  await fake.emit(
+    WailsEvents.mqttMessage,
+    message(connectionId, "sensors/temp", "while-away"),
+  );
+  await app.switchTo("MQTT");
+
+  await expect(app.mqttStatus("Connected")).toBeVisible();
+  await expect(app.mqttSubscription("sensors/#")).toBeVisible();
+  await expect(app.mqttTopicInput).toHaveValue("draft/topic");
+  await expect(app.mqttMessage("while-away")).toContainText("sensors/temp");
+  expect(await fake.calls("Connect")).toBe(1);
+});
+
+// ── 観点E: 購読解除の失敗と、再接続時に拒否された購読 ────────────────────────
+
+test.describe("unsubscribe failure", () => {
+  const ERROR = "no acknowledgement from broker in time";
+
+  test.use({
+    seed: {
+      mqttProfiles: [BROKER],
+      mqttConnect: "ok",
+      unsubscribeError: ERROR,
+    },
+  });
+
+  // ブローカーの応答を確認できなかった解除。Go はエラーを返すが、購読は外している。
+  test("failed unsubscribe shows an error toast and removes the row", async ({
+    page,
+    app,
+    fake,
+    connectionId,
+  }) => {
+    await app.subscribeMqtt("sensors/#");
+    await app.subscribeMqtt("alerts/#");
+
+    await app.removeMqttSubscriptionButton("sensors/#").click();
+
+    await expect(
+      page
+        .getByRole("alert")
+        .filter({ hasText: "Failed to unsubscribe from sensors/#" }),
+    ).toContainText(ERROR);
+    await expect(app.mqttSubscription("sensors/#")).toHaveCount(0);
+    await expect(app.mqttSubscription("alerts/#")).toBeVisible();
+    expect(await fake.args("Unsubscribe")).toEqual([
+      [connectionId, "sensors/#"],
+    ]);
+    expect((await fake.snapshot()).mqttConnections[0].subscriptions).toEqual([
+      { topic: "alerts/#", qos: 0 },
+    ]);
+  });
+});
+
+test.describe("a subscription rejected by the broker", () => {
+  const SEEDED = {
+    id: "conn-seeded",
+    name: BROKER.name,
+    broker: "tcp://localhost:1883",
+    connected: true,
+    profileId: BROKER.id,
+    subscriptions: [
+      { topic: "allowed/#", qos: 0 },
+      { topic: "denied/#", qos: 1 },
+    ],
+    scanning: false,
+  };
+  const ERROR = "subscription rejected by broker";
+
+  test.use({
+    seed: {
+      mqttProfiles: [BROKER],
+      mqttConnect: "ok",
+      mqttConnections: [SEEDED],
+      subscribeError: { topic: "denied/#", message: ERROR },
+    },
+  });
+
+  // 起動時からある接続を使うので、connectionId fixture は取らない (接続済みのブローカーには
+  // Connect が出ない)。
+  test("a subscription rejected on reconnect is removed and the rest are kept", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.selectBroker(BROKER.name, { connected: true });
+    await expect(app.mqttSubscription("allowed/#")).toBeVisible();
+    await expect(app.mqttSubscription("denied/#")).toContainText("QoS 1");
+
+    await app.brokerDisconnectButton.click();
+    await expect(app.brokerConnectButton).toBeVisible();
+    await app.brokerConnectButton.click();
+
+    // 張り直しの購読は確立前に送られて受け付けられ、確立したときにブローカーが拒否する。
+    await expect(
+      page
+        .getByRole("alert")
+        .filter({ hasText: "Subscription to denied/# was dropped" }),
+    ).toContainText(ERROR);
+    await expect(app.mqttStatus("Connected")).toBeVisible();
+    await expect(app.mqttSubscription("denied/#")).toHaveCount(0);
+    await expect(app.mqttSubscription("allowed/#")).toBeVisible();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Failed to re-subscribe" }),
+    ).toHaveCount(0);
+    const [conn] = (await fake.snapshot()).mqttConnections;
+    expect(conn.id).not.toBe(SEEDED.id);
+    expect(conn.subscriptions).toEqual([{ topic: "allowed/#", qos: 0 }]);
+
+    // 確立後の購読は、RPC がその場で失敗する。
+    await app.mqttTopicInput.fill("denied/#");
+    await app.mqttSubscribeButton.click();
+
+    await expect(
+      page
+        .getByRole("alert")
+        .filter({ hasText: "Failed to subscribe to denied/#" }),
+    ).toContainText(ERROR);
+    await expect(app.mqttSubscription("denied/#")).toHaveCount(0);
+    expect((await fake.snapshot()).mqttConnections[0].subscriptions).toEqual([
+      { topic: "allowed/#", qos: 0 },
+    ]);
+  });
+});
+
+// ── 観点D: 日本語・絵文字・マークアップ ──────────────────────────────────────
+
+test.describe("unicode and markup", () => {
+  const NAME = 'ブローカー 🚀 <img src=x onerror="alert(1)">';
+  const TOPIC = "センサー/温度 🌡/<b>bold</b>";
+  const PAYLOAD = '<script>alert("xss")</script> こんにちは 🎉';
+
+  test.use({
+    seed: {
+      mqttProfiles: [{ id: "profile-unicode", name: NAME }],
+      mqttConnect: "ok",
+    },
+  });
+
+  test("unicode and markup in names, topics and payloads are shown as text", async ({
+    page,
+    app,
+    fake,
+    pageErrors,
+  }) => {
+    const dialogs: string[] = [];
+    page.on("dialog", (dialog) => {
+      dialogs.push(dialog.message());
+      void dialog.dismiss();
+    });
+
+    await app.connectBroker(NAME);
+    const [conn] = (await fake.snapshot()).mqttConnections;
+    await app.subscribeMqtt(TOPIC);
+    await fake.emit(WailsEvents.mqttMessage, message(conn.id, TOPIC, PAYLOAD));
+
+    // 一覧にも詳細にも、書いたとおりの文字で出る。
+    await expect(app.broker(NAME)).toBeVisible();
+    await expect(app.mqttSubscription(TOPIC)).toBeVisible();
+    const item = app.mqttMessage(PAYLOAD);
+    await expect(item).toContainText(TOPIC);
+    await item.click();
+    await expect(page.getByText(PAYLOAD, { exact: true })).toHaveCount(2);
+    expect(await fake.args("Subscribe")).toEqual([[conn.id, TOPIC, 0]]);
+
+    // 要素として解釈されていない。
+    await expect(page.locator("img[src='x'], b")).toHaveCount(0);
+    expect(dialogs).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
 });

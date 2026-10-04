@@ -66,6 +66,21 @@ test("broker dialog rejects port 0 and 65536 and a blank host", async ({
   await expect(save).toBeEnabled();
 });
 
+test("broker dialog rejects a whitespace-only name", async ({ page, app }) => {
+  await page.getByRole("button", { name: "New Broker" }).click();
+  const dialog = app.brokerDialog("New Profile");
+  const name = dialog.getByLabel("Name", { exact: true });
+  const saveAndConnect = dialog.getByRole("button", { name: "Save & Connect" });
+
+  await name.fill("   ");
+  await expect(saveButton(dialog)).toBeDisabled();
+  await expect(saveAndConnect).toBeDisabled();
+
+  await name.fill("  Padded  ");
+  await expect(saveButton(dialog)).toBeEnabled();
+  await expect(saveAndConnect).toBeEnabled();
+});
+
 // ── 観点H: プロファイルの編集 ────────────────────────────────────────────────
 
 test.describe("editing a broker", () => {
@@ -882,5 +897,245 @@ test.describe("deleting a connected broker", () => {
     await expect(app.brokerHostInput()).toHaveValue("beta.local");
     await expect(app.brokerPortInput()).toHaveValue("8883");
     await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+});
+
+// ── 観点C: 行のクリックと削除のキャンセル ────────────────────────────────────
+
+test.describe("broker rows", () => {
+  test.use({ seed: { mqttProfiles: [ALPHA, BETA] } });
+
+  test("cancelling the delete dialog keeps the broker", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await (await app.brokerRowAction(ALPHA.name, "Delete broker")).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(app.broker(ALPHA.name)).toContainText(ALPHA.broker);
+    expect(await fake.calls("DeleteProfile")).toBe(0);
+    expect((await fake.snapshot()).mqttProfiles).toHaveLength(2);
+  });
+
+  test("clicking a broker row selects it and the edit button does not", async ({
+    app,
+  }) => {
+    // 行の中の文字をクリックして選ぶ (行の中央にはホバーで Edit / Delete が出る)。
+    await app.broker(ALPHA.name).getByText(ALPHA.name, { exact: true }).click();
+    await expect(app.brokerConnectButton).toBeVisible();
+    await expect(app.brokerHostInput()).toHaveValue("alpha.local");
+
+    // 別の行の Edit はダイアログを開くだけで、選択は変えない。
+    const dialog = await app.openBrokerEditDialog(BETA.name);
+    await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue(
+      BETA.name,
+    );
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toBeHidden();
+
+    await expect(app.brokerHostInput()).toHaveValue("alpha.local");
+    await expect(app.brokerPortInput()).toHaveValue("1883");
+  });
+});
+
+// ── 観点A: 起動時の復元 ──────────────────────────────────────────────────────
+
+const LAST_PROFILE_KEY = "mqtt:lastActiveProfileId";
+
+/** 最後に選んだブローカーの保存値を書き換えて読み込み直す (保存形式は JSON)。 */
+async function reloadWithLastProfile(page: Page, id: string): Promise<void> {
+  await page.evaluate(
+    ([key, value]) => localStorage.setItem(key, value),
+    [LAST_PROFILE_KEY, JSON.stringify(id)] as const,
+  );
+  await page.reload();
+}
+
+test.describe("when GetConnections fails on startup", () => {
+  test.use({
+    seed: { mqttProfiles: [ALPHA, BETA], getConnectionsError: "rpc down" },
+  });
+
+  test("brokers are still listed as offline when GetConnections fails on startup", async ({
+    page,
+    app,
+    fake,
+    pageErrors,
+  }) => {
+    await expect(app.broker(ALPHA.name)).toContainText(ALPHA.broker);
+    await expect(app.broker(BETA.name)).toContainText(BETA.broker);
+    expect(await fake.calls("GetConnections")).toBe(1);
+
+    // 接続の状態が分からないので、どれも未接続として並べる。
+    await app.selectBroker(BETA.name);
+    await expect(app.mqttStatus("Disconnected")).toBeVisible();
+    await expect(app.brokerHostInput()).toHaveValue("beta.local");
+
+    // 復元の失敗はログに残すだけで、通知しない。
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect(pageErrors).toEqual([]);
+  });
+});
+
+test.describe("last active broker", () => {
+  test.use({ seed: { mqttProfiles: [ALPHA] } });
+
+  test("a last active broker that no longer exists leaves the empty state", async ({
+    page,
+    app,
+    pageErrors,
+  }) => {
+    await reloadWithLastProfile(page, "profile-deleted");
+
+    await expect(app.broker(ALPHA.name)).toBeVisible();
+    await expect(
+      page.getByText(
+        "No active connection. Select a broker from the sidebar to connect.",
+      ),
+    ).toBeVisible();
+    await expect(app.brokerConnectButton).toBeHidden();
+    // 無いブローカーの ID は持ち続けない。
+    await expect
+      .poll(() =>
+        page.evaluate((key) => localStorage.getItem(key), LAST_PROFILE_KEY),
+      )
+      .toBeNull();
+    expect(pageErrors).toEqual([]);
+  });
+});
+
+// プロファイルを消したあとも、バックエンドに接続が残っていることがある (削除と切断は別の RPC)。
+test.describe("a connection whose profile was deleted", () => {
+  const ORPHAN = {
+    id: "conn-orphan",
+    name: "Orphan Broker",
+    broker: "tcp://orphan.local:1883",
+    connected: true,
+    profileId: "profile-deleted",
+    subscriptions: [{ topic: "sensors/#", qos: 1 }],
+    scanning: false,
+  };
+
+  test.use({ seed: { mqttConnections: [ORPHAN] } });
+
+  test("a connection whose profile was deleted is restored as a connected tab", async ({
+    page,
+    app,
+    fake,
+    pageErrors,
+  }) => {
+    await reloadWithLastProfile(page, ORPHAN.profileId);
+
+    // プロファイルは無いので一覧には出ないが、接続のタブは選ばれている。
+    await expect(page.getByText("No brokers yet")).toBeVisible();
+    await expect(app.mqttStatus("Connected")).toBeVisible();
+    await expect(page.getByText(ORPHAN.broker, { exact: true })).toBeVisible();
+    await expect(app.mqttSubscription("sensors/#")).toContainText("QoS 1");
+
+    // 画面から切断できる。
+    await app.brokerDisconnectButton.click();
+    await expect(app.mqttStatus("Disconnected")).toBeVisible();
+    expect(await fake.args("Disconnect")).toEqual([[ORPHAN.id]]);
+    expect((await fake.snapshot()).mqttConnections).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+});
+
+// ── 観点E: 切断の失敗と、応答を待つ間の操作 ──────────────────────────────────
+
+test.describe("disconnect failure", () => {
+  test.use({
+    seed: {
+      mqttProfiles: [ALPHA],
+      mqttConnect: "ok",
+      disconnectError: "rpc down",
+    },
+  });
+
+  // RPC が届かなかった場合。画面は未接続にするが、バックエンドには接続が残る。
+  test("failed disconnect shows an error toast and marks the broker disconnected", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.connectBroker(ALPHA.name);
+
+    await app.brokerDisconnectButton.click();
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Failed to disconnect" }),
+    ).toContainText("rpc down");
+    await expect(app.mqttStatus("Disconnected")).toBeVisible();
+    await expect(app.brokerConnectButton).toBeVisible();
+    expect(await fake.calls("Disconnect")).toBe(1);
+    expect((await fake.snapshot()).mqttConnections).toHaveLength(1);
+  });
+});
+
+test.describe("while a connect is in flight", () => {
+  test.describe("slow result", () => {
+    test.use({
+      seed: {
+        mqttProfiles: [ALPHA, BETA],
+        mqttConnect: "ok",
+        mqttConnectResultDelayMs: 1000,
+      },
+    });
+
+    test("a connection result that arrives after switching brokers updates the original broker", async ({
+      app,
+    }) => {
+      await app.selectBroker(ALPHA.name);
+      await app.brokerConnectButton.click();
+      await expect(connectingButton(app.page)).toBeVisible();
+
+      // 結果を待つ間に別のブローカーへ切り替える。
+      await app.selectBroker(BETA.name);
+      await expect(app.brokerHostInput()).toHaveValue("beta.local");
+
+      // 行の印は、そのブローカーの接続状態を title で持つ。
+      await expect(
+        app.broker(ALPHA.name).getByTitle("Connected", { exact: true }),
+      ).toBeAttached();
+      await expect(
+        app.broker(BETA.name).getByTitle("Disconnected", { exact: true }),
+      ).toBeAttached();
+      // 表示中の切り替え先は未接続のまま。
+      await expect(app.mqttStatus("Disconnected")).toBeVisible();
+      await expect(app.brokerConnectButton).toBeVisible();
+      await expect(app.brokerHostInput()).toHaveValue("beta.local");
+    });
+  });
+
+  test.describe("slow response", () => {
+    test.use({
+      seed: {
+        mqttProfiles: [ALPHA],
+        mqttConnect: "ok",
+        mqttConnectDelayMs: 500,
+      },
+    });
+
+    test("pressing Connect twice before the first response leaves one connection", async ({
+      app,
+      fake,
+    }) => {
+      await app.selectBroker(ALPHA.name);
+
+      // 応答が来るまでタブは未接続のままで、Connect を押せる。
+      await app.brokerConnectButton.click();
+      await app.brokerConnectButton.click();
+
+      await expect(app.mqttStatus("Connected")).toBeVisible();
+      expect(await fake.calls("Connect")).toBe(1);
+      const { mqttConnections } = await fake.snapshot();
+      expect(mqttConnections).toHaveLength(1);
+      expect(mqttConnections[0].connected).toBe(true);
+    });
   });
 });

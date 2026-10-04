@@ -133,6 +133,26 @@ test("subscribe button is disabled when broker is not connected", async ({
   await expect(app.mqttSubscribeButton).toBeDisabled();
 });
 
+// Subscribe ボタンと同じく、Enter でも送らない (送ると connection not found のトーストが出る)。
+test("Enter in the topic field while disconnected does not add a subscription", async ({
+  page,
+  app,
+  fake,
+}) => {
+  await app.createBrokerProfile("Offline Broker");
+
+  await app.mqttTopicInput.fill("test/topic");
+  await app.mqttTopicInput.press("Enter");
+
+  expect(await fake.calls("Subscribe")).toBe(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(
+    app.mqttSection("Subscriptions").getByText("No subscriptions"),
+  ).toBeVisible();
+  // 入力は残る。
+  await expect(app.mqttTopicInput).toHaveValue("test/topic");
+});
+
 // ── 観点H: 購読の QoS の選択 ─────────────────────────────────────────────────
 // 未接続のブローカーなので、トリガーの表示だけを見る。選んだ値が Subscribe に渡ることは
 // messages.spec.ts の "subscribing and unsubscribing reach the backend" が見る。
@@ -314,6 +334,39 @@ test.describe("broker topics scan", () => {
     await expect(panel.getByTitle("Subscribe", { exact: true })).toBeEnabled();
   });
 
+  // 一覧は上限 (src/config/limits.ts の MQTT_MAX_TOPICS) を超えた分の古いトピックを捨てる。
+  test("broker topics list keeps the newest 500 topics", async ({
+    app,
+    fake,
+  }) => {
+    const MAX_TOPICS = 500;
+    await app.connectBroker(BROKER.name);
+    const connectionId = (await fake.snapshot()).mqttConnections[0].id;
+    const panel = app.mqttSection("Broker Topics");
+    await app.mqttScanButton.click();
+    await expect(app.mqttStopScanButton).toBeVisible();
+
+    // 桁を揃えて、topic-0 が topic-00 などに部分一致しないようにする。
+    const topic = (i: number) => `scan/topic-${String(i).padStart(3, "0")}`;
+    await fake.emitAll(
+      WailsEvents.mqttScanTopic,
+      Array.from({ length: MAX_TOPICS + 1 }, (_, i) => ({
+        connectionId,
+        topic: topic(i),
+      })),
+    );
+
+    // 一覧は見つけた順に並ぶ。末尾までスクロールして最後のトピックを確かめる。
+    const last = panel.getByText(topic(MAX_TOPICS), { exact: true });
+    await last.scrollIntoViewIfNeeded();
+    await expect(last).toBeVisible();
+    await expect(panel.getByText(topic(0), { exact: true })).toHaveCount(0);
+    await expect(panel.getByText(topic(1), { exact: true })).toHaveCount(1);
+    await expect(panel.getByTitle("Subscribe", { exact: true })).toHaveCount(
+      MAX_TOPICS,
+    );
+  });
+
   // 未接続のタブの接続 ID (offline-<プロファイル ID>) はバックエンドに無い。
   test("starting a scan on a disconnected broker shows an error and returns to Scan", async ({
     page,
@@ -335,5 +388,48 @@ test.describe("broker topics scan", () => {
     expect(await fake.args("StartTopicScan")).toEqual([
       [`offline-${BROKER.id}`],
     ]);
+  });
+});
+
+test.describe("broker topics scan that is slow to start", () => {
+  const BROKER = { id: "profile-local", name: "Local Broker" };
+
+  test.use({
+    seed: {
+      mqttProfiles: [BROKER],
+      mqttConnect: "ok",
+      startTopicScanDelayMs: 500,
+    },
+  });
+
+  // 止めた開始は topic scan was stopped で失敗するが、止めたのは利用者なので通知しない。
+  test("stopping a scan that is still starting shows no error", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.connectBroker(BROKER.name);
+    const scanning = async () =>
+      (await fake.snapshot()).mqttConnections[0].scanning;
+
+    await app.mqttScanButton.click();
+    // Stop の表示は開始の完了を待たずに出る。
+    await app.mqttStopScanButton.click();
+
+    await expect(app.mqttScanButton).toBeVisible();
+    await fake.waitForCalls("StopTopicScan");
+    expect(await scanning()).toBe(false);
+
+    // 次の開始は、止めた開始が終わってから送られる。稼働したら、止めた開始は片付いている。
+    await app.mqttScanButton.click();
+    await expect.poll(scanning).toBe(true);
+    expect(await fake.calls("StartTopicScan")).toBe(2);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(app.mqttStopScanButton).toBeVisible();
+
+    await app.mqttStopScanButton.click();
+    await expect(app.mqttScanButton).toBeVisible();
+    await expect.poll(scanning).toBe(false);
+    await expect(page.getByRole("alert")).toHaveCount(0);
   });
 });
