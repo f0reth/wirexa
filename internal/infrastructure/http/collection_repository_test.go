@@ -271,72 +271,6 @@ func TestCollectionRepository_SaveDropsTokensAndPaths(t *testing.T) {
 	}
 }
 
-// 旧形式 (Contents["file"] と FormRow.filePath に生のパス) を basename と再選択状態へ移行し、
-// 次の保存でディスク上の旧パスも消える。
-func TestCollectionRepository_MigratesLegacyPaths(t *testing.T) {
-	repo, dir := newTestRepo(t)
-	legacy := `{"id":"col-1","name":"Col","items":[{"type":"request","id":"r1","name":"R","children":[],
-		"request":{"id":"r1","name":"R","method":"POST","url":"http://x","doc":"","headers":[],"params":[],
-		"auth":{"type":"none","username":"","password":"","token":""},"settings":{},
-		"body":{"type":"file","contents":{"file":"C:\\Users\\alice\\secret\\a.bin","json":"{}"},
-		"formData":[
-			{"key":"unix","value":"","kind":"file","filePath":"/Users/alice/secret/b.txt","enabled":true},
-			{"key":"trailing","value":"","kind":"file","filePath":"/Users/alice/secret/dir/","enabled":true},
-			{"key":"empty","value":"","kind":"file","filePath":"","enabled":true}
-		]}}}]}`
-	if err := os.WriteFile(filepath.Join(dir, "col-1.json"), []byte(legacy), 0o600); err != nil {
-		t.Fatalf("write legacy: %v", err)
-	}
-
-	loaded, err := repo.Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	body := loaded[0].Items[0].Request.Body
-	if want := (domain.FileReference{Name: "a.bin", NeedsReselect: true}); body.File != want {
-		t.Errorf("body file = %+v, want %+v", body.File, want)
-	}
-	if _, ok := body.Contents[domain.BodyTypeFile]; ok {
-		t.Error("legacy file path must be removed from contents")
-	}
-	if body.Contents["json"] != "{}" {
-		t.Error("other contents must be kept")
-	}
-	wantRows := []domain.FileReference{{Name: "b.txt", NeedsReselect: true}, {Name: "dir", NeedsReselect: true}, {}}
-	for i, want := range wantRows {
-		if body.FormData[i].File != want {
-			t.Errorf("row %d file = %+v, want %+v", i, body.FormData[i].File, want)
-		}
-	}
-
-	if err := repo.Save(&loaded[0]); err != nil {
-		t.Fatalf("re-save: %v", err)
-	}
-	if raw := storedJSON(t, dir); strings.Contains(raw, "alice") || strings.Contains(raw, "filePath") {
-		t.Fatalf("re-saved JSON still holds the legacy path:\n%s", raw)
-	}
-}
-
-func TestLegacyBaseName(t *testing.T) {
-	tests := map[string]string{
-		"/home/me/a.txt":         "a.txt",
-		`C:\Users\me\b.png`:      "b.png",
-		`\\server\share\c`:       "c",
-		"mixed/dir\\d.json":      "d.json",
-		"dir/":                   "dir",
-		"name-only":              "name-only",
-		"":                       "",
-		"/":                      "",
-		`C:\Users\me\trailing\\`: "trailing",
-		"../../etc/passwd":       "passwd",
-	}
-	for in, want := range tests {
-		if got := legacyBaseName(in); got != want {
-			t.Errorf("legacyBaseName(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 // CollectionService のどの保存経路でも token が永続化されず、
 // キャッシュ上の token は autosave 後も同一セッションで使える状態に残る。
 func TestCollectionRepository_NoSavePathPersistsTokens(t *testing.T) {
@@ -404,17 +338,16 @@ func TestCollectionRepository_NoSavePathPersistsTokens(t *testing.T) {
 	}
 }
 
-// 旧パスを持つ保存データを読み込んだ直後から、RPC 応答に旧パスが現れない。
-func TestCollectionRepository_LoadedServiceHidesLegacyPaths(t *testing.T) {
+// Contents["file"] にパスがあるファイルを読み込んでも、RPC 応答にパスが現れない。
+func TestCollectionRepository_LoadedServiceHidesFilePathInContents(t *testing.T) {
 	repo, dir := newTestRepo(t)
-	legacy := func(id string) string {
+	stored := func(id string) string {
 		return `{"id":"` + id + `","name":"` + id + `","items":[{"type":"request","id":"r-` + id + `","name":"R","children":[],
 			"request":{"id":"r-` + id + `","name":"R","method":"POST","url":"","doc":"","headers":[],"params":[],"auth":{},"settings":{},
-			"body":{"type":"form-data","contents":{"file":"` + secretDir + `/a.bin"},
-			"formData":[{"key":"f","value":"","kind":"file","filePath":"` + secretDir + `/b.txt","enabled":true}]}}}]}`
+			"body":{"type":"file","contents":{"file":"` + secretDir + `/a.bin","json":"{}"}}}}]}`
 	}
 	for _, id := range []string{"col-1", domain.RootCollectionID} {
-		if err := os.WriteFile(filepath.Join(dir, id+".json"), []byte(legacy(id)), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, id+".json"), []byte(stored(id)), 0o600); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 	}
@@ -434,10 +367,14 @@ func TestCollectionRepository_LoadedServiceHidesLegacyPaths(t *testing.T) {
 	for _, item := range items {
 		body := item.Request.Body
 		if _, ok := body.Contents[domain.BodyTypeFile]; ok {
-			t.Fatalf("%s exposes a legacy path: %+v", item.ID, body)
+			t.Fatalf("%s exposes a file path: %+v", item.ID, body)
 		}
-		if !body.File.NeedsReselect || !body.FormData[0].File.NeedsReselect {
-			t.Fatalf("%s must require reselecting its files: %+v", item.ID, body)
+		if body.Contents["json"] != "{}" {
+			t.Fatalf("%s lost its other contents: %+v", item.ID, body)
+		}
+		// パスは basename へ変換せず、捨てる。
+		if body.File != (domain.FileReference{}) {
+			t.Fatalf("%s must have no file selected: %+v", item.ID, body.File)
 		}
 	}
 }

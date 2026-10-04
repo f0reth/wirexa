@@ -1,9 +1,7 @@
 package httpinfra
 
 import (
-	"encoding/json"
 	"maps"
-	"strings"
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
@@ -35,7 +33,6 @@ func NewCollectionRepository(dir string, logger cmn.Logger) (*CollectionReposito
 }
 
 // Load は全コレクションを読み込み、runtime model へ変換して返す。
-// 旧形式のファイルパスは basename と再選択状態へ移行し、パス自体は返さない。
 func (r *CollectionRepository) Load() ([]domain.Collection, error) {
 	stored, err := r.store.Load()
 	if err != nil {
@@ -118,7 +115,7 @@ type storedRequestSettings struct {
 }
 
 type storedRequestBody struct {
-	// Contents は file 種別のキーを持たない (旧データの読み込み時のみ存在しうる)。
+	// Contents は file 種別のキーを持たない (手で書き換えたファイルの読み込み時のみ存在しうる)。
 	Contents       map[string]string    `json:"contents"`
 	File           *storedFileReference `json:"file,omitempty"`
 	Type           string               `json:"type"`
@@ -132,24 +129,7 @@ type storedFormRow struct {
 	Value       string               `json:"value"`
 	Kind        string               `json:"kind,omitempty"`
 	ContentType string               `json:"contentType,omitempty"`
-	// legacyFilePath は旧形式の "filePath"。読み込み時の移行にだけ使い、書き出さない。
-	legacyFilePath string
-	Enabled        bool `json:"enabled"`
-}
-
-// UnmarshalJSON は旧形式の "filePath" を書き出し不能な非公開フィールドへ読み込む。
-func (r *storedFormRow) UnmarshalJSON(data []byte) error {
-	type plain storedFormRow
-	var aux struct {
-		FilePath string `json:"filePath"`
-		plain
-	}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	*r = storedFormRow(aux.plain)
-	r.legacyFilePath = aux.FilePath
-	return nil
+	Enabled     bool                 `json:"enabled"`
 }
 
 // storedFileReference は永続化するファイル参照。token と実パスを表現できない。
@@ -336,11 +316,11 @@ func fromStoredSettings(s storedRequestSettings) domain.RequestSettings {
 
 func (b *storedRequestBody) toDomain() domain.RequestBody {
 	contents := maps.Clone(b.Contents)
-	legacyPath := contents[domain.BodyTypeFile]
+	// 手で書き換えたファイルに残ったパスを RPC へ出さない。
 	delete(contents, domain.BodyTypeFile)
 	return domain.RequestBody{
 		Contents:       contents,
-		File:           fromStoredFileRef(b.File, legacyPath),
+		File:           fromStoredFileRef(b.File),
 		Type:           b.Type,
 		FormData:       fromStoredRows(b.FormData),
 		FormURLEncoded: fromStoredRows(b.FormURLEncoded),
@@ -358,7 +338,7 @@ func fromStoredRows(rows []storedFormRow) []domain.FormRow {
 			Key:         r.Key,
 			Value:       r.Value,
 			Kind:        r.Kind,
-			File:        fromStoredFileRef(r.File, r.legacyFilePath),
+			File:        fromStoredFileRef(r.File),
 			ContentType: r.ContentType,
 			Enabled:     r.Enabled,
 		}
@@ -367,28 +347,9 @@ func fromStoredRows(rows []storedFormRow) []domain.FormRow {
 }
 
 // fromStoredFileRef は保存済みの参照を token なしの再選択待ちとして復元する。
-// 旧形式のパスは basename にだけ変換し、許可として扱わない (registry へ登録しない)。
-func fromStoredFileRef(ref *storedFileReference, legacyPath string) domain.FileReference {
-	name := ""
-	if ref != nil {
-		name = ref.Name
-	}
-	if name == "" {
-		name = legacyBaseName(legacyPath)
-	}
-	if name == "" {
+func fromStoredFileRef(ref *storedFileReference) domain.FileReference {
+	if ref == nil || ref.Name == "" {
 		return domain.FileReference{}
 	}
-	return domain.FileReference{Name: name, NeedsReselect: true}
-}
-
-// legacyBaseName は旧データのパスから表示用の basename を取り出す。
-// 保存時と現在で OS が異なりうるため、/ と \ の両方を区切りとして扱う。
-// 文字列処理だけで、パスが指すファイルにはアクセスしない。
-func legacyBaseName(p string) string {
-	p = strings.TrimRight(p, `/\`)
-	if i := strings.LastIndexAny(p, `/\`); i >= 0 {
-		p = p[i+1:]
-	}
-	return p
+	return domain.FileReference{Name: ref.Name, NeedsReselect: true}
 }
