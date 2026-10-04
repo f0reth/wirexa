@@ -41,8 +41,9 @@ export interface FakeSeed {
    * - 未設定: 接続 ID を返してから mqtt:connection-failed を発火する (繋がるブローカーが無い状態)。
    * - "ok": 接続 ID を返してから mqtt:connected を発火する。
    * - "reject": Connect の RPC 自体を失敗させる。
+   * - "pending": 接続 ID を返したあと、確立も失敗もしない (確立待ちが続いている状態)。
    */
-  mqttConnect?: "ok" | "reject";
+  mqttConnect?: "ok" | "reject" | "pending";
   /** MQTT の GetProfiles を必ず失敗させる (起動時の読み込みの失敗を模す)。 */
   getProfilesError?: string;
   /** MQTT の SaveProfile を必ず失敗させる (ディスクへの書き込みの失敗などを模す)。 */

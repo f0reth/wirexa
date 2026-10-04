@@ -1,4 +1,5 @@
-import { expect, test } from "../../fixtures/ui";
+import type { Locator, Page } from "@playwright/test";
+import { type App, expect, test, WailsEvents } from "../../fixtures/ui";
 
 // ブローカープロファイルの編集・選択・接続失敗。偽バックエンドの Connect は seed.mqttConnect を
 // "ok" にしない限り失敗するので、未接続のまま書ける範囲を扱う。
@@ -148,6 +149,271 @@ test.describe("editing a broker", () => {
     await expect(dialog).toBeHidden();
     await expect(app.broker(ALPHA.name)).toContainText(ALPHA.broker);
     expect(await fake.calls("SaveProfile")).toBe(0);
+  });
+});
+
+// ── 観点H: 接続が生きているブローカーの編集 ──────────────────────────────────
+// バックエンドに接続が残っている間 (Connected・確立待ち・自動再接続中) は、ダイアログの Save と
+// 接続バーの入力欄を使えない。編集前の宛先に繋がったまま、編集後の宛先を表示しないため。
+
+const LIVE_NOTICE =
+  "This broker has an active connection. Use Save & Connect to apply changes.";
+
+function saveButton(dialog: Locator): Locator {
+  return dialog.getByRole("button", { name: "Save", exact: true });
+}
+
+/** 確立待ち・自動再接続中に接続バーへ出るボタン。押すと接続を中止する。 */
+function connectingButton(page: Page): Locator {
+  return page.getByRole("button", { name: "Connecting…", exact: true });
+}
+
+async function subscribe(app: App, topic: string): Promise<void> {
+  const panel = app.mqttSection("Subscriptions");
+  await panel.getByPlaceholder("Topic (e.g., sensors/#)").fill(topic);
+  await panel.getByRole("button", { name: "Subscribe", exact: true }).click();
+  await expect(app.mqttSubscription(topic)).toBeVisible();
+}
+
+test.describe("editing a broker whose connection is pending", () => {
+  test.use({ seed: { mqttProfiles: [ALPHA], mqttConnect: "pending" } });
+
+  test("Save and the connection bar are locked while a connection is pending", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.selectBroker(ALPHA.name);
+    await app.brokerConnectButton.click();
+
+    const expectLocked = async () => {
+      await expect(connectingButton(page)).toBeVisible();
+      const dialog = await app.openBrokerEditDialog(ALPHA.name);
+      await expect(saveButton(dialog)).toBeDisabled();
+      await expect(dialog.getByText(LIVE_NOTICE)).toBeVisible();
+      await expect(
+        dialog.getByRole("button", { name: "Save & Connect" }),
+      ).toBeEnabled();
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(dialog).toBeHidden();
+
+      await expect(app.brokerHostInput).toBeDisabled();
+      await expect(app.brokerPortInput).toBeDisabled();
+      await expect(app.brokerConnectButton).toBeHidden();
+      expect(await fake.calls("SaveProfile")).toBe(0);
+    };
+    await expectLocked();
+
+    // 復元したタブも、バックエンドに接続が残っている。
+    await page.reload();
+    await expectLocked();
+    expect((await fake.snapshot()).mqttConnections).toHaveLength(1);
+  });
+
+  test("clicking Connecting… cancels a pending connection", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.selectBroker(ALPHA.name);
+    await app.brokerConnectButton.click();
+
+    await connectingButton(page).click();
+
+    await expect(app.brokerConnectButton).toBeVisible();
+    expect(await fake.calls("Disconnect")).toBe(1);
+    expect((await fake.snapshot()).mqttConnections).toEqual([]);
+
+    // 中止したあとは、接続バーでもダイアログでも編集できる。
+    await app.brokerHostInput.fill("edited.local");
+    await expect(app.broker(ALPHA.name)).toContainText(
+      "tcp://edited.local:1883",
+    );
+    const dialog = await app.openBrokerEditDialog(ALPHA.name);
+    await expect(dialog.getByText(LIVE_NOTICE)).toBeHidden();
+    await saveButton(dialog).click();
+    await expect(dialog).toBeHidden();
+  });
+});
+
+test.describe("editing a broker after its connection failed", () => {
+  test.use({ seed: { mqttProfiles: [ALPHA] } });
+
+  test("Save becomes available after a failed connection", async ({
+    page,
+    app,
+  }) => {
+    await app.selectBroker(ALPHA.name);
+    await app.brokerConnectButton.click();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "MQTT connection failed" }),
+    ).toBeVisible();
+
+    await app.brokerHostInput.fill("edited.local");
+    await expect(app.broker(ALPHA.name)).toContainText(
+      "tcp://edited.local:1883",
+    );
+
+    const dialog = await app.openBrokerEditDialog(ALPHA.name);
+    await expect(dialog.getByText(LIVE_NOTICE)).toBeHidden();
+    await dialog.getByLabel("Name", { exact: true }).fill("Broker Renamed");
+    await saveButton(dialog).click();
+    await expect(dialog).toBeHidden();
+    await expect(app.broker("Broker Renamed")).toContainText(
+      "tcp://edited.local:1883",
+    );
+  });
+});
+
+test.describe("editing a connected broker", () => {
+  test.use({ seed: { mqttProfiles: [ALPHA], mqttConnect: "ok" } });
+
+  test("Save is disabled for a connected broker and Save & Connect reconnects with the edit", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.connectBroker(ALPHA.name);
+    await subscribe(app, "sensors/#");
+    const oldId = (await fake.snapshot()).mqttConnections[0].id;
+
+    const dialog = await app.openBrokerEditDialog(ALPHA.name);
+    await expect(saveButton(dialog)).toBeDisabled();
+    await expect(dialog.getByText(LIVE_NOTICE)).toBeVisible();
+    await dialog.getByPlaceholder("localhost").fill("renamed.local");
+    // 入力を変えても Save は押せないまま。
+    await expect(saveButton(dialog)).toBeDisabled();
+    await dialog.getByRole("button", { name: "Save & Connect" }).click();
+    await expect(dialog).toBeHidden();
+
+    // 編集後の URL で張り直し、購読を新しい接続へ引き継ぐ。
+    await fake.waitForCalls("Subscribe", 2);
+    expect(await fake.calls("Disconnect")).toBe(1);
+    expect((await fake.args("Connect")).at(-1)?.[0]).toMatchObject({
+      broker: "tcp://renamed.local:1883",
+    });
+    const { mqttConnections } = await fake.snapshot();
+    expect(mqttConnections).toHaveLength(1);
+    expect(mqttConnections[0].id).not.toBe(oldId);
+    expect((await fake.args("Subscribe")).at(-1)).toEqual([
+      mqttConnections[0].id,
+      "sensors/#",
+      0,
+    ]);
+    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    await expect(app.mqttSubscription("sensors/#")).toBeVisible();
+  });
+
+  test("saving an edit of a disconnected broker keeps its subscription rows", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.connectBroker(ALPHA.name);
+    await subscribe(app, "sensors/#");
+    await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+    await expect(app.brokerConnectButton).toBeVisible();
+
+    const dialog = await app.openBrokerEditDialog(ALPHA.name);
+    await expect(dialog.getByText(LIVE_NOTICE)).toBeHidden();
+    await dialog.getByPlaceholder("localhost").fill("renamed.local");
+    await saveButton(dialog).click();
+    await expect(dialog).toBeHidden();
+
+    // タブを作り直さないので、購読の行が残る。
+    await expect(app.brokerHostInput).toHaveValue("renamed.local");
+    await expect(app.mqttSubscription("sensors/#")).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+
+    await app.brokerConnectButton.click();
+    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    expect((await fake.args("Connect")).at(-1)?.[0]).toMatchObject({
+      broker: "tcp://renamed.local:1883",
+    });
+    await expect(app.mqttSubscription("sensors/#")).toBeVisible();
+  });
+
+  // 確立待ちでは購読を足せないので、購読の行が残ることは自動再接続中の中止で確かめる。
+  test("clicking Connecting… during an automatic reconnect stops it and keeps the subscription rows", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.connectBroker(ALPHA.name);
+    await subscribe(app, "sensors/#");
+    const connectionId = (await fake.snapshot()).mqttConnections[0].id;
+
+    await fake.emit(WailsEvents.mqttConnectionLost, {
+      connectionId,
+      error: "EOF",
+    });
+    await expect(app.brokerHostInput).toBeDisabled();
+    await connectingButton(page).click();
+
+    await expect(app.brokerConnectButton).toBeVisible();
+    expect(await fake.calls("Disconnect")).toBe(1);
+    expect((await fake.snapshot()).mqttConnections).toEqual([]);
+    await expect(app.mqttSubscription("sensors/#")).toBeVisible();
+    await expect(app.brokerHostInput).toBeEnabled();
+  });
+});
+
+// ── 観点D: 接続バーの入力検証 ────────────────────────────────────────────────
+// 接続バーは入力のたびに保存する。読み戻せないホスト・ポート (broker-url.ts が既定値として読む)
+// は保存しない。
+
+test.describe("connection bar validation", () => {
+  test.use({ seed: { mqttProfiles: [ALPHA] } });
+
+  test("the connection bar does not save a host or port that cannot be read back", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.selectBroker(ALPHA.name);
+    const host = app.brokerHostInput;
+    const port = app.brokerPortInput;
+
+    const expectRejected = async (saveCalls: number) => {
+      await expect(host).toHaveAttribute("aria-invalid", "true");
+      await expect(port).toHaveAttribute("aria-invalid", "true");
+      await expect(app.brokerConnectButton).toBeDisabled();
+      expect(await fake.calls("SaveProfile")).toBe(saveCalls);
+      expect((await fake.snapshot()).mqttProfiles[0].broker).toBe(ALPHA.broker);
+    };
+
+    await host.fill("");
+    await expectRejected(0);
+
+    // 有効な値に戻すと保存する。
+    await host.fill("alpha.local");
+    await expect(host).toHaveAttribute("aria-invalid", "false");
+    await expect(app.brokerConnectButton).toBeEnabled();
+    await fake.waitForCalls("SaveProfile", 1);
+
+    for (const invalid of ["0", "65536", ""]) {
+      await port.fill(invalid);
+      await expectRejected(1);
+    }
+
+    await port.fill("1884");
+    await expect(port).toHaveAttribute("aria-invalid", "false");
+    await expect(app.brokerConnectButton).toBeEnabled();
+    await expect(app.broker(ALPHA.name)).toContainText(
+      "tcp://alpha.local:1884",
+    );
+    expect(await fake.calls("SaveProfile")).toBe(2);
+    expect((await fake.snapshot()).mqttProfiles[0].broker).toBe(
+      "tcp://alpha.local:1884",
+    );
+
+    // 無効な入力は保存していないので、リロード後は最後に保存した URL を表示する。
+    await port.fill("");
+    await page.reload();
+    // 接続バーのスキーム欄。Subscriptions パネルにも select があるので、先頭を取る。
+    await expect(page.getByRole("combobox").first()).toHaveValue("tcp");
+    await expect(host).toHaveValue("alpha.local");
+    await expect(port).toHaveValue("1884");
   });
 });
 

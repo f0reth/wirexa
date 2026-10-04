@@ -707,6 +707,8 @@ const MqttHandler = {
   //   (Go は失敗した接続を一覧から外す)。
   // - seed.mqttConnect が "ok": 確立して mqtt:connected を出す。
   // - seed.mqttConnect が "reject": RPC 自体を失敗させる (Go では終了処理中の Connect に当たる)。
+  // - seed.mqttConnect が "pending": 接続を一覧に残したままイベントを出さない (Go で確立待ちが
+  //   続いている状態。GetConnections は connected: false で返す)。
   Connect: counted(
     "Connect",
     async (config: {
@@ -731,6 +733,7 @@ const MqttHandler = {
       };
       db.mqttConnections.push(conn);
       save();
+      if (seed.mqttConnect === "pending") return conn.id;
       setTimeout(() => {
         // 結果が出るより先に切断された接続はイベントを出さない (Go の runConnect / onConnected と同じ)。
         const live = db.mqttConnections.find((c) => c.id === conn.id);

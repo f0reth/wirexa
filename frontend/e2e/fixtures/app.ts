@@ -537,6 +537,29 @@ export class App {
     return this.page.getByRole("button", { name: "Connect", exact: true });
   }
 
+  /**
+   * 接続バーのホスト欄。ブローカーの編集ダイアログにも同じ placeholder の入力欄があるので、
+   * ダイアログを閉じた状態で使う。
+   */
+  get brokerHostInput(): Locator {
+    return this.page.getByPlaceholder("localhost");
+  }
+
+  /** 接続バーのポート欄。brokerHostInput と同じく、ダイアログを閉じた状態で使う。 */
+  get brokerPortInput(): Locator {
+    return this.page.getByPlaceholder("1883");
+  }
+
+  /** サイドバーの行の Edit ボタンからブローカーの編集ダイアログを開き、ダイアログを返す。 */
+  async openBrokerEditDialog(name: string): Promise<Locator> {
+    const row = this.broker(name);
+    await row.hover();
+    await row.getByRole("button", { name: "Edit broker" }).click();
+    const dialog = this.page.getByRole("dialog", { name: "Edit Profile" });
+    await expect(dialog).toBeVisible();
+    return dialog;
+  }
+
   /** ブローカーを選んで Connect を押し、Connected になるまで待つ。 */
   async connectBroker(name: string): Promise<void> {
     await this.selectBroker(name);
