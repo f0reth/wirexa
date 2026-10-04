@@ -69,7 +69,12 @@ function PresetsPanel() {
 
                   const commitName = () => {
                     const name = editingName().trim();
-                    if (name && name !== preset.name) {
+                    if (!name) {
+                      // 空の名前では確定しない。入力欄を空のまま残すと、名前が消えたように見える。
+                      setEditingName(preset.name);
+                      return;
+                    }
+                    if (name !== preset.name) {
                       updatePreset(preset.id, { name });
                     }
                   };

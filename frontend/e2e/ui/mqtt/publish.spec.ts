@@ -204,10 +204,13 @@ test("Escape while renaming a preset restores its name", async ({
   await expect(topic).toHaveValue("sensors/a");
   await expect(input).toHaveValue("Preset A");
 
-  // 空の名前では確定しない。選択を外すと、元の名前で表示される。
-  await input.fill("");
-  await input.press("Enter");
-  await expect(input).not.toBeFocused();
+  // 空の名前では確定せず、入力欄は元の名前に戻る。空白だけでも同じ。
+  for (const blank of ["", "   "]) {
+    await input.fill(blank);
+    await input.press("Enter");
+    await expect(input).not.toBeFocused();
+    await expect(input).toHaveValue("Preset A");
+  }
   expect(await storedNames()).toEqual(["Preset A", "no name"]);
   await app.mqttPresets.filter({ hasNotText: "sensors/a" }).focus();
   await page.keyboard.press("Enter");
