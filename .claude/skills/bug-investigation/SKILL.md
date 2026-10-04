@@ -97,7 +97,7 @@ disable-model-invocation: true
 
 ### 依存方向（厳守）
 
-CLAUDE.md の「Architecture」（依存方向・入出力ポートの置き場所・合成ルート・import 制限）と「ドメイン型・RPC・永続化の境界」に従う。修正案もこの依存方向を守る。
+AGENTS.md の「Architecture」（依存方向・入出力ポートの置き場所・合成ルート・import 制限）と「ドメイン型・RPC・永続化の境界」に従う。修正案もこの依存方向を守る。
 
 ### 意図的な設計
 
@@ -108,7 +108,7 @@ CLAUDE.md の「Architecture」（依存方向・入出力ポートの置き場�
 | HTTP のタイムアウトを `http.Client.Timeout` ではなく context で表現している（`internal/infrastructure/http/net_client.go` の `Do`） | キャンセルと同じ経路に一本化するため。`buildHTTPClient` の `&http.Client{Transport: ...}` にタイムアウトが無いのは正しい | context が `Do` まで伝わっていない、`resolveTimeout` の値域の扱い |
 | ハンドラは `NewApp()` で空のまま作り、`initialize()` で `SetupXxxHandler` により注入する二段階初期化 | Wails が `main.go` でバインドするため。初期化に失敗したら `runtime.Quit` し、`shutdown` は `ready` で守っている | 初期化途中で失敗したときに一部だけ注入された状態で動く経路、`ready` を見ずにサービスを触る経路。ハンドラの全メソッドに nil チェックを求めない |
 | `_ = x.Close() //nolint:errcheck // best-effort ...` | 失敗しても続行してよい後始末 | 理由と実態が合わない（書き込み系の Close・Rename の失敗を捨てていて、データ損失を見逃す）もの |
-| 破損した設定ファイルを退避してスキップする・空で始める | CLAUDE.md「設定データの分類と復旧方針」の表（`internal/application/store/recovery.go` にも同じ表がある） | 表と実装が食い違う箇所（観点 G8） |
+| 破損した設定ファイルを退避してスキップする・空で始める | AGENTS.md「設定データの分類と復旧方針」の表（`internal/application/store/recovery.go` にも同じ表がある） | 表と実装が食い違う箇所（観点 G8） |
 | stored DTO の json タグ・`omitempty` の有無 | 保存形式の基準は `internal/infrastructure/*/testdata/*.golden.json` | 保存・復元で値が変わる（ゼロ値と未設定を区別できない等）。修正に保存形式の変更が要るなら「修正の影響範囲」に書く |
 | フロントの `application/<proto>/` の `createXxxState` がモジュール外の関数として `createSignal` / `createEffect` / `onCleanup` を呼ぶ | Provider（`presentation/providers/*.tsx`）の本体から同期的に呼ばれ、owner の下で動く | Provider の本体以外（`await` の後、イベントハンドラ、`setTimeout` の中など）から呼ばれる経路 |
 | Wails イベントの購読は `EventsOn` の戻り値（解除関数）を `onCleanup` で呼んで解除する | `EventsOff` はそのイベント名のリスナーを全部外すため使わない | 解除関数を捨てている、`onCleanup` を owner の外で呼んでいる。修正案で `EventsOff` を勧めない |
@@ -172,7 +172,7 @@ CLAUDE.md の「Architecture」（依存方向・入出力ポートの置き場�
 - **修正案**: 依存方向を守った最小限の修正
 - **修正の影響範囲**: 呼び出し元・共有状態・他の層への影響。次に当たるものは必ず明記する
   - **保存形式の変更**（`storedXxx` DTO の json タグ・構造。golden ファイルの更新が要る）
-  - **設定データの復旧方針の変更**（CLAUDE.md と `internal/application/store/recovery.go` の表を両方直す）
+  - **設定データの復旧方針の変更**（AGENTS.md と `internal/application/store/recovery.go` の表を両方直す）
   - **RPC のシグネチャ・ドメイン型の json タグ・イベント名の変更**
   - **バインド対象のハンドラメソッドの引数・戻り値やドメイン型のフィールドを、ポインタから値へ、または値からポインタへ変えること**（Wails v2 は `*T` と `T` から同じ TS 型を生成するため `frontend/wailsjs` の差分には出ないが、nil が `null` として渡るかどうかが変わる）
   - **ファイルアクセスの方式の変更**

@@ -12,7 +12,7 @@ $ARGUMENTS
 
 ## 前提
 
-アーキテクチャ、依存方向、`app.go` の二段階配線、ドメイン型・RPC・永続化の境界、設定データの復旧方針、コード生成、テスト構成は **CLAUDE.md を正とする**。ここには計画書作成に固有の手順と確認観点だけを書く。
+アーキテクチャ、依存方向、`app.go` の二段階配線、ドメイン型・RPC・永続化の境界、設定データの復旧方針、コード生成、テスト構成は **AGENTS.md を正とする**。ここには計画書作成に固有の手順と確認観点だけを書く。
 
 ## 実装開始前の確認
 
@@ -59,7 +59,7 @@ Wails の RPC は WebView 上の JS から誰でも呼べる。RPC 引数でロ�
 - 変更する stored DTO（`storedXxx`）と変換関数（`toStoredXxx` / `fromStoredXxx` など）
 - `testdata/*.golden.json` を更新するか（旧形式のファイルを読めるかを含む）
 - 保存しないフィールドを足すなら、往復テストの期待値補正関数（例: `persistedCollection`）に書く理由
-- **新しい保存ファイルを足すなら、復旧方針の分類**（必須 / best effort / 再生成可能）と破損時・退避失敗時・読み込み失敗時の扱い。単一ファイル型なら `store.LoadSingleFile` のポリシーも決める。分類表を変えるなら CLAUDE.md と `internal/application/store/recovery.go` の両方を直す手順を含める
+- **新しい保存ファイルを足すなら、復旧方針の分類**（必須 / best effort / 再生成可能）と破損時・退避失敗時・読み込み失敗時の扱い。単一ファイル型なら `store.LoadSingleFile` のポリシーも決める。分類表を変えるなら AGENTS.md と `internal/application/store/recovery.go` の両方を直す手順を含める
 - **フロントエンドの localStorage も保存データである。** `frontend/src/infrastructure/storage/local-storage.ts` のキー（`mqtt:presets`、`app:theme` など）や値の形を変えるなら、旧形式を読めるか（例: `StoredPreset` で `retain` の無い旧プリセットを補う）と、古いキーの扱いを書く
 
 ## 変更計画書の作成

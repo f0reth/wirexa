@@ -14,7 +14,7 @@ $ARGUMENTS
 
 ## 前提
 
-アーキテクチャ、依存方向、`app.go` の二段階配線、ドメイン型・RPC・永続化の境界、設定データの復旧方針、コード生成、テスト構成は **CLAUDE.md を正とする**。ここには CLAUDE.md に無い手順と、取り違えやすい点だけを書く。
+アーキテクチャ、依存方向、`app.go` の二段階配線、ドメイン型・RPC・永続化の境界、設定データの復旧方針、コード生成、テスト構成は **AGENTS.md を正とする**。ここには AGENTS.md に無い手順と、取り違えやすい点だけを書く。
 
 ## 実装開始前の確認
 
@@ -54,7 +54,7 @@ Wails の RPC は WebView 上の JS から誰でも呼べる（経緯は `docs/h
 保存データ（設定ディレクトリの JSON と localStorage）はユーザーの手元に残るため、**旧形式を読めるように保つ**。
 
 - 保存形式を変えるときは `testdata/*.golden.json` を更新し、旧形式のファイルを読めることをテストで確かめる。
-- 新しい保存ファイルは、CLAUDE.md の「設定データの分類と復旧方針」で分類を決めて従う。
+- 新しい保存ファイルは、AGENTS.md の「設定データの分類と復旧方針」で分類を決めて従う。
 - localStorage（`frontend/src/infrastructure/storage/local-storage.ts`）のキーや値の形を変えるときは、旧形式を補って読む（例: `retain` の無い旧プリセットを補う `StoredPreset`）。
 
 ## 実装ルール
@@ -74,7 +74,7 @@ Wails の RPC は WebView 上の JS から誰でも呼べる（経緯は `docs/h
 
 ## コード生成の注意点
 
-Go↔TS 境界を変更したら、コミット前に CLAUDE.md の生成コマンドを実行する（生成物は手で編集しない）。`task wails:generate` では次に注意する。
+Go↔TS 境界を変更したら、コミット前に AGENTS.md の生成コマンドを実行する（生成物は手で編集しない）。`task wails:generate` では次に注意する。
 
 - Wails CLI のバージョンを go.mod と揃える（`wails version` で確かめる）。違うと生成結果がぶれて CI で落ちる。
 - 新しい形の型を RPC に出したら、`frontend/wailsjs/go/models.ts` の生成結果を目で確かめる。

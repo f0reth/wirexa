@@ -103,7 +103,7 @@ http・mqtt・udp の保存実装とテーマの保存を 1 ファイルに持�
 
 ### 依存方向（厳守）
 
-CLAUDE.md の「Architecture」（依存方向・入出力ポートの置き場所・合成ルート・import 制限）と「ドメイン型・RPC・永続化の境界」に従う。加えて次を前提とする。
+AGENTS.md の「Architecture」（依存方向・入出力ポートの置き場所・合成ルート・import 制限）と「ドメイン型・RPC・永続化の境界」に従う。加えて次を前提とする。
 
 - openapi は保存用のポートを持たないため `domain/openapi/ports.ts` は無い。
 - infrastructure → application の既存 import 2 か所の import 先である `application/openapi/ports.ts`（`ParseResult`）と `application/logger.ts`（`Logger`）は、application に置かれたポートとして現行の設計で扱う。domain への移動などは提案せず、見つけたら「対応不要と判断した箇所」に理由つきで載せる。
@@ -116,7 +116,7 @@ CLAUDE.md の「Architecture」（依存方向・入出力ポートの置き場�
 | 重複 | 理由 |
 |---|---|
 | フロント `domain/<proto>/types.ts` と Go のドメイン型 | Go の型が RPC の配線型の正で、フロント側はユニオン型・型ガードで意味付けする層。生成型→フロント型の変換は infrastructure で行う。生成型を application / presentation から直接使う案は規約違反（変換の書き方については表の下を参照） |
-| infrastructure の `storedXxx` DTO と Go のドメイン型 | 保存形式を RPC の json タグから独立させるため（CLAUDE.md「ドメイン型・RPC・永続化の境界」）。`testutil.AssertNoTypesFrom` は struct 型だけを検査するが、現状の stored DTO に名前付きの基本型を使う箇所は無いので、使用箇所を探さなくてよい。統合・埋め込みの提案は禁止 |
+| infrastructure の `storedXxx` DTO と Go のドメイン型 | 保存形式を RPC の json タグから独立させるため（AGENTS.md「ドメイン型・RPC・永続化の境界」）。`testutil.AssertNoTypesFrom` は struct 型だけを検査するが、現状の stored DTO に名前付きの基本型を使う箇所は無いので、使用箇所を探さなくてよい。統合・埋め込みの提案は禁止 |
 | adapters に RPC 用 DTO が無いこと | ドメインと同じ形の DTO を adapters に新設する提案は禁止（ドメインに対応物の無いアダプタ固有の入力型は可） |
 | フロントとバックの入力検証（例: `frontend/src/domain/udp/types.ts` の数値検証と `internal/domain/udp/encoding.go`） | 正はバックエンド。フロントは送信前の先回り検証で、UX のために持つ |
 | フロントのエラー文言定数（例: `RESPONSE_UNAVAILABLE_ERROR` と `ErrResponseUnavailable`） | RPC 越しにはエラー文字列しか渡らないため |
@@ -201,7 +201,7 @@ CLAUDE.md の「Architecture」（依存方向・入出力ポートの置き場�
 - フレームワーク変更
 - 挙動変更。このプロジェクトでは以下も挙動変更として扱う:
   - **保存形式の変更**（`storedXxx` DTO の json タグ・構造。基準は `internal/infrastructure/*/testdata/*.golden.json`）
-  - **設定データの復旧方針の変更**（破損・読み込み失敗時の扱い。CLAUDE.md と `internal/application/store/recovery.go` の表）
+  - **設定データの復旧方針の変更**（破損・読み込み失敗時の扱い。AGENTS.md と `internal/application/store/recovery.go` の表）
   - **RPC のシグネチャ・ドメイン型の json タグ・イベント名の変更**
   - **バインド対象のハンドラメソッドの引数・戻り値やドメイン型のフィールドを、ポインタから値へ、または値からポインタへ変えること**。Wails v2 は `*T` と `T` から同じ TS 型を生成するため、`frontend/wailsjs` の差分には出ない。それでも nil が `null` として渡るかどうかが変わる
   - **ファイルアクセスの方式の変更**（HTTP の `FileReference.Token`、OpenAPI の `checkGranted` による許可リスト。RPC で受け取ったパスを検証なしに読み書きしない。`docs/http-local-file-access-hardening.md`）
