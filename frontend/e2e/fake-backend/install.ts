@@ -217,6 +217,12 @@ function findNode(col: Collection, id: string): TreeItem | undefined {
   return walk(col.items).find((i) => i.id === id);
 }
 
+// Go の cmn.InsertAt と同じく、負または範囲外の position は末尾として扱う。
+function insertAt<T>(list: T[], item: T, position: number): void {
+  if (position < 0 || position > list.length) list.push(item);
+  else list.splice(position, 0, item);
+}
+
 /** parentId が空文字ならコレクション直下、そうでなければそのフォルダの children。 */
 function childrenOf(col: Collection, parentId: string): TreeItem[] | undefined {
   return parentId === "" ? col.items : findNode(col, parentId)?.children;
@@ -440,8 +446,7 @@ const HttpHandler = {
       removeNode(src, itemId);
       const target = childrenOf(dst, targetParentId);
       if (!target) return;
-      if (index < 0 || index > target.length) target.push(item);
-      else target.splice(index, 0, item);
+      insertAt(target, item, index);
     },
   ),
 
@@ -454,11 +459,7 @@ const HttpHandler = {
       if (current < 0) return;
       const [entry] = db.sidebar.splice(current, 1);
       const index = current < position ? position - 1 : position;
-      db.sidebar.splice(
-        Math.max(0, Math.min(index, db.sidebar.length)),
-        0,
-        entry,
-      );
+      insertAt(db.sidebar, entry, index);
     },
   ),
 
@@ -470,11 +471,7 @@ const HttpHandler = {
       if (!item) return;
       removeNode(src, itemId);
       collection(ROOT_COLLECTION_ID).items.push(item);
-      db.sidebar.splice(
-        Math.max(0, Math.min(sidebarPosition, db.sidebar.length)),
-        0,
-        { kind: "item", id: itemId },
-      );
+      insertAt(db.sidebar, { kind: "item", id: itemId }, sidebarPosition);
     },
   ),
 

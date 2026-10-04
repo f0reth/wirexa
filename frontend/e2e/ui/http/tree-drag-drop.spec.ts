@@ -139,3 +139,33 @@ test("dropping a request into a folder nests it", async ({ app, fake }) => {
   await folder.click();
   await expect(request).toBeHidden();
 });
+
+// 偽バックエンドが Go (cmn.InsertAt) と同じく、負の position を末尾として扱うことを確かめる。
+// UI は負の position をサイドバーへ送らないので、バインディングを直接呼ぶ。
+test("a negative sidebar position appends to the end, like the Go backend", async ({
+  page,
+  fake,
+}) => {
+  type Handler = Record<string, (...args: unknown[]) => Promise<unknown>>;
+  const call = (method: string, ...callArgs: unknown[]) =>
+    page.evaluate(
+      ([m, a]) =>
+        (
+          window as unknown as { go: { adapters: { HTTPHandler: Handler } } }
+        ).go.adapters.HTTPHandler[m](...a),
+      [method, callArgs] as const,
+    );
+
+  await call("MoveSidebarEntry", "collection", ALPHA.id, -1);
+  expect((await fake.snapshot()).sidebar).toEqual([
+    { kind: "collection", id: BETA.id },
+    { kind: "collection", id: ALPHA.id },
+  ]);
+
+  await call("MoveItemToSidebar", ALPHA.id, REQUEST.id, -1);
+  expect((await fake.snapshot()).sidebar).toEqual([
+    { kind: "collection", id: BETA.id },
+    { kind: "collection", id: ALPHA.id },
+    { kind: "item", id: REQUEST.id },
+  ]);
+});
