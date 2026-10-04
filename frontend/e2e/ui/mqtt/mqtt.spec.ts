@@ -2,9 +2,6 @@ import { expect, test, WailsEvents } from "../../fixtures/ui";
 
 // MQTT パネルはデフォルトで表示される
 
-const EMPTY_STATE =
-  "No active connection. Select a broker from the sidebar to connect.";
-
 // ── 観点H: ブローカープロファイルの作成・削除 ────────────────────────────────
 
 test("can create a broker profile", async ({ app, fake }) => {
@@ -34,13 +31,9 @@ test("can create a broker profile", async ({ app, fake }) => {
 });
 
 test("new broker dialog save button is disabled when name is empty", async ({
-  page,
   app,
 }) => {
-  await page.getByRole("button", { name: "New Broker" }).click();
-
-  const dialog = app.brokerDialog("New Profile");
-  await expect(dialog).toBeVisible();
+  const dialog = await app.openNewBrokerDialog();
 
   // 名前が空のため Save ボタンは無効
   await expect(
@@ -50,13 +43,9 @@ test("new broker dialog save button is disabled when name is empty", async ({
 
 // 保存した broker URL を読み戻せない値（指数表記・小数のポート、コロンを含むホスト）は保存させない。
 test("new broker dialog rejects a port or host that cannot be read back", async ({
-  page,
   app,
 }) => {
-  await page.getByRole("button", { name: "New Broker" }).click();
-
-  const dialog = app.brokerDialog("New Profile");
-  await expect(dialog).toBeVisible();
+  const dialog = await app.openNewBrokerDialog();
   const save = dialog.getByRole("button", { name: "Save", exact: true });
   const host = app.brokerHostInput(dialog);
   const port = app.brokerPortInput(dialog);
@@ -92,16 +81,16 @@ test("can delete a broker profile", async ({ page, app, fake }) => {
   expect((await fake.snapshot()).mqttProfiles).toEqual([]);
   // 最後の 1 件を消したので、空状態に戻る。
   await expect(page.getByText("No brokers yet")).toBeVisible();
-  await expect(page.getByText(EMPTY_STATE)).toBeVisible();
+  await expect(app.mqttEmptyState).toBeVisible();
 });
 
 // ── 観点H: Subscribe / Publish タブの切り替え ────────────────────────────────
 
-test("can switch between subscribe and publish tabs", async ({ page, app }) => {
+test("can switch between subscribe and publish tabs", async ({ app }) => {
   await app.createBrokerProfile("Tab Test Broker");
 
-  const subscribeTab = page.getByRole("tab", { name: "Subscribe" });
-  const publishTab = page.getByRole("tab", { name: "Publish" });
+  const subscribeTab = app.mqttTab("Subscribe");
+  const publishTab = app.mqttTab("Publish");
 
   // 初期状態: Subscribe タブがアクティブ
   await expect(subscribeTab).toHaveAttribute("aria-selected", "true");
@@ -187,7 +176,7 @@ test("can toggle the retain flag and it is stored on the selected preset", async
   app,
 }) => {
   await app.createBrokerProfile("Retain Test Broker");
-  await page.getByRole("tab", { name: "Publish" }).click();
+  await app.openMqttTab("Publish");
 
   const retain = page.getByRole("checkbox", { name: "Retain" });
   await expect(retain).not.toBeChecked();

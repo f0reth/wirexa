@@ -8,22 +8,10 @@ const BROKER = { id: "profile-local", name: "Local Broker" };
 
 test.use({ seed: { mqttProfiles: [BROKER] } });
 
-test.beforeEach(async ({ page, app }) => {
+test.beforeEach(async ({ app }) => {
   await app.selectBroker(BROKER.name);
-  await page.getByRole("tab", { name: "Publish" }).click();
+  await app.openMqttTab("Publish");
 });
-
-/** Publish フォームの入力欄と送信ボタン。 */
-function publishForm(app: App) {
-  const form = app.mqttSection("Publish");
-  return {
-    form,
-    topic: form.getByPlaceholder("Topic", { exact: true }),
-    payload: form.getByPlaceholder("Message payload"),
-    retain: form.getByRole("checkbox", { name: "Retain" }),
-    publish: form.getByRole("button", { name: "Publish", exact: true }),
-  };
-}
 
 /** 選択中のプリセットの名前を、行内の入力欄で書き換えて確定する。 */
 async function renameSelectedPreset(
@@ -46,7 +34,7 @@ async function storedPresets(page: Page): Promise<unknown> {
 // ── 観点H: 未接続時の Publish ────────────────────────────────────────────────
 
 test("publish button is disabled while offline", async ({ app, fake }) => {
-  const { topic, payload, publish } = publishForm(app);
+  const { topic, payload, publish } = app.mqttPublishForm();
   await topic.fill("devices/lamp");
   await payload.fill("on");
 
@@ -60,7 +48,7 @@ test("presets can be added, selected, renamed and deleted", async ({
   page,
   app,
 }) => {
-  const { form, topic, payload } = publishForm(app);
+  const { form, topic, payload } = app.mqttPublishForm();
 
   // 初回起動時の既定プリセット。選択中なので名前は入力欄に出る。
   await expect(app.mqttPresets).toHaveCount(1);
@@ -107,7 +95,7 @@ test("presets can be added, selected, renamed and deleted", async ({
 // ── 観点C・F: プリセットの並び替えと永続化 ─────────────────────────────────────
 
 test("publish presets survive a reload", async ({ page, app }) => {
-  const { topic, payload, retain } = publishForm(app);
+  const { topic, payload, retain } = app.mqttPublishForm();
   await topic.fill("sensors/a");
   await payload.fill("payload-a");
   await renameSelectedPreset(app, "sensors/a", "Preset A");
@@ -144,7 +132,7 @@ test("publish presets survive a reload", async ({ page, app }) => {
 
   // リロード後は最後に選んだブローカーが復元される。プリセットはどれも選ばれていない。
   await page.reload();
-  await page.getByRole("tab", { name: "Publish" }).click();
+  await app.openMqttTab("Publish");
   await expect(app.mqttPresets).toHaveText([
     /Preset B.*sensors\/b.*Retained/,
     /Preset A.*sensors\/a/,
@@ -160,7 +148,7 @@ test("publish presets survive a reload", async ({ page, app }) => {
 // ── 観点G: キーボードでのプリセット選択 ──────────────────────────────────────
 
 test("Enter on a focused preset selects it", async ({ app }) => {
-  const { topic } = publishForm(app);
+  const { topic } = app.mqttPublishForm();
   await topic.fill("sensors/a");
   await app.addMqttPresetButton.click();
   await expect(app.mqttPresets).toHaveCount(2);
@@ -180,7 +168,7 @@ test("Escape while renaming a preset restores its name", async ({
   page,
   app,
 }) => {
-  const { topic } = publishForm(app);
+  const { topic } = app.mqttPublishForm();
   await topic.fill("sensors/a");
   await renameSelectedPreset(app, "sensors/a", "Preset A");
   const presetA = app.mqttPreset("sensors/a");
@@ -223,7 +211,7 @@ test("form edits after deleting the selected preset are not written to another p
   page,
   app,
 }) => {
-  const { topic, payload } = publishForm(app);
+  const { topic, payload } = app.mqttPublishForm();
   await topic.fill("sensors/a");
   await payload.fill("payload-a");
   await renameSelectedPreset(app, "sensors/a", "Preset A");
@@ -298,7 +286,7 @@ test.describe("malformed localStorage", () => {
     await expect(app.broker(BROKER.name)).toBeVisible();
     await expect(app.brokerConnectButton).toBeHidden();
     await app.selectBroker(BROKER.name);
-    await page.getByRole("tab", { name: "Publish" }).click();
+    await app.openMqttTab("Publish");
     await expect(app.mqttPresets).toHaveText([/Valid Preset.*sensors\/valid/]);
     await expect(app.mqttPreset("sensors/valid")).toContainText("QoS 1");
     await expect(app.mqttPreset("sensors/valid")).toContainText("Retained");
@@ -312,7 +300,7 @@ test.describe("malformed localStorage", () => {
       });
       await expect(app.broker(BROKER.name)).toBeVisible();
       await app.selectBroker(BROKER.name);
-      await page.getByRole("tab", { name: "Publish" }).click();
+      await app.openMqttTab("Publish");
       // 空のときは、初回起動と同じく既定のプリセットを 1 件作る。
       await expect(app.mqttPresets).toHaveCount(1);
       await expect(app.mqttPresets.getByRole("textbox")).toHaveValue("no name");

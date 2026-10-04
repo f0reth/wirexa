@@ -19,25 +19,20 @@ const BETA = {
 
 test("empty state shows no brokers and no active connection", async ({
   page,
+  app,
 }) => {
   await expect(page.getByText("No brokers yet")).toBeVisible();
-  await expect(
-    page.getByText(
-      "No active connection. Select a broker from the sidebar to connect.",
-    ),
-  ).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Subscribe" })).toBeHidden();
+  await expect(app.mqttEmptyState).toBeVisible();
+  await expect(app.mqttTab("Subscribe")).toBeHidden();
 });
 
 // ── 観点D: ダイアログの入力検証 ──────────────────────────────────────────────
 // 範囲外のポートや空のホストは Save / Save & Connect とも押せない (profile-validation.ts)。
 
 test("broker dialog rejects port 0 and 65536 and a blank host", async ({
-  page,
   app,
 }) => {
-  await page.getByRole("button", { name: "New Broker" }).click();
-  const dialog = app.brokerDialog("New Profile");
+  const dialog = await app.openNewBrokerDialog();
   const save = dialog.getByRole("button", { name: "Save", exact: true });
   const saveAndConnect = dialog.getByRole("button", { name: "Save & Connect" });
   const host = app.brokerHostInput(dialog);
@@ -66,9 +61,8 @@ test("broker dialog rejects port 0 and 65536 and a blank host", async ({
   await expect(save).toBeEnabled();
 });
 
-test("broker dialog rejects a whitespace-only name", async ({ page, app }) => {
-  await page.getByRole("button", { name: "New Broker" }).click();
-  const dialog = app.brokerDialog("New Profile");
+test("broker dialog rejects a whitespace-only name", async ({ app }) => {
+  const dialog = await app.openNewBrokerDialog();
   const name = dialog.getByLabel("Name", { exact: true });
   const saveAndConnect = dialog.getByRole("button", { name: "Save & Connect" });
 
@@ -222,12 +216,10 @@ test.describe("client id, credentials and TLS", () => {
     test.use({ seed: { mqttConnect: "ok" } });
 
     test("client id, credentials and TLS from the dialog reach SaveProfile and Connect", async ({
-      page,
       app,
       fake,
     }) => {
-      await page.getByRole("button", { name: "New Broker" }).click();
-      const dialog = app.brokerDialog("New Profile");
+      const dialog = await app.openNewBrokerDialog();
       await dialog.getByLabel("Name", { exact: true }).fill(SECURE.name);
       await app.brokerSchemeSelect(dialog).selectOption("mqtts");
       await app.brokerHostInput(dialog).fill("secure.local");
@@ -579,8 +571,7 @@ test.describe("save failure", () => {
     page,
     app,
   }) => {
-    await page.getByRole("button", { name: "New Broker" }).click();
-    const dialog = app.brokerDialog("New Profile");
+    const dialog = await app.openNewBrokerDialog();
     await dialog.getByLabel("Name", { exact: true }).fill("Not Saved");
     await dialog.getByRole("button", { name: "Save", exact: true }).click();
 
@@ -745,8 +736,7 @@ test.describe("connect failure", () => {
     app,
     fake,
   }) => {
-    await page.getByRole("button", { name: "New Broker" }).click();
-    const dialog = app.brokerDialog("New Profile");
+    const dialog = await app.openNewBrokerDialog();
     await dialog.getByLabel("Name", { exact: true }).fill("Unreachable");
     await dialog.getByRole("button", { name: "Save & Connect" }).click();
 
@@ -817,9 +807,7 @@ test.describe("multiple brokers", () => {
   }) => {
     const host = app.brokerHostInput();
     const port = app.brokerPortInput();
-    const emptyState = page.getByText(
-      "No active connection. Select a broker from the sidebar to connect.",
-    );
+    const emptyState = app.mqttEmptyState;
     await expect(emptyState).toBeVisible();
 
     await app.selectBroker(ALPHA.name);
@@ -993,11 +981,7 @@ test.describe("last active broker", () => {
     await reloadWithLastProfile(page, "profile-deleted");
 
     await expect(app.broker(ALPHA.name)).toBeVisible();
-    await expect(
-      page.getByText(
-        "No active connection. Select a broker from the sidebar to connect.",
-      ),
-    ).toBeVisible();
+    await expect(app.mqttEmptyState).toBeVisible();
     await expect(app.brokerConnectButton).toBeHidden();
     // 無いブローカーの ID は持ち続けない。
     await expect

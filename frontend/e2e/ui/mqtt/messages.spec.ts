@@ -358,7 +358,6 @@ test("dropped subscription is removed and notified", async ({
 });
 
 test("topic filter can shorten a list that grew after it was first drawn", async ({
-  page,
   app,
   fake,
   connectionId,
@@ -376,8 +375,7 @@ test("topic filter can shorten a list that grew after it was first drawn", async
   await fake.emit(WailsEvents.mqttMessage, message(connectionId, "sensors/temp", "t-3"));
   await expect(app.mqttMessages).toHaveCount(5);
 
-  await page
-    .getByRole("combobox", { name: "Filter by topic" })
+  await app.mqttTopicFilter
     .selectOption("sensors/temp");
 
   await expect(app.mqttMessages).toHaveText([/t-1$/, /t-2$/, /t-3$/]);
@@ -385,7 +383,6 @@ test("topic filter can shorten a list that grew after it was first drawn", async
 });
 
 test("topic filter narrows the list and Clear empties it", async ({
-  page,
   app,
   fake,
   connectionId,
@@ -401,7 +398,7 @@ test("topic filter narrows the list and Clear empties it", async ({
   await expect(humidity).toBeVisible();
 
   // 選択肢は購読トピックと、ワイルドカード購読に一致した実トピック。
-  const filter = page.getByRole("combobox", { name: "Filter by topic" });
+  const filter = app.mqttTopicFilter;
   await expect(filter.getByRole("option")).toHaveText([
     "All topics",
     "sensors/#",
@@ -428,7 +425,6 @@ test("topic filter narrows the list and Clear empties it", async ({
 
 // 共有購読の選択肢は接頭辞の付いた購読の文字列で、照合は接頭辞を外して行う。
 test("topic filter narrows by a shared subscription and its concrete topics", async ({
-  page,
   app,
   fake,
   connectionId,
@@ -443,7 +439,7 @@ test("topic filter narrows by a shared subscription and its concrete topics", as
   await expect(temp).toBeVisible();
   await expect(humidity).toBeVisible();
 
-  const filter = page.getByRole("combobox", { name: "Filter by topic" });
+  const filter = app.mqttTopicFilter;
   await expect(filter.getByRole("option")).toHaveText([
     "All topics",
     "$share/group/sensors/#",
@@ -483,7 +479,6 @@ async function expectRowsContiguous(app: App, rows: number): Promise<void> {
 }
 
 test("message rows stay contiguous whatever the payload length", async ({
-  page,
   app,
   fake,
   connectionId,
@@ -506,7 +501,7 @@ test("message rows stay contiguous whatever the payload length", async ({
   await expect(app.mqttMessages).toHaveCount(5);
   await expectRowsContiguous(app, 5);
 
-  const filter = page.getByRole("combobox", { name: "Filter by topic" });
+  const filter = app.mqttTopicFilter;
   await filter.selectOption("sensors/temp");
   await expect(app.mqttMessages).toHaveCount(3);
   await expectRowsContiguous(app, 3);
@@ -587,8 +582,7 @@ test("with Auto and a topic filter, a message outside the filter leaves the sele
   await expect(app.mqttMessage("h-1")).toBeVisible();
 
   await app.mqttMessagesAction("Auto").click();
-  await page
-    .getByRole("combobox", { name: "Filter by topic" })
+  await app.mqttTopicFilter
     .selectOption("sensors/temp");
 
   // フィルター後の末尾を選び、一覧と詳細の両方に出す。
@@ -665,16 +659,12 @@ test.describe("message cap", () => {
 // ── 観点H: Publish ───────────────────────────────────────────────────────────
 
 test("publish sends topic, QoS, retain and payload", async ({
-  page,
   app,
   fake,
   connectionId,
 }) => {
-  await page.getByRole("tab", { name: "Publish" }).click();
-  const form = app.mqttSection("Publish");
-  const topic = form.getByPlaceholder("Topic", { exact: true });
-  const payload = form.getByPlaceholder("Message payload");
-  const publish = form.getByRole("button", { name: "Publish", exact: true });
+  await app.openMqttTab("Publish");
+  const { form, topic, payload, retain, publish } = app.mqttPublishForm();
   await expect(publish).toBeEnabled();
 
   // トピックが空なら送らない
@@ -691,7 +681,7 @@ test("publish sends topic, QoS, retain and payload", async ({
   await fake.waitForCalls("Publish");
 
   // retain 付きの空ペイロードは retained メッセージの削除なので送る
-  await form.getByRole("checkbox", { name: "Retain" }).check();
+  await retain.check();
   await payload.fill("");
   await publish.click();
   await fake.waitForCalls("Publish", 2);
@@ -708,11 +698,11 @@ test("publishing to a topic with a wildcard shows the backend error", async ({
   fake,
   connectionId,
 }) => {
-  await page.getByRole("tab", { name: "Publish" }).click();
-  const form = app.mqttSection("Publish");
-  await form.getByPlaceholder("Topic", { exact: true }).fill("devices/#");
-  await form.getByPlaceholder("Message payload").fill("on");
-  await form.getByRole("button", { name: "Publish", exact: true }).click();
+  await app.openMqttTab("Publish");
+  const { topic, payload, publish } = app.mqttPublishForm();
+  await topic.fill("devices/#");
+  await payload.fill("on");
+  await publish.click();
 
   // Go の ValidateTopicName と同じ文言がトーストに出る。
   await expect(
@@ -728,7 +718,6 @@ test("publishing to a topic with a wildcard shows the backend error", async ({
 // ── 観点B・H: 切断・再接続・リロード ─────────────────────────────────────────
 
 test("disconnect disables subscribe and publish, and Connect re-subscribes the kept topics", async ({
-  page,
   app,
   fake,
   connectionId,
@@ -750,14 +739,9 @@ test("disconnect disables subscribe and publish, and Connect re-subscribes the k
   await expect(app.mqttSubscription("sensors/#")).toContainText("QoS 1");
   await expect(app.mqttSubscribeButton).toBeDisabled();
   await expect(app.mqttScanButton).toBeVisible();
-  await page.getByRole("tab", { name: "Publish" }).click();
-  await expect(
-    app.mqttSection("Publish").getByRole("button", {
-      name: "Publish",
-      exact: true,
-    }),
-  ).toBeDisabled();
-  await page.getByRole("tab", { name: "Subscribe" }).click();
+  await app.openMqttTab("Publish");
+  await expect(app.mqttPublishForm().publish).toBeDisabled();
+  await app.openMqttTab("Subscribe");
 
   await app.brokerConnectButton.click();
 
@@ -882,7 +866,7 @@ test("removing the filtered subscription resets the topic filter", async ({
     message(connectionId, "sensors/temp", "t-2"),
     message(connectionId, "alerts/fire", "a-2"),
   ]);
-  const filter = page.getByRole("combobox", { name: "Filter by topic" });
+  const filter = app.mqttTopicFilter;
   await filter.selectOption("sensors/#");
   await expect(app.mqttMessage("t-2")).toBeVisible();
   await expect(app.mqttMessage("a-2")).toBeHidden();

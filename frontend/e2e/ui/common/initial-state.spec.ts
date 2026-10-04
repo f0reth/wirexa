@@ -35,11 +35,7 @@ test("each protocol shows its empty state on first launch", async ({
   app,
 }) => {
   await expect(page.getByText("No brokers yet")).toBeVisible();
-  await expect(
-    page.getByText(
-      "No active connection. Select a broker from the sidebar to connect.",
-    ),
-  ).toBeVisible();
+  await expect(app.mqttEmptyState).toBeVisible();
 
   await app.switchTo("HTTP");
   await expect(page.getByText("No collections yet")).toBeVisible();

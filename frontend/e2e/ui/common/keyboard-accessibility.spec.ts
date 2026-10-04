@@ -79,7 +79,7 @@ test("Escape and a backdrop click close the broker dialog without saving", async
 }) => {
   const dialog = app.brokerDialog("New Profile");
   const open = async () => {
-    await page.getByRole("button", { name: "New Broker" }).click();
+    await app.openNewBrokerDialog();
     await dialog.getByLabel("Name", { exact: true }).fill("Not Saved");
   };
 
@@ -105,9 +105,8 @@ test("Escape and a backdrop click close the broker dialog without saving", async
   expect(await fake.calls("SaveProfile")).toBe(0);
 });
 
-test("Tab cycles focus inside the broker dialog", async ({ page }) => {
-  await page.getByRole("button", { name: "New Broker" }).click();
-  const dialog = page.getByRole("dialog");
+test("Tab cycles focus inside the broker dialog", async ({ page, app }) => {
+  const dialog = await app.openNewBrokerDialog();
   const name = dialog.getByLabel("Name", { exact: true });
 
   // 開いた時点で先頭の入力欄にフォーカスがある。

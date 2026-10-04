@@ -30,13 +30,6 @@ async function connectNewBroker(app: App, name: string): Promise<void> {
   await app.connectBroker(name);
 }
 
-/** 接続済みのブローカーへ切り替える。行をフォーカスして Enter で選ぶ (app.selectBroker と同じ理由)。 */
-async function switchBroker(app: App, name: string): Promise<void> {
-  const row = app.broker(name);
-  await row.focus();
-  await row.press("Enter");
-}
-
 /** paho の自動再接続を待つ時間。切断の検知と張り直しを含む。 */
 const RECONNECT_TIMEOUT = 30_000;
 
@@ -61,7 +54,7 @@ test("connects to a local broker and shows Connected", async ({
     app.brokerDisconnectButton,
   ).toBeVisible();
   await expect(app.broker(name).getByTitle("Connected")).toBeAttached();
-  await expect(page.getByRole("tab", { name: "Subscribe" })).toBeVisible();
+  await expect(app.mqttTab("Subscribe")).toBeVisible();
 
   const conns = await mqttConnections(page);
   expect(conns).toEqual([
@@ -193,21 +186,20 @@ test("published message on a subscribed topic appears in Messages", async ({
 });
 
 test("publishing to a subscribed topic loops back into Messages", async ({
-  page,
   app,
 }) => {
   const topic = "e2e/loopback/lamp";
   await connectNewBroker(app, "E2E MQTT Loopback");
   await app.subscribeMqtt(topic);
 
-  await page.getByRole("tab", { name: "Publish" }).click();
-  const form = app.mqttSection("Publish");
-  await form.getByPlaceholder("Topic", { exact: true }).fill(topic);
-  await form.getByPlaceholder("Message payload").fill("loopback-on");
-  await form.getByRole("button", { name: "Publish", exact: true }).click();
+  await app.openMqttTab("Publish");
+  const form = app.mqttPublishForm();
+  await form.topic.fill(topic);
+  await form.payload.fill("loopback-on");
+  await form.publish.click();
 
   // 送信した側では一覧に足さないので、ここに出るのはブローカーから届いたもの。
-  await page.getByRole("tab", { name: "Subscribe" }).click();
+  await app.openMqttTab("Subscribe");
   await expect(app.mqttMessage("loopback-on")).toContainText(topic);
 });
 
@@ -239,18 +231,18 @@ test("publishing to a topic with a wildcard shows the backend error", async ({
   await connectNewBroker(app, "E2E MQTT Wildcard Publish");
   await app.subscribeMqtt("e2e/wildcard/#");
 
-  await page.getByRole("tab", { name: "Publish" }).click();
-  const form = app.mqttSection("Publish");
-  await form.getByPlaceholder("Topic", { exact: true }).fill("e2e/wildcard/#");
-  await form.getByPlaceholder("Message payload").fill("never-sent");
-  await form.getByRole("button", { name: "Publish", exact: true }).click();
+  await app.openMqttTab("Publish");
+  const form = app.mqttPublishForm();
+  await form.topic.fill("e2e/wildcard/#");
+  await form.payload.fill("never-sent");
+  await form.publish.click();
 
   await expect(
     page.getByRole("alert").filter({ hasText: "Failed to publish message" }),
   ).toContainText("invalid topic: must not contain wildcards (+ or #)");
   // 検証で弾いただけなので接続は保たれ、ブローカーには何も送られていない。
   await expect(app.mqttStatus("Connected")).toBeVisible();
-  await page.getByRole("tab", { name: "Subscribe" }).click();
+  await app.openMqttTab("Subscribe");
   await publishFromBroker("e2e/wildcard/marker", "marker");
   await expect(app.mqttMessage("marker")).toBeVisible();
   await expect(app.mqttMessages).toHaveCount(1);
@@ -266,15 +258,15 @@ test("a retained publish is delivered to a later subscription", async ({
   const payload = "retained-by-app";
   await connectNewBroker(app, "E2E MQTT Retained Publish");
   try {
-    await page.getByRole("tab", { name: "Publish" }).click();
-    const form = app.mqttSection("Publish");
-    await form.getByPlaceholder("Topic", { exact: true }).fill(topic);
-    await form.getByPlaceholder("Message payload").fill(payload);
-    await app.chooseOption(form, "0", "QoS 1");
-    await form.getByRole("checkbox", { name: "Retain" }).check();
-    await form.getByRole("button", { name: "Publish", exact: true }).click();
+    await app.openMqttTab("Publish");
+    const form = app.mqttPublishForm();
+    await form.topic.fill(topic);
+    await form.payload.fill(payload);
+    await app.chooseOption(form.form, "0", "QoS 1");
+    await form.retain.check();
+    await form.publish.click();
 
-    await page.getByRole("tab", { name: "Subscribe" }).click();
+    await app.openMqttTab("Subscribe");
     await app.subscribeMqtt(topic);
     await expect(app.mqttMessage(payload)).toHaveCount(1);
 
@@ -363,7 +355,7 @@ test("switching brokers keeps each broker's subscriptions separate", async ({
   await expect(app.mqttMessage("to-beta")).toBeVisible();
   await expect(app.mqttMessage("to-alpha")).toHaveCount(0);
 
-  await switchBroker(app, alpha);
+  await app.selectBroker(alpha, { connected: true });
   await expect(app.mqttSubscription("e2e/switch/alpha")).toBeVisible();
   await expect(app.mqttSubscription("e2e/switch/beta")).toBeHidden();
   await expect(app.mqttMessage("to-alpha")).toBeVisible();

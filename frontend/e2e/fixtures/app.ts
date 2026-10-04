@@ -517,9 +517,7 @@ export class App {
       action?: "Save" | "Save & Connect";
     } = {},
   ): Promise<void> {
-    await this.page.getByRole("button", { name: "New Broker" }).click();
-    const dialog = this.brokerDialog("New Profile");
-    await expect(dialog).toBeVisible();
+    const dialog = await this.openNewBrokerDialog();
     await dialog.getByLabel("Name", { exact: true }).fill(name);
     if (options.host !== undefined) {
       await this.brokerHostInput(dialog).fill(options.host);
@@ -536,6 +534,21 @@ export class App {
   /** ブローカーの追加・編集ダイアログ。title を省くとどちらでも当たる。 */
   brokerDialog(title?: "New Profile" | "Edit Profile"): Locator {
     return this.page.getByRole("dialog", { name: title });
+  }
+
+  /** サイドバーの New Broker を押してブローカーの追加ダイアログを開き、ダイアログを返す。 */
+  async openNewBrokerDialog(): Promise<Locator> {
+    await this.page.getByRole("button", { name: "New Broker" }).click();
+    const dialog = this.brokerDialog("New Profile");
+    await expect(dialog).toBeVisible();
+    return dialog;
+  }
+
+  /** ブローカーをどれも選んでいないときに、MQTT パネルに出る案内。 */
+  get mqttEmptyState(): Locator {
+    return this.page.getByText(
+      "No active connection. Select a broker from the sidebar to connect.",
+    );
   }
 
   /** サイドバーのブローカー行。行には名前とブローカー URL が並ぶ。 */
@@ -664,6 +677,16 @@ export class App {
     }, config);
   }
 
+  /** MQTT パネルの Subscribe / Publish タブ。 */
+  mqttTab(name: "Subscribe" | "Publish"): Locator {
+    return this.page.getByRole("tab", { name, exact: true });
+  }
+
+  /** MQTT パネルのタブを切り替える。 */
+  async openMqttTab(name: "Subscribe" | "Publish"): Promise<void> {
+    await this.mqttTab(name).click();
+  }
+
   /**
    * 見出し (Subscriptions / Messages / Publish など) を持つ MQTT のパネル。
    * 見出し → 見出し行 → パネル、と上がる。非表示のタブの見出しは getByRole が拾わないので、
@@ -747,6 +770,11 @@ export class App {
     });
   }
 
+  /** Messages パネルのトピックの絞り込み (ネイティブ select)。値が空なら絞り込まない。 */
+  get mqttTopicFilter(): Locator {
+    return this.page.getByRole("combobox", { name: "Filter by topic" });
+  }
+
   /**
    * Messages パネルの一覧に描かれている行。一覧は仮想スクロールで、表示中の行だけを
    * data-index (一覧の中の位置) 付きで描く。行の位置や並びを測るときに使うもので、
@@ -768,6 +796,18 @@ export class App {
     return this.mqttMessages.filter({
       has: this.page.getByText(payload, { exact: true }),
     });
+  }
+
+  /** Publish タブのフォームと、その入力欄・送信ボタン。Publish タブを開いた状態で使う。 */
+  mqttPublishForm() {
+    const form = this.mqttSection("Publish");
+    return {
+      form,
+      topic: form.getByPlaceholder("Topic", { exact: true }),
+      payload: form.getByPlaceholder("Message payload"),
+      retain: form.getByRole("checkbox", { name: "Retain" }),
+      publish: form.getByRole("button", { name: "Publish", exact: true }),
+    };
   }
 
   /**
