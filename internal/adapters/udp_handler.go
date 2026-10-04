@@ -58,8 +58,8 @@ func (h *UDPHandler) DeleteTarget(id string) error {
 }
 
 // StartListen は指定ポートで UDP リスニングを開始する。
-// encoding は名前付き文字列型をそのまま引数に取ると Wails が models.ts に型定義を生成せず
-// バインディングが壊れるため、string で受けてここでドメイン型へ変換する。
+// encoding は string で受けて、ここでドメイン型へ変換する。
+// 名前付き文字列型を引数に取ると、Wails が models.ts に型定義を生成せずバインディングが壊れる。
 func (h *UDPHandler) StartListen(port int, encoding string) (udpdomain.UDPListenSession, error) {
 	return h.listenSvc.StartListen(port, udpdomain.PayloadEncoding(encoding))
 }

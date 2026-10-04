@@ -33,7 +33,6 @@ type MQTTHandler struct {
 }
 
 // SetupMQTTHandler は既存の MQTTHandler インスタンスにサービスを注入する。
-// Wails の Bind に渡す前に事前確保した空ハンドラーを startup() で初期化する際に使用する。
 func SetupMQTTHandler(h *MQTTHandler, svc MQTTConnectionUseCase, profileSvc MQTTProfileUseCase) {
 	h.svc = svc
 	h.profileSvc = profileSvc

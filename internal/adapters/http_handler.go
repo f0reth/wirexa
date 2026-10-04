@@ -26,17 +26,17 @@ var (
 )
 
 // FileSelector はダイアログで選択されたファイルを登録して session token を発行する。
-// 登録を呼ぶのは OpenFilePicker のダイアログ処理だけで、RPC からパスを登録する経路は無い。
+// Register へ渡してよいのはダイアログの戻り値だけ。RPC 引数のパスを渡す経路を作らない。
 type FileSelector interface {
 	Register(path string) (httpdomain.SelectedFile, error)
 }
 
 // HTTPRequestUseCase は HTTP リクエスト送信のユースケース入力ポート。
-// executionID は送信ごとに呼び出し側が採番する実行 ID で、キャンセル・レスポンスの保存と破棄を
-// この ID で関連付ける。保存済みリクエストの永続 ID (req.ID) とは独立している。
+// executionID は送信ごとに呼び出し側が採番する実行 ID。
+// キャンセルと、レスポンスの保存・破棄をこの ID で関連付ける。
+// 保存済みリクエストの永続 ID (req.ID) とは独立している。
 type HTTPRequestUseCase interface {
 	SendRequest(executionID string, req httpdomain.HTTPRequest) (httpdomain.HTTPResponse, error)
-	// CancelRequest は指定 execution ID の実行をキャンセルする。
 	CancelRequest(executionID string)
 }
 
@@ -61,7 +61,8 @@ type HTTPCollectionItemUseCase interface {
 	DeleteItem(collectionID, itemID string) error
 	// MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。
 	// targetParentID が空の場合はターゲットコレクションルートへ移動する。
-	// position は挿入先インデックス（移動前の配列に対する。UI の挿入ゾーンの位置）。-1 の場合は末尾に追加。
+	// position は移動前の配列に対する挿入先インデックス（UI の挿入ゾーンの位置）。
+	// 負または範囲外の場合は末尾に追加する。
 	MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error
 }
 
@@ -88,7 +89,6 @@ type HTTPHandlerDeps struct {
 }
 
 // SetupHTTPHandler は既存の HTTPHandler インスタンスにサービスを注入する。
-// Wails の Bind に渡す前に事前確保した空ハンドラーを startup() で初期化する際に使用する。
 func SetupHTTPHandler(ctx context.Context, h *HTTPHandler, deps HTTPHandlerDeps) {
 	h.ctx = ctx
 	h.reqSvc = deps.ReqSvc
@@ -154,10 +154,8 @@ func isDir(path string) bool {
 }
 
 // SendRequest は HTTP リクエストを実行してレスポンスを返す。
-// executionID は呼び出し側が送信ごとに採番する実行 ID。ボディが切り詰められた場合、
-// 全文の一時ファイルは backend がこの ID で追跡し、
-// SaveResponseBody / DiscardResponseBody / CancelRequest で参照する。
-// req.ID は保存済みリクエストの ID で、実行の識別には使わない。
+// executionID は送信ごとの実行 ID で、保存済みリクエストの req.ID とは別。
+// ボディが切り詰められた場合、全文の一時ファイルをこの ID で追跡する。
 func (h *HTTPHandler) SendRequest(executionID string, req httpdomain.HTTPRequest) (httpdomain.HTTPResponse, error) {
 	res, err := h.reqSvc.SendRequest(executionID, req)
 	if err != nil {
@@ -199,7 +197,7 @@ func (h *HTTPHandler) SaveResponseBody(executionID string) (bool, error) {
 }
 
 // DiscardResponseBody は execution ID で追跡中の一時ファイルを破棄する。
-// frontend がレスポンスを置き換える・閉じるときに呼ぶ。保存処理中の ID は拒否する。
+// 保存処理中の ID は拒否する。
 func (h *HTTPHandler) DiscardResponseBody(executionID string) error {
 	if h.responses == nil {
 		return httpdomain.ErrResponseUnavailable
@@ -289,7 +287,7 @@ func (h *HTTPHandler) DeleteItem(collectionID, itemID string) error {
 
 // MoveItem はアイテムをコレクション内外・別の親・位置へ移動する。
 // targetParentID が空文字の場合はターゲットコレクションルートへ移動する。
-// position は挿入先インデックス（削除後）。-1 の場合は末尾に追加する。
+// position は移動前の配列に対する挿入先インデックス。負または範囲外の場合は末尾に追加する。
 func (h *HTTPHandler) MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID string, position int) error {
 	return h.itemSvc.MoveItem(sourceCollectionID, itemID, targetCollectionID, targetParentID, position)
 }

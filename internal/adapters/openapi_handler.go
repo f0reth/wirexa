@@ -57,7 +57,6 @@ type OpenAPIHandlerDeps struct {
 }
 
 // SetupOpenAPIHandler は既存の OpenAPIHandler インスタンスに ctx とユースケースを注入する。
-// Wails の Bind に渡す前に事前確保した空ハンドラーを startup() で初期化する際に使用する。
 func SetupOpenAPIHandler(ctx context.Context, h *OpenAPIHandler, deps OpenAPIHandlerDeps) {
 	h.ctx = ctx
 	h.files = deps.Files
@@ -82,7 +81,6 @@ func (h *OpenAPIHandler) OpenFilePicker() (string, error) {
 
 // SaveFileAs はネイティブの保存ダイアログを開き、選択先へ content を書き込む。
 // 選択先を許可リストと recents に登録し、保存パスを返す。キャンセル時は ("", nil)。
-// D&D / ペーストで開いた無題文書の初回保存に使う。
 func (h *OpenAPIHandler) SaveFileAs(defaultName, content string) (string, error) {
 	path, err := h.dialog.SaveFile(h.ctx, runtime.SaveDialogOptions{
 		DefaultFilename: defaultName,

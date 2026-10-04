@@ -22,7 +22,8 @@ func SetupLogHandler(h *LogHandler, logger domain.Logger) {
 	h.logger = logger
 }
 
-// Log はフロントエンドから送られるログエントリを受け取りファイルに書き込む。
+// Log はフロントエンドのログエントリを logger へ書き込む。
+// Level が ERROR・DEBUG 以外のエントリは Info として書く。
 func (h *LogHandler) Log(entry LogEntry) {
 	args := make([]any, 0, len(entry.Attrs)*2+2)
 	args = append(args, "source", entry.Source)
