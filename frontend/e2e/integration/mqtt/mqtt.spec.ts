@@ -1,4 +1,3 @@
-import type { Page } from "@playwright/test";
 import {
   type App,
   disconnectMqttConnections,
@@ -18,33 +17,13 @@ import {
 
 const BROKER_URL = `mqtt://127.0.0.1:${mqttBrokerPort}`;
 
-/** New Broker のダイアログで e2e ブローカーを指すプロファイルを作り、action のボタンで閉じる。 */
-async function newBroker(
-  page: Page,
-  name: string,
-  action: "Save" | "Save & Connect" = "Save",
-): Promise<void> {
-  await page.getByRole("button", { name: "New Broker" }).click();
-  const dialog = page.getByRole("dialog", { name: "New Profile" });
-  await dialog.getByLabel("Name", { exact: true }).fill(name);
-  await dialog.getByPlaceholder("localhost").fill("127.0.0.1");
-  await dialog.getByPlaceholder("1883").fill(String(mqttBrokerPort));
-  await dialog.getByRole("button", { name: action, exact: true }).click();
-  await expect(dialog).toBeHidden();
-}
+/** e2e ブローカーの宛先。app.createBrokerProfile に渡す。 */
+const E2E_BROKER = { host: "127.0.0.1", port: mqttBrokerPort };
 
 /** e2e ブローカーを指すプロファイルを作って接続し、Connected になるまで待つ。 */
 async function connectNewBroker(app: App, name: string): Promise<void> {
-  await newBroker(app.page, name);
+  await app.createBrokerProfile(name, E2E_BROKER);
   await app.connectBroker(name);
-}
-
-/** Subscriptions パネルから購読し、購読の行が出るまで待つ (Go の Subscribe は SUBACK を待つ)。 */
-async function subscribe(app: App, topic: string): Promise<void> {
-  const panel = app.mqttSection("Subscriptions");
-  await panel.getByPlaceholder("Topic (e.g., sensors/#)").fill(topic);
-  await panel.getByRole("button", { name: "Subscribe", exact: true }).click();
-  await expect(app.mqttSubscription(topic)).toBeVisible();
 }
 
 /** 接続済みのブローカーへ切り替える。行をフォーカスして Enter で選ぶ (app.selectBroker と同じ理由)。 */
@@ -68,9 +47,9 @@ test("connects to a local broker and shows Connected", async ({
   await connectNewBroker(app, name);
 
   // 接続バーは URL の入力欄を閉じて Disconnect を出す。
-  await expect(page.getByPlaceholder("localhost")).toBeHidden();
+  await expect(app.brokerHostInput()).toBeHidden();
   await expect(
-    page.getByRole("button", { name: "Disconnect", exact: true }),
+    app.brokerDisconnectButton,
   ).toBeVisible();
   await expect(app.broker(name).getByTitle("Connected")).toBeAttached();
   await expect(page.getByRole("tab", { name: "Subscribe" })).toBeVisible();
@@ -85,16 +64,16 @@ test("disconnect returns the tab to Disconnected", async ({ page, app }) => {
   const name = "E2E MQTT Disconnect";
   await connectNewBroker(app, name);
 
-  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await app.brokerDisconnectButton.click();
 
-  await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
+  await expect(app.mqttStatus("Disconnected")).toBeVisible();
   await expect(app.brokerConnectButton).toBeVisible();
   await expect(app.broker(name).getByTitle("Disconnected")).toBeAttached();
   expect(await mqttConnections(page)).toEqual([]);
 
   // 切断したタブからもう一度つなげる。
   await app.brokerConnectButton.click();
-  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(app.mqttStatus("Connected")).toBeVisible();
 });
 
 test("Save & Connect saves the profile and connects to it", async ({
@@ -102,9 +81,12 @@ test("Save & Connect saves the profile and connects to it", async ({
   app,
 }) => {
   const name = "E2E MQTT Save And Connect";
-  await newBroker(page, name, "Save & Connect");
+  await app.createBrokerProfile(name, {
+    ...E2E_BROKER,
+    action: "Save & Connect",
+  });
 
-  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(app.mqttStatus("Connected")).toBeVisible();
   await expect(app.broker(name)).toContainText(BROKER_URL);
   expect(await mqttConnections(page)).toEqual([
     expect.objectContaining({ name, broker: BROKER_URL, connected: true }),
@@ -118,7 +100,7 @@ test("published message on a subscribed topic appears in Messages", async ({
   app,
 }) => {
   await connectNewBroker(app, "E2E MQTT Receive");
-  await subscribe(app, "e2e/receive/#");
+  await app.subscribeMqtt("e2e/receive/#");
 
   // アプリ以外のクライアントから publish する。
   await publishFromBroker("e2e/receive/temp", '{"temp":21.5}', { qos: 1 });
@@ -139,7 +121,7 @@ test("publishing to a subscribed topic loops back into Messages", async ({
 }) => {
   const topic = "e2e/loopback/lamp";
   await connectNewBroker(app, "E2E MQTT Loopback");
-  await subscribe(app, topic);
+  await app.subscribeMqtt(topic);
 
   await page.getByRole("tab", { name: "Publish" }).click();
   const form = app.mqttSection("Publish");
@@ -158,8 +140,8 @@ test("subscribing to 'a/#/b' shows a validation error toast", async ({
 }) => {
   await connectNewBroker(app, "E2E MQTT Invalid Topic");
   const panel = app.mqttSection("Subscriptions");
-  await panel.getByPlaceholder("Topic (e.g., sensors/#)").fill("a/#/b");
-  await panel.getByRole("button", { name: "Subscribe", exact: true }).click();
+  await app.mqttTopicInput.fill("a/#/b");
+  await app.mqttSubscribeButton.click();
 
   await expect(
     page.getByRole("alert").filter({ hasText: "Failed to subscribe to a/#/b" }),
@@ -167,8 +149,8 @@ test("subscribing to 'a/#/b' shows a validation error toast", async ({
   await expect(panel.getByText("No subscriptions")).toBeVisible();
 
   // 検証で弾いただけなので接続は保たれ、続けて購読できる。
-  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
-  await subscribe(app, "e2e/invalid/ok");
+  await expect(app.mqttStatus("Connected")).toBeVisible();
+  await app.subscribeMqtt("e2e/invalid/ok");
   const [conn] = await mqttConnections(page);
   expect(conn.subscriptions).toEqual([{ topic: "e2e/invalid/ok", qos: 0 }]);
 });
@@ -182,15 +164,15 @@ test("reconnecting after Disconnect keeps receiving subscribed topics", async ({
   const topic = "e2e/reconnect/retained";
   const payload = "after-manual-reconnect";
   await connectNewBroker(app, "E2E MQTT Manual Reconnect");
-  await subscribe(app, topic);
+  await app.subscribeMqtt(topic);
   try {
-    await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+    await app.brokerDisconnectButton.click();
     await expect(app.brokerConnectButton).toBeVisible();
     await expect(app.mqttSubscription(topic)).toBeVisible();
     await publishFromBroker(topic, payload, { retain: true });
 
     await app.brokerConnectButton.click();
-    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    await expect(app.mqttStatus("Connected")).toBeVisible();
 
     await expect(app.mqttMessage(payload).first()).toContainText(topic);
     await expect(
@@ -213,9 +195,9 @@ test("switching brokers keeps each broker's subscriptions separate", async ({
   const alpha = "E2E MQTT Switch Alpha";
   const beta = "E2E MQTT Switch Beta";
   await connectNewBroker(app, alpha);
-  await subscribe(app, "e2e/switch/alpha");
+  await app.subscribeMqtt("e2e/switch/alpha");
   await connectNewBroker(app, beta);
-  await subscribe(app, "e2e/switch/beta");
+  await app.subscribeMqtt("e2e/switch/beta");
   await expect(app.mqttSubscription("e2e/switch/alpha")).toBeHidden();
 
   // 両方のトピックへ届けても、各ブローカーには自分の購読の分だけが出る。
@@ -258,7 +240,7 @@ test("scanning lists broker topics and subscribes from the list", async ({
     const panel = app.mqttSection("Broker Topics");
     await expect(panel.getByText("No topics found")).toBeVisible();
 
-    await panel.getByRole("button", { name: "Scan", exact: true }).click();
+    await app.mqttScanButton.click();
 
     await expect(panel.getByText(topic, { exact: true })).toBeVisible();
     // スキャンはトピックを集めるだけで、購読していないトピックのメッセージは一覧に出さない。
@@ -274,10 +256,8 @@ test("scanning lists broker topics and subscribes from the list", async ({
     // 購読した retained メッセージが届く。スキャンの "#" は別の接続なので、この接続には 1 件だけ届く。
     await expect(app.mqttMessage("kept")).toContainText(topic);
     await expect(app.mqttMessages).toHaveCount(1);
-    await panel.getByRole("button", { name: "Stop", exact: true }).click();
-    await expect(
-      panel.getByRole("button", { name: "Scan", exact: true }),
-    ).toBeVisible();
+    await app.mqttStopScanButton.click();
+    await expect(app.mqttScanButton).toBeVisible();
     const [conn] = await mqttConnections(page);
     expect(conn.subscriptions).toEqual([{ topic, qos: 0 }]);
   } finally {

@@ -13,6 +13,11 @@ interface Fixtures {
   seed: FakeSeed;
   app: App;
   fake: FakeControl;
+  /**
+   * 最初の読み込みのあとに起きた未捕捉の例外のメッセージ。自動では検査しないので、使うテストが
+   * 引数に取り、最後に expect(pageErrors).toEqual([]) で確かめる。
+   */
+  pageErrors: string[];
 }
 
 /** ブラウザ側の偽バックエンドをテストから覗く口。 */
@@ -113,5 +118,11 @@ export const test = base.extend<Fixtures>({
 
   fake: async ({ app }, use) => {
     await use(new FakeControl(app));
+  },
+
+  pageErrors: async ({ page }, use) => {
+    const errors: string[] = [];
+    page.on("pageerror", (err) => errors.push(err.message));
+    await use(errors);
   },
 });

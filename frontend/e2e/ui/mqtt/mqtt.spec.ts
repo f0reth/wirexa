@@ -11,10 +11,11 @@ test("can create a broker profile", async ({ page, app }) => {
 
 test("new broker dialog save button is disabled when name is empty", async ({
   page,
+  app,
 }) => {
   await page.getByRole("button", { name: "New Broker" }).click();
 
-  const dialog = page.getByRole("dialog");
+  const dialog = app.brokerDialog("New Profile");
   await expect(dialog).toBeVisible();
 
   // 名前が空のため Save ボタンは無効
@@ -26,15 +27,15 @@ test("new broker dialog save button is disabled when name is empty", async ({
 // 保存した broker URL を読み戻せない値（指数表記・小数のポート、コロンを含むホスト）は保存させない。
 test("new broker dialog rejects a port or host that cannot be read back", async ({
   page,
+  app,
 }) => {
   await page.getByRole("button", { name: "New Broker" }).click();
 
-  const dialog = page.getByRole("dialog");
+  const dialog = app.brokerDialog("New Profile");
   await expect(dialog).toBeVisible();
   const save = dialog.getByRole("button", { name: "Save", exact: true });
-  // ホストとポートは "Broker URL" の行にまとめて並び、個別のラベルを持たないので placeholder で取る。
-  const host = dialog.getByPlaceholder("localhost");
-  const port = dialog.getByPlaceholder("1883");
+  const host = app.brokerHostInput(dialog);
+  const port = app.brokerPortInput(dialog);
 
   await dialog.getByLabel("Name", { exact: true }).fill("Validation Broker");
   await host.fill("localhost");
@@ -57,9 +58,7 @@ test("can delete a broker profile", async ({ page, app }) => {
   await app.createBrokerProfile("Delete Me");
   await expect(page.getByText("Delete Me")).toBeVisible();
 
-  // アクションボタンはホバーで表示される
-  await page.getByText("Delete Me").hover();
-  await page.getByRole("button", { name: "Delete broker", exact: true }).click();
+  await (await app.brokerRowAction("Delete Me", "Delete broker")).click();
 
   await app.confirmDelete();
 
@@ -92,18 +91,16 @@ test("can switch between subscribe and publish tabs", async ({ page, app }) => {
 // ── 観点H-4: トピックのサブスクライブ UIフロー ────────────────────────────────
 
 test("subscribe button is disabled when broker is not connected", async ({
-  page,
   app,
 }) => {
   await app.createBrokerProfile("Offline Broker");
 
-  const topicInput = page.getByPlaceholder("Topic (e.g., sensors/#)");
-  await expect(topicInput).toBeVisible();
+  await expect(app.mqttTopicInput).toBeVisible();
 
-  await topicInput.fill("test/topic");
+  await app.mqttTopicInput.fill("test/topic");
 
   // オフライン接続のため Subscribe ボタンは無効
-  await expect(page.getByRole("button", { name: "Subscribe" })).toBeDisabled();
+  await expect(app.mqttSubscribeButton).toBeDisabled();
 });
 
 // ── 観点H-5: QoS の選択（0/1/2） ──────────────────────────────────────────────
@@ -166,12 +163,10 @@ test.describe("broker order", () => {
     page,
     app,
   }) => {
-    const row = (name: string) =>
-      page.getByRole("button").filter({ hasText: name });
     const rows = page.getByRole("button").filter({ hasText: /^Broker / });
     await expect(rows).toHaveText([/Broker Alpha/, /Broker Beta/]);
 
-    await app.dragListRowBefore(row(BETA.name), row(ALPHA.name));
+    await app.dragListRowBefore(app.broker(BETA.name), app.broker(ALPHA.name));
 
     await expect(rows).toHaveText([/Broker Beta/, /Broker Alpha/]);
     const stored = await page.evaluate(() =>
@@ -202,8 +197,8 @@ test.describe("broker topics scan", () => {
     await app.connectBroker(BROKER.name);
     const connectionId = (await fake.snapshot()).mqttConnections[0].id;
     const panel = app.mqttSection("Broker Topics");
-    const scan = panel.getByRole("button", { name: "Scan", exact: true });
-    const stop = panel.getByRole("button", { name: "Stop", exact: true });
+    const scan = app.mqttScanButton;
+    const stop = app.mqttStopScanButton;
     await expect(panel.getByText("No topics found")).toBeVisible();
 
     await scan.click();

@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { type App, expect, test, WailsEvents } from "../../fixtures/ui";
+import { expect, test, WailsEvents } from "../../fixtures/ui";
 
 // ブローカープロファイルの編集・選択・接続失敗。偽バックエンドの Connect は seed.mqttConnect を
 // "ok" にしない限り失敗するので、未接続のまま書ける範囲を扱う。
@@ -34,13 +34,14 @@ test("empty state shows no brokers and no active connection", async ({
 
 test("broker dialog rejects port 0 and 65536 and a blank host", async ({
   page,
+  app,
 }) => {
   await page.getByRole("button", { name: "New Broker" }).click();
-  const dialog = page.getByRole("dialog", { name: "New Profile" });
+  const dialog = app.brokerDialog("New Profile");
   const save = dialog.getByRole("button", { name: "Save", exact: true });
   const saveAndConnect = dialog.getByRole("button", { name: "Save & Connect" });
-  const host = dialog.getByPlaceholder("localhost");
-  const port = dialog.getByPlaceholder("1883");
+  const host = app.brokerHostInput(dialog);
+  const port = app.brokerPortInput(dialog);
 
   await dialog.getByLabel("Name", { exact: true }).fill("Range Broker");
   await expect(host).toHaveValue("localhost");
@@ -75,24 +76,19 @@ test.describe("editing a broker", () => {
     app,
     fake,
   }) => {
-    const row = app.broker(ALPHA.name);
-    await row.hover();
-    await row.getByRole("button", { name: "Edit broker" }).click();
-
     // 保存済みの broker URL をスキーム・ホスト・ポートに分けて読み込む。
-    const dialog = page.getByRole("dialog", { name: "Edit Profile" });
+    const dialog = await app.openBrokerEditDialog(ALPHA.name);
     const name = dialog.getByLabel("Name", { exact: true });
     await expect(name).toHaveValue(ALPHA.name);
-    // スキームはダイアログで唯一のネイティブ select。
-    await expect(dialog.getByRole("combobox")).toHaveValue("tcp");
-    await expect(dialog.getByPlaceholder("localhost")).toHaveValue(
+    await expect(app.brokerSchemeSelect(dialog)).toHaveValue("tcp");
+    await expect(app.brokerHostInput(dialog)).toHaveValue(
       "alpha.local",
     );
-    await expect(dialog.getByPlaceholder("1883")).toHaveValue("1883");
+    await expect(app.brokerPortInput(dialog)).toHaveValue("1883");
 
     await name.fill("Broker Renamed");
-    await dialog.getByPlaceholder("localhost").fill("renamed.local");
-    await dialog.getByPlaceholder("1883").fill("1884");
+    await app.brokerHostInput(dialog).fill("renamed.local");
+    await app.brokerPortInput(dialog).fill("1884");
     await dialog.getByRole("button", { name: "Save", exact: true }).click();
     await expect(dialog).toBeHidden();
 
@@ -115,34 +111,26 @@ test.describe("editing a broker", () => {
   });
 
   test("editing the selected broker in the dialog refreshes the connection bar", async ({
-    page,
     app,
   }) => {
     await app.selectBroker(ALPHA.name);
-    const host = page.getByPlaceholder("localhost");
+    const host = app.brokerHostInput();
     await expect(host).toHaveValue("alpha.local");
 
-    const row = app.broker(ALPHA.name);
-    await row.hover();
-    await row.getByRole("button", { name: "Edit broker" }).click();
-    const dialog = page.getByRole("dialog", { name: "Edit Profile" });
-    await dialog.getByPlaceholder("localhost").fill("renamed.local");
+    const dialog = await app.openBrokerEditDialog(ALPHA.name);
+    await app.brokerHostInput(dialog).fill("renamed.local");
     await dialog.getByRole("button", { name: "Save", exact: true }).click();
     await expect(dialog).toBeHidden();
 
     await expect(host).toHaveValue("renamed.local");
-    await expect(page.getByPlaceholder("1883")).toHaveValue("1883");
+    await expect(app.brokerPortInput()).toHaveValue("1883");
   });
 
   test("cancelling the edit dialog keeps the profile", async ({
-    page,
     app,
     fake,
   }) => {
-    const row = app.broker(ALPHA.name);
-    await row.hover();
-    await row.getByRole("button", { name: "Edit broker" }).click();
-    const dialog = page.getByRole("dialog", { name: "Edit Profile" });
+    const dialog = await app.openBrokerEditDialog(ALPHA.name);
     await dialog.getByLabel("Name", { exact: true }).fill("Not Saved");
     await dialog.getByRole("button", { name: "Cancel" }).click();
 
@@ -168,13 +156,6 @@ function connectingButton(page: Page): Locator {
   return page.getByRole("button", { name: "Connecting…", exact: true });
 }
 
-async function subscribe(app: App, topic: string): Promise<void> {
-  const panel = app.mqttSection("Subscriptions");
-  await panel.getByPlaceholder("Topic (e.g., sensors/#)").fill(topic);
-  await panel.getByRole("button", { name: "Subscribe", exact: true }).click();
-  await expect(app.mqttSubscription(topic)).toBeVisible();
-}
-
 test.describe("editing a broker whose connection is pending", () => {
   test.use({ seed: { mqttProfiles: [ALPHA], mqttConnect: "pending" } });
 
@@ -197,8 +178,8 @@ test.describe("editing a broker whose connection is pending", () => {
       await dialog.getByRole("button", { name: "Cancel" }).click();
       await expect(dialog).toBeHidden();
 
-      await expect(app.brokerHostInput).toBeDisabled();
-      await expect(app.brokerPortInput).toBeDisabled();
+      await expect(app.brokerHostInput()).toBeDisabled();
+      await expect(app.brokerPortInput()).toBeDisabled();
       await expect(app.brokerConnectButton).toBeHidden();
       expect(await fake.calls("SaveProfile")).toBe(0);
     };
@@ -225,7 +206,7 @@ test.describe("editing a broker whose connection is pending", () => {
     expect((await fake.snapshot()).mqttConnections).toEqual([]);
 
     // 中止したあとは、接続バーでもダイアログでも編集できる。
-    await app.brokerHostInput.fill("edited.local");
+    await app.brokerHostInput().fill("edited.local");
     await expect(app.broker(ALPHA.name)).toContainText(
       "tcp://edited.local:1883",
     );
@@ -249,7 +230,7 @@ test.describe("editing a broker after its connection failed", () => {
       page.getByRole("alert").filter({ hasText: "MQTT connection failed" }),
     ).toBeVisible();
 
-    await app.brokerHostInput.fill("edited.local");
+    await app.brokerHostInput().fill("edited.local");
     await expect(app.broker(ALPHA.name)).toContainText(
       "tcp://edited.local:1883",
     );
@@ -269,18 +250,17 @@ test.describe("editing a connected broker", () => {
   test.use({ seed: { mqttProfiles: [ALPHA], mqttConnect: "ok" } });
 
   test("Save is disabled for a connected broker and Save & Connect reconnects with the edit", async ({
-    page,
     app,
     fake,
   }) => {
     await app.connectBroker(ALPHA.name);
-    await subscribe(app, "sensors/#");
+    await app.subscribeMqtt("sensors/#");
     const oldId = (await fake.snapshot()).mqttConnections[0].id;
 
     const dialog = await app.openBrokerEditDialog(ALPHA.name);
     await expect(saveButton(dialog)).toBeDisabled();
     await expect(dialog.getByText(LIVE_NOTICE)).toBeVisible();
-    await dialog.getByPlaceholder("localhost").fill("renamed.local");
+    await app.brokerHostInput(dialog).fill("renamed.local");
     // 入力を変えても Save は押せないまま。
     await expect(saveButton(dialog)).toBeDisabled();
     await dialog.getByRole("button", { name: "Save & Connect" }).click();
@@ -300,7 +280,7 @@ test.describe("editing a connected broker", () => {
       "sensors/#",
       0,
     ]);
-    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    await expect(app.mqttStatus("Connected")).toBeVisible();
     await expect(app.mqttSubscription("sensors/#")).toBeVisible();
   });
 
@@ -310,23 +290,23 @@ test.describe("editing a connected broker", () => {
     fake,
   }) => {
     await app.connectBroker(ALPHA.name);
-    await subscribe(app, "sensors/#");
-    await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+    await app.subscribeMqtt("sensors/#");
+    await app.brokerDisconnectButton.click();
     await expect(app.brokerConnectButton).toBeVisible();
 
     const dialog = await app.openBrokerEditDialog(ALPHA.name);
     await expect(dialog.getByText(LIVE_NOTICE)).toBeHidden();
-    await dialog.getByPlaceholder("localhost").fill("renamed.local");
+    await app.brokerHostInput(dialog).fill("renamed.local");
     await saveButton(dialog).click();
     await expect(dialog).toBeHidden();
 
     // タブを作り直さないので、購読の行が残る。
-    await expect(app.brokerHostInput).toHaveValue("renamed.local");
+    await expect(app.brokerHostInput()).toHaveValue("renamed.local");
     await expect(app.mqttSubscription("sensors/#")).toBeVisible();
     await expect(page.getByRole("alert")).toHaveCount(0);
 
     await app.brokerConnectButton.click();
-    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    await expect(app.mqttStatus("Connected")).toBeVisible();
     expect((await fake.args("Connect")).at(-1)?.[0]).toMatchObject({
       broker: "tcp://renamed.local:1883",
     });
@@ -340,21 +320,21 @@ test.describe("editing a connected broker", () => {
     fake,
   }) => {
     await app.connectBroker(ALPHA.name);
-    await subscribe(app, "sensors/#");
+    await app.subscribeMqtt("sensors/#");
     const connectionId = (await fake.snapshot()).mqttConnections[0].id;
 
     await fake.emit(WailsEvents.mqttConnectionLost, {
       connectionId,
       error: "EOF",
     });
-    await expect(app.brokerHostInput).toBeDisabled();
+    await expect(app.brokerHostInput()).toBeDisabled();
     await connectingButton(page).click();
 
     await expect(app.brokerConnectButton).toBeVisible();
     expect(await fake.calls("Disconnect")).toBe(1);
     expect((await fake.snapshot()).mqttConnections).toEqual([]);
     await expect(app.mqttSubscription("sensors/#")).toBeVisible();
-    await expect(app.brokerHostInput).toBeEnabled();
+    await expect(app.brokerHostInput()).toBeEnabled();
   });
 });
 
@@ -371,8 +351,8 @@ test.describe("connection bar validation", () => {
     fake,
   }) => {
     await app.selectBroker(ALPHA.name);
-    const host = app.brokerHostInput;
-    const port = app.brokerPortInput;
+    const host = app.brokerHostInput();
+    const port = app.brokerPortInput();
 
     const expectRejected = async (saveCalls: number) => {
       await expect(host).toHaveAttribute("aria-invalid", "true");
@@ -410,8 +390,7 @@ test.describe("connection bar validation", () => {
     // 無効な入力は保存していないので、リロード後は最後に保存した URL を表示する。
     await port.fill("");
     await page.reload();
-    // 接続バーのスキーム欄。Subscriptions パネルにも select があるので、先頭を取る。
-    await expect(page.getByRole("combobox").first()).toHaveValue("tcp");
+    await expect(app.brokerSchemeSelect()).toHaveValue("tcp");
     await expect(host).toHaveValue("alpha.local");
     await expect(port).toHaveValue("1884");
   });
@@ -429,7 +408,7 @@ test.describe("save failure", () => {
     app,
   }) => {
     await page.getByRole("button", { name: "New Broker" }).click();
-    const dialog = page.getByRole("dialog", { name: "New Profile" });
+    const dialog = app.brokerDialog("New Profile");
     await dialog.getByLabel("Name", { exact: true }).fill("Not Saved");
     await dialog.getByRole("button", { name: "Save", exact: true }).click();
 
@@ -449,12 +428,11 @@ test.describe("save failure", () => {
     page,
     app,
     fake,
+    pageErrors,
   }) => {
-    const pageErrors: string[] = [];
-    page.on("pageerror", (err) => pageErrors.push(err.message));
     await app.selectBroker(ALPHA.name);
 
-    const host = page.getByPlaceholder("localhost");
+    const host = app.brokerHostInput();
     await host.press("End");
     await host.pressSequentially("xyz");
     await fake.waitForCalls("SaveProfile", 3);
@@ -481,6 +459,7 @@ test.describe("when loading brokers fails on startup", () => {
   test("shows an error toast, keeps the last broker and still creates a preset", async ({
     page,
     fake,
+    pageErrors,
   }) => {
     // saveToStorage の保存形式 (JSON)
     const saved = JSON.stringify(ALPHA.id);
@@ -495,8 +474,6 @@ test.describe("when loading brokers fails on startup", () => {
     );
 
     // fixture は goto を済ませているので、reload で起動時の失敗をもう一度起こす。
-    const pageErrors: string[] = [];
-    page.on("pageerror", (err) => pageErrors.push(err.message));
     await page.reload();
 
     const toast = page
@@ -539,14 +516,11 @@ test.describe("delete failure", () => {
     page,
     app,
     fake,
+    pageErrors,
   }) => {
-    const pageErrors: string[] = [];
-    page.on("pageerror", (err) => pageErrors.push(err.message));
     await app.connectBroker(ALPHA.name);
 
-    const row = app.broker(ALPHA.name);
-    await row.hover();
-    await row.getByRole("button", { name: "Delete broker" }).click();
+    await (await app.brokerRowAction(ALPHA.name, "Delete broker")).click();
     await app.confirmDelete();
 
     await expect(
@@ -554,7 +528,7 @@ test.describe("delete failure", () => {
     ).toContainText("access denied");
     // 削除に失敗したら、ブローカーもタブも接続も残す。
     await expect(app.broker(ALPHA.name)).toBeVisible();
-    await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+    await expect(app.mqttStatus("Connected")).toBeVisible();
     expect(await fake.calls("Disconnect")).toBe(0);
     expect((await fake.snapshot()).mqttConnections).toHaveLength(1);
     expect(pageErrors).toEqual([]);
@@ -580,7 +554,7 @@ test.describe("connect failure", () => {
       page.getByRole("alert").filter({ hasText: "MQTT connection failed" }),
     ).toContainText("connection refused");
     // 未接続のまま、もう一度押せる。失敗した接続はバックエンドに残らない。
-    await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
+    await expect(app.mqttStatus("Disconnected")).toBeVisible();
     await expect(app.brokerConnectButton).toBeEnabled();
     expect(await fake.calls("Connect")).toBe(1);
     expect((await fake.snapshot()).mqttConnections).toEqual([]);
@@ -600,7 +574,7 @@ test.describe("connect failure", () => {
     fake,
   }) => {
     await page.getByRole("button", { name: "New Broker" }).click();
-    const dialog = page.getByRole("dialog", { name: "New Profile" });
+    const dialog = app.brokerDialog("New Profile");
     await dialog.getByLabel("Name", { exact: true }).fill("Unreachable");
     await dialog.getByRole("button", { name: "Save & Connect" }).click();
 
@@ -649,7 +623,7 @@ test.describe("connect rejected", () => {
       .filter({ hasText: "Failed to reconnect" });
     await expect(toast).toContainText("connection refused");
     // 未接続のまま、もう一度押せる。
-    await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
+    await expect(app.mqttStatus("Disconnected")).toBeVisible();
     await expect(app.brokerConnectButton).toBeEnabled();
     expect(await fake.calls("Connect")).toBe(1);
     expect((await fake.snapshot()).mqttConnections).toEqual([]);
@@ -669,9 +643,8 @@ test.describe("multiple brokers", () => {
     page,
     app,
   }) => {
-    // 接続バーの入力欄。ダイアログは閉じているので、この placeholder は接続バーにしか無い。
-    const host = page.getByPlaceholder("localhost");
-    const port = page.getByPlaceholder("1883");
+    const host = app.brokerHostInput();
+    const port = app.brokerPortInput();
     const emptyState = page.getByText(
       "No active connection. Select a broker from the sidebar to connect.",
     );
@@ -699,14 +672,13 @@ test.describe("multiple brokers", () => {
 
   // 接続バーで編集した URL は、選んでいるブローカーのプロファイルに保存される。
   test("editing the connection bar after switching saves only the selected broker", async ({
-    page,
     app,
     fake,
   }) => {
     await app.selectBroker(ALPHA.name);
     await app.selectBroker(BETA.name);
 
-    await page.getByPlaceholder("1883").fill("9999");
+    await app.brokerPortInput().fill("9999");
 
     await expect(app.broker(BETA.name)).toContainText(
       "mqtts://beta.local:9999",

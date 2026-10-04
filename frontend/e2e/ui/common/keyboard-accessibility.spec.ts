@@ -135,15 +135,15 @@ test.describe("selecting with the keyboard", () => {
     await expect(app.urlInput).toHaveValue("https://api.example.com/kb");
   });
 
-  test("Enter on a focused broker selects it", async ({ page, app }) => {
+  test("Enter on a focused broker selects it", async ({ app }) => {
     const row = app.broker("Keyboard Broker");
 
     await row.focus();
     await row.press("Enter");
 
     await expect(app.brokerConnectButton).toBeVisible();
-    await expect(page.getByPlaceholder("localhost")).toHaveValue("kb.local");
-    await expect(page.getByPlaceholder("1883")).toHaveValue("1884");
+    await expect(app.brokerHostInput()).toHaveValue("kb.local");
+    await expect(app.brokerPortInput()).toHaveValue("1884");
   });
 
   test("Space on a focused udp target selects it", async ({ page, app }) => {

@@ -25,17 +25,6 @@ function publishForm(app: App) {
   };
 }
 
-/**
- * プリセット一覧の追加ボタン。アクセシブル名が無いので、見出し "Messages" の行にある
- * 唯一のボタンとして取る。
- */
-function addPresetButton(page: Page) {
-  return page
-    .getByRole("heading", { name: "Messages", exact: true })
-    .locator("xpath=..")
-    .getByRole("button");
-}
-
 /** 選択中のプリセットの名前を、行内の入力欄で書き換えて確定する。 */
 async function renameSelectedPreset(
   app: App,
@@ -83,7 +72,7 @@ test("presets can be added, selected, renamed and deleted", async ({
   await renameSelectedPreset(app, "sensors/a", "Preset A");
 
   // 追加したプリセットが選ばれ、フォームは空に戻る。
-  await addPresetButton(page).click();
+  await app.addMqttPresetButton.click();
   await expect(app.mqttPresets).toHaveCount(2);
   await expect(topic).toHaveValue("");
   await expect(payload).toHaveValue("");
@@ -104,12 +93,12 @@ test("presets can be added, selected, renamed and deleted", async ({
   ).toHaveValue("Preset A");
   await expect(app.mqttPreset("sensors/b")).toContainText("Preset B");
 
-  // 削除ボタンにはアクセシブル名が無い。行内のボタンはこれだけ。確認は挟まない。
-  await app.mqttPreset("sensors/b").getByRole("button").click();
+  // 削除は確認を挟まない。
+  await app.deleteMqttPresetButton("sensors/b").click();
   await expect(app.mqttPreset("sensors/b")).toHaveCount(0);
   await expect(app.mqttPresets).toHaveCount(1);
 
-  await app.mqttPreset("sensors/a").getByRole("button").click();
+  await app.deleteMqttPresetButton("sensors/a").click();
   await expect(app.mqttPresets).toHaveCount(0);
   await expect(page.getByText("No saved presets")).toBeVisible();
   expect(await storedPresets(page)).toEqual([]);
@@ -123,7 +112,7 @@ test("publish presets survive a reload", async ({ page, app }) => {
   await payload.fill("payload-a");
   await renameSelectedPreset(app, "sensors/a", "Preset A");
 
-  await addPresetButton(page).click();
+  await app.addMqttPresetButton.click();
   await topic.fill("sensors/b");
   await payload.fill("payload-b");
   await retain.check();
@@ -170,10 +159,10 @@ test("publish presets survive a reload", async ({ page, app }) => {
 
 // ── 観点G: キーボードでのプリセット選択 ──────────────────────────────────────
 
-test("Enter on a focused preset selects it", async ({ page, app }) => {
+test("Enter on a focused preset selects it", async ({ app }) => {
   const { topic } = publishForm(app);
   await topic.fill("sensors/a");
-  await addPresetButton(page).click();
+  await app.addMqttPresetButton.click();
   await expect(app.mqttPresets).toHaveCount(2);
   await topic.fill("sensors/b");
 

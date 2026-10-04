@@ -1,5 +1,11 @@
 import type { Page } from "@playwright/test";
-import { type App, expect, test, WailsEvents } from "../../fixtures/ui";
+import type { MqttRawMessage } from "../../../src/domain/mqtt/types";
+import {
+  type App,
+  test as base,
+  expect,
+  WailsEvents,
+} from "../../fixtures/ui";
 
 // 接続済みブローカーでの購読・受信・表示と Publish。偽バックエンドは seed.mqttConnect: "ok" で
 // Connect を成功させ、Go と同じく接続 ID を返したあとで mqtt:connected を発火する。
@@ -11,18 +17,30 @@ const BROKER = { id: "profile-local", name: "Local Broker" };
 /** 画面が 1 つの接続で保持するメッセージの上限 (src/config/limits.ts の MQTT_MAX_MESSAGES)。 */
 const MAX_MESSAGES = 5000;
 
-test.use({ seed: { mqttProfiles: [BROKER], mqttConnect: "ok" } });
-
-let connectionId: string;
-
-test.beforeEach(async ({ app, fake }) => {
-  await app.connectBroker(BROKER.name);
-  const [conn] = (await fake.snapshot()).mqttConnections;
-  connectionId = conn.id;
+/**
+ * connectionId は BROKER に接続して、その接続 ID を返す。自動では動かないので、接続が要るテストが
+ * 引数に取る。
+ */
+const test = base.extend<{ connectionId: string }>({
+  connectionId: async ({ app, fake }, use) => {
+    await app.connectBroker(BROKER.name);
+    const [conn] = (await fake.snapshot()).mqttConnections;
+    await use(conn.id);
+  },
 });
 
-/** Go の domain.MQTTMessage と同じ形の mqtt:message のペイロード。 */
-function message(topic: string, payload: string, qos: 0 | 1 | 2 = 0) {
+test.use({ seed: { mqttProfiles: [BROKER], mqttConnect: "ok" } });
+
+/**
+ * Go の domain.MQTTMessage と同じ形の mqtt:message のペイロード。フロントエンドの domain 型は
+ * retained を持たないが、Go は送る。
+ */
+function message(
+  connectionId: string,
+  topic: string,
+  payload: string,
+  qos: 0 | 1 | 2 = 0,
+): MqttRawMessage & { retained: boolean } {
   return {
     connectionId,
     topic,
@@ -35,17 +53,10 @@ function message(topic: string, payload: string, qos: 0 | 1 | 2 = 0) {
 }
 
 /** "msg-<from>" から "msg-<to - 1>" までのペイロードを持つメッセージ。 */
-function numbered(from: number, to: number) {
+function numbered(connectionId: string, from: number, to: number) {
   return Array.from({ length: to - from }, (_, i) =>
-    message("bulk/data", `msg-${from + i}`),
+    message(connectionId, "bulk/data", `msg-${from + i}`),
   );
-}
-
-/** 以後に起きた未捕捉の例外のメッセージを集める。fixture は pageerror を検査しない。 */
-function collectPageErrors(page: Page): string[] {
-  const errors: string[] = [];
-  page.on("pageerror", (err) => errors.push(err.message));
-  return errors;
 }
 
 /** 受信の反映 (requestAnimationFrame) とその後の描画が終わるまで待つ。 */
@@ -58,25 +69,17 @@ async function nextFrames(page: Page): Promise<void> {
   );
 }
 
-async function subscribe(app: App, topic: string, qos?: 1 | 2): Promise<void> {
-  const panel = app.mqttSection("Subscriptions");
-  await panel.getByPlaceholder("Topic (e.g., sensors/#)").fill(topic);
-  // QoS の Select はトリガーに現在の値が出る。
-  if (qos !== undefined) await app.chooseOption(panel, "0", `QoS ${qos}`);
-  await panel.getByRole("button", { name: "Subscribe", exact: true }).click();
-  await expect(app.mqttSubscription(topic)).toBeVisible();
-}
-
 // ── 観点H: 購読の追加・削除 ──────────────────────────────────────────────────
 
 test("subscribing and unsubscribing reach the backend", async ({
   app,
   fake,
+  connectionId,
 }) => {
   const panel = app.mqttSection("Subscriptions");
   await expect(panel.getByText("No subscriptions")).toBeVisible();
 
-  await subscribe(app, "sensors/#", 1);
+  await app.subscribeMqtt("sensors/#", 1);
 
   const row = app.mqttSubscription("sensors/#");
   await expect(row).toContainText("QoS 1");
@@ -85,8 +88,7 @@ test("subscribing and unsubscribing reach the backend", async ({
     { topic: "sensors/#", qos: 1 },
   ]);
 
-  // 削除ボタンにはアクセシブル名が無い。Mute の次に並ぶ行末のボタン。
-  await row.getByRole("button").last().click();
+  await app.removeMqttSubscriptionButton("sensors/#").click();
 
   await expect(row).toBeHidden();
   await expect(panel.getByText("No subscriptions")).toBeVisible();
@@ -96,10 +98,12 @@ test("subscribing and unsubscribing reach the backend", async ({
 test("subscribing to an invalid filter shows the backend error", async ({
   page,
   app,
+  // 接続だけが要る。
+  connectionId: _connectionId,
 }) => {
   const panel = app.mqttSection("Subscriptions");
-  await panel.getByPlaceholder("Topic (e.g., sensors/#)").fill("a/#/b");
-  await panel.getByRole("button", { name: "Subscribe", exact: true }).click();
+  await app.mqttTopicInput.fill("a/#/b");
+  await app.mqttSubscribeButton.click();
 
   // Go の ValidateTopicFilter と同じ文言がトーストに出て、購読は増えない。
   await expect(
@@ -115,15 +119,16 @@ test("received message is listed and its details can be copied", async ({
   context,
   app,
   fake,
+  connectionId,
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await subscribe(app, "sensors/temp");
+  await app.subscribeMqtt("sensors/temp");
   const messages = app.mqttSection("Messages");
   await expect(messages.getByText("No messages yet")).toBeVisible();
 
   await fake.emit(
     WailsEvents.mqttMessage,
-    message("sensors/temp", '{"temp":21.5}', 1),
+    message(connectionId, "sensors/temp", '{"temp":21.5}', 1),
   );
 
   const item = app.mqttMessage('{"temp":21.5}');
@@ -156,9 +161,9 @@ test("received message is listed and its details can be copied", async ({
     .toBe(formatted);
 });
 
-test("muted subscription hides its messages", async ({ app, fake }) => {
-  await subscribe(app, "sensors/temp");
-  await subscribe(app, "alerts/fire");
+test("muted subscription hides its messages", async ({ app, fake, connectionId }) => {
+  await app.subscribeMqtt("sensors/temp");
+  await app.subscribeMqtt("alerts/fire");
 
   const muteButton = app
     .mqttSubscription("sensors/temp")
@@ -171,9 +176,9 @@ test("muted subscription hides its messages", async ({ app, fake }) => {
 
   // 同じフレームに届けるので、alarm が見えた時点で残りも処理済み。
   await fake.emitAll(WailsEvents.mqttMessage, [
-    message("sensors/temp", "muted-reading"),
-    message("other/topic", "not-subscribed"),
-    message("alerts/fire", "alarm"),
+    message(connectionId, "sensors/temp", "muted-reading"),
+    message(connectionId, "other/topic", "not-subscribed"),
+    message(connectionId, "alerts/fire", "alarm"),
   ]);
 
   await expect(app.mqttMessage("alarm")).toBeVisible();
@@ -185,18 +190,18 @@ test("muted subscription hides its messages", async ({ app, fake }) => {
   await unmuteButton.click();
   await fake.emit(
     WailsEvents.mqttMessage,
-    message("sensors/temp", "after-unmute"),
+    message(connectionId, "sensors/temp", "after-unmute"),
   );
   await expect(app.mqttMessage("after-unmute")).toBeVisible();
 });
 
 // 共有購読のメッセージは、接頭辞の無いトピックで届く (バックエンドは接頭辞を外して振り分ける)。
-test("shared subscription shows its messages", async ({ app, fake }) => {
-  await subscribe(app, "$share/group/sensors/#");
+test("shared subscription shows its messages", async ({ app, fake, connectionId }) => {
+  await app.subscribeMqtt("$share/group/sensors/#");
 
   await fake.emitAll(WailsEvents.mqttMessage, [
-    message("other/topic", "not-subscribed"),
-    message("sensors/temp", "shared-reading"),
+    message(connectionId, "other/topic", "not-subscribed"),
+    message(connectionId, "sensors/temp", "shared-reading"),
   ]);
 
   await expect(app.mqttMessage("shared-reading")).toContainText(
@@ -211,9 +216,10 @@ test("dropped subscription is removed and notified", async ({
   page,
   app,
   fake,
+  connectionId,
 }) => {
-  await subscribe(app, "sensors/#");
-  await subscribe(app, "alerts/fire");
+  await app.subscribeMqtt("sensors/#");
+  await app.subscribeMqtt("alerts/fire");
 
   await fake.emit(WailsEvents.mqttSubscriptionDropped, {
     connectionId,
@@ -234,18 +240,19 @@ test("topic filter can shorten a list that grew after it was first drawn", async
   page,
   app,
   fake,
+  connectionId,
+  pageErrors,
 }) => {
-  const pageErrors = collectPageErrors(page);
-  await subscribe(app, "sensors/#");
+  await app.subscribeMqtt("sensors/#");
   await fake.emitAll(WailsEvents.mqttMessage, [
-    message("sensors/temp", "t-1"),
-    message("sensors/humidity", "h-1"),
-    message("sensors/temp", "t-2"),
-    message("sensors/humidity", "h-2"),
+    message(connectionId, "sensors/temp", "t-1"),
+    message(connectionId, "sensors/humidity", "h-1"),
+    message(connectionId, "sensors/temp", "t-2"),
+    message(connectionId, "sensors/humidity", "h-2"),
   ]);
   await expect(app.mqttMessages).toHaveCount(4);
   // 描画済みの一覧に 1 件足してから絞り込む。
-  await fake.emit(WailsEvents.mqttMessage, message("sensors/temp", "t-3"));
+  await fake.emit(WailsEvents.mqttMessage, message(connectionId, "sensors/temp", "t-3"));
   await expect(app.mqttMessages).toHaveCount(5);
 
   await page
@@ -260,11 +267,12 @@ test("topic filter narrows the list and Clear empties it", async ({
   page,
   app,
   fake,
+  connectionId,
 }) => {
-  await subscribe(app, "sensors/#");
+  await app.subscribeMqtt("sensors/#");
   await fake.emitAll(WailsEvents.mqttMessage, [
-    message("sensors/temp", "t-1"),
-    message("sensors/humidity", "h-1"),
+    message(connectionId, "sensors/temp", "t-1"),
+    message(connectionId, "sensors/humidity", "h-1"),
   ]);
   const temp = app.mqttMessage("t-1");
   const humidity = app.mqttMessage("h-1");
@@ -287,10 +295,7 @@ test("topic filter narrows the list and Clear empties it", async ({
   await filter.selectOption("");
   await expect(humidity).toBeVisible();
 
-  await app
-    .mqttSection("Messages")
-    .getByRole("button", { name: "Clear", exact: true })
-    .click();
+  await app.mqttMessagesAction("Clear").click();
 
   await expect(app.mqttMessages).toHaveCount(0);
   await expect(
@@ -305,11 +310,12 @@ test("topic filter narrows by a shared subscription and its concrete topics", as
   page,
   app,
   fake,
+  connectionId,
 }) => {
-  await subscribe(app, "$share/group/sensors/#");
+  await app.subscribeMqtt("$share/group/sensors/#");
   await fake.emitAll(WailsEvents.mqttMessage, [
-    message("sensors/temp", "t-1"),
-    message("sensors/humidity", "h-1"),
+    message(connectionId, "sensors/temp", "t-1"),
+    message(connectionId, "sensors/humidity", "h-1"),
   ]);
   const temp = app.mqttMessage("t-1");
   const humidity = app.mqttMessage("h-1");
@@ -340,15 +346,12 @@ test("topic filter narrows by a shared subscription and its concrete topics", as
  * 行が隙間なく並んでいればすべて 0 になる。
  */
 function rowGaps(app: App): Promise<number[]> {
-  return app
-    .mqttSection("Messages")
-    .locator("[data-index]")
-    .evaluateAll((rows) => {
-      const rects = rows
-        .sort((a, b) => Number(a.dataset.index) - Number(b.dataset.index))
-        .map((el) => el.getBoundingClientRect());
-      return rects.slice(1).map((rect, i) => rect.top - rects[i].bottom);
-    });
+  return app.mqttMessageRows.evaluateAll((rows) => {
+    const rects = rows
+      .sort((a, b) => Number(a.dataset.index) - Number(b.dataset.index))
+      .map((el) => el.getBoundingClientRect());
+    return rects.slice(1).map((rect, i) => rect.top - rects[i].bottom);
+  });
 }
 
 /** 一覧の rows 件の行が、隙間も重なりもなく (±1px) 並ぶまで待つ。 */
@@ -362,22 +365,23 @@ test("message rows stay contiguous whatever the payload length", async ({
   page,
   app,
   fake,
+  connectionId,
+  pageErrors,
 }) => {
-  const pageErrors = collectPageErrors(page);
-  await subscribe(app, "sensors/#");
+  await app.subscribeMqtt("sensors/#");
   // プレビューが 1 行で収まるペイロードと、2 行に折り返して切り詰められるペイロード。
   const long = "x".repeat(400);
   await fake.emitAll(WailsEvents.mqttMessage, [
-    message("sensors/temp", "short-1"),
-    message("sensors/humidity", `${long}-1`),
-    message("sensors/temp", "short-2"),
-    message("sensors/humidity", `${long}-2`),
+    message(connectionId, "sensors/temp", "short-1"),
+    message(connectionId, "sensors/humidity", `${long}-1`),
+    message(connectionId, "sensors/temp", "short-2"),
+    message(connectionId, "sensors/humidity", `${long}-2`),
   ]);
   await expect(app.mqttMessages).toHaveCount(4);
   await expectRowsContiguous(app, 4);
 
   // 受信で件数が変わっても並びは崩れない。
-  await fake.emit(WailsEvents.mqttMessage, message("sensors/temp", "short-3"));
+  await fake.emit(WailsEvents.mqttMessage, message(connectionId, "sensors/temp", "short-3"));
   await expect(app.mqttMessages).toHaveCount(5);
   await expectRowsContiguous(app, 5);
 
@@ -396,12 +400,13 @@ test("selecting a long single-line payload does not widen the window", async ({
   page,
   app,
   fake,
+  connectionId,
+  pageErrors,
 }) => {
-  const pageErrors = collectPageErrors(page);
-  await subscribe(app, "sensors/temp");
+  await app.subscribeMqtt("sensors/temp");
   // 改行も空白も無く、詳細の <pre> で折り返されないペイロード。
   const payload = "x".repeat(400);
-  await fake.emit(WailsEvents.mqttMessage, message("sensors/temp", payload));
+  await fake.emit(WailsEvents.mqttMessage, message(connectionId, "sensors/temp", payload));
 
   await app.mqttMessage(payload).click();
   await expect(page.getByText(payload, { exact: true })).toHaveCount(2);
@@ -411,9 +416,7 @@ test("selecting a long single-line payload does not widen the window", async ({
       () => document.documentElement.scrollWidth - window.innerWidth,
     ),
   ).toBeLessThanOrEqual(0);
-  await expect(
-    app.mqttSection("Messages").getByRole("button", { name: "Clear" }),
-  ).toBeInViewport({ ratio: 1 });
+  await expect(app.mqttMessagesAction("Clear")).toBeInViewport({ ratio: 1 });
   expect(pageErrors).toEqual([]);
 });
 
@@ -423,10 +426,11 @@ test("with Auto enabled the newest message is scrolled into view", async ({
   page,
   app,
   fake,
+  connectionId,
 }) => {
-  await subscribe(app, "bulk/#");
+  await app.subscribeMqtt("bulk/#");
   // 一覧の表示領域を十分に超える件数
-  await fake.emitAll(WailsEvents.mqttMessage, numbered(0, 50));
+  await fake.emitAll(WailsEvents.mqttMessage, numbered(connectionId, 0, 50));
 
   // Auto は既定で OFF: 先頭に留まり、どのメッセージも選ばない。
   await expect(app.mqttMessage("msg-0")).toBeInViewport();
@@ -434,10 +438,7 @@ test("with Auto enabled the newest message is scrolled into view", async ({
   const placeholder = page.getByText("Select a message to view details");
   await expect(placeholder).toBeVisible();
 
-  await app
-    .mqttSection("Messages")
-    .getByRole("button", { name: "Auto", exact: true })
-    .click();
+  await app.mqttMessagesAction("Auto").click();
 
   // 末尾までスクロールし、最新のメッセージを選んで詳細に出す。
   await expect(app.mqttMessage("msg-49")).toBeInViewport();
@@ -445,7 +446,7 @@ test("with Auto enabled the newest message is scrolled into view", async ({
   await expect(page.getByText("msg-49", { exact: true })).toHaveCount(2);
 
   // 以後に届いたメッセージにも追従する。
-  await fake.emit(WailsEvents.mqttMessage, message("bulk/data", "msg-50"));
+  await fake.emit(WailsEvents.mqttMessage, message(connectionId, "bulk/data", "msg-50"));
   await expect(app.mqttMessage("msg-50")).toBeInViewport();
   await expect(page.getByText("msg-50", { exact: true })).toHaveCount(2);
 });
@@ -454,19 +455,17 @@ test("with Auto and a topic filter, a message outside the filter leaves the sele
   page,
   app,
   fake,
+  connectionId,
+  pageErrors,
 }) => {
-  const pageErrors = collectPageErrors(page);
-  await subscribe(app, "sensors/#");
+  await app.subscribeMqtt("sensors/#");
   await fake.emitAll(WailsEvents.mqttMessage, [
-    message("sensors/temp", "t-1"),
-    message("sensors/humidity", "h-1"),
+    message(connectionId, "sensors/temp", "t-1"),
+    message(connectionId, "sensors/humidity", "h-1"),
   ]);
   await expect(app.mqttMessage("h-1")).toBeVisible();
 
-  await app
-    .mqttSection("Messages")
-    .getByRole("button", { name: "Auto", exact: true })
-    .click();
+  await app.mqttMessagesAction("Auto").click();
   await page
     .getByRole("combobox", { name: "Filter by topic" })
     .selectOption("sensors/temp");
@@ -476,20 +475,20 @@ test("with Auto and a topic filter, a message outside the filter leaves the sele
   await expect(page.getByText("t-1", { exact: true })).toHaveCount(2);
 
   // フィルター外の受信は一覧にも詳細にも出ない。
-  await fake.emit(WailsEvents.mqttMessage, message("sensors/humidity", "h-2"));
+  await fake.emit(WailsEvents.mqttMessage, message(connectionId, "sensors/humidity", "h-2"));
   await nextFrames(page);
   await expect(page.getByText("h-2", { exact: true })).toHaveCount(0);
   await expect(page.getByText("t-1", { exact: true })).toHaveCount(2);
 
   // フィルターに一致する受信には追従し続ける。
-  await fake.emit(WailsEvents.mqttMessage, message("sensors/temp", "t-2"));
+  await fake.emit(WailsEvents.mqttMessage, message(connectionId, "sensors/temp", "t-2"));
   await expect(page.getByText("t-2", { exact: true })).toHaveCount(2);
   await expect(page.getByText("h-2", { exact: true })).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });
 
 // ── 観点D: 5000 件の上限 ─────────────────────────────────────────────────────
-// 受信は 1 フレームにまとめて一覧へ反映する (connections.ts の flushMessages)。一覧は
+// 受信は 1 フレームにまとめて一覧へ反映する (message-buffer.ts の flushMessages)。一覧は
 // 上限を超えた分の古いものを捨て、1 フレーム分のバッファは上限を超えた新しいものを捨てる。
 // 一覧は仮想スクロールで表示中の行しか描かないので、先頭と末尾で見えている行を確かめる。
 
@@ -500,42 +499,38 @@ test.describe("message cap", () => {
   test("mqtt message list drops the oldest message when the 5001st arrives", async ({
     app,
     fake,
+    connectionId,
   }) => {
-    await subscribe(app, "bulk/#");
-    await fake.emitAll(WailsEvents.mqttMessage, numbered(0, MAX_MESSAGES));
+    await app.subscribeMqtt("bulk/#");
+    await fake.emitAll(WailsEvents.mqttMessage, numbered(connectionId, 0, MAX_MESSAGES));
     // 表示されたら 1 フレーム目の反映は終わっている。次の 1 件は別のフレームに届く。
     await expect(app.mqttMessage("msg-0")).toBeVisible();
 
     await fake.emit(
       WailsEvents.mqttMessage,
-      message("bulk/data", `msg-${MAX_MESSAGES}`),
+      message(connectionId, "bulk/data", `msg-${MAX_MESSAGES}`),
     );
 
     // 先頭 (スクロール位置は先頭のまま) から最古の msg-0 が消え、msg-1 が繰り上がる。
     await expect(app.mqttMessage("msg-0")).toHaveCount(0);
     await expect(app.mqttMessages.first()).toHaveText(/msg-1$/);
 
-    await app
-      .mqttSection("Messages")
-      .getByRole("button", { name: "Auto", exact: true })
-      .click();
+    await app.mqttMessagesAction("Auto").click();
     await expect(app.mqttMessage(`msg-${MAX_MESSAGES}`)).toBeInViewport();
   });
 
   test("mqtt messages beyond 5000 within one frame are dropped from the buffer", async ({
     app,
     fake,
+    connectionId,
   }) => {
-    await subscribe(app, "bulk/#");
-    await fake.emitAll(WailsEvents.mqttMessage, numbered(0, MAX_MESSAGES + 1));
+    await app.subscribeMqtt("bulk/#");
+    await fake.emitAll(WailsEvents.mqttMessage, numbered(connectionId, 0, MAX_MESSAGES + 1));
 
     // バッファに入った最初の 5000 件が一覧に載り、あふれた最新の 1 件は捨てられる。
     await expect(app.mqttMessages.first()).toHaveText(/msg-0$/);
 
-    await app
-      .mqttSection("Messages")
-      .getByRole("button", { name: "Auto", exact: true })
-      .click();
+    await app.mqttMessagesAction("Auto").click();
     const last = app.mqttMessage(`msg-${MAX_MESSAGES - 1}`);
     await expect(last).toBeInViewport();
     // 一覧の並び順そのものを確かめるので、末尾の項目を位置で取る。
@@ -552,6 +547,7 @@ test("publish sends topic, QoS, retain and payload", async ({
   page,
   app,
   fake,
+  connectionId,
 }) => {
   await page.getByRole("tab", { name: "Publish" }).click();
   const form = app.mqttSection("Publish");

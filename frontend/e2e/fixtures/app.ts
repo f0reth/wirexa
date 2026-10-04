@@ -505,13 +505,37 @@ export class App {
 
   // ── MQTT ────────────────────────────────────────────────────────────────────
 
-  async createBrokerProfile(name: string): Promise<void> {
+  /**
+   * New Broker のダイアログでプロファイルを作り、action のボタンで閉じる。host と port を省くと
+   * ダイアログの既定値 (mqtt://localhost:1883) のまま保存する。
+   */
+  async createBrokerProfile(
+    name: string,
+    options: {
+      host?: string;
+      port?: number;
+      action?: "Save" | "Save & Connect";
+    } = {},
+  ): Promise<void> {
     await this.page.getByRole("button", { name: "New Broker" }).click();
-    const dialog = this.page.getByRole("dialog");
+    const dialog = this.brokerDialog("New Profile");
     await expect(dialog).toBeVisible();
     await dialog.getByLabel("Name", { exact: true }).fill(name);
-    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    if (options.host !== undefined) {
+      await this.brokerHostInput(dialog).fill(options.host);
+    }
+    if (options.port !== undefined) {
+      await this.brokerPortInput(dialog).fill(String(options.port));
+    }
+    await dialog
+      .getByRole("button", { name: options.action ?? "Save", exact: true })
+      .click();
     await expect(dialog).toBeHidden();
+  }
+
+  /** ブローカーの追加・編集ダイアログ。title を省くとどちらでも当たる。 */
+  brokerDialog(title?: "New Profile" | "Edit Profile"): Locator {
+    return this.page.getByRole("dialog", { name: title });
   }
 
   /** サイドバーのブローカー行。行には名前とブローカー URL が並ぶ。 */
@@ -522,14 +546,32 @@ export class App {
   }
 
   /**
-   * 未接続のブローカーを選び、接続バーに Connect が出るまで待つ。行をクリックすると、
+   * サイドバーの行のボタン (Edit / Delete)。ホバーで出るので、行をホバーしてから返す。
+   */
+  async brokerRowAction(
+    name: string,
+    action: "Edit broker" | "Delete broker",
+  ): Promise<Locator> {
+    const row = this.broker(name);
+    await row.hover();
+    return row.getByRole("button", { name: action, exact: true });
+  }
+
+  /**
+   * ブローカーを選び、接続バーに Connect が出るまで待つ。接続済みのブローカーは Connect が
+   * 出ないので、connected: true を渡して Disconnect が出るまで待つ。行をクリックすると、
    * ホバーで出る Edit / Delete ボタンに当たることがあるので、フォーカスして Enter で選ぶ。
    */
-  async selectBroker(name: string): Promise<void> {
+  async selectBroker(
+    name: string,
+    options: { connected?: boolean } = {},
+  ): Promise<void> {
     const row = this.broker(name);
     await row.focus();
     await row.press("Enter");
-    await expect(this.brokerConnectButton).toBeVisible();
+    await expect(
+      options.connected ? this.brokerDisconnectButton : this.brokerConnectButton,
+    ).toBeVisible();
   }
 
   /** 接続バーの Connect ボタン。未接続のブローカーを選んでいるときだけ出る。 */
@@ -537,25 +579,45 @@ export class App {
     return this.page.getByRole("button", { name: "Connect", exact: true });
   }
 
-  /**
-   * 接続バーのホスト欄。ブローカーの編集ダイアログにも同じ placeholder の入力欄があるので、
-   * ダイアログを閉じた状態で使う。
-   */
-  get brokerHostInput(): Locator {
-    return this.page.getByPlaceholder("localhost");
+  /** 接続バーの Disconnect ボタン。接続済みのブローカーを選んでいるときだけ出る。 */
+  get brokerDisconnectButton(): Locator {
+    return this.page.getByRole("button", { name: "Disconnect", exact: true });
   }
 
-  /** 接続バーのポート欄。brokerHostInput と同じく、ダイアログを閉じた状態で使う。 */
-  get brokerPortInput(): Locator {
-    return this.page.getByPlaceholder("1883");
+  /** 接続バーの接続状態の表示。 */
+  mqttStatus(text: "Connected" | "Disconnected"): Locator {
+    return this.page.getByText(text, { exact: true });
+  }
+
+  /**
+   * ブローカー URL のホスト欄。scope を省くと接続バー、ダイアログを渡すとダイアログの欄。
+   * スキーム・ホスト・ポートは "Broker URL" の 1 行に並び、個別のラベルを持たないので placeholder で取る。
+   * 接続バーとダイアログの欄は同じ placeholder なので、接続バーの欄はダイアログを閉じた状態で使う。
+   */
+  brokerHostInput(scope: Locator | Page = this.page): Locator {
+    return scope.getByPlaceholder("localhost");
+  }
+
+  /** ブローカー URL のポート欄。scope は brokerHostInput と同じ。 */
+  brokerPortInput(scope: Locator | Page = this.page): Locator {
+    return scope.getByPlaceholder("1883");
+  }
+
+  /**
+   * ブローカー URL のスキーム欄 (ネイティブ select)。scope は brokerHostInput と同じ。
+   * ラベルが無く、画面にはほかの select (Messages のトピックの絞り込み) もあるので、
+   * ホスト欄の直前に並ぶ select として取る。
+   */
+  brokerSchemeSelect(scope: Locator | Page = this.page): Locator {
+    return this.brokerHostInput(scope).locator(
+      "xpath=preceding-sibling::select",
+    );
   }
 
   /** サイドバーの行の Edit ボタンからブローカーの編集ダイアログを開き、ダイアログを返す。 */
   async openBrokerEditDialog(name: string): Promise<Locator> {
-    const row = this.broker(name);
-    await row.hover();
-    await row.getByRole("button", { name: "Edit broker" }).click();
-    const dialog = this.page.getByRole("dialog", { name: "Edit Profile" });
+    await (await this.brokerRowAction(name, "Edit broker")).click();
+    const dialog = this.brokerDialog("Edit Profile");
     await expect(dialog).toBeVisible();
     return dialog;
   }
@@ -564,9 +626,7 @@ export class App {
   async connectBroker(name: string): Promise<void> {
     await this.selectBroker(name);
     await this.brokerConnectButton.click();
-    await expect(
-      this.page.getByText("Connected", { exact: true }),
-    ).toBeVisible();
+    await expect(this.mqttStatus("Connected")).toBeVisible();
   }
 
   /**
@@ -587,6 +647,78 @@ export class App {
       .locator(
         "xpath=ancestor::div[.//button[@title='Mute' or @title='Unmute']][1]",
       );
+  }
+
+  /** Subscriptions パネルのトピックの入力欄。 */
+  get mqttTopicInput(): Locator {
+    return this.mqttSection("Subscriptions").getByPlaceholder(
+      "Topic (e.g., sensors/#)",
+    );
+  }
+
+  /** Subscriptions パネルの Subscribe ボタン。 */
+  get mqttSubscribeButton(): Locator {
+    return this.mqttSection("Subscriptions").getByRole("button", {
+      name: "Subscribe",
+      exact: true,
+    });
+  }
+
+  /**
+   * Subscriptions パネルから購読し、購読の行が出るまで待つ。qos を省くと選び直さない (QoS 0)。
+   */
+  async subscribeMqtt(topic: string, qos?: 1 | 2): Promise<void> {
+    await this.mqttTopicInput.fill(topic);
+    // QoS の Select はトリガーに現在の値が出る。
+    if (qos !== undefined) {
+      await this.chooseOption(
+        this.mqttSection("Subscriptions"),
+        "0",
+        `QoS ${qos}`,
+      );
+    }
+    await this.mqttSubscribeButton.click();
+    await expect(this.mqttSubscription(topic)).toBeVisible();
+  }
+
+  /** 購読の行の削除ボタン。 */
+  removeMqttSubscriptionButton(topic: string): Locator {
+    return this.mqttSubscription(topic).getByRole("button", {
+      name: "Remove subscription",
+    });
+  }
+
+  /** Broker Topics パネルの Scan ボタン。スキャン中は Stop に替わる。 */
+  get mqttScanButton(): Locator {
+    return this.mqttSection("Broker Topics").getByRole("button", {
+      name: "Scan",
+      exact: true,
+    });
+  }
+
+  /** Broker Topics パネルの Stop ボタン。スキャン中だけ出る。 */
+  get mqttStopScanButton(): Locator {
+    return this.mqttSection("Broker Topics").getByRole("button", {
+      name: "Stop",
+      exact: true,
+    });
+  }
+
+  /** Messages パネルの見出し行のボタン。 */
+  mqttMessagesAction(name: "Auto" | "Clear"): Locator {
+    return this.mqttSection("Messages").getByRole("button", {
+      name,
+      exact: true,
+    });
+  }
+
+  /**
+   * Messages パネルの一覧に描かれている行。一覧は仮想スクロールで、表示中の行だけを
+   * data-index (一覧の中の位置) 付きで描く。行の位置や並びを測るときに使うもので、
+   * アクセシブルな代わりが無いので DOM の属性で取る。項目の中身は mqttMessages で見る。
+   */
+  get mqttMessageRows(): Locator {
+    return this.mqttSection("Messages").locator("[data-index]");
   }
 
   /** Messages パネルの一覧の項目 (ボタン)。見出し行の Auto / Clear は除く。 */
@@ -620,6 +752,20 @@ export class App {
   mqttPreset(topic: string): Locator {
     return this.mqttPresets.filter({
       has: this.page.getByText(topic, { exact: true }),
+    });
+  }
+
+  /** Publish タブのプリセット一覧の追加ボタン。 */
+  get addMqttPresetButton(): Locator {
+    return this.mqttSection("Messages").getByRole("button", {
+      name: "Add preset",
+    });
+  }
+
+  /** トピックが topic のプリセット行の削除ボタン。確認は挟まない。 */
+  deleteMqttPresetButton(topic: string): Locator {
+    return this.mqttPreset(topic).getByRole("button", {
+      name: "Delete preset",
     });
   }
 }
