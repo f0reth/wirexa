@@ -1,4 +1,4 @@
-// Package main is the entry point for the Wirexa desktop application.
+// Package main は Wirexa デスクトップアプリのエントリポイント。
 package main
 
 import (
@@ -25,7 +25,7 @@ import (
 	udpinfra "github.com/f0reth/Wirexa/internal/infrastructure/udp"
 )
 
-// コンパイル時に各 application サービスが adapters の入力ポートを満たすことを検証
+// 各 application サービスが adapters の入力ポートを満たすことを、コンパイル時に検証する。
 var (
 	_ adapters.HTTPRequestUseCase        = (*httpapp.HTTPRequestService)(nil)
 	_ adapters.HTTPCollectionUseCase     = (*httpapp.CollectionService)(nil)
@@ -99,9 +99,9 @@ func (a *App) startup(ctx context.Context) {
 	a.ready = true
 }
 
-// initialize は各サービスの構築を行い、失敗時はエラーを返す。
-// 破損した JSON ファイルは JSONStore.Load 側で退避・スキップされるため、
-// ここでの失敗は設定ディレクトリが作れない等の継続不能なケースに限られる。
+// initialize は各サービスを構築してハンドラーへ注入する。
+// 破損した JSON ファイルは読み込み側で退避・スキップされる。
+// ここで失敗するのは、設定ディレクトリを作れないなど継続できない場合だけ。
 func (a *App) initialize(ctx context.Context) error {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -127,11 +127,7 @@ func (a *App) initialize(ctx context.Context) error {
 		logger,
 	)
 
-	// 前回セッションで残った打ち切りレスポンスの一時ファイルを掃除する。
-	// session directory は Wirexa 専用の cache directory 配下にあり、削除前に
-	// インストールごとの乱数シークレットで marker を検証するため、同一 OS ユーザーの
-	// 他プロセスが接頭辞を真似ただけのディレクトリを誤って削除しない
-	// (単一インスタンスロックは「Wirexa の別プロセスがいない」ことしか保証しない)。
+	// 前回のセッションが残した、打ち切りレスポンスの一時ファイルを掃除する。
 	httpinfra.SweepStaleTempFiles(sessionDir)
 
 	// MQTT / UDP の両サービスで共有する (ctx を保持するだけのステートレスな型)。
@@ -150,7 +146,6 @@ func (a *App) initialize(ctx context.Context) error {
 	}
 	adapters.SetupMQTTHandler(a.mqttHandler, a.mqttSvc, profileSvc)
 
-	// token と実パスを永続化しないよう、runtime model と永続化 DTO を変換する専用リポジトリを使う。
 	collRepo, err := httpinfra.NewCollectionRepository(filepath.Join(configDir, wirexaConfigDir, "collections"), logger)
 	if err != nil {
 		return fmt.Errorf("failed to create collection store: %w", err)
@@ -194,7 +189,7 @@ func (a *App) initialize(ctx context.Context) error {
 	return nil
 }
 
-// onSecondInstanceLaunch は二重起動時に既存インスタンス側で呼ばれ、ウィンドウを前面化する。
+// onSecondInstanceLaunch はウィンドウを前面に出す。二重起動時に、既存インスタンス側で Wails が呼ぶ。
 func (a *App) onSecondInstanceLaunch(_ options.SecondInstanceData) {
 	if a.ctx == nil {
 		return // startup 完了前は何もしない
@@ -203,11 +198,10 @@ func (a *App) onSecondInstanceLaunch(_ options.SecondInstanceData) {
 	runtime.Show(a.ctx)
 }
 
-// beforeClose はウィンドウを閉じようとしたときに呼ばれる。
-// true を返すと閉じるのを阻止する。未保存文書の有無はフロントエンドしか
-// 知らないため、"app:before-close" を通知して一旦阻止し、フロント側の判断
-// (ConfirmQuit の呼び出し) を待つ。ConfirmQuit 経由で quitConfirmed が立てば
-// 次の呼び出しでそのまま閉じる。
+// beforeClose はウィンドウを閉じる前に呼ばれる。true を返すと閉じるのを止める。
+// 未保存の文書があるかはフロントエンドしか知らない。
+// そのため EventAppBeforeClose を通知して一度止め、ConfirmQuit を待つ。
+// quitConfirmed が立っていれば、そのまま閉じる。
 func (a *App) beforeClose(ctx context.Context) bool {
 	// ウィンドウが生存しているこの時点で状態を保存する (冪等なので複数回呼ばれてよい)。
 	if a.windowMgr != nil {

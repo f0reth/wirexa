@@ -3,7 +3,6 @@
 // internal/domain/events.go の go:generate ディレクティブから呼ばれる。
 //
 // 生成物: frontend/src/shared/wails-events.ts
-// Go 側の定数値がフロントへ機械的に伝播し、イベント名の二重宣言・乖離を防ぐ。
 package main
 
 import (
