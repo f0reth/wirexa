@@ -27,9 +27,18 @@ import type {
   UdpTarget,
 } from "../../src/domain/udp/types";
 import { WailsEvents } from "../../src/shared/wails-events";
+import type { mqttdomain } from "../../wailsjs/go/models";
 import type { FakeSeed } from "./types";
 
 const clone = <T>(v: T): T => structuredClone(v);
+
+/**
+ * ID の昇順に並べた複製を返す。Go の CachedStore.GetAll (GetProfiles・GetTargets) と同じ順で、
+ * 作った順ではない。db の中の順序は変えない。
+ */
+function sortedById<T extends { id: string }>(items: T[]): T[] {
+  return clone(items).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
 
 // ── 永続化 (sessionStorage) ───────────────────────────────────────────────────
 
@@ -533,7 +542,7 @@ const UdpHandler = {
   // seed.getTargetsError で RPC 自体の失敗 (Wails のランタイムの不調など) を模す。
   GetTargets: counted("GetTargets", async () => {
     if (seed.getTargetsError) throw new Error(seed.getTargetsError);
-    return clone(db.udpTargets);
+    return sortedById(db.udpTargets);
   }),
 
   SaveTarget: mutates("SaveTarget", (target: UdpTarget) => {
@@ -641,8 +650,8 @@ function validateTopicFilter(filter: string): void {
 }
 
 /** UseTLS のときに TLS で接続できるスキームか (Go の ValidateBrokerScheme と同じ規則)。 */
-function validateBrokerScheme(broker: string, useTLS: boolean): void {
-  if (!useTLS) return;
+function validateBrokerScheme(broker: string, useTls: boolean): void {
+  if (!useTls) return;
   const index = broker.indexOf("://");
   if (index < 0) return;
   const scheme = broker.slice(0, index).toLowerCase();
@@ -666,7 +675,7 @@ const MqttHandler = {
   // seed.getProfilesError で RPC 自体の失敗 (Wails のランタイムの不調など) を模す。
   GetProfiles: counted("GetProfiles", async () => {
     if (seed.getProfilesError) throw new Error(seed.getProfilesError);
-    return clone(db.mqttProfiles);
+    return sortedById(db.mqttProfiles);
   }),
 
   // seed.saveProfileError で書き込みの失敗 (ディスクの I/O エラーなど) を模す。
@@ -709,18 +718,14 @@ const MqttHandler = {
   // - seed.mqttConnect が "reject": RPC 自体を失敗させる (Go では終了処理中の Connect に当たる)。
   // - seed.mqttConnect が "pending": 接続を一覧に残したままイベントを出さない (Go で確立待ちが
   //   続いている状態。GetConnections は connected: false で返す)。
+  // 引数は生成された配線型で受ける。Go の json タグが変わって再生成されれば、ここで tsc が検出する。
   Connect: counted(
     "Connect",
-    async (config: {
-      name: string;
-      broker: string;
-      profileId: string;
-      useTLS: boolean;
-    }): Promise<string> => {
+    async (config: mqttdomain.ConnectionConfig): Promise<string> => {
       if (config.broker === "") {
         throw validationError("broker URL", "is required");
       }
-      validateBrokerScheme(config.broker, config.useTLS);
+      validateBrokerScheme(config.broker, config.useTls);
       if (seed.mqttConnect === "reject") throw new Error("connection refused");
       const conn: ConnectionStatus = {
         id: newId("conn"),
@@ -772,11 +777,10 @@ const MqttHandler = {
       validateTopicFilter(topic);
       validateQos(qos);
       const conn = mqttConnection(connectionId);
-      // Go は購読を topic → qos の map で持つので、同じトピックは QoS を上書きする。
-      conn.subscriptions = [
-        ...conn.subscriptions.filter((s) => s.topic !== topic),
-        { topic, qos },
-      ];
+      // Go の setSub と同じく、購読中のトピックは位置を保って QoS を上書きする。
+      const existing = conn.subscriptions.find((s) => s.topic === topic);
+      if (existing) existing.qos = qos;
+      else conn.subscriptions.push({ topic, qos });
     },
   ),
 
