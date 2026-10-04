@@ -14,20 +14,8 @@ import (
 	domain "github.com/f0reth/Wirexa/internal/domain/http"
 )
 
-// isolateTempDir は各 OS の一時ディレクトリ環境変数を専用ディレクトリに向け、
-// os.TempDir() ベースの一時ファイル生成・掃除をテスト間で隔離する。
-func isolateTempDir(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	t.Setenv("TMPDIR", dir)
-	t.Setenv("TMP", dir)
-	t.Setenv("TEMP", dir)
-	return dir
-}
-
 func TestSweepStaleTempFiles(t *testing.T) {
 	baseDir := t.TempDir()
-	tmpDir := isolateTempDir(t) // legacy flat-file sweep は今も実 os.TempDir() を対象にする
 
 	secret, err := sessionSecret(baseDir)
 	if err != nil {
@@ -70,21 +58,16 @@ func TestSweepStaleTempFiles(t *testing.T) {
 		t.Fatalf("write %s: %v", forgedMarker, err)
 	}
 
-	legacy := filepath.Join(tmpDir, "wirexa-response-abc123")
-	keep := filepath.Join(tmpDir, "unrelated.txt")
-	for _, p := range []string{legacy, keep} {
-		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
-			t.Fatalf("write %s: %v", p, err)
-		}
+	// 接頭辞に一致しないファイルは sweep の対象外。
+	keep := filepath.Join(baseDir, "unrelated.txt")
+	if err := os.WriteFile(keep, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write %s: %v", keep, err)
 	}
 
 	SweepStaleTempFiles(baseDir)
 
 	if _, err := os.Stat(sessionDir); !os.IsNotExist(err) {
 		t.Fatalf("expected stale session dir removed, err=%v", err)
-	}
-	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
-		t.Fatalf("expected legacy temp file removed, err=%v", err)
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("unrelated file must be kept: %v", err)

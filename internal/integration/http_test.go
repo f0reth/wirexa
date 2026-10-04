@@ -2002,7 +2002,6 @@ func TestHTTP_ReconcilesRootItemEntriesOnStartup(t *testing.T) {
 // セッションの一時ファイルを起動時の sweep が回収し、marker の無いディレクトリは残すことと、
 // 前回セッションのファイル token が再起動後に使えないことを確認する。
 // sweep を app.go と同じ sessionDir で NetClient の作成前に呼ぶ配線は、このテストでは確かめない。
-// 注意: SweepStaleTempFiles は os.TempDir() 直下の旧形式の一時ファイル (wirexa-response-*) も消す。
 func TestHTTP_StaleResponseFilesSweptOnRestart(t *testing.T) {
 	srv := newBodyServer(t, truncatedBody())
 	selected := filepath.Join(t.TempDir(), "payload.txt")

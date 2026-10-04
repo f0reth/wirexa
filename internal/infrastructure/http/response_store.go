@@ -24,8 +24,6 @@ const (
 	// responseSessionDirPrefix は Wirexa 専用 session directory の接頭辞。
 	// 起動時 sweep はこの接頭辞のディレクトリだけを対象にする。
 	responseSessionDirPrefix = "wirexa-http-"
-	// legacyResponseFilePrefix は session directory 導入前の flat な一時ファイルの接頭辞。
-	legacyResponseFilePrefix = "wirexa-response-"
 
 	// sessionMarkerFile は Wirexa が作成した session directory であることを示す marker file の名前。
 	// 名前が接頭辞に一致するだけの無関係なディレクトリを起動時 sweep が削除しないよう、
@@ -443,31 +441,26 @@ func sessionSecret(baseDir string) ([]byte, error) {
 	return secret, nil
 }
 
-// SweepStaleTempFiles は前回のセッションが残した一時ファイルを削除する。
-// 対象は baseDir 配下の session directory と、os.TempDir() 直下の legacyResponseFilePrefix のファイル。
+// SweepStaleTempFiles は前回のセッションが baseDir 配下に残した session directory を削除する。
 // session directory は isWirexaSessionDir で確かめてから削除する。
 // 同じ OS ユーザーの別プロセスが接頭辞を真似たディレクトリを消さないため。
-// シークレットを読み書きできない場合は、session directory の sweep だけを諦める。
+// シークレットを読み書きできない場合は sweep を諦める。
 // 失敗はログに出さず、次回起動時の sweep に任せる。
 func SweepStaleTempFiles(baseDir string) {
-	if info, err := os.Stat(baseDir); err == nil && info.IsDir() {
-		if secret, err := sessionSecret(baseDir); err == nil {
-			if dirs, err := filepath.Glob(filepath.Join(baseDir, responseSessionDirPrefix+"*")); err == nil {
-				for _, d := range dirs {
-					if isWirexaSessionDir(d, secret) {
-						_ = os.RemoveAll(d) //nolint:errcheck // 後始末。失敗は無視してよい
-					}
-				}
-			}
-		}
+	if info, err := os.Stat(baseDir); err != nil || !info.IsDir() {
+		return
 	}
-
-	tmp := os.TempDir()
-	if files, err := filepath.Glob(filepath.Join(tmp, legacyResponseFilePrefix+"*")); err == nil {
-		for _, f := range files {
-			if info, err := os.Lstat(f); err == nil && info.Mode().IsRegular() {
-				_ = os.Remove(f) //nolint:errcheck // 後始末。失敗は無視してよい
-			}
+	secret, err := sessionSecret(baseDir)
+	if err != nil {
+		return
+	}
+	dirs, err := filepath.Glob(filepath.Join(baseDir, responseSessionDirPrefix+"*"))
+	if err != nil {
+		return
+	}
+	for _, d := range dirs {
+		if isWirexaSessionDir(d, secret) {
+			_ = os.RemoveAll(d) //nolint:errcheck // 後始末。失敗は無視してよい
 		}
 	}
 }
