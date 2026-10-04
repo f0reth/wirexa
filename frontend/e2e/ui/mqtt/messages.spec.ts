@@ -127,6 +127,39 @@ test("subscribing to an invalid filter shows the backend error", async ({
   await expect(panel.getByText("No subscriptions")).toBeVisible();
 });
 
+test("subscribing to an already subscribed topic sends nothing and clears the field", async ({
+  app,
+  fake,
+  connectionId,
+}) => {
+  // 前後の空白は除いて送る。
+  await app.mqttTopicInput.fill("  sensors/temp  ");
+  await app.mqttSubscribeButton.click();
+  await expect(app.mqttSubscription("sensors/temp")).toBeVisible();
+  await expect(app.mqttTopicInput).toHaveValue("");
+  expect(await fake.args("Subscribe")).toEqual([
+    [connectionId, "sensors/temp", 0],
+  ]);
+
+  // 購読中のトピックは送らず、入力欄だけを消す。
+  await app.mqttTopicInput.fill("sensors/temp");
+  await app.mqttSubscribeButton.click();
+  await expect(app.mqttTopicInput).toHaveValue("");
+
+  // 空白だけなら何もしない (入力も残る)。
+  await app.mqttTopicInput.fill("   ");
+  await app.mqttSubscribeButton.click();
+  await expect(app.mqttTopicInput).toHaveValue("   ");
+
+  // 送っていれば行が増えるか、失敗のトーストが出る。
+  await expect(
+    app.mqttSection("Subscriptions").getByRole("button", {
+      name: "Remove subscription",
+    }),
+  ).toHaveCount(1);
+  expect(await fake.calls("Subscribe")).toBe(1);
+});
+
 // ── 観点H: 受信 → 一覧 → 詳細 ────────────────────────────────────────────────
 
 test("received message is listed and its details can be copied", async ({
@@ -176,7 +209,39 @@ test("received message is listed and its details can be copied", async ({
     .toBe(formatted);
 });
 
-test("muted subscription hides its messages", async ({ app, fake, connectionId }) => {
+// UTF-8 でないペイロードは base64 で届く (Go の EncodeMaybeBase64)。
+test("a binary payload is listed by its size and shown as hex", async ({
+  page,
+  app,
+  fake,
+  connectionId,
+}) => {
+  await app.subscribeMqtt("bin/#");
+
+  await fake.emit(WailsEvents.mqttMessage, {
+    ...message(connectionId, "bin/data", "3q2+7w=="),
+    payloadBase64: true,
+  });
+
+  const item = app.mqttMessages.filter({ hasText: "bin/data" });
+  await expect(item).toContainText("[binary 4 bytes]");
+  await expect(item).not.toContainText("3q2+7w==");
+
+  await item.click();
+
+  await expect(page.getByText("Binary content (4 bytes)")).toBeVisible();
+  await expect(
+    page.getByText("00000000  de ad be ef", { exact: false }),
+  ).toBeVisible();
+  // base64 の文字列は一覧にも詳細にも出さない。
+  await expect(page.getByText("3q2+7w==")).toHaveCount(0);
+});
+
+test("muted subscription hides its messages", async ({
+  app,
+  fake,
+  connectionId,
+}) => {
   await app.subscribeMqtt("sensors/temp");
   await app.subscribeMqtt("alerts/fire");
 
@@ -211,7 +276,11 @@ test("muted subscription hides its messages", async ({ app, fake, connectionId }
 });
 
 // 共有購読のメッセージは、接頭辞の無いトピックで届く (バックエンドは接頭辞を外して振り分ける)。
-test("shared subscription shows its messages", async ({ app, fake, connectionId }) => {
+test("shared subscription shows its messages", async ({
+  app,
+  fake,
+  connectionId,
+}) => {
   await app.subscribeMqtt("$share/group/sensors/#");
 
   await fake.emitAll(WailsEvents.mqttMessage, [
@@ -594,4 +663,157 @@ test("publish sends topic, QoS, retain and payload", async ({
     [connectionId, "devices/lamp", "on", 2, false],
     [connectionId, "devices/lamp", "", 2, true],
   ]);
+});
+
+test("publishing to a topic with a wildcard shows the backend error", async ({
+  page,
+  app,
+  fake,
+  connectionId,
+}) => {
+  await page.getByRole("tab", { name: "Publish" }).click();
+  const form = app.mqttSection("Publish");
+  await form.getByPlaceholder("Topic", { exact: true }).fill("devices/#");
+  await form.getByPlaceholder("Message payload").fill("on");
+  await form.getByRole("button", { name: "Publish", exact: true }).click();
+
+  // Go の ValidateTopicName と同じ文言がトーストに出る。
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Failed to publish message" }),
+  ).toContainText("invalid topic: must not contain wildcards (+ or #)");
+  expect(await fake.args("Publish")).toEqual([
+    [connectionId, "devices/#", "on", 0, false],
+  ]);
+  // 検証で弾いただけなので、接続は保たれる。
+  await expect(app.mqttStatus("Connected")).toBeVisible();
+});
+
+// ── 観点B・H: 切断・再接続・リロード ─────────────────────────────────────────
+
+test("disconnect disables subscribe and publish, and Connect re-subscribes the kept topics", async ({
+  page,
+  app,
+  fake,
+  connectionId,
+}) => {
+  await app.subscribeMqtt("sensors/#", 1);
+  await app.mqttScanButton.click();
+  await expect(app.mqttStopScanButton).toBeVisible();
+  await fake.waitForCalls("StartTopicScan");
+
+  await app.brokerDisconnectButton.click();
+
+  // 接続バーは URL の入力欄に戻る。
+  await expect(app.mqttStatus("Disconnected")).toBeVisible();
+  await expect(app.brokerHostInput()).toBeVisible();
+  await expect(app.brokerConnectButton).toBeVisible();
+  expect(await fake.args("Disconnect")).toEqual([[connectionId]]);
+  expect((await fake.snapshot()).mqttConnections).toEqual([]);
+  // 購読の行は残り、スキャンは接続と一緒に止まる。
+  await expect(app.mqttSubscription("sensors/#")).toContainText("QoS 1");
+  await expect(app.mqttSubscribeButton).toBeDisabled();
+  await expect(app.mqttScanButton).toBeVisible();
+  await page.getByRole("tab", { name: "Publish" }).click();
+  await expect(
+    app.mqttSection("Publish").getByRole("button", {
+      name: "Publish",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await page.getByRole("tab", { name: "Subscribe" }).click();
+
+  await app.brokerConnectButton.click();
+
+  // 新しい接続を作り、残っていた購読をその接続へ張り直す。
+  await expect(app.mqttStatus("Connected")).toBeVisible();
+  const { mqttConnections } = await fake.snapshot();
+  expect(mqttConnections).toHaveLength(1);
+  expect(mqttConnections[0].id).not.toBe(connectionId);
+  expect(mqttConnections[0].subscriptions).toEqual([
+    { topic: "sensors/#", qos: 1 },
+  ]);
+  expect((await fake.args("Subscribe")).at(-1)).toEqual([
+    mqttConnections[0].id,
+    "sensors/#",
+    1,
+  ]);
+  await expect(app.mqttSubscribeButton).toBeEnabled();
+  await expect(app.mqttSubscription("sensors/#")).toBeVisible();
+});
+
+// バックエンドの接続と購読はリロードを跨いで残る。スキャンは止めて、スキャン中としては復元しない。
+test("reload restores a connected broker with its subscriptions and stops a running scan", async ({
+  page,
+  app,
+  fake,
+  connectionId,
+}) => {
+  await app.subscribeMqtt("sensors/#", 1);
+  await app.mqttScanButton.click();
+  await expect
+    .poll(async () => (await fake.snapshot()).mqttConnections[0].scanning)
+    .toBe(true);
+
+  await page.reload();
+
+  await expect(app.mqttStatus("Connected")).toBeVisible();
+  await expect(app.brokerDisconnectButton).toBeVisible();
+  await expect(app.mqttSubscription("sensors/#")).toContainText("QoS 1");
+  await expect(app.mqttScanButton).toBeVisible();
+  // 呼び出しの記録はリロードで消えるので、ここにあるのは起動時の停止だけ。
+  await fake.waitForCalls("StopTopicScan");
+  expect(await fake.args("StopTopicScan")).toEqual([[connectionId]]);
+  expect(await fake.calls("Connect")).toBe(0);
+  expect((await fake.snapshot()).mqttConnections).toEqual([
+    expect.objectContaining({
+      id: connectionId,
+      connected: true,
+      scanning: false,
+      subscriptions: [{ topic: "sensors/#", qos: 1 }],
+    }),
+  ]);
+
+  // 復元した購読にメッセージが届く。
+  await fake.emit(
+    WailsEvents.mqttMessage,
+    message(connectionId, "sensors/temp", "after-reload"),
+  );
+  await expect(app.mqttMessage("after-reload")).toBeVisible();
+});
+
+// 流したイベントは偽バックエンドの状態を変えないので、画面の反応だけを見る
+// (リロードも snapshot() の検証もしない)。
+test("a lost connection shows one toast and returns to Connected when the backend reconnects", async ({
+  page,
+  app,
+  fake,
+  connectionId,
+}) => {
+  await app.subscribeMqtt("sensors/#");
+
+  // 自動再接続が失敗を繰り返すと、同じ接続の mqtt:connection-lost が続けて届く。
+  await fake.emit(WailsEvents.mqttConnectionLost, {
+    connectionId,
+    error: "EOF",
+  });
+  await fake.emit(WailsEvents.mqttConnectionLost, {
+    connectionId,
+    error: "EOF",
+  });
+
+  const toast = page
+    .getByRole("alert")
+    .filter({ hasText: "MQTT connection lost" });
+  await expect(toast).toHaveCount(1);
+  await expect(toast).toContainText("EOF");
+  await expect(app.mqttStatus("Disconnected")).toBeVisible();
+  await expect(app.mqttSubscribeButton).toBeDisabled();
+  await expect(app.mqttSubscription("sensors/#")).toBeVisible();
+
+  // paho の自動再接続が成功した。
+  await fake.emit(WailsEvents.mqttConnected, { connectionId });
+
+  await expect(app.mqttStatus("Connected")).toBeVisible();
+  await expect(app.mqttSubscribeButton).toBeEnabled();
+  await expect(app.mqttSubscription("sensors/#")).toBeVisible();
 });
