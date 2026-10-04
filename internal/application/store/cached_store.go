@@ -4,6 +4,7 @@ package store
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/google/uuid"
@@ -55,13 +56,20 @@ func NewCachedStore[T any](
 	}, nil
 }
 
-// GetAll は全アイテムのコピーを返す。
+// GetAll は全アイテムのコピーを ID の昇順で返す。
+// map の反復順のまま返すと、呼ぶたびに順序が変わりうる。ID は UUID なので意味のある順ではないが、
+// 表示順を保存していないアイテムの並びが起動のたびに変わらなくなる。
 func (s *CachedStore[T]) GetAll() []T {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	result := make([]T, 0, len(s.items))
-	for k := range s.items {
-		result = append(result, s.items[k])
+	ids := make([]string, 0, len(s.items))
+	for id := range s.items {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	result := make([]T, 0, len(ids))
+	for _, id := range ids {
+		result = append(result, s.items[id])
 	}
 	return result
 }

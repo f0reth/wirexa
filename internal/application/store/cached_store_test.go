@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
@@ -99,6 +100,24 @@ func TestCachedStore_GetAll_ReturnsCopy(t *testing.T) {
 	got[0].Name = "Modified"
 	if again := cs.GetAll(); again[0].Name != "Original" {
 		t.Error("GetAll should return a copy, not a reference")
+	}
+}
+
+func TestCachedStore_GetAll_SortsByID(t *testing.T) {
+	cs := newStore(t, newFakeRepo(
+		item{ID: "c", Name: "C"}, item{ID: "b", Name: "B"}, item{ID: "d", Name: "D"}, item{ID: "a", Name: "A"},
+	))
+	want := []string{"a", "b", "c", "d"}
+	// map の反復順は呼ぶたびに変わりうるので、何度か呼んで同じ順であることを確かめる。
+	for range 20 {
+		got := cs.GetAll()
+		ids := make([]string, len(got))
+		for i, it := range got {
+			ids[i] = it.ID
+		}
+		if !slices.Equal(ids, want) {
+			t.Fatalf("GetAll IDs = %v, want %v", ids, want)
+		}
 	}
 }
 
