@@ -102,6 +102,7 @@ export function SubscriptionsPanel() {
                         size="icon"
                         onClick={() => removeSubscription(sub.id)}
                         class={base.deleteButton}
+                        aria-label="Remove subscription"
                       >
                         <Trash2 size={16} />
                       </Button>

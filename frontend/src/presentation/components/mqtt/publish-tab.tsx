@@ -43,7 +43,12 @@ function PresetsPanel() {
     <div class={styles.presetsPanel}>
       <div class={base.sectionHeader}>
         <h3 class={base.sectionTitle}>Messages</h3>
-        <Button variant="ghost" size="icon" onClick={() => addPreset()}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => addPreset()}
+          aria-label="Add preset"
+        >
           <Plus size={16} />
         </Button>
       </div>
@@ -145,6 +150,7 @@ function PresetsPanel() {
                             removePreset(preset.id);
                           }}
                           class={base.deleteButton}
+                          aria-label="Delete preset"
                         >
                           <Trash2 size={16} />
                         </Button>
