@@ -1,6 +1,7 @@
 package mqttdomain
 
 import (
+	"fmt"
 	"strings"
 
 	cmn "github.com/f0reth/Wirexa/internal/domain"
@@ -52,7 +53,7 @@ func validateTopicString(topic string) error {
 		return &cmn.ValidationError{Field: fieldTopic, Message: cmn.MsgRequired}
 	}
 	if len(topic) > maxTopicBytes {
-		return &cmn.ValidationError{Field: fieldTopic, Message: "must be at most 65535 bytes"}
+		return &cmn.ValidationError{Field: fieldTopic, Message: fmt.Sprintf("must be at most %d bytes", maxTopicBytes)}
 	}
 	if strings.ContainsRune(topic, 0) {
 		return &cmn.ValidationError{Field: fieldTopic, Message: "must not contain the null character"}

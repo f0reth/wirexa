@@ -78,3 +78,11 @@ func assertTopicErr(t *testing.T, err error, wantErr bool) {
 		t.Errorf("Field = %q, want topic", ve.Field)
 	}
 }
+
+// 上限のメッセージは maxTopicBytes から組み立てる。フロントエンドに届く文言を固定する。
+func TestValidateTopicName_TooLongMessage(t *testing.T) {
+	err := ValidateTopicName(strings.Repeat("a", maxTopicBytes+1))
+	if err == nil || err.Error() != "invalid topic: must be at most 65535 bytes" {
+		t.Fatalf("ValidateTopicName error = %v, want the length limit message", err)
+	}
+}

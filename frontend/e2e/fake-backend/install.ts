@@ -626,7 +626,7 @@ const MAX_TOPIC_BYTES = 65535;
 function validateTopicString(topic: string): void {
   if (topic === "") throw validationError("topic", "is required");
   if (new TextEncoder().encode(topic).length > MAX_TOPIC_BYTES) {
-    throw validationError("topic", "must be at most 65535 bytes");
+    throw validationError("topic", `must be at most ${MAX_TOPIC_BYTES} bytes`);
   }
   if (topic.includes("\0")) {
     throw validationError("topic", "must not contain the null character");

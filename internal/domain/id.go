@@ -1,6 +1,9 @@
 package domain
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // maxIDLength は永続化ファイル名として使う ID の最大長。
 const maxIDLength = 128
@@ -23,7 +26,7 @@ func ValidateID(id string) error {
 		return &ValidationError{Field: "id", Message: "must not be empty"}
 	}
 	if len(id) > maxIDLength {
-		return &ValidationError{Field: "id", Message: "must be at most 128 characters"}
+		return &ValidationError{Field: "id", Message: fmt.Sprintf("must be at most %d characters", maxIDLength)}
 	}
 	for i := range len(id) {
 		c := id[i]

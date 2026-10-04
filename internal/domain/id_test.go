@@ -18,7 +18,7 @@ func TestValidateID_Allowed(t *testing.T) {
 		"com0",
 		"com10",
 		"lpt0",
-		strings.Repeat("a", 128), // 上限ちょうど
+		strings.Repeat("a", maxIDLength), // 上限ちょうど
 	}
 	for _, id := range ids {
 		t.Run(id, func(t *testing.T) {
@@ -35,7 +35,7 @@ func TestValidateID_Rejected(t *testing.T) {
 		id   string
 	}{
 		{"empty", ""},
-		{"too long", strings.Repeat("a", 129)},
+		{"too long", strings.Repeat("a", maxIDLength+1)},
 		{"parent traversal", "../x"},
 		{"windows traversal", `..\x`},
 		{"absolute path", "/abs"},
@@ -70,5 +70,13 @@ func TestValidateID_Rejected(t *testing.T) {
 				t.Errorf("Field = %q, want id", ve.Field)
 			}
 		})
+	}
+}
+
+// 上限のメッセージは maxIDLength から組み立てる。フロントエンドに届く文言を固定する。
+func TestValidateID_TooLongMessage(t *testing.T) {
+	err := ValidateID(strings.Repeat("a", maxIDLength+1))
+	if err == nil || err.Error() != "invalid id: must be at most 128 characters" {
+		t.Fatalf("ValidateID error = %v, want the length limit message", err)
 	}
 }
