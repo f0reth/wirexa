@@ -912,7 +912,7 @@ test.describe("unsubscribe failure", () => {
     seed: {
       mqttProfiles: [BROKER],
       mqttConnect: "ok",
-      unsubscribeError: ERROR,
+      unsubscribeError: { message: ERROR },
     },
   });
 
@@ -941,6 +941,49 @@ test.describe("unsubscribe failure", () => {
     expect((await fake.snapshot()).mqttConnections[0].subscriptions).toEqual([
       { topic: "alerts/#", qos: 0 },
     ]);
+  });
+
+  test.describe("that leaves the subscription in the backend", () => {
+    test.use({
+      seed: {
+        mqttProfiles: [BROKER],
+        mqttConnect: "ok",
+        unsubscribeError: { message: ERROR, keepsSubscription: true },
+      },
+    });
+
+    // 応答の確認以外の失敗では、Go は購読を残す。行を外すと、届き続けるメッセージの行き先が無くなる。
+    test("an unsubscribe that fails without removing the subscription keeps the row", async ({
+      page,
+      app,
+      fake,
+      connectionId,
+    }) => {
+      await app.subscribeMqtt("sensors/#", 1);
+
+      await app.removeMqttSubscriptionButton("sensors/#").click();
+
+      await expect(
+        page
+          .getByRole("alert")
+          .filter({ hasText: "Failed to unsubscribe from sensors/#" }),
+      ).toContainText(ERROR);
+      expect((await fake.snapshot()).mqttConnections[0].subscriptions).toEqual([
+        { topic: "sensors/#", qos: 1 },
+      ]);
+      // 突き合わせが終わったあとも行は残り、購読のメッセージも表示し続ける。
+      await fake.waitForCalls("GetConnections", 2);
+      await fake.emit(
+        WailsEvents.mqttMessage,
+        message(connectionId, "sensors/temp", "still-subscribed"),
+      );
+      await expect(app.mqttMessage("still-subscribed")).toBeVisible();
+      await expect(app.mqttSubscription("sensors/#")).toContainText("QoS 1");
+
+      // リロードしても同じ行が出る。
+      await page.reload();
+      await expect(app.mqttSubscription("sensors/#")).toContainText("QoS 1");
+    });
   });
 });
 

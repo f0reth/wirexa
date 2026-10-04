@@ -836,18 +836,24 @@ const MqttHandler = {
     },
   ),
 
-  // seed.unsubscribeError は、確立済みの接続でブローカーの応答を確認できなかった場合 (Go の
-  // ErrAckTimeout) を模す。Go と同じく購読は外してからエラーを返す。失敗しても外した購読を
-  // 書き戻すよう、mutates ではなく自分で save する。
+  // seed.unsubscribeError は確立済みの接続での解除の失敗を模す。Go と同じく、ブローカーの応答を
+  // 確認できなかった場合 (ErrAckTimeout) は購読を外してからエラーを返し、それ以外の失敗
+  // (keepsSubscription) では購読を残す。失敗しても外した購読を書き戻すよう、mutates ではなく
+  // 自分で save する。
   Unsubscribe: counted(
     "Unsubscribe",
     async (connectionId: string, topic: string) => {
       validateTopicFilter(topic);
       const conn = mqttConnection(connectionId);
-      conn.subscriptions = conn.subscriptions.filter((s) => s.topic !== topic);
-      save();
-      if (conn.connected && seed.unsubscribeError) {
-        throw new Error(`failed to unsubscribe: ${seed.unsubscribeError}`);
+      const failure = conn.connected ? seed.unsubscribeError : undefined;
+      if (!failure?.keepsSubscription) {
+        conn.subscriptions = conn.subscriptions.filter(
+          (s) => s.topic !== topic,
+        );
+        save();
+      }
+      if (failure) {
+        throw new Error(`failed to unsubscribe: ${failure.message}`);
       }
     },
   ),

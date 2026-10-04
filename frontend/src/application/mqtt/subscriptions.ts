@@ -1,6 +1,6 @@
 import { createSignal, onCleanup } from "solid-js";
 import type { Logger } from "../../application/logger";
-import type { Qos } from "../../domain/mqtt/types";
+import type { ConnectionStatus, Qos } from "../../domain/mqtt/types";
 import type { Notifier } from "../../domain/ui/ports";
 import { errorMessage } from "../../shared/error";
 import { WailsEvents } from "../../shared/wails-events";
@@ -10,6 +10,7 @@ import { makeSubscription } from "./subscription";
 export interface SubscriptionApi {
   subscribe(connectionId: string, topic: string, qos: number): Promise<void>;
   unsubscribe(connectionId: string, topic: string): Promise<void>;
+  getConnections(): Promise<ConnectionStatus[]>;
   startTopicScan(connectionId: string): Promise<void>;
   stopTopicScan(connectionId: string): Promise<void>;
 }
@@ -149,6 +150,9 @@ export function createSubscriptionsState(
             `Failed to unsubscribe from ${sub.topic}`,
             errorMessage(err),
           );
+          // バックエンドは、応答を確認できなかった解除では購読を外し、それ以外の失敗では残す。
+          // 残っている購読の行を外すと、メッセージが届き続けるのに行が無く、リロードで行が戻る。
+          if (await remainsSubscribed(connId, sub.topic)) return;
         }
       }
     }
@@ -157,6 +161,26 @@ export function createSubscriptionsState(
       subscriptions: state.subscriptions.filter((s) => s.id !== id),
     }));
   };
+
+  // 解除に失敗した購読がバックエンドに残っているか。確かめられなければ残っているものとして扱う。
+  async function remainsSubscribed(
+    connId: string,
+    topic: string,
+  ): Promise<boolean> {
+    let live: ConnectionStatus[];
+    try {
+      live = await api.getConnections();
+    } catch (err) {
+      logger.error("MQTT unsubscribe check failed", {
+        connection_id: connId,
+        topic,
+        error: String(err),
+      });
+      return true;
+    }
+    const status = live.find((c) => c.id === connId);
+    return status?.subscriptions.some((s) => s.topic === topic) ?? false;
+  }
 
   // isScanning は RPC の完了前に切り替えるので、開始の完了前に Stop を押せる。
   // scanSeq は接続ごとの連番で、setIsScanning を呼ぶたびに進める。開始の結果は、連番が呼び出し時の

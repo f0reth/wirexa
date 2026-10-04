@@ -1,6 +1,6 @@
 import { createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
-import type { BrokerProfile } from "../../domain/mqtt/types";
+import type { BrokerProfile, ConnectionStatus } from "../../domain/mqtt/types";
 import type { Notifier } from "../../domain/ui/ports";
 import { type MqttEventName, WailsEvents } from "../../shared/wails-events";
 import type { Logger } from "../logger";
@@ -61,6 +61,7 @@ function harness(initial: ConnectionStateExt) {
   const api = {
     subscribe: vi.fn(async () => {}),
     unsubscribe: vi.fn(async (_id: string, _topic: string) => {}),
+    getConnections: vi.fn(async (): Promise<ConnectionStatus[]> => []),
     startTopicScan: vi.fn(async (_id: string) => {}),
     stopTopicScan: vi.fn(async (_id: string) => {}),
   } satisfies SubscriptionApi;
@@ -246,6 +247,17 @@ describe("createSubscriptionsState setIsScanning", () => {
 });
 
 describe("createSubscriptionsState removeSubscription", () => {
+  /** バックエンドが c1 の接続で持っている購読 (GetConnections の 1 件)。 */
+  const backendStatus = (topics: string[]): ConnectionStatus => ({
+    id: "c1",
+    name: profile.name,
+    broker: profile.broker,
+    connected: true,
+    profileId: profile.id,
+    subscriptions: topics.map((topic) => ({ topic, qos: 0 })),
+    scanning: false,
+  });
+
   it("unsubscribes on an online tab that is still connecting", async () => {
     const h = harness(onlineTab(false));
 
@@ -271,9 +283,11 @@ describe("createSubscriptionsState removeSubscription", () => {
     h.dispose();
   });
 
-  it("notifies when unsubscribing fails on a connected tab", async () => {
+  // 応答を確認できなかった解除では、バックエンドは購読を外してからエラーを返す。
+  it("notifies and removes the row when a failed unsubscribe left no subscription in the backend", async () => {
     const h = harness(onlineTab(true));
     h.api.unsubscribe.mockRejectedValueOnce(new Error("timeout"));
+    h.api.getConnections.mockResolvedValueOnce([backendStatus(["b/#"])]);
 
     await h.state.removeSubscription(h.subscriptionId("a"));
 
@@ -282,6 +296,33 @@ describe("createSubscriptionsState removeSubscription", () => {
       "timeout",
     );
     expect(h.topics()).toEqual(["b/#"]);
+    h.dispose();
+  });
+
+  it("keeps the row when a failed unsubscribe left the subscription in the backend", async () => {
+    const h = harness(onlineTab(true));
+    h.api.unsubscribe.mockRejectedValueOnce(new Error("broker refused"));
+    h.api.getConnections.mockResolvedValueOnce([backendStatus(["a", "b/#"])]);
+
+    await h.state.removeSubscription(h.subscriptionId("a"));
+
+    expect(h.notifier.error).toHaveBeenCalledWith(
+      "Failed to unsubscribe from a",
+      "broker refused",
+    );
+    expect(h.topics()).toEqual(["a", "b/#"]);
+    h.dispose();
+  });
+
+  it("keeps the row when the backend subscriptions cannot be checked after a failed unsubscribe", async () => {
+    const h = harness(onlineTab(true));
+    h.api.unsubscribe.mockRejectedValueOnce(new Error("broker refused"));
+    h.api.getConnections.mockRejectedValueOnce(new Error("rpc down"));
+
+    await h.state.removeSubscription(h.subscriptionId("a"));
+
+    expect(h.notifier.error).toHaveBeenCalledTimes(1);
+    expect(h.topics()).toEqual(["a", "b/#"]);
     h.dispose();
   });
 

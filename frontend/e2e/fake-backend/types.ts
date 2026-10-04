@@ -73,10 +73,12 @@ export interface FakeSeed {
    */
   subscribeError?: { topic: string; message: string };
   /**
-   * 確立済みの接続への Unsubscribe が、購読を外してから "failed to unsubscribe: <この文字列>" で
-   * 失敗する (ブローカーの応答を確認できなかった場合を模す)。
+   * 確立済みの接続への Unsubscribe が "failed to unsubscribe: <message>" で失敗する。
+   * - keepsSubscription を省くと、購読を外してから失敗する (ブローカーの応答を確認できなかった場合。
+   *   Go の ErrAckTimeout)。
+   * - keepsSubscription: true なら、購読を残したまま失敗する (それ以外の失敗)。
    */
-  unsubscribeError?: string;
+  unsubscribeError?: { message: string; keepsSubscription?: boolean };
   /**
    * StartTopicScan が解決するまでの遅延 (ms)。待つ間に StopTopicScan か Disconnect が来たら、
    * "topic scan was stopped" で失敗する。
