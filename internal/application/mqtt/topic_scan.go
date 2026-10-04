@@ -151,7 +151,7 @@ func (s *MQTTService) reserveScan(connectionID string) (scanReservation, error) 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.closed {
-		return scanReservation{}, errShuttingDown
+		return scanReservation{}, cmn.ErrShuttingDown
 	}
 	conn, ok := s.conns[connectionID]
 	if !ok {

@@ -444,8 +444,8 @@ func TestHTTPRequestService_Shutdown_CancelsInFlightAndRejectsNewSends(t *testin
 	if err := <-done; err == nil {
 		t.Fatal("expected the in-flight request to be canceled")
 	}
-	if _, err := svc.SendRequest("exec-2", domain.HTTPRequest{Method: "GET", URL: "http://example.com"}); err == nil {
-		t.Fatal("SendRequest after Shutdown must fail")
+	if _, err := svc.SendRequest("exec-2", domain.HTTPRequest{Method: "GET", URL: "http://example.com"}); !errors.Is(err, cmn.ErrShuttingDown) {
+		t.Fatalf("SendRequest after Shutdown: err = %v, want ErrShuttingDown", err)
 	}
 }
 

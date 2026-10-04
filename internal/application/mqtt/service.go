@@ -3,7 +3,6 @@ package mqttapp
 import (
 	"cmp"
 	"context"
-	"errors"
 	"slices"
 	"sync"
 	"time"
@@ -17,9 +16,6 @@ import (
 // disconnectQuiesce は接続を切断する (Disconnect・Shutdown) ときの待機時間 (ms)。
 // 不要になったクライアントを捨てるだけの経路 (割り込まれた接続・失敗したスキャン) は Disconnect(0) で待たない。
 const disconnectQuiesce = 1000
-
-// errShuttingDown は終了処理の開始後に接続しようとした場合に返す。
-var errShuttingDown = errors.New("application is shutting down")
 
 // connState は接続のライフサイクル状態。フロントエンドには公開せず、
 // ConnectionStatus.Connected の導出とイベント発行の判定にだけ使う。
@@ -133,7 +129,7 @@ func (s *MQTTService) Connect(config domain.ConnectionConfig) (string, error) {
 	defer s.mu.Unlock()
 	if s.closed {
 		cancel()
-		return "", errShuttingDown
+		return "", cmn.ErrShuttingDown
 	}
 	conn.seq = s.nextSeq
 	s.nextSeq++

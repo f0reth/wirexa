@@ -2,7 +2,6 @@ package httpapp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -15,9 +14,6 @@ var validMethods = map[string]bool{
 	"GET": true, "POST": true, "PUT": true, "DELETE": true,
 	"PATCH": true, "HEAD": true, "OPTIONS": true,
 }
-
-// errShuttingDown は終了処理の開始後に送信しようとした場合に返す。
-var errShuttingDown = errors.New("application is shutting down")
 
 const (
 	// maxExecutionIDLen は execution ID の最大長。マップのキーになるため長さを有界にする。
@@ -97,7 +93,7 @@ func (s *HTTPRequestService) SendRequest(executionID string, req domain.HTTPRequ
 	if s.closed {
 		s.mu.Unlock()
 		cancel()
-		return domain.HTTPResponse{}, errShuttingDown
+		return domain.HTTPResponse{}, cmn.ErrShuttingDown
 	}
 	if _, dup := s.cancels[executionID]; dup {
 		s.mu.Unlock()

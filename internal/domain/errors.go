@@ -11,6 +11,9 @@ import (
 // 各リポジトリは parse 失敗をこれで wrap して返し、呼び出し側は errors.Is で判定する。
 var ErrCorruptData = errors.New("stored data is corrupt")
 
+// ErrShuttingDown は終了処理の開始後に新しい操作 (送信・接続・スキャン) を始めようとした場合に返す。
+var ErrShuttingDown = errors.New("application is shutting down")
+
 // NotFoundError はリソースが見つからない場合のエラー。
 type NotFoundError struct {
 	Resource string

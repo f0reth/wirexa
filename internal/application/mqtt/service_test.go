@@ -1480,8 +1480,8 @@ func TestMQTTService_Connect_AfterShutdown_Rejected(t *testing.T) {
 		t.Fatal("expected Shutdown to drain within timeout")
 	}
 
-	if _, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"}); !errors.Is(err, errShuttingDown) {
-		t.Errorf("err = %v, want errShuttingDown", err)
+	if _, err := svc.Connect(domain.ConnectionConfig{Broker: "tcp://localhost:1883"}); !errors.Is(err, cmn.ErrShuttingDown) {
+		t.Errorf("err = %v, want ErrShuttingDown", err)
 	}
 	if conns := svc.GetConnections(); len(conns) != 0 {
 		t.Errorf("expected 0 connections, got %d", len(conns))
@@ -2874,8 +2874,8 @@ func TestMQTTService_StartTopicScan_AfterShutdown_Rejected(t *testing.T) {
 		t.Fatal("expected Shutdown to drain within timeout")
 	}
 
-	if err := svc.StartTopicScan(id); !errors.Is(err, errShuttingDown) {
-		t.Errorf("err = %v, want errShuttingDown", err)
+	if err := svc.StartTopicScan(id); !errors.Is(err, cmn.ErrShuttingDown) {
+		t.Errorf("err = %v, want ErrShuttingDown", err)
 	}
 	if n := rec.count(); n != 1 {
 		t.Errorf("clients = %d, want 1 (no scan client)", n)
