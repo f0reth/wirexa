@@ -372,6 +372,32 @@ export class App {
     await panel.getByPlaceholder("Value").last().fill(value);
   }
 
+  /**
+   * 画面を通さずに SaveResponseBody のバインディングを直接呼ぶ。失敗したらそのメッセージを、
+   * 成功したら null を返す。追跡されていない execution ID は保存ダイアログを開く前に拒否される
+   * ので、その文言を確かめるのに使う (追跡中の ID を渡すとネイティブのダイアログが開く)。
+   */
+  async httpSaveResponseError(executionId: string): Promise<string | null> {
+    return this.page.evaluate(async (id) => {
+      const { HTTPHandler } = (
+        window as unknown as {
+          go: {
+            adapters: {
+              HTTPHandler: { SaveResponseBody(id: string): Promise<boolean> };
+            };
+          };
+        }
+      ).go.adapters;
+      try {
+        await HTTPHandler.SaveResponseBody(id);
+        return null;
+      } catch (err) {
+        // Wails はエラーを文字列で、偽バックエンドは Error で返す。
+        return err instanceof Error ? err.message : String(err);
+      }
+    }, executionId);
+  }
+
   // ── HTTP: レスポンス表示エリア ──────────────────────────────────────────────
 
   /** レスポンス表示エリア。見出し "Response" → 見出し行 → パネル、と上がる。 */

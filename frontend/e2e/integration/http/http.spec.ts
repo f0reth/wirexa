@@ -5,12 +5,19 @@ import {
   startTestServer,
   type TestServer,
 } from "../../fixtures/http-server";
+import { RESPONSE_UNAVAILABLE_ERROR } from "../../../src/domain/http/types";
 import { expect, test, type WailsGo } from "../../fixtures/integration";
 
 // 実 Go バックエンドから実サーバーへ HTTP を投げる。保存先は一時 APPDATA へ隔離済みなので
 // コレクションの後始末は不要。
 
 let server: TestServer;
+
+// /large が返すボディの大きさ。Max Response Body を 1 MB にして送ると打ち切られる。
+const LARGE_BODY_BYTES = 2 * 1024 * 1024;
+
+// /slow への接続が、応答を返す前にクライアントから切られた回数。
+let slowAborted = 0;
 
 test.beforeAll(async () => {
   server = await startTestServer((req, res) => {
@@ -31,6 +38,17 @@ test.beforeAll(async () => {
         "Set-Cookie": ["a=1; Path=/", "b=2; Path=/"],
       });
       res.end("ok");
+    } else if (pathname === "/slow") {
+      // テストが待つより長く応答しない。Cancel で接続が切られたら数えて、タイマーを止める
+      // (止めないと afterAll の server.close() が応答を待つ)。
+      const timer = setTimeout(() => res.end("late"), 60_000);
+      res.on("close", () => {
+        clearTimeout(timer);
+        if (!res.writableEnded) slowAborted++;
+      });
+    } else if (pathname === "/large") {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("x".repeat(LARGE_BODY_BYTES));
     } else {
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not found");
@@ -63,37 +81,26 @@ test.beforeEach(async ({ app }) => {
   await app.switchTo("HTTP");
 });
 
-// ── 観点I-2: URL入力とリクエスト送信 ─────────────────────────────────────────
+// ── 観点I-5: レスポンス表示（ステータス・ボディ・ヘッダー） ───────────────────
 
-test("entering a URL and clicking send initiates a request", async ({
-  page,
-  app,
-}) => {
+test("response viewer shows status code and body", async ({ app }) => {
   await app.urlInput.fill(jsonUrl());
   await app.sendButton.click();
 
-  await expect(page.getByText("200", { exact: true })).toBeVisible();
+  const viewer = app.responseViewer;
+  await expect(viewer.getByText("200", { exact: true })).toBeVisible();
+  await expect(viewer.getByText('"hello"', { exact: true })).toBeVisible();
+  // 送信が終わると Send に戻る。
   await expect(app.sendButton).toBeVisible();
 });
 
-// ── 観点I-5: レスポンス表示（ステータス・ボディ・ヘッダー） ───────────────────
-
-test("response viewer shows status code and body", async ({ page, app }) => {
-  await app.urlInput.fill(jsonUrl());
-  await app.sendButton.click();
-
-  await expect(page.getByText("200", { exact: true })).toBeVisible();
-  await expect(page.getByText('"hello"', { exact: true })).toBeVisible();
-});
-
 test("response viewer headers tab shows response headers", async ({
-  page,
   app,
 }) => {
   await app.urlInput.fill(jsonUrl());
   await app.sendButton.click();
 
-  await expect(page.getByText("200", { exact: true })).toBeVisible();
+  await expect(app.responseViewer.getByText("200", { exact: true })).toBeVisible();
 
   const headers = await app.openResponseTab("Headers");
 
@@ -102,13 +109,12 @@ test("response viewer headers tab shows response headers", async ({
 });
 
 test("response viewer headers tab shows every value of a multi-value header", async ({
-  page,
   app,
 }) => {
   await app.urlInput.fill(`http://127.0.0.1:${server.port}/multi-header`);
   await app.sendButton.click();
 
-  await expect(page.getByText("200", { exact: true })).toBeVisible();
+  await expect(app.responseViewer.getByText("200", { exact: true })).toBeVisible();
 
   const headers = await app.openResponseTab("Headers");
 
@@ -132,9 +138,7 @@ test("form-data rows are sent as multipart parts and a typed file path is not up
   await writeFile(filePath, '{"from":"file"}');
 
   await app.urlInput.fill(echoUrl());
-  const bodyPanel = await app.openRequestTab("Body");
-  await bodyPanel.getByRole("button").first().click();
-  await bodyPanel.getByRole("button", { name: "Form Data" }).click();
+  const bodyPanel = await app.chooseBodyType("Form Data");
 
   // text 行
   await bodyPanel.getByRole("button", { name: "Add" }).click();
@@ -145,9 +149,11 @@ test("form-data rows are sent as multipart parts and a typed file path is not up
   // 行は名前を持たないので、file 行は 2 行目 (nth(1)) として位置で取る。
   await bodyPanel.getByRole("button", { name: "Add" }).click();
   await bodyPanel.getByPlaceholder("Field").nth(1).fill("doc");
-  const kindSelect = bodyPanel.getByTestId("form-kind-select").nth(1);
-  await kindSelect.getByRole("button").first().click();
-  await kindSelect.getByRole("button", { name: "File" }).click();
+  await app.chooseOption(
+    bodyPanel.getByTestId("form-kind-select").nth(1),
+    "Text",
+    "File",
+  );
   await bodyPanel.getByPlaceholder("No file selected").fill(filePath);
   await expect(bodyPanel.getByText("Not confirmed")).toBeVisible();
 
@@ -157,7 +163,7 @@ test("form-data rows are sent as multipart parts and a typed file path is not up
   // 未確定の file 行を外せば、残りの行は multipart で送られる
   await bodyPanel.getByRole("button", { name: "Remove row" }).nth(1).click();
   await app.sendButton.click();
-  await expect(page.getByText("200", { exact: true })).toBeVisible();
+  await expect(app.responseViewer.getByText("200", { exact: true })).toBeVisible();
 
   // エコーされた multipart のワイヤ形式をそのまま確認する。
   // ボディは 1 要素にまとめて描画されるため、部分一致で見る。
@@ -200,7 +206,7 @@ test("headers, query params and bearer token are sent on the wire", async ({
   await auth.getByPlaceholder("Token").fill("secret-token");
 
   await app.sendButton.click();
-  await expect(page.getByText("200", { exact: true })).toBeVisible();
+  await expect(app.responseViewer.getByText("200", { exact: true })).toBeVisible();
 
   const echoed = page.getByTestId("response-body");
   // クエリは url.Values.Encode でキー順に並び、空白は + になる。
@@ -225,7 +231,7 @@ test("basic auth credentials are sent as an Authorization header", async ({
   await auth.getByPlaceholder("Password").fill("p@ss");
 
   await app.sendButton.click();
-  await expect(page.getByText("200", { exact: true })).toBeVisible();
+  await expect(app.responseViewer.getByText("200", { exact: true })).toBeVisible();
 
   const credentials = Buffer.from("alice:p@ss").toString("base64");
   await expect(page.getByTestId("response-body")).toContainText(
@@ -261,27 +267,125 @@ test("saved request URL is restored when request is re-opened", async ({
   await expect(app.urlInput).toHaveValue(jsonUrl());
 });
 
-// ── 観点I-8: レスポンスのクリップボードコピー ────────────────────────────────
+// ── 観点I-1: 開いているリクエストの移動 ──────────────────────────────────────
 
-test("copy button writes response body to clipboard", async ({
+// 保存先のコレクションが移動に追従しないと、Go は元のコレクションでリクエストを探して
+// "request not found" を返す。偽バックエンドではなく実物の CollectionService で確かめる。
+test("edits made after moving the open request to another collection are saved", async ({
   page,
-  context,
   app,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await app.createCollection("Move Source Collection");
+  await app.createCollection("Move Target Collection");
+  await app.addRequest("Move Source Collection", "Travelling Request");
+  const request = app.request(/Travelling Request/);
+  await request.click();
+  await expect(request).toHaveAttribute("aria-current", "true");
 
-  await app.urlInput.fill(jsonUrl());
+  await app.dragTreeNode(request, app.collection("Move Target Collection"));
+  /** リクエストを直下に持つコレクションの名前。 */
+  const owner = () =>
+    page.evaluate(async () => {
+      const handler = (window as unknown as { go: WailsGo }).go.adapters
+        .HTTPHandler;
+      const collections = await handler.GetCollections();
+      return collections.find((c) =>
+        (c.items ?? []).some((i) => i.name === "Travelling Request"),
+      )?.name;
+    });
+  await expect.poll(owner).toBe("Move Target Collection");
+
+  const url = `${jsonUrl()}?moved=1`;
+  await app.urlInput.fill(url);
+  await expect.poll(() => savedUrl(page, /Travelling Request/)).toBe(url);
+  await expect(app.saveErrorBanner).toBeHidden();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Failed to" }),
+  ).toHaveCount(0);
+
+  // 選択も新しいコレクションで覚えているので、リロード後に復元される。
+  await page.reload();
+  await app.switchTo("HTTP");
+  await expect(app.request(/Travelling Request/)).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await expect(app.urlInput).toHaveValue(url);
+});
+
+// ── 観点M-5: バックエンドのエラーの表示 ──────────────────────────────────────
+
+// Wails はエラーを Error ではなく文字列で返すので、偽バックエンド (Error を投げる) とは
+// 画面までの経路が違う。
+test("a connection error from the backend is shown in the response viewer", async ({
+  page,
+  app,
+}) => {
+  // 起動してすぐ閉じたサーバーのポートには、何も待ち受けていない。
+  const closed = await startTestServer(() => {});
+  await closed.close();
+
+  await app.urlInput.fill(`http://127.0.0.1:${closed.port}/`);
   await app.sendButton.click();
 
-  await expect(page.getByText("200", { exact: true })).toBeVisible();
-
-  const copyBtn = page.getByRole("button", { name: "Copy body" });
-  await expect(copyBtn).toBeVisible();
-  await copyBtn.click();
-
-  const clipboardText = await page.evaluate(() =>
-    navigator.clipboard.readText(),
+  await expect(page.getByTestId("response-error")).toContainText(
+    "failed to send request:",
   );
-  expect(clipboardText).toContain('"message"');
-  expect(clipboardText).toContain('"hello"');
+  await expect(app.sendButton).toBeVisible();
+  await expect(page.getByText("Sending request...")).toBeHidden();
+});
+
+// ── 観点M-6: Cancel と打ち切り ───────────────────────────────────────────────
+
+test("cancel aborts a request to a slow server", async ({ page, app }) => {
+  const abortedBefore = slowAborted;
+  await app.urlInput.fill(`http://127.0.0.1:${server.port}/slow`);
+  await app.sendButton.click();
+  await expect(app.cancelButton).toBeVisible();
+  await expect(page.getByText("Sending request...")).toBeVisible();
+
+  await app.cancelButton.click();
+
+  await expect(app.sendButton).toBeVisible();
+  await expect(page.getByText("Sending request...")).toBeHidden();
+  // 表示が戻るだけでなく、Go がサーバーへの接続を実際に切っている。
+  await expect.poll(() => slowAborted).toBe(abortedBefore + 1);
+});
+
+test("a response larger than the limit is shown as truncated", async ({
+  app,
+}) => {
+  await app.urlInput.fill(`http://127.0.0.1:${server.port}/large`);
+  const settings = await app.openRequestTab("Settings");
+  await settings.getByLabel("Max Response Body (MB)").fill("1");
+
+  await app.sendButton.click();
+
+  const viewer = app.responseViewer;
+  await expect(viewer.getByText("200", { exact: true })).toBeVisible();
+  await expect(
+    viewer.getByText(/Response body exceeds the size limit/),
+  ).toBeVisible();
+  // 全文は backend の一時ファイルにあり、保存を選べる (保存はネイティブのダイアログを開くので
+  // 押さない。保存と破棄は Go の統合テスト TestHTTP_TruncatedResponse_SaveAndDiscard が見る)。
+  await expect(
+    viewer.getByRole("button", { name: "Save body to file" }),
+  ).toBeVisible();
+
+  await viewer.getByRole("button", { name: "Show truncated body" }).click();
+  await expect(viewer.getByText(/Showing truncated body/)).toBeVisible();
+  await expect(viewer.getByTestId("response-body")).toContainText("xxxxxxxx");
+});
+
+// ── 観点M-10: 回収済みを表す文言の一致 ───────────────────────────────────────
+
+// 画面は SaveResponseBody のエラーの文言で「回収済み」を判定する。UI モードのテストは同じ
+// 文字列を自分で seed に入れているので、Go 側の文言 (ErrResponseUnavailable) が変わっても
+// 検出できない。未知の execution ID は保存ダイアログを開く前に拒否される。
+test("saving an unknown execution ID is rejected with the message the UI treats as reclaimed", async ({
+  app,
+}) => {
+  expect(await app.httpSaveResponseError("no-such-execution")).toBe(
+    RESPONSE_UNAVAILABLE_ERROR,
+  );
 });

@@ -100,7 +100,7 @@ test.describe("M-1: Wails binding calls return backend data", () => {
 interface StoredCollection {
   id: string;
   name: string;
-  items: Array<{ name: string }>;
+  items: Array<{ name: string; request?: { method: string; url: string } }>;
 }
 
 test.describe("M-2: Collection persistence", () => {
@@ -138,6 +138,82 @@ test.describe("M-2: Collection persistence", () => {
       Object.keys(golden).sort(),
     );
     expect(shapeOf(stored.data.items[0])).toEqual(shapeOf(golden.items[1]));
+  });
+});
+
+// ── 観点M-2: コレクションの更新・削除と自動保存 ──────────────────────────────
+
+test.describe("M-2: Collection updates on disk", () => {
+  const find = (name: string) =>
+    findStored<StoredCollection>("collections", name);
+  const files = () =>
+    readStoredEntities<StoredCollection>("collections").map((e) => e.file);
+
+  test("renaming and deleting a collection updates and removes its file", async ({
+    app,
+  }) => {
+    const name = "E2E Disk Original Collection";
+    const renamed = "E2E Disk Renamed Collection";
+    await app.switchTo("HTTP");
+    await app.createCollection(name);
+    await expect.poll(() => find(name)?.data.name).toBe(name);
+    const created = storedEntity(find(name));
+    const filesBefore = files();
+
+    await app.startRename(app.collection(name), name);
+    await app.confirmRename(renamed);
+    await expect(app.collection(renamed)).toBeVisible();
+
+    // 同じファイルを書き換え、新しいファイルは作らない。
+    await expect.poll(() => find(renamed)?.data.id).toBe(created.data.id);
+    expect(storedEntity(find(renamed)).file).toBe(created.file);
+    expect(find(name)).toBeUndefined();
+    expect(files()).toEqual(filesBefore);
+
+    await app.deleteCollection(renamed);
+
+    await expect.poll(files).not.toContain(created.file);
+    // サイドバーの並びからも外れる。
+    await expect
+      .poll(() =>
+        (
+          readStoredFile<Array<{ kind: string; id: string }>>(
+            "sidebar_layout.json",
+          ) ?? []
+        ).some((e) => e.id === created.data.id),
+      )
+      .toBe(false);
+  });
+
+  test("auto-saved request content is written to disk and restored after reload", async ({
+    page,
+    app,
+  }) => {
+    const name = "E2E Autosave Collection";
+    const url = "http://127.0.0.1:9/autosaved";
+    await app.switchTo("HTTP");
+    await app.createCollection(name);
+    await app.addRequest(name, "E2E Autosave Request");
+    const request = app.request(/E2E Autosave Request/);
+    await request.click();
+    await expect(request).toHaveAttribute("aria-current", "true");
+
+    await app.urlInput.fill(url);
+    await app.selectMethod("POST");
+
+    // デバウンスされた自動保存がファイルに届くまで待つ。
+    await expect
+      .poll(() => find(name)?.data.items[0]?.request)
+      .toMatchObject({ method: "POST", url });
+
+    await page.reload();
+    await app.switchTo("HTTP");
+    await expect(app.request(/E2E Autosave Request/)).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    await expect(app.urlInput).toHaveValue(url);
+    await expect(app.methodSelect).toHaveText("POST");
   });
 });
 
