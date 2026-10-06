@@ -70,14 +70,14 @@ test.describe("while a request is in progress", () => {
 // ── 観点E-2: レスポンス受信後にレスポンスビューワーに内容が表示される ─────────
 
 test("response viewer shows status and body after successful request", async ({
-  page,
   app,
 }) => {
   await app.urlInput.fill("http://127.0.0.1:9999/fast");
   await app.sendButton.click();
 
-  await expect(page.getByText("200", { exact: true })).toBeVisible();
-  await expect(page.getByText('"ok"', { exact: true })).toBeVisible();
+  const viewer = app.responseViewer;
+  await expect(viewer.getByText("200", { exact: true })).toBeVisible();
+  await expect(viewer.getByText('"ok"', { exact: true })).toBeVisible();
 });
 
 // ── 観点E-5: エラー時にエラーメッセージが表示される ─────────────────────────
@@ -102,6 +102,8 @@ test.describe("when the request fails", () => {
     await expect(
       page.getByText("Send a request to see the response"),
     ).toBeHidden();
-    await expect(page.getByTestId("response-error")).toBeVisible();
+    await expect(page.getByTestId("response-error")).toContainText(
+      "connection refused",
+    );
   });
 });

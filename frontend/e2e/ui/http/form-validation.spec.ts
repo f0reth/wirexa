@@ -1,47 +1,38 @@
 import type { HttpRequest } from "../../../src/domain/http/types";
 import { expect, test } from "../../fixtures/ui";
 
-test.beforeEach(async ({ page }) => {
-  await page.getByRole("button", { name: "HTTP", exact: true }).click();
-  await expect(
-    page.getByPlaceholder("https://api.example.com/endpoint"),
-  ).toBeVisible();
+test.beforeEach(async ({ app }) => {
+  await app.switchTo("HTTP");
 });
 
 // ── 観点D-1: URL 空欄で送信ボタン無効 ────────────────────────────────────────
 
-test("send button is disabled when URL is empty", async ({ page }) => {
-  const urlInput = page.getByPlaceholder("https://api.example.com/endpoint");
-  await expect(urlInput).toHaveValue("");
-  await expect(page.getByRole("button", { name: "Send" })).toBeDisabled();
+test("send button is disabled when URL is empty", async ({ app }) => {
+  await expect(app.urlInput).toHaveValue("");
+  await expect(app.sendButton).toBeDisabled();
 });
 
-test("send button is enabled when a valid URL is entered", async ({ page }) => {
-  await page
-    .getByPlaceholder("https://api.example.com/endpoint")
-    .fill("https://api.example.com/users");
-  await expect(page.getByRole("button", { name: "Send" })).toBeEnabled();
+test("send button is enabled when a valid URL is entered", async ({ app }) => {
+  await app.urlInput.fill("https://api.example.com/users");
+  await expect(app.sendButton).toBeEnabled();
 });
 
 // ── 観点D-2: 不正URLで送信ボタン無効 ────────────────────────────────────────
 
 test("send button is disabled for malformed URL like 'not-a-url'", async ({
-  page,
+  app,
 }) => {
-  await page
-    .getByPlaceholder("https://api.example.com/endpoint")
-    .fill("not-a-url");
-  await expect(page.getByRole("button", { name: "Send" })).toBeDisabled();
+  await app.urlInput.fill("not-a-url");
+  await expect(app.sendButton).toBeDisabled();
 });
 
 test("send button is re-disabled after clearing a valid URL", async ({
-  page,
+  app,
 }) => {
-  const urlInput = page.getByPlaceholder("https://api.example.com/endpoint");
-  await urlInput.fill("https://api.example.com");
-  await expect(page.getByRole("button", { name: "Send" })).toBeEnabled();
-  await urlInput.clear();
-  await expect(page.getByRole("button", { name: "Send" })).toBeDisabled();
+  await app.urlInput.fill("https://api.example.com");
+  await expect(app.sendButton).toBeEnabled();
+  await app.urlInput.clear();
+  await expect(app.sendButton).toBeDisabled();
 });
 
 // Send ボタンは無効でも、Enter は別の経路で送信に届く。

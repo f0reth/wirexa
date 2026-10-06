@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import type { Collection, HttpRequest } from "../../../src/domain/http/types";
+import type { HttpRequest } from "../../../src/domain/http/types";
 import { type App, type FakeControl, expect, test } from "../../fixtures/ui";
 
 // HTTP ツリーのフォルダ／リクエスト操作 (D&D 以外)。コレクション単位の操作は
@@ -15,14 +15,6 @@ test.beforeEach(async ({ app }) => {
   await app.switchTo("HTTP");
 });
 
-/** 偽バックエンドが持つ seed のコレクション。 */
-async function storedCollection(fake: FakeControl): Promise<Collection> {
-  const { collections } = await fake.snapshot();
-  const col = collections.find((c) => c.name === COLLECTION);
-  if (!col) throw new Error(`${COLLECTION} is missing in the fake backend`);
-  return col;
-}
-
 // ── 削除 ────────────────────────────────────────────────────────────────────
 
 test("can delete a request after confirming", async ({ page, app, fake }) => {
@@ -36,7 +28,7 @@ test("can delete a request after confirming", async ({ page, app, fake }) => {
 
   await expect(dialog).toBeHidden();
   await expect(request).toBeHidden();
-  expect((await storedCollection(fake)).items).toEqual([]);
+  expect((await fake.collection(COLLECTION)).items).toEqual([]);
 });
 
 test("can delete a folder together with its children", async ({
@@ -57,7 +49,7 @@ test("can delete a folder together with its children", async ({
   await expect(dialog).toBeHidden();
   await expect(app.folder("Doomed Folder")).toBeHidden();
   await expect(app.request(/Nested Request/)).toBeHidden();
-  const items = (await storedCollection(fake)).items;
+  const items = (await fake.collection(COLLECTION)).items;
   expect(items.map((i) => i.name)).toEqual([REQUEST]);
 });
 
@@ -185,7 +177,7 @@ test("can rename a request by double-click", async ({ app, fake }) => {
 
   await expect(app.request(/Renamed Request/)).toBeVisible();
   await expect(app.request(/Tree Request/)).toBeHidden();
-  const items = (await storedCollection(fake)).items;
+  const items = (await fake.collection(COLLECTION)).items;
   expect(items.map((i) => i.name)).toEqual(["Renamed Request"]);
 });
 
@@ -197,7 +189,7 @@ test("can rename a folder by double-click", async ({ app, fake }) => {
 
   await expect(app.folder("New Folder Name")).toBeVisible();
   await expect(app.folder("Old Folder")).toBeHidden();
-  const items = (await storedCollection(fake)).items;
+  const items = (await fake.collection(COLLECTION)).items;
   expect(items.map((i) => i.name)).toEqual([REQUEST, "New Folder Name"]);
 });
 
@@ -211,7 +203,7 @@ test("rename is committed on blur", async ({ page, app, fake }) => {
   await expect(app.renameInput).toBeHidden();
   await expect(app.request(/Blurred Name/)).toBeVisible();
   await fake.waitForCalls("RenameItem");
-  const items = (await storedCollection(fake)).items;
+  const items = (await fake.collection(COLLECTION)).items;
   expect(items.map((i) => i.name)).toEqual(["Blurred Name"]);
 });
 
@@ -257,7 +249,7 @@ test("can add a request inside a folder", async ({ app, fake }) => {
   await app.addRequest("Parent Folder", "Inner Request");
 
   await expect(app.request(/Inner Request/)).toBeVisible();
-  const folder = (await storedCollection(fake)).items.find(
+  const folder = (await fake.collection(COLLECTION)).items.find(
     (i) => i.name === "Parent Folder",
   );
   expect(folder?.children.map((c) => [c.type, c.name])).toEqual([
@@ -271,7 +263,7 @@ test("can add a folder inside a folder", async ({ app, fake }) => {
   await app.addFolder("Outer Folder", "Inner Folder");
 
   await expect(app.folder("Inner Folder")).toBeVisible();
-  const outer = (await storedCollection(fake)).items.find(
+  const outer = (await fake.collection(COLLECTION)).items.find(
     (i) => i.name === "Outer Folder",
   );
   expect(outer?.children.map((c) => [c.type, c.name])).toEqual([
@@ -333,7 +325,7 @@ test.describe("when a collection operation fails", () => {
     ).toContainText("disk is full");
     await expect(page.getByRole("dialog")).toBeHidden();
     await expect(request).toBeVisible();
-    expect((await storedCollection(fake)).items.map((i) => i.name)).toEqual([
+    expect((await fake.collection(COLLECTION)).items.map((i) => i.name)).toEqual([
       REQUEST,
     ]);
   });
@@ -354,7 +346,7 @@ test.describe("when a collection operation fails", () => {
         page.getByRole("alert").filter({ hasText: label }),
       ).toContainText("disk is full");
       await expect(app.renameInput).toHaveCount(0);
-      expect((await storedCollection(fake)).items.map((i) => i.name)).toEqual([
+      expect((await fake.collection(COLLECTION)).items.map((i) => i.name)).toEqual([
         REQUEST,
       ]);
     });

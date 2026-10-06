@@ -15,22 +15,13 @@ test("protocol switcher buttons have correct aria-labels", async ({ page }) => {
 
 // ── 観点G-4: Tab キーによるフォーカス移動 ───────────────────────────────────
 
-test("tab key moves focus away from URL input field", async ({ app }) => {
-  await app.switchTo("HTTP");
-
-  await app.urlInput.focus();
-  await expect(app.urlInput).toBeFocused();
-
-  await app.page.keyboard.press("Tab");
-
-  await expect(app.urlInput).not.toBeFocused();
-});
-
 test("tab key moves focus to send button from URL input", async ({ app }) => {
   await app.switchTo("HTTP");
 
   await app.urlInput.fill("https://api.example.com");
   await app.urlInput.focus();
+  await expect(app.urlInput).toBeFocused();
+
   await app.page.keyboard.press("Tab");
 
   await expect(app.sendButton).toBeFocused();

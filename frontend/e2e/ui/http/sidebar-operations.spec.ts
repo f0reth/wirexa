@@ -4,9 +4,18 @@ test.beforeEach(async ({ app }) => {
   await app.switchTo("HTTP");
 });
 
-test("can create a new collection from sidebar", async ({ page, app }) => {
+test("can create a new collection from sidebar", async ({
+  page,
+  app,
+  fake,
+}) => {
   await app.createCollection("E2E Test Collection");
   await expect(page.getByText("E2E Test Collection")).toBeVisible();
+
+  // 作成 (既定名) とリネームの 2 つの RPC を経て、バックエンドにもその名前で残る。
+  const { collections, sidebar } = await fake.snapshot();
+  expect(collections.map((c) => c.name)).toEqual(["E2E Test Collection"]);
+  expect(sidebar).toEqual([{ kind: "collection", id: collections[0].id }]);
 });
 
 test("can rename collection with double-click then Enter", async ({
@@ -38,6 +47,7 @@ test("rename is cancelled on Escape", async ({ page, app }) => {
 test("delete collection shows confirm dialog and removes on confirm", async ({
   page,
   app,
+  fake,
 }) => {
   await app.createCollection();
 
@@ -52,6 +62,10 @@ test("delete collection shows confirm dialog and removes on confirm", async ({
   await dialog.getByRole("button", { name: "Delete" }).click();
   await expect(dialog).toBeHidden();
   await expect(app.collection("New Collection")).toBeHidden();
+
+  const { collections, sidebar } = await fake.snapshot();
+  expect(collections).toEqual([]);
+  expect(sidebar).toEqual([]);
 });
 
 test("clicking a request in sidebar opens it in the editor panel", async ({

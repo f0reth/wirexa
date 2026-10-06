@@ -3,11 +3,8 @@ import { expect, test } from "../../fixtures/ui";
 // 切り詰められたレスポンスの全文は backend が execution ID で追跡する一時ファイルにある。
 // RPC 境界には一時ファイルのパスではなく、送信時の execution ID だけが渡ることを確かめる。
 
-test.beforeEach(async ({ page }) => {
-  await page.getByRole("button", { name: "HTTP", exact: true }).click();
-  await expect(
-    page.getByPlaceholder("https://api.example.com/endpoint"),
-  ).toBeVisible();
+test.beforeEach(async ({ app }) => {
+  await app.switchTo("HTTP");
 });
 
 /** SendRequest に渡った n 番目の execution ID (第 1 引数)。 */

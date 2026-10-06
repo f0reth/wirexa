@@ -11,11 +11,9 @@ test.beforeEach(async ({ app }) => {
   await app.switchTo("HTTP");
 });
 
-/** SendRequest に最後に渡ったリクエスト (第 2 引数)。 */
+/** SendRequest に最後に渡ったリクエスト (第 2 引数)。呼ばれるまで待つ。 */
 async function lastSent(fake: FakeControl): Promise<HttpRequest> {
-  await fake.waitForCalls("SendRequest");
-  const calls = await fake.args("SendRequest");
-  return calls[calls.length - 1][1] as HttpRequest;
+  return (await fake.lastArgs("SendRequest"))[1] as HttpRequest;
 }
 
 test("headers, query params and bearer token are sent with the request", async ({

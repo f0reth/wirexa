@@ -36,7 +36,7 @@ for (const [statusCode, statusText] of [
       const viewer = app.responseViewer;
       const badge = viewer.getByText(String(statusCode), { exact: true });
       await expect(badge).toBeVisible();
-      await expect(badge).toHaveClass(/variantDestructive/);
+      await expect(badge).toHaveAttribute("data-variant", "destructive");
       await expect(viewer.getByText(statusText, { exact: true })).toBeVisible();
       // 4xx/5xx でもボディは通常どおり表示する (接続エラーの表示にはしない)。
       await expect(viewer.getByTestId("response-body")).toContainText(
@@ -52,7 +52,7 @@ test("2xx response is not shown with destructive badge", async ({ app }) => {
 
   const badge = app.responseViewer.getByText("200", { exact: true });
   await expect(badge).toBeVisible();
-  await expect(badge).not.toHaveClass(/variantDestructive/);
+  await expect(badge).toHaveAttribute("data-variant", "default");
 });
 
 test.describe("empty body", () => {

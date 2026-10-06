@@ -15,17 +15,9 @@ test.beforeEach(async ({ app }) => {
   await app.switchTo("HTTP");
 });
 
-async function chooseBodyType(app: App, label: string) {
-  const bodyPanel = await app.openRequestTab("Body");
-  await bodyPanel.getByRole("button").first().click();
-  await bodyPanel.getByRole("button", { name: label, exact: true }).click();
-  return bodyPanel;
-}
-
-/** SendRequest に最後に渡ったリクエスト (第 2 引数)。 */
+/** SendRequest に最後に渡ったリクエスト (第 2 引数)。呼ばれるまで待つ。 */
 async function lastSent(fake: FakeControl): Promise<HttpRequest> {
-  const calls = await fake.args("SendRequest");
-  return calls[calls.length - 1][1] as HttpRequest;
+  return (await fake.lastArgs("SendRequest"))[1] as HttpRequest;
 }
 
 test.describe("file body", () => {
@@ -37,7 +29,7 @@ test.describe("file body", () => {
     fake,
   }) => {
     await app.urlInput.fill("https://example.com/upload");
-    const bodyPanel = await chooseBodyType(app, "File");
+    const bodyPanel = await app.chooseBodyType("File");
     await bodyPanel.getByPlaceholder("No file selected").fill("/tmp/upload.json");
 
     await expect(bodyPanel.getByText("Not confirmed")).toBeVisible();
@@ -51,7 +43,7 @@ test.describe("file body", () => {
     fake,
   }) => {
     await app.urlInput.fill("https://example.com/upload");
-    const bodyPanel = await chooseBodyType(app, "File");
+    const bodyPanel = await app.chooseBodyType("File");
     const input = bodyPanel.getByPlaceholder("No file selected");
     await input.fill("/tmp/upload.json");
     await bodyPanel.getByRole("button", { name: "Browse..." }).click();
@@ -61,7 +53,6 @@ test.describe("file body", () => {
     expect(await fake.args("OpenFilePicker")).toEqual([["/tmp/upload.json"]]);
 
     await app.sendButton.click();
-    await fake.waitForCalls("SendRequest");
     const sent = await lastSent(fake);
     expect(sent.body.file?.token).toBe(PICKED.token);
     expect(JSON.stringify(sent)).not.toContain("/tmp/upload.json");
@@ -73,7 +64,7 @@ test.describe("file body", () => {
     fake,
   }) => {
     await app.urlInput.fill("https://example.com/upload");
-    const bodyPanel = await chooseBodyType(app, "File");
+    const bodyPanel = await app.chooseBodyType("File");
     await bodyPanel.getByRole("button", { name: "Browse..." }).click();
     await expect(bodyPanel.getByText("Selected", { exact: true })).toBeVisible();
 
@@ -86,7 +77,7 @@ test.describe("file body", () => {
 
   test("clear selection removes the confirmed file", async ({ app, fake }) => {
     await app.urlInput.fill("https://example.com/upload");
-    const bodyPanel = await chooseBodyType(app, "File");
+    const bodyPanel = await app.chooseBodyType("File");
     const input = bodyPanel.getByPlaceholder("No file selected");
     await bodyPanel.getByRole("button", { name: "Browse..." }).click();
     await expect(bodyPanel.getByText("Selected", { exact: true })).toBeVisible();
@@ -102,7 +93,6 @@ test.describe("file body", () => {
 
     // 未選択に戻っているので、ファイルを付けずに送られる。
     await app.sendButton.click();
-    await fake.waitForCalls("SendRequest");
     expect((await lastSent(fake)).body.file).toBeUndefined();
   });
 
@@ -110,7 +100,7 @@ test.describe("file body", () => {
     app,
     fake,
   }) => {
-    const bodyPanel = await chooseBodyType(app, "File");
+    const bodyPanel = await app.chooseBodyType("File");
     const input = bodyPanel.getByPlaceholder("No file selected");
     await input.fill("/tmp/upload.json");
     await input.press("Enter");
@@ -127,7 +117,7 @@ test("cancelling the file dialog keeps the typed path unconfirmed", async ({
   fake,
 }) => {
   await app.urlInput.fill("https://example.com/upload");
-  const bodyPanel = await chooseBodyType(app, "File");
+  const bodyPanel = await app.chooseBodyType("File");
   const input = bodyPanel.getByPlaceholder("No file selected");
   await input.fill("/tmp/upload.json");
 
@@ -147,7 +137,7 @@ test.describe("when the file dialog fails", () => {
   });
 
   test("a failed file dialog shows an error toast", async ({ page, app }) => {
-    const bodyPanel = await chooseBodyType(app, "File");
+    const bodyPanel = await app.chooseBodyType("File");
     const input = bodyPanel.getByPlaceholder("No file selected");
     await input.fill("/tmp/upload.json");
 
@@ -170,12 +160,14 @@ test.describe("form-data file row", () => {
   });
 
   async function addFileRow(app: App) {
-    const bodyPanel = await chooseBodyType(app, "Form Data");
+    const bodyPanel = await app.chooseBodyType("Form Data");
     await bodyPanel.getByRole("button", { name: "Add" }).click();
     await bodyPanel.getByPlaceholder("Field").fill("doc");
-    const kindSelect = bodyPanel.getByTestId("form-kind-select");
-    await kindSelect.getByRole("button").first().click();
-    await kindSelect.getByRole("button", { name: "File" }).click();
+    await app.chooseOption(
+      bodyPanel.getByTestId("form-kind-select"),
+      "Text",
+      "File",
+    );
     return bodyPanel;
   }
 
@@ -219,7 +211,6 @@ test.describe("form-data file row", () => {
     await expect(bodyPanel.getByText("Selected", { exact: true })).toBeVisible();
 
     await app.sendButton.click();
-    await fake.waitForCalls("SendRequest");
     const sent = await lastSent(fake);
     expect(sent.body.formData?.[0].file?.token).toBe("tok-png");
   });
@@ -279,7 +270,6 @@ test.describe("saved file request", () => {
     );
 
     await app.sendButton.click();
-    await fake.waitForCalls("SendRequest");
     const sent = await lastSent(fake);
     expect(sent.body.file).toMatchObject({
       token: PICKED.token,

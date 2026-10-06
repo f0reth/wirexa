@@ -121,7 +121,7 @@ test("method, headers and body are restored after reload", async ({
     "true",
   );
 
-  await expect(page.getByTestId("method-select")).toContainText("POST");
+  await expect(app.methodSelect).toHaveText("POST");
   const restoredHeaders = await app.openRequestTab("Headers");
   await expect(restoredHeaders.getByPlaceholder("Header")).toHaveValue(
     "X-Saved",

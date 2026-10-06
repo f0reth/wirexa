@@ -2,61 +2,33 @@ import type { Page } from "@playwright/test";
 import type { HttpRequest } from "../../../src/domain/http/types";
 import { type App, expect, type FakeControl, test } from "../../fixtures/ui";
 
-test.beforeEach(async ({ page }) => {
-  await page.getByRole("button", { name: "HTTP", exact: true }).click();
-  await expect(
-    page.getByPlaceholder("https://api.example.com/endpoint"),
-  ).toBeVisible();
+test.beforeEach(async ({ app }) => {
+  await app.switchTo("HTTP");
 });
 
 // ── 観点I-1: HTTPメソッドの選択 ──────────────────────────────────────────────
 
-test("can select different HTTP methods from dropdown", async ({ page }) => {
-  const methodSelect = page.getByTestId("method-select");
-  const trigger = methodSelect.getByRole("button").first();
-
+test("can select different HTTP methods from dropdown", async ({ app }) => {
   // 初期状態: GET
-  await expect(trigger).toContainText("GET");
+  await expect(app.methodSelect).toHaveText("GET");
 
-  // POST を選択
-  await trigger.click();
-  await methodSelect.getByRole("button", { name: "POST" }).click();
-  await expect(trigger).toContainText("POST");
-
-  // DELETE を選択
-  await trigger.click();
-  await methodSelect.getByRole("button", { name: "DELETE" }).click();
-  await expect(trigger).toContainText("DELETE");
-
-  // PUT を選択
-  await trigger.click();
-  await methodSelect.getByRole("button", { name: "PUT" }).click();
-  await expect(trigger).toContainText("PUT");
-
-  // GET に戻す
-  await trigger.click();
-  await methodSelect.getByRole("button", { name: "GET" }).click();
-  await expect(trigger).toContainText("GET");
+  // 最後は GET に戻す
+  for (const method of ["POST", "DELETE", "PUT", "GET"]) {
+    await app.selectMethod(method);
+    await expect(app.methodSelect).toHaveText(method);
+  }
 });
 
 // ── 観点I-3: ボディタイプ切り替え ────────────────────────────────────────────
 
 test("switching body type to JSON shows CodeMirror editor", async ({ app }) => {
-  const bodyPanel = await app.openRequestTab("Body");
-  const bodyTypeTrigger = bodyPanel.getByRole("button").first();
-
-  await bodyTypeTrigger.click();
-  await bodyPanel.getByRole("button", { name: "JSON" }).click();
+  const bodyPanel = await app.chooseBodyType("JSON");
 
   await expect(app.editor(bodyPanel).root).toBeVisible();
 });
 
 test("switching body type to Text shows textarea", async ({ app }) => {
-  const bodyPanel = await app.openRequestTab("Body");
-  const bodyTypeTrigger = bodyPanel.getByRole("button").first();
-
-  await bodyTypeTrigger.click();
-  await bodyPanel.getByRole("button", { name: "Text" }).click();
+  const bodyPanel = await app.chooseBodyType("Text");
 
   await expect(bodyPanel.getByRole("textbox")).toBeVisible();
 });
@@ -64,28 +36,16 @@ test("switching body type to Text shows textarea", async ({ app }) => {
 test("switching body type to Form Data shows key-value editor", async ({
   app,
 }) => {
-  const bodyPanel = await app.openRequestTab("Body");
-  const bodyTypeTrigger = bodyPanel.getByRole("button").first();
-
-  await bodyTypeTrigger.click();
-  await bodyPanel.getByRole("button", { name: "Form Data" }).click();
+  const bodyPanel = await app.chooseBodyType("Form Data");
 
   await expect(bodyPanel.getByRole("button", { name: "Add" })).toBeVisible();
 });
-
-// ボディタイプを選択して Body タブの key-value エディタを開く。
-async function openFormBody(app: App, bodyTypeLabel: string) {
-  const bodyPanel = await app.openRequestTab("Body");
-  await bodyPanel.getByRole("button").first().click();
-  await bodyPanel.getByRole("button", { name: bodyTypeLabel }).click();
-  return bodyPanel;
-}
 
 // 行は文字列へ直列化して導出し直していたため、空キー行が直列化で捨てられ
 // Add が無反応になっていた。行が実体の state であることを担保する回帰テスト。
 for (const bodyTypeLabel of ["Form Data", "Form URL Encoded"]) {
   test(`can add rows to ${bodyTypeLabel} body`, async ({ app }) => {
-    const bodyPanel = await openFormBody(app, bodyTypeLabel);
+    const bodyPanel = await app.chooseBodyType(bodyTypeLabel);
     const addButton = bodyPanel.getByRole("button", { name: "Add" });
 
     await expect(bodyPanel.getByPlaceholder("Field")).toHaveCount(0);
@@ -109,7 +69,7 @@ for (const bodyTypeLabel of ["Form Data", "Form URL Encoded"]) {
 test("unchecking a Form Data row disables it without removing it", async ({
   app,
 }) => {
-  const bodyPanel = await openFormBody(app, "Form Data");
+  const bodyPanel = await app.chooseBodyType("Form Data");
 
   await bodyPanel.getByRole("button", { name: "Add" }).click();
   await bodyPanel.getByPlaceholder("Field").fill("token");
@@ -125,7 +85,7 @@ test("unchecking a Form Data row disables it without removing it", async ({
 
 // キーを空にしても値ごと行が消えてはいけない。
 test("clearing the key of a Form Data row keeps the row", async ({ app }) => {
-  const bodyPanel = await openFormBody(app, "Form Data");
+  const bodyPanel = await app.chooseBodyType("Form Data");
 
   await bodyPanel.getByRole("button", { name: "Add" }).click();
   await bodyPanel.getByPlaceholder("Field").fill("k");
@@ -141,16 +101,16 @@ test("clearing the key of a Form Data row keeps the row", async ({ app }) => {
 test("Form Data and Form URL Encoded keep independent rows", async ({
   app,
 }) => {
-  const bodyPanel = await openFormBody(app, "Form Data");
+  const bodyPanel = await app.chooseBodyType("Form Data");
   await bodyPanel.getByRole("button", { name: "Add" }).click();
   await bodyPanel.getByPlaceholder("Field").fill("from-form-data");
 
-  await openFormBody(app, "Form URL Encoded");
+  await app.chooseBodyType("Form URL Encoded", "form-data");
   await expect(bodyPanel.getByPlaceholder("Field")).toHaveCount(0);
   await bodyPanel.getByRole("button", { name: "Add" }).click();
   await bodyPanel.getByPlaceholder("Field").fill("from-urlencoded");
 
-  await openFormBody(app, "Form Data");
+  await app.chooseBodyType("Form Data", "form-urlencoded");
   await expect(bodyPanel.getByPlaceholder("Field")).toHaveValue(
     "from-form-data",
   );
@@ -158,9 +118,10 @@ test("Form Data and Form URL Encoded keep independent rows", async ({
 
 // ── form-data の行種別と行ごとの Content-Type ────────────────────────────────
 
-// 行を1つ追加して、その行の kind セレクタを返す。
+// 行を1つ追加して、その行の kind セレクタを返す。kind の Select はトリガーに今の種別の
+// ラベル (Text / JSON / File) が出るので、app.chooseOption で選ぶ。
 async function addFormRow(app: App, bodyTypeLabel: string) {
-  const bodyPanel = await openFormBody(app, bodyTypeLabel);
+  const bodyPanel = await app.chooseBodyType(bodyTypeLabel);
   await bodyPanel.getByRole("button", { name: "Add" }).click();
   return { bodyPanel, kindSelect: bodyPanel.getByTestId("form-kind-select") };
 }
@@ -168,7 +129,9 @@ async function addFormRow(app: App, bodyTypeLabel: string) {
 test("a new Form Data row starts as a Text row", async ({ app }) => {
   const { bodyPanel, kindSelect } = await addFormRow(app, "Form Data");
 
-  await expect(kindSelect.getByRole("button").first()).toContainText("Text");
+  await expect(
+    kindSelect.getByRole("button", { name: "Text", exact: true }),
+  ).toBeVisible();
   await expect(bodyPanel.getByPlaceholder("Value")).toBeVisible();
 });
 
@@ -177,8 +140,7 @@ test("selecting the File kind swaps the value field for a file path picker", asy
 }) => {
   const { bodyPanel, kindSelect } = await addFormRow(app, "Form Data");
 
-  await kindSelect.getByRole("button").first().click();
-  await kindSelect.getByRole("button", { name: "File" }).click();
+  await app.chooseOption(kindSelect, "Text", "File");
 
   await expect(bodyPanel.getByPlaceholder("No file selected")).toBeVisible();
   await expect(bodyPanel.getByPlaceholder("Value")).toHaveCount(0);
@@ -190,20 +152,16 @@ test("switching kind back and forth keeps both the value and the file path", asy
   app,
 }) => {
   const { bodyPanel, kindSelect } = await addFormRow(app, "Form Data");
-  const trigger = kindSelect.getByRole("button").first();
 
   await bodyPanel.getByPlaceholder("Value").fill("text kept");
 
-  await trigger.click();
-  await kindSelect.getByRole("button", { name: "File" }).click();
+  await app.chooseOption(kindSelect, "Text", "File");
   await bodyPanel.getByPlaceholder("No file selected").fill("C:\\tmp\\a.png");
 
-  await trigger.click();
-  await kindSelect.getByRole("button", { name: "Text" }).click();
+  await app.chooseOption(kindSelect, "File", "Text");
   await expect(bodyPanel.getByPlaceholder("Value")).toHaveValue("text kept");
 
-  await trigger.click();
-  await kindSelect.getByRole("button", { name: "File" }).click();
+  await app.chooseOption(kindSelect, "Text", "File");
   await expect(bodyPanel.getByPlaceholder("No file selected")).toHaveValue(
     "C:\\tmp\\a.png",
   );
@@ -214,8 +172,7 @@ test("expanding a JSON row shows a JSON editor and an application/json hint", as
 }) => {
   const { bodyPanel, kindSelect } = await addFormRow(app, "Form Data");
 
-  await kindSelect.getByRole("button").first().click();
-  await kindSelect.getByRole("button", { name: "JSON" }).click();
+  await app.chooseOption(kindSelect, "Text", "JSON");
   await bodyPanel.getByRole("button", { name: "Expand row" }).click();
 
   await expect(app.editor(bodyPanel).root).toBeVisible();
@@ -229,7 +186,7 @@ test("Form URL Encoded rows offer no File kind and no Content-Type field", async
   const { bodyPanel, kindSelect } = await addFormRow(app, "Form URL Encoded");
 
   // Text はトリガー側にも出ている（現在の kind）ので、選択肢側は JSON/File で見る。
-  await kindSelect.getByRole("button").first().click();
+  await kindSelect.getByRole("button", { name: "Text", exact: true }).click();
   await expect(kindSelect.getByRole("button", { name: "JSON" })).toBeVisible();
   await expect(kindSelect.getByRole("button", { name: "File" })).toHaveCount(0);
 
@@ -245,17 +202,12 @@ test("Form URL Encoded rows offer no File kind and no Content-Type field", async
 });
 
 test("switching body type back to none hides the editor", async ({ app }) => {
-  const bodyPanel = await app.openRequestTab("Body");
-  const bodyTypeTrigger = bodyPanel.getByRole("button").first();
-
   // JSON を選択してエディタを表示
-  await bodyTypeTrigger.click();
-  await bodyPanel.getByRole("button", { name: "JSON" }).click();
+  const bodyPanel = await app.chooseBodyType("JSON");
   await expect(app.editor(bodyPanel).root).toBeVisible();
 
   // none に戻す
-  await bodyTypeTrigger.click();
-  await bodyPanel.getByRole("button", { name: "None" }).click();
+  await app.chooseBodyType("None", "json");
   await expect(app.editor(bodyPanel).root).not.toBeVisible();
 });
 
@@ -265,10 +217,8 @@ test("selecting Basic auth shows username and password fields", async ({
   app,
 }) => {
   const authPanel = await app.openRequestTab("Auth");
-  const authTypeTrigger = authPanel.getByRole("button").first();
 
-  await authTypeTrigger.click();
-  await authPanel.getByRole("button", { name: "Basic Auth" }).click();
+  await app.chooseOption(authPanel, "none", "Basic Auth");
 
   await expect(authPanel.getByPlaceholder("Username")).toBeVisible();
   await expect(authPanel.getByPlaceholder("Password")).toBeVisible();
@@ -276,56 +226,35 @@ test("selecting Basic auth shows username and password fields", async ({
 
 test("selecting Bearer auth shows token field", async ({ app }) => {
   const authPanel = await app.openRequestTab("Auth");
-  const authTypeTrigger = authPanel.getByRole("button").first();
 
-  await authTypeTrigger.click();
-  await authPanel.getByRole("button", { name: "Bearer Token" }).click();
+  await app.chooseOption(authPanel, "none", "Bearer Token");
 
   await expect(authPanel.getByPlaceholder("Token")).toBeVisible();
 });
 
 test("switching back to no auth hides credential fields", async ({ app }) => {
   const authPanel = await app.openRequestTab("Auth");
-  const authTypeTrigger = authPanel.getByRole("button").first();
 
   // Basic Auth を選択
-  await authTypeTrigger.click();
-  await authPanel.getByRole("button", { name: "Basic Auth" }).click();
+  await app.chooseOption(authPanel, "none", "Basic Auth");
   await expect(authPanel.getByPlaceholder("Username")).toBeVisible();
 
   // None に戻す
-  await authTypeTrigger.click();
-  await authPanel.getByRole("button", { name: "None" }).click();
+  await app.chooseOption(authPanel, "basic", "None");
   await expect(authPanel.getByPlaceholder("Username")).not.toBeVisible();
   await expect(authPanel.getByPlaceholder("Password")).not.toBeVisible();
 });
 
-// ── 観点I-7: プロキシ・タイムアウト設定の入力UI ──────────────────────────────
-
-test("can configure timeout in settings tab", async ({ app }) => {
-  const settingsPanel = await app.openRequestTab("Settings");
-  const timeoutInput = settingsPanel.getByLabel("Timeout (s)");
-
-  await expect(timeoutInput).toBeVisible();
-  await timeoutInput.fill("60");
-  await expect(timeoutInput).toHaveValue("60");
-});
+// ── 観点I-7: 設定の入力UI ────────────────────────────────────────────────────
+// 入力した値が送信に載ることは request-send.spec.ts が見る。ここは表示の切り替えだけを見る。
 
 test("selecting custom proxy mode shows proxy URL field", async ({ app }) => {
   const settingsPanel = await app.openRequestTab("Settings");
 
-  // proxy ドロップダウンを開いて Custom を選択
-  const proxyTrigger = settingsPanel.getByRole("button").first();
-  await proxyTrigger.click();
-  await settingsPanel.getByRole("button", { name: "Custom" }).click();
+  await expect(settingsPanel.getByLabel("Proxy URL")).toHaveCount(0);
+  await app.chooseOption(settingsPanel, "none", "Custom");
 
   await expect(settingsPanel.getByLabel("Proxy URL")).toBeVisible();
-  await settingsPanel
-    .getByLabel("Proxy URL")
-    .fill("http://proxy.example.com:8080");
-  await expect(settingsPanel.getByLabel("Proxy URL")).toHaveValue(
-    "http://proxy.example.com:8080",
-  );
 });
 
 test("settings tab shows TLS and redirect checkboxes", async ({ app }) => {
@@ -335,45 +264,6 @@ test("settings tab shows TLS and redirect checkboxes", async ({ app }) => {
     settingsPanel.getByLabel("Verify TLS certificate"),
   ).toBeVisible();
   await expect(settingsPanel.getByLabel("Disable redirects")).toBeVisible();
-});
-
-// ── 観点I-9: リクエストヘッダーの追加 ────────────────────────────────────────
-
-test("can add custom headers to HTTP request", async ({ app }) => {
-  const headersPanel = await app.openRequestTab("Headers");
-
-  // 行を追加
-  await headersPanel.getByRole("button", { name: "Add" }).click();
-
-  // キーと値を入力
-  await headersPanel.getByPlaceholder("Header").fill("Content-Type");
-  await headersPanel.getByPlaceholder("Value").fill("application/json");
-
-  await expect(headersPanel.getByPlaceholder("Header")).toHaveValue(
-    "Content-Type",
-  );
-  await expect(headersPanel.getByPlaceholder("Value")).toHaveValue(
-    "application/json",
-  );
-});
-
-test("can add multiple headers to HTTP request", async ({ app }) => {
-  const headersPanel = await app.openRequestTab("Headers");
-  const addButton = headersPanel.getByRole("button", { name: "Add" });
-
-  // 2 行追加
-  await addButton.click();
-  await addButton.click();
-
-  const headerInputs = headersPanel.getByPlaceholder("Header");
-  await expect(headerInputs).toHaveCount(2);
-
-  // 行は名前を持たないので、足した順 (上から) の位置で取る。
-  await headerInputs.nth(0).fill("Accept");
-  await headerInputs.nth(1).fill("Authorization");
-
-  await expect(headerInputs.nth(0)).toHaveValue("Accept");
-  await expect(headerInputs.nth(1)).toHaveValue("Authorization");
 });
 
 // ── 観点I: Doc タブ ──────────────────────────────────────────────────────────

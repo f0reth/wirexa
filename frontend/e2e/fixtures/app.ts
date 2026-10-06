@@ -295,9 +295,14 @@ export class App {
     return this.page.getByText(/^Save failed: /).locator("xpath=..");
   }
 
+  /** リクエストのメソッドの Select。閉じているあいだは、選択中のメソッドだけがテキストになる。 */
+  get methodSelect(): Locator {
+    return this.page.getByTestId("method-select");
+  }
+
   /** リクエストのメソッド選択。 */
   async selectMethod(method: string): Promise<void> {
-    const methodSelect = this.page.getByTestId("method-select");
+    const methodSelect = this.methodSelect;
     await methodSelect.getByRole("button").first().click();
     await methodSelect.getByRole("button", { name: method, exact: true }).click();
   }
@@ -346,11 +351,11 @@ export class App {
 
   /**
    * Body タブを開いてボディの種別を選び、Body パネルを返す。
-   * 種別を選んでいない (none の) リクエストで使う。
+   * current は今の種別の値 (トリガーに出ている文字列) で、選び直すときに指定する。
    */
-  async chooseBodyType(label: string): Promise<Locator> {
+  async chooseBodyType(label: string, current = "none"): Promise<Locator> {
     const body = await this.openRequestTab("Body");
-    await this.chooseOption(body, "none", label);
+    await this.chooseOption(body, current, label);
     return body;
   }
 

@@ -1,4 +1,3 @@
-import type { Collection } from "../../../src/domain/http/types";
 import { type FakeControl, expect, test } from "../../fixtures/ui";
 
 // HTTP ツリーの D&D (マウス方式。app.dragTreeNode を使う)。どのテストも、画面の並びに加えて
@@ -17,15 +16,6 @@ test.beforeEach(async ({ app }) => {
   await app.switchTo("HTTP");
 });
 
-async function storedCollection(
-  fake: FakeControl,
-  id: string,
-): Promise<Collection> {
-  const col = (await fake.snapshot()).collections.find((c) => c.id === id);
-  if (!col) throw new Error(`${id} is missing in the fake backend`);
-  return col;
-}
-
 test("dragging a request onto another collection moves it", async ({
   app,
   fake,
@@ -40,9 +30,9 @@ test("dragging a request onto another collection moves it", async ({
   expect(await fake.args("MoveItem")).toEqual([
     [ALPHA.id, REQUEST.id, BETA.id, "", -1],
   ]);
-  expect((await storedCollection(fake, ALPHA.id)).items).toEqual([]);
+  expect((await fake.collection(ALPHA.id)).items).toEqual([]);
   expect(
-    (await storedCollection(fake, BETA.id)).items.map((i) => i.id),
+    (await fake.collection(BETA.id)).items.map((i) => i.id),
   ).toEqual([REQUEST.id]);
 
   // 移動先を閉じると隠れ、移動元を閉じても見えたまま
@@ -106,7 +96,7 @@ test("dragging a request out of its collection makes it a root item", async ({
     { kind: "collection", id: BETA.id },
     { kind: "item", id: REQUEST.id },
   ]);
-  expect((await storedCollection(fake, ALPHA.id)).items).toEqual([]);
+  expect((await fake.collection(ALPHA.id)).items).toEqual([]);
 
   // どのコレクションを閉じても見えたまま
   await app.collection(ALPHA.name).click();
@@ -125,7 +115,7 @@ test("dropping a request into a folder nests it", async ({ app, fake }) => {
   );
 
   await fake.waitForCalls("MoveItem");
-  const [stored] = (await storedCollection(fake, ALPHA.id)).items;
+  const [stored] = (await fake.collection(ALPHA.id)).items;
   expect(stored).toMatchObject({ type: "folder", name: "Target Folder" });
   expect(await fake.args("MoveItem")).toEqual([
     [ALPHA.id, REQUEST.id, ALPHA.id, stored.id, 0],
@@ -520,26 +510,19 @@ test.describe("root items", () => {
 // 偽バックエンドが Go (cmn.InsertAt) と同じく、負の position を末尾として扱うことを確かめる。
 // UI は負の position をサイドバーへ送らないので、バインディングを直接呼ぶ。
 test("a negative sidebar position appends to the end, like the Go backend", async ({
-  page,
   fake,
 }) => {
-  type Handler = Record<string, (...args: unknown[]) => Promise<unknown>>;
-  const call = (method: string, ...callArgs: unknown[]) =>
-    page.evaluate(
-      ([m, a]) =>
-        (
-          window as unknown as { go: { adapters: { HTTPHandler: Handler } } }
-        ).go.adapters.HTTPHandler[m](...a),
-      [method, callArgs] as const,
-    );
-
-  await call("MoveSidebarEntry", "collection", ALPHA.id, -1);
+  expect(
+    await fake.callHttp("MoveSidebarEntry", "collection", ALPHA.id, -1),
+  ).toBeNull();
   expect((await fake.snapshot()).sidebar).toEqual([
     { kind: "collection", id: BETA.id },
     { kind: "collection", id: ALPHA.id },
   ]);
 
-  await call("MoveItemToSidebar", ALPHA.id, REQUEST.id, -1);
+  expect(
+    await fake.callHttp("MoveItemToSidebar", ALPHA.id, REQUEST.id, -1),
+  ).toBeNull();
   expect((await fake.snapshot()).sidebar).toEqual([
     { kind: "collection", id: BETA.id },
     { kind: "collection", id: ALPHA.id },

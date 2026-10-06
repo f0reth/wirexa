@@ -26,6 +26,7 @@ export function Badge(props: BadgeProps) {
         variantStyles[local.variant ?? "default"],
         local.class,
       )}
+      data-variant={local.variant ?? "default"}
       {...rest}
     >
       {local.children}
