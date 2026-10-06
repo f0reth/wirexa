@@ -12,8 +12,36 @@ import type { Notifier } from "../../domain/ui/ports";
 import { notifyOnError, runGuarded } from "../ui/guard";
 
 /**
+ * コレクション ID に対応するアイテムの並び。__root__ はサイドバー直下のアイテムを指す。
+ * 無いコレクションは null。
+ */
+function itemsOf(
+  collections: readonly Collection[],
+  rootItems: readonly TreeItem[],
+  collectionId: string,
+): readonly TreeItem[] | null {
+  if (collectionId === ROOT_COLLECTION_ID) return rootItems;
+  return collections.find((c) => c.id === collectionId)?.items ?? null;
+}
+
+function findRequestIn(
+  items: readonly TreeItem[],
+  requestId: string,
+): HttpRequest | null {
+  for (const item of items) {
+    if (item.type === "request" && item.id === requestId && item.request) {
+      return item.request;
+    }
+    const found = findRequestIn(item.children, requestId);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
  * 保存済みのアクティブリクエスト（id とコレクション id）をツリーから探す。
- * __root__ はサイドバー直下のアイテムなので子を持たず、通常のコレクションは再帰的に探す。
+ * __root__ もフォルダを持てる（フォルダをサイドバー直下へ出せる）ので、通常のコレクションと
+ * 同じく再帰的に探す。
  */
 export function findRequestById(
   collections: readonly Collection[],
@@ -21,27 +49,8 @@ export function findRequestById(
   collectionId: string,
   requestId: string,
 ): HttpRequest | null {
-  if (collectionId === ROOT_COLLECTION_ID) {
-    const item = rootItems.find(
-      (i) => i.id === requestId && i.type === "request",
-    );
-    return item?.request ?? null;
-  }
-
-  const collection = collections.find((c) => c.id === collectionId);
-  if (!collection) return null;
-
-  const walk = (items: readonly TreeItem[]): HttpRequest | null => {
-    for (const item of items) {
-      if (item.type === "request" && item.id === requestId && item.request) {
-        return item.request;
-      }
-      const found = walk(item.children);
-      if (found) return found;
-    }
-    return null;
-  };
-  return walk(collection.items);
+  const items = itemsOf(collections, rootItems, collectionId);
+  return items ? findRequestIn(items, requestId) : null;
 }
 
 /**
@@ -262,34 +271,24 @@ export function createCollectionsState(
   }
 
   function patchRequest(collectionId: string, req: HttpRequest): void {
+    const patch = (items: TreeItem[]): boolean => {
+      for (const item of items) {
+        if (item.type === "request" && item.id === req.id && item.request) {
+          // name は backend が管理するため保持する
+          item.request = { ...req, name: item.request.name };
+          return true;
+        }
+        if (patch(item.children)) return true;
+      }
+      return false;
+    };
     if (collectionId === ROOT_COLLECTION_ID) {
-      setRootItems(
-        produce((items) => {
-          for (const item of items) {
-            if (item.type === "request" && item.id === req.id && item.request) {
-              item.request = { ...req, name: item.request.name };
-            }
-          }
-        }),
-      );
+      setRootItems(produce((items) => void patch(items)));
       return;
     }
     setCollections(
       (col) => col.id === collectionId,
-      produce((col) => {
-        const patch = (items: TreeItem[]): boolean => {
-          for (const item of items) {
-            if (item.type === "request" && item.id === req.id && item.request) {
-              // name は backend が管理するため保持する
-              item.request = { ...req, name: item.request.name };
-              return true;
-            }
-            if (patch(item.children)) return true;
-          }
-          return false;
-        };
-        patch(col.items);
-      }),
+      produce((col) => void patch(col.items)),
     );
   }
 

@@ -140,6 +140,38 @@ test("dropping a request into a folder nests it", async ({ app, fake }) => {
   await expect(request).toBeHidden();
 });
 
+// ルートのフォルダの中のリクエストは collectionId が __root__ で、ルート直下には無い。保存した
+// 内容がツリーに反映されないと、別のリクエストから戻ったときに古い値が編集エリアに入り、
+// 自動保存がそれで上書きする。
+test("edits to a request inside a folder moved to the sidebar root survive switching requests", async ({
+  app,
+  fake,
+}) => {
+  await app.addFolder(ALPHA.name, "Carrier");
+  const folder = app.folder("Carrier");
+  await folder.click();
+  await app.addRequest("Carrier", "Carried Request");
+  await app.addRequest(BETA.name, "Other Request");
+  await folder.click();
+
+  // フォルダごとルートへ出す (Alpha の中で 2 番目なので、サイドバーゾーン 0 は隠れない)。
+  await app.dragTreeNode(folder, app.sidebarDropZone(0));
+  await fake.waitForCalls("MoveItemToSidebar");
+
+  await folder.click();
+  await app.request(/Carried Request/).click();
+  await app.urlInput.fill("https://example.com/carried");
+  // 切り替えのたびに前のリクエストも保存されるので、回数ではなく最後の保存の内容で待つ。
+  await expect
+    .poll(async () => (await fake.args("UpdateRequest")).at(-1))
+    .toMatchObject(["__root__", { url: "https://example.com/carried" }]);
+
+  await app.request(/Other Request/).click();
+  await expect(app.urlInput).toHaveValue("");
+  await app.request(/Carried Request/).click();
+  await expect(app.urlInput).toHaveValue("https://example.com/carried");
+});
+
 // 偽バックエンドが Go (cmn.InsertAt) と同じく、負の position を末尾として扱うことを確かめる。
 // UI は負の position をサイドバーへ送らないので、バインディングを直接呼ぶ。
 test("a negative sidebar position appends to the end, like the Go backend", async ({

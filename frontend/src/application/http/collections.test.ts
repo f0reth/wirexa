@@ -158,6 +158,23 @@ describe("findRequestById", () => {
     ).toBeNull();
   });
 
+  it("finds a request inside a folder under the sidebar root", () => {
+    const items: TreeItem[] = [
+      {
+        ...makeTreeItem("root-folder"),
+        children: [
+          {
+            ...makeTreeItem("inner-folder"),
+            children: [makeRequestItem("r-deep", "https://deep.example")],
+          },
+        ],
+      },
+    ];
+    expect(findRequestById([], items, ROOT_COLLECTION_ID, "r-deep")?.url).toBe(
+      "https://deep.example",
+    );
+  });
+
   it("ignores a root folder with the same id", () => {
     const items: TreeItem[] = [makeTreeItem("dup")];
     expect(findRequestById([], items, ROOT_COLLECTION_ID, "dup")).toBeNull();
@@ -553,6 +570,26 @@ describe("createCollectionsState patchRequest", () => {
 
       expect(state.rootItems[0].request).toEqual({
         ...edited("r-root"),
+        name: "New Request",
+      });
+    });
+  });
+
+  it("patches a request inside a folder under the sidebar root", async () => {
+    const api = makeApi();
+    api.getRootItems = vi.fn(async () => [
+      {
+        ...makeTreeItem("root-folder"),
+        children: [makeRequestItem("r-deep", "https://old.example")],
+      },
+    ]);
+
+    await withState(api, async (state) => {
+      await state.refreshCollections();
+      state.patchRequest(ROOT_COLLECTION_ID, edited("r-deep"));
+
+      expect(state.rootItems[0].children[0].request).toEqual({
+        ...edited("r-deep"),
         name: "New Request",
       });
     });

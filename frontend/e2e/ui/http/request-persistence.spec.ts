@@ -43,6 +43,30 @@ test("selected request is restored after reload", async ({
   await expect(app.urlInput).toHaveValue(SAVED_URL);
 });
 
+test.describe("a request inside a folder under the sidebar root", () => {
+  test.use({
+    seed: {
+      rootItems: [{ folder: "Root Folder", items: [{ name: "Deep Request" }] }],
+    },
+  });
+
+  test("a request inside a root folder is restored after reload", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.folder("Root Folder").click();
+    await app.request(/Deep Request/).click();
+    await app.urlInput.fill(SAVED_URL);
+    await fake.waitForCalls("UpdateRequest");
+
+    await page.reload();
+    await app.switchTo("HTTP");
+
+    await expect(app.urlInput).toHaveValue(SAVED_URL);
+  });
+});
+
 // ── 観点F-3: フォームの入力内容が自動保存されリロード後に復元される ──────────
 
 test("http request form values are auto-saved and restored after reload", async ({
