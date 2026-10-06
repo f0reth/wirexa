@@ -150,3 +150,23 @@ test("collection name supports unicode and special characters", async ({
   await app.createCollection("API テスト コレクション");
   await expect(page.getByText("API テスト コレクション")).toBeVisible();
 });
+
+// 名前はテキストとして描く。マークアップとして解釈されないこと (要素が作られず、スクリプトが
+// 走らないこと) を確かめる。
+test("request name with markup and emoji is shown as text", async ({
+  page,
+  app,
+  fake,
+}) => {
+  const name = '<b>bold</b> 🚀 <img src=x onerror="window.__wirexaXss=1">';
+  const request = await app.createRootRequest(name);
+
+  await expect(request).toContainText(name);
+  await expect(request.locator("b, img")).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { __wirexaXss?: number }).__wirexaXss,
+    ),
+  ).toBeUndefined();
+  expect((await fake.snapshot()).rootItems.map((i) => i.name)).toEqual([name]);
+});

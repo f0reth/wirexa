@@ -279,6 +279,107 @@ test("can add a folder inside a folder", async ({ app, fake }) => {
   ]);
 });
 
+test("deleting a root-level request removes it from the sidebar layout", async ({
+  app,
+  fake,
+}) => {
+  const request = await app.createRootRequest("Root Request");
+  expect((await fake.snapshot()).sidebar).toHaveLength(2);
+
+  await app.rowAction(request, "Delete request").click();
+  await app.confirmDelete();
+
+  await expect(request).toBeHidden();
+  const { rootItems, sidebar } = await fake.snapshot();
+  expect(rootItems).toEqual([]);
+  expect(sidebar.map((e) => e.kind)).toEqual(["collection"]);
+});
+
+test("the add menu closes when clicking outside it", async ({ app }) => {
+  await app.addMenuButton.click();
+  await expect(app.addMenuItem("New Collection")).toBeVisible();
+
+  await app.urlInput.click();
+  await expect(app.addMenuItem("New Collection")).toBeHidden();
+  await expect(app.addMenuItem("New Request")).toBeHidden();
+});
+
+// ── 操作の失敗 (観点E) ──────────────────────────────────────────────────────
+
+test.describe("when a collection operation fails", () => {
+  test.use({
+    seed: {
+      collections: [{ name: COLLECTION, items: [{ name: REQUEST }] }],
+      httpRpcErrors: {
+        DeleteItem: "disk is full",
+        AddRequest: "disk is full",
+        AddFolder: "disk is full",
+        CreateCollection: "disk is full",
+      },
+    },
+  });
+
+  test("a failed delete shows an error toast and keeps the item", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    const request = app.request(/Tree Request/);
+    await app.rowAction(request, "Delete request").click();
+    await app.confirmDelete();
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Failed to delete item" }),
+    ).toContainText("disk is full");
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await expect(request).toBeVisible();
+    expect((await storedCollection(fake)).items.map((i) => i.name)).toEqual([
+      REQUEST,
+    ]);
+  });
+
+  // 追加に成功したときだけ、足したアイテムのリネーム入力を開く。
+  for (const [action, label] of [
+    ["Add request", "Failed to add request"],
+    ["Add folder", "Failed to add folder"],
+  ] as const) {
+    test(`a failed "${action}" shows an error toast and does not start renaming`, async ({
+      page,
+      app,
+      fake,
+    }) => {
+      await app.rowAction(app.collection(COLLECTION), action).click();
+
+      await expect(
+        page.getByRole("alert").filter({ hasText: label }),
+      ).toContainText("disk is full");
+      await expect(app.renameInput).toHaveCount(0);
+      expect((await storedCollection(fake)).items.map((i) => i.name)).toEqual([
+        REQUEST,
+      ]);
+    });
+  }
+
+  test("a failed collection creation shows an error toast and does not start renaming", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.addMenuButton.click();
+    await app.addMenuItem("New Collection").click();
+
+    await expect(
+      page
+        .getByRole("alert")
+        .filter({ hasText: "Failed to create collection" }),
+    ).toContainText("disk is full");
+    await expect(app.renameInput).toHaveCount(0);
+    expect((await fake.snapshot()).collections.map((c) => c.name)).toEqual([
+      COLLECTION,
+    ]);
+  });
+});
+
 // ── 永続化 (観点F) ──────────────────────────────────────────────────────────
 
 test("expanded folders are restored after reload", async ({ page, app }) => {
@@ -363,5 +464,28 @@ test.describe("when loading collections fails on startup", () => {
       await page.evaluate((key) => localStorage.getItem(key), ACTIVE_REQUEST_KEY),
     ).toBe(saved);
     expect(pageErrors).toEqual([]);
+  });
+
+  // 一覧は 3 つとも読めたときだけ反映するので、サイドバーは空のまま。作成そのものは成功して
+  // いるが、そのあとの再読み込みがまた失敗するので、失敗として知らせる。
+  test("creating a collection after a failed load reports the failure and keeps existing collections", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.addMenuButton.click();
+    await app.addMenuItem("New Collection").click();
+
+    await expect(
+      page
+        .getByRole("alert")
+        .filter({ hasText: "Failed to create collection" }),
+    ).toContainText("rpc down");
+    await expect(app.renameInput).toHaveCount(0);
+    await expect(page.getByText("No collections yet")).toBeVisible();
+    expect((await fake.snapshot()).collections.map((c) => c.name)).toEqual([
+      COLLECTION,
+      "New Collection",
+    ]);
   });
 });

@@ -114,3 +114,50 @@ test("request settings are sent with the request", async ({ app, fake }) => {
     disableRedirects: true,
   });
 });
+
+// タイムアウトの欄は 0 を空欄で表す。空にすると 0 が送られ、backend の既定値が使われる。
+test("clearing the timeout sends 0 so the backend default applies", async ({
+  app,
+  fake,
+}) => {
+  await app.urlInput.fill(URL);
+
+  const settings = await app.openRequestTab("Settings");
+  const timeout = settings.getByLabel("Timeout (s)");
+  await timeout.fill("5");
+  await timeout.fill("");
+
+  await app.sendButton.click();
+  const sent = await lastSent(fake);
+
+  expect(sent.settings.timeoutSec).toBe(0);
+});
+
+test("json body is sent with the request", async ({ app, fake }) => {
+  await app.urlInput.fill(URL);
+  await app.selectMethod("POST");
+
+  const body = await app.chooseBodyType("JSON");
+  await app.editor(body).fill('{"name": "wirexa"}');
+
+  await app.sendButton.click();
+  const sent = await lastSent(fake);
+
+  expect(sent.method).toBe("POST");
+  expect(sent.body.type).toBe("json");
+  expect(sent.body.contents.json).toBe('{"name": "wirexa"}');
+});
+
+// JSON を選んだだけのときに出る雛形は表示だけで、本文としては送らない。
+test("an untouched json body sends no content", async ({ app, fake }) => {
+  await app.urlInput.fill(URL);
+
+  const body = await app.chooseBodyType("JSON");
+  await expect(app.editor(body).content).toContainText('"": ""');
+
+  await app.sendButton.click();
+  const sent = await lastSent(fake);
+
+  expect(sent.body.type).toBe("json");
+  expect(sent.body.contents).toEqual({});
+});

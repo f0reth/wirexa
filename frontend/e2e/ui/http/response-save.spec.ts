@@ -83,3 +83,91 @@ test.describe("reclaimed response body", () => {
     ).toHaveCount(0);
   });
 });
+
+test.describe("when saving the body fails", () => {
+  test.use({
+    seed: {
+      httpResponse: { bodyTruncated: true },
+      httpRpcErrors: { SaveResponseBody: "disk is full" },
+    },
+  });
+
+  // 回収済み以外の失敗では全文がまだ残っているので、もう一度保存できる。
+  test("a failed save shows an error toast and keeps the save button", async ({
+    page,
+    app,
+  }) => {
+    await app.urlInput.fill("https://example.com/large");
+    await app.sendButton.click();
+    const save = page.getByRole("button", { name: "Save body to file" });
+    await save.click();
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Failed to save response" }),
+    ).toContainText("disk is full");
+    await expect(save).toBeVisible();
+    await expect(
+      page.getByText("The full body is no longer available."),
+    ).toHaveCount(0);
+    await expect(page.getByText("Saved the full body to a file.")).toHaveCount(
+      0,
+    );
+  });
+});
+
+test.describe("when the save dialog is cancelled", () => {
+  test.use({
+    seed: {
+      httpResponse: { bodyTruncated: true },
+      saveResponseBodyCancelled: true,
+    },
+  });
+
+  test("cancelling the save dialog keeps the save button", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.urlInput.fill("https://example.com/large");
+    await app.sendButton.click();
+    const save = page.getByRole("button", { name: "Save body to file" });
+    await save.click();
+    await fake.waitForCalls("SaveResponseBody");
+
+    await expect(save).toBeVisible();
+    await expect(page.getByText("Saved the full body to a file.")).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole("alert")).toHaveCount(0);
+
+    // 保存していないので、もう一度選べる。
+    await save.click();
+    await fake.waitForCalls("SaveResponseBody", 2);
+  });
+});
+
+test.describe("when saving a binary body fails", () => {
+  test.use({
+    seed: {
+      httpResponse: {
+        body: "AAEC/0E=",
+        bodyBase64: true,
+        contentType: "application/octet-stream",
+        size: 5,
+      },
+      httpRpcErrors: { SaveResponseBase64: "disk is full" },
+    },
+  });
+
+  test("a failed binary save shows an error toast", async ({ page, app }) => {
+    await app.urlInput.fill("https://example.com/binary");
+    await app.sendButton.click();
+    const save = page.getByRole("button", { name: "Save body to file" });
+    await save.click();
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Failed to save response" }),
+    ).toContainText("disk is full");
+    await expect(save).toBeVisible();
+  });
+});

@@ -84,6 +84,28 @@ test.describe("file body", () => {
     expect(await fake.calls("SendRequest")).toBe(0);
   });
 
+  test("clear selection removes the confirmed file", async ({ app, fake }) => {
+    await app.urlInput.fill("https://example.com/upload");
+    const bodyPanel = await chooseBodyType(app, "File");
+    const input = bodyPanel.getByPlaceholder("No file selected");
+    await bodyPanel.getByRole("button", { name: "Browse..." }).click();
+    await expect(bodyPanel.getByText("Selected", { exact: true })).toBeVisible();
+
+    const clear = bodyPanel.getByRole("button", { name: "Clear selection" });
+    await clear.click();
+
+    await expect(input).toHaveValue("");
+    await expect(bodyPanel.getByText("Selected", { exact: true })).toHaveCount(
+      0,
+    );
+    await expect(clear).toHaveCount(0);
+
+    // 未選択に戻っているので、ファイルを付けずに送られる。
+    await app.sendButton.click();
+    await fake.waitForCalls("SendRequest");
+    expect((await lastSent(fake)).body.file).toBeUndefined();
+  });
+
   test("pressing Enter in the path field opens the file picker", async ({
     app,
     fake,
@@ -95,6 +117,48 @@ test.describe("file body", () => {
 
     await fake.waitForCalls("OpenFilePicker");
     await expect(bodyPanel.getByText("Selected", { exact: true })).toBeVisible();
+  });
+});
+
+// seed.pickedFile を省くと、OpenFilePicker はダイアログのキャンセルとして空の参照を返す。
+test("cancelling the file dialog keeps the typed path unconfirmed", async ({
+  page,
+  app,
+  fake,
+}) => {
+  await app.urlInput.fill("https://example.com/upload");
+  const bodyPanel = await chooseBodyType(app, "File");
+  const input = bodyPanel.getByPlaceholder("No file selected");
+  await input.fill("/tmp/upload.json");
+
+  await bodyPanel.getByRole("button", { name: "Browse..." }).click();
+  await fake.waitForCalls("OpenFilePicker");
+
+  await expect(input).toHaveValue("/tmp/upload.json");
+  await expect(bodyPanel.getByText("Not confirmed")).toBeVisible();
+  await app.sendButton.click();
+  await expect(page.getByTestId("response-error")).toContainText("Browse");
+  expect(await fake.calls("SendRequest")).toBe(0);
+});
+
+test.describe("when the file dialog fails", () => {
+  test.use({
+    seed: { httpRpcErrors: { OpenFilePicker: "dialog unavailable" } },
+  });
+
+  test("a failed file dialog shows an error toast", async ({ page, app }) => {
+    const bodyPanel = await chooseBodyType(app, "File");
+    const input = bodyPanel.getByPlaceholder("No file selected");
+    await input.fill("/tmp/upload.json");
+
+    await bodyPanel.getByRole("button", { name: "Browse..." }).click();
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Failed to open file picker" }),
+    ).toContainText("dialog unavailable");
+    // 入力したヒントは残り、確定はしない。
+    await expect(input).toHaveValue("/tmp/upload.json");
+    await expect(bodyPanel.getByText("Not confirmed")).toBeVisible();
   });
 });
 
@@ -164,12 +228,14 @@ test.describe("form-data file row", () => {
 test.describe("saved file request", () => {
   test.use({
     seed: {
+      pickedFile: PICKED,
       collections: [
         {
           name: "Files",
           items: [
             {
               name: "Upload",
+              url: "https://example.com/upload",
               body: {
                 type: "file",
                 contents: {},
@@ -190,5 +256,34 @@ test.describe("saved file request", () => {
     await expect(bodyPanel.getByPlaceholder("No file selected")).toHaveValue(
       "old.bin",
     );
+  });
+
+  // 保存済みの参照は許可にならない。ダイアログで選び直すと、その token で送れる。
+  test("a file that needs reselecting can be sent after Browse", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.request(/Upload/).click();
+    const bodyPanel = await app.openRequestTab("Body");
+    await expect(bodyPanel.getByText("Reselect file")).toBeVisible();
+
+    await app.sendButton.click();
+    await expect(page.getByTestId("response-error")).toContainText("Browse");
+    expect(await fake.calls("SendRequest")).toBe(0);
+
+    await bodyPanel.getByRole("button", { name: "Browse..." }).click();
+    await expect(bodyPanel.getByText("Selected", { exact: true })).toBeVisible();
+    await expect(bodyPanel.getByPlaceholder("No file selected")).toHaveValue(
+      PICKED.name,
+    );
+
+    await app.sendButton.click();
+    await fake.waitForCalls("SendRequest");
+    const sent = await lastSent(fake);
+    expect(sent.body.file).toMatchObject({
+      token: PICKED.token,
+      name: PICKED.name,
+    });
   });
 });

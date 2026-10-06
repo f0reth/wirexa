@@ -141,10 +141,21 @@ export class App {
       .locator("xpath=..");
   }
 
+  /** サイドバーの見出しの Add ボタン。押すと Add ドロップダウンが開閉する。 */
+  get addMenuButton(): Locator {
+    return this.collectionsHeader.getByRole("button", {
+      name: "Add",
+      exact: true,
+    });
+  }
+
+  /** Add ドロップダウンの項目。ドロップダウンが開いているときだけある。 */
+  addMenuItem(name: "New Request" | "New Collection"): Locator {
+    return this.collectionsHeader.getByRole("button", { name, exact: true });
+  }
+
   private async openAddMenu(): Promise<void> {
-    await this.collectionsHeader
-      .getByRole("button", { name: "Add", exact: true })
-      .click();
+    await this.addMenuButton.click();
   }
 
   /**
@@ -153,9 +164,7 @@ export class App {
    */
   async createCollection(name?: string): Promise<Locator> {
     await this.openAddMenu();
-    await this.collectionsHeader
-      .getByRole("button", { name: "New Collection", exact: true })
-      .click();
+    await this.addMenuItem("New Collection").click();
     await expect(this.renameInput).toBeVisible();
     if (name === undefined) {
       await this.renameInput.press("Enter");
@@ -170,9 +179,7 @@ export class App {
   /** Add ドロップダウンの New Request で、どのコレクションにも属さないリクエストを作る。 */
   async createRootRequest(name: string): Promise<Locator> {
     await this.openAddMenu();
-    await this.collectionsHeader
-      .getByRole("button", { name: "New Request", exact: true })
-      .click();
+    await this.addMenuItem("New Request").click();
     await this.confirmRename(name);
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const created = this.request(new RegExp(` ${escaped}$`));
@@ -335,6 +342,16 @@ export class App {
   ): Promise<void> {
     await panel.getByRole("button", { name: current, exact: true }).click();
     await panel.getByRole("button", { name: label, exact: true }).click();
+  }
+
+  /**
+   * Body タブを開いてボディの種別を選び、Body パネルを返す。
+   * 種別を選んでいない (none の) リクエストで使う。
+   */
+  async chooseBodyType(label: string): Promise<Locator> {
+    const body = await this.openRequestTab("Body");
+    await this.chooseOption(body, "none", label);
+    return body;
   }
 
   /** Headers / Params のキー・値の行を 1 行足して埋める。 */

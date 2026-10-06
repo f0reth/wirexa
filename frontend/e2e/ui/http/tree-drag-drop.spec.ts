@@ -359,6 +359,164 @@ test("edits to a request inside a folder moved to the sidebar root survive switc
   await expect(app.urlInput).toHaveValue("https://example.com/carried");
 });
 
+// ── フォルダの移動 ──────────────────────────────────────────────────────────
+
+test.describe("moving folders", () => {
+  const OUTER = { id: "folder-outer", name: "Outer Folder" };
+  const SUB = { id: "folder-sub", name: "Sub Folder" };
+  const INNER = { id: "req-inner", name: "Inner Request" };
+
+  test.use({
+    seed: {
+      collections: [
+        {
+          ...ALPHA,
+          items: [
+            {
+              id: OUTER.id,
+              folder: OUTER.name,
+              items: [INNER, { id: SUB.id, folder: SUB.name }],
+            },
+          ],
+        },
+        BETA,
+      ],
+    },
+  });
+
+  test("dragging a folder to another collection moves its children with it", async ({
+    app,
+    fake,
+  }) => {
+    await app.dragTreeNode(
+      app.folder(OUTER.name),
+      app.collection(BETA.name),
+    );
+
+    await fake.waitForCalls("MoveItem");
+    expect(await fake.args("MoveItem")).toEqual([
+      [ALPHA.id, OUTER.id, BETA.id, "", -1],
+    ]);
+    expect((await fake.collection(ALPHA.id)).items).toEqual([]);
+    const [moved] = (await fake.collection(BETA.id)).items;
+    expect(moved.id).toBe(OUTER.id);
+    expect(moved.children.map((c) => c.id)).toEqual([INNER.id, SUB.id]);
+
+    // 子は移動先のコレクションの中にある。
+    await app.folder(OUTER.name).click();
+    await expect(app.request(/Inner Request/)).toBeVisible();
+    await app.collection(ALPHA.name).click();
+    await expect(app.request(/Inner Request/)).toBeVisible();
+    await app.collection(BETA.name).click();
+    await expect(app.request(/Inner Request/)).toBeHidden();
+  });
+
+  test("dropping a folder into its own subfolder is rejected and keeps the tree", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.folder(OUTER.name).click();
+    const sub = app.folder(SUB.name);
+    await sub.click();
+    const before = await fake.collection(ALPHA.id);
+
+    await app.dragTreeNode(
+      app.folder(OUTER.name),
+      app.childrenEndDropZone(sub),
+    );
+
+    const toast = page
+      .getByRole("alert")
+      .filter({ hasText: "Failed to move item" });
+    await expect(toast).toContainText(
+      "cannot move an item into its own subtree",
+    );
+    expect(await fake.args("MoveItem")).toEqual([
+      [ALPHA.id, OUTER.id, ALPHA.id, SUB.id, 0],
+    ]);
+    expect(await fake.collection(ALPHA.id)).toEqual(before);
+    await expect(sub).toBeVisible();
+    await expect(app.request(/Inner Request/)).toBeVisible();
+  });
+});
+
+// ── ルートのアイテム ────────────────────────────────────────────────────────
+
+test.describe("root items", () => {
+  const ROOT = { id: "req-root", name: "Root Request" };
+
+  // サイドバーの並びは Alpha, Beta, Root Request (ルートのアイテムは末尾に並ぶ)。
+  test.use({ seed: { collections: [ALPHA, BETA], rootItems: [ROOT] } });
+
+  test("dragging a root request reorders it among collections", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    const entries = page.getByRole("button", {
+      name: /^(Alpha Collection|Beta Collection|GET Root Request)$/,
+    });
+    await expect(entries).toHaveText([ALPHA.name, BETA.name, /Root Request/]);
+
+    await app.dragTreeNode(app.request(/Root Request/), app.sidebarDropZone(0));
+
+    await expect(entries).toHaveText([/Root Request/, ALPHA.name, BETA.name]);
+    expect(await fake.args("MoveSidebarEntry")).toEqual([
+      ["item", ROOT.id, 0],
+    ]);
+    expect((await fake.snapshot()).sidebar).toEqual([
+      { kind: "item", id: ROOT.id },
+      { kind: "collection", id: ALPHA.id },
+      { kind: "collection", id: BETA.id },
+    ]);
+
+    await page.reload();
+    await app.switchTo("HTTP");
+    await expect(entries).toHaveText([/Root Request/, ALPHA.name, BETA.name]);
+  });
+
+  test("dragging a root request onto a collection moves it out of the sidebar root", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.dragTreeNode(
+      app.request(/Root Request/),
+      app.collection(BETA.name),
+    );
+
+    await fake.waitForCalls("MoveItem");
+    expect(await fake.args("MoveItem")).toEqual([
+      ["__root__", ROOT.id, BETA.id, "", -1],
+    ]);
+    const { rootItems, sidebar } = await fake.snapshot();
+    expect(rootItems).toEqual([]);
+    expect(sidebar).toEqual([
+      { kind: "collection", id: ALPHA.id },
+      { kind: "collection", id: BETA.id },
+    ]);
+    expect((await fake.collection(BETA.id)).items.map((i) => i.id)).toEqual([
+      ROOT.id,
+    ]);
+
+    // コレクションの中に入ったので、閉じると隠れる。
+    const request = app.request(/Root Request/);
+    await expect(request).toBeVisible();
+    await app.collection(BETA.name).click();
+    await expect(request).toBeHidden();
+
+    // 出ていったアイテムはサイドバーの位置に数えないので、位置 0 は Alpha の前。
+    await app.dragTreeNode(app.collection(BETA.name), app.sidebarDropZone(0));
+    await expect(
+      page.getByRole("button", { name: /^(Alpha|Beta) Collection$/ }),
+    ).toHaveText([BETA.name, ALPHA.name]);
+    expect(await fake.args("MoveSidebarEntry")).toEqual([
+      ["collection", BETA.id, 0],
+    ]);
+  });
+});
+
 // 偽バックエンドが Go (cmn.InsertAt) と同じく、負の position を末尾として扱うことを確かめる。
 // UI は負の position をサイドバーへ送らないので、バインディングを直接呼ぶ。
 test("a negative sidebar position appends to the end, like the Go backend", async ({

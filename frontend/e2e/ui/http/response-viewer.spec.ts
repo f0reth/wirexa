@@ -286,6 +286,33 @@ test.describe("capped response body", () => {
   });
 });
 
+// ── 観点I: 大きな JSON ──────────────────────────────────────────────────────
+
+// ハイライトの上限 (response-viewer.tsx の HIGHLIGHT_SIZE_LIMIT) をわずかに超える JSON。
+const LARGE_JSON = JSON.stringify({ filler: "x".repeat(1024 * 1024) });
+
+test.describe("json response larger than the highlight limit", () => {
+  test.use({
+    seed: {
+      httpResponse: { body: LARGE_JSON, size: LARGE_JSON.length },
+    },
+  });
+
+  test("a json response over 1 MB is shown without syntax highlighting", async ({
+    app,
+  }) => {
+    await send(app);
+
+    const body = app.responseViewer.getByTestId("response-body");
+    await expect(
+      body.getByText(/Syntax highlighting is disabled for large responses/),
+    ).toBeVisible();
+    // 整形もハイライトもせず、受け取ったままの文字列を描く。
+    await expect(body.locator("pre")).toHaveText(LARGE_JSON);
+    await expect(body.locator("pre span")).toHaveCount(0);
+  });
+});
+
 // ── 観点D: JSON レスポンス内の HTML ──────────────────────────────────────────
 
 // JSON は構文ハイライトのため innerHTML で描く。キー・値に含まれる HTML がマークアップとして

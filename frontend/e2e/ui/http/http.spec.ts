@@ -489,6 +489,63 @@ test.describe("when saving the request fails", () => {
     await app.saveErrorBanner.getByRole("button", { name: "Dismiss" }).click();
     await expect(banner).toBeHidden();
   });
+
+  test("repeated auto-save failures keep a single toast", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    const banner = page.getByText("Save failed: disk is full");
+    const toast = page
+      .getByRole("alert")
+      .filter({ hasText: "Failed to auto-save request" });
+
+    await app.request(/Unsaved/).click();
+    await app.urlInput.fill("https://example.com/first");
+    await expect(toast).toHaveCount(1);
+    // バナーを閉じておき、次の失敗で出直すのを、2 回目の失敗が画面に届いた合図にする。
+    await app.saveErrorBanner.getByRole("button", { name: "Dismiss" }).click();
+    await expect(banner).toBeHidden();
+
+    await app.urlInput.fill("https://example.com/second");
+    await fake.waitForCalls("UpdateRequest", 2);
+    await expect(banner).toBeVisible();
+    await expect(toast).toHaveCount(1);
+  });
+});
+
+test.describe("when saving the request fails once", () => {
+  test.use({
+    seed: {
+      collections: [
+        { name: "Recovering Collection", items: [{ name: "Retried" }] },
+      ],
+      httpRpcErrors: {
+        UpdateRequest: { message: "disk is full", times: 1 },
+      },
+    },
+  });
+
+  test("the banner disappears when the next save succeeds", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    const banner = page.getByText("Save failed: disk is full");
+    await app.request(/Retried/).click();
+    await app.urlInput.fill("https://example.com/first");
+    await expect(banner).toBeVisible();
+
+    await app.urlInput.fill("https://example.com/second");
+    await expect(banner).toBeHidden();
+    await expect
+      .poll(
+        async () =>
+          (await fake.collection("Recovering Collection")).items[0].request
+            ?.url,
+      )
+      .toBe("https://example.com/second");
+  });
 });
 
 // ── 観点E: 送信中にリクエストを切り替える ────────────────────────────────────
