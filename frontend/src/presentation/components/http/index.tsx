@@ -34,6 +34,7 @@ export function HttpClient() {
             type="button"
             class={styles.saveErrorDismiss}
             onClick={clearSaveError}
+            aria-label="Dismiss"
           >
             ✕
           </button>

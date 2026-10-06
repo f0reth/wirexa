@@ -486,8 +486,7 @@ test.describe("when saving the request fails", () => {
     // 入力は失われない。
     await expect(app.urlInput).toHaveValue("https://example.com/unsaved");
 
-    // Dismiss ボタンは "✕" だけでアクセシブル名を持たないので、バナーの行でスコープする。
-    await banner.locator("xpath=..").getByRole("button").click();
+    await app.saveErrorBanner.getByRole("button", { name: "Dismiss" }).click();
     await expect(banner).toBeHidden();
   });
 });
