@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { batch, createSignal } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 import type { ExpandedFoldersStorage } from "../../domain/http/ports";
 import type {
@@ -143,45 +143,63 @@ export function createCollectionsState(
     expandedStorage.save({ ...expandedIds });
   }
 
-  async function refreshRootItems(): Promise<void> {
-    const items = await api.getRootItems();
-    setRootItems(reconcile(items, { key: "id" }));
+  // 構造を変える操作 (RPC とそのあとの再読み込み) と、外から呼ぶ再読み込みを 1 本に直列化する。
+  // 3 つの取得は同じ時点のスナップショットではないので、取得の途中で構造を変える RPC が走ると、
+  // 移動中のアイテムがどこにも無いツリーが組み上がる。前の操作の再読み込みが反映されるまで
+  // 次の操作を始めなければ、取得の途中で構造は変わらず、反映の順も入れ替わらない。
+  // 前の操作が失敗しても次は実行する。
+  let queue: Promise<unknown> = Promise.resolve();
+
+  function enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const run = queue.then(task);
+    queue = run.catch(() => {});
+    return run;
   }
 
-  async function refreshSidebarLayout(): Promise<void> {
-    const layout = await api.getSidebarLayout();
-    setSidebarLayout(reconcile(layout));
-  }
-
-  async function refreshCollections(): Promise<void> {
+  // 3 つを取得し終えてからまとめて反映する。途中まで読めた一覧は見せず、どれかの取得に
+  // 失敗したら何も変えない。enqueue の中から呼ぶ (自分では積まない)。
+  async function loadTree(): Promise<void> {
     const cols = await api.getCollections();
-    setCollections(reconcile(cols, { key: "id" }));
-    pruneExpandedIds(cols);
-    await refreshRootItems();
-    await refreshSidebarLayout();
-    setCollectionsLoaded(true);
+    const items = await api.getRootItems();
+    const layout = await api.getSidebarLayout();
+    batch(() => {
+      setCollections(reconcile(cols, { key: "id" }));
+      setRootItems(reconcile(items, { key: "id" }));
+      setSidebarLayout(reconcile(layout));
+      pruneExpandedIds(cols);
+      setCollectionsLoaded(true);
+    });
+  }
+
+  function refreshCollections(): Promise<void> {
+    return enqueue(loadTree);
+  }
+
+  /** 構造を変える RPC を呼び、ツリーを読み直す。 */
+  function mutate<T>(rpc: () => Promise<T>): Promise<T> {
+    return enqueue(async () => {
+      const result = await rpc();
+      await loadTree();
+      return result;
+    });
   }
 
   async function createCollection(name: string): Promise<Collection> {
-    return notifyOnError(notifier, "Failed to create collection", async () => {
-      const collection = await api.createCollection(name);
-      await refreshCollections();
-      return collection;
-    });
+    return notifyOnError(notifier, "Failed to create collection", () =>
+      mutate(() => api.createCollection(name)),
+    );
   }
 
   async function deleteCollection(id: string): Promise<void> {
-    await runGuarded(notifier, "Failed to delete collection", async () => {
-      await api.deleteCollection(id);
-      await refreshCollections();
-    });
+    await runGuarded(notifier, "Failed to delete collection", () =>
+      mutate(() => api.deleteCollection(id)),
+    );
   }
 
   async function renameCollection(id: string, name: string): Promise<void> {
-    await runGuarded(notifier, "Failed to rename collection", async () => {
-      await api.renameCollection(id, name);
-      await refreshCollections();
-    });
+    await runGuarded(notifier, "Failed to rename collection", () =>
+      mutate(() => api.renameCollection(id, name)),
+    );
   }
 
   async function addFolder(
@@ -189,11 +207,9 @@ export function createCollectionsState(
     parentId: string,
     name: string,
   ): Promise<TreeItem> {
-    return notifyOnError(notifier, "Failed to add folder", async () => {
-      const item = await api.addFolder(collectionId, parentId, name);
-      await refreshCollections();
-      return item;
-    });
+    return notifyOnError(notifier, "Failed to add folder", () =>
+      mutate(() => api.addFolder(collectionId, parentId, name)),
+    );
   }
 
   async function addRequest(
@@ -201,11 +217,9 @@ export function createCollectionsState(
     parentId: string,
     req: HttpRequest,
   ): Promise<TreeItem> {
-    return notifyOnError(notifier, "Failed to add request", async () => {
-      const item = await api.addRequest(collectionId, parentId, req);
-      await refreshCollections();
-      return item;
-    });
+    return notifyOnError(notifier, "Failed to add request", () =>
+      mutate(() => api.addRequest(collectionId, parentId, req)),
+    );
   }
 
   async function renameItem(
@@ -213,20 +227,18 @@ export function createCollectionsState(
     itemId: string,
     name: string,
   ): Promise<void> {
-    await runGuarded(notifier, "Failed to rename item", async () => {
-      await api.renameItem(collectionId, itemId, name);
-      await refreshCollections();
-    });
+    await runGuarded(notifier, "Failed to rename item", () =>
+      mutate(() => api.renameItem(collectionId, itemId, name)),
+    );
   }
 
   async function deleteItem(
     collectionId: string,
     itemId: string,
   ): Promise<void> {
-    await runGuarded(notifier, "Failed to delete item", async () => {
-      await api.deleteItem(collectionId, itemId);
-      await refreshCollections();
-    });
+    await runGuarded(notifier, "Failed to delete item", () =>
+      mutate(() => api.deleteItem(collectionId, itemId)),
+    );
   }
 
   async function moveItem(
@@ -236,27 +248,31 @@ export function createCollectionsState(
     targetParentId: string,
     position: number,
   ): Promise<void> {
-    await runGuarded(notifier, "Failed to move item", async () => {
-      await api.moveItem(
-        sourceCollectionId,
-        itemId,
-        targetCollectionId,
-        targetParentId,
-        position,
-      );
-      await refreshCollections();
-    });
+    await runGuarded(notifier, "Failed to move item", () =>
+      mutate(() =>
+        api.moveItem(
+          sourceCollectionId,
+          itemId,
+          targetCollectionId,
+          targetParentId,
+          position,
+        ),
+      ),
+    );
   }
 
+  // 並びしか変わらないので、読み直すのはレイアウトだけ。レイアウトを書くので同じキューに通す。
   async function moveSidebarEntry(
     kind: string,
     id: string,
     position: number,
   ): Promise<void> {
-    await runGuarded(notifier, "Failed to move item", async () => {
-      await api.moveSidebarEntry(kind, id, position);
-      await refreshSidebarLayout();
-    });
+    await runGuarded(notifier, "Failed to move item", () =>
+      enqueue(async () => {
+        await api.moveSidebarEntry(kind, id, position);
+        setSidebarLayout(reconcile(await api.getSidebarLayout()));
+      }),
+    );
   }
 
   async function moveItemToSidebar(
@@ -264,10 +280,11 @@ export function createCollectionsState(
     itemId: string,
     sidebarPosition: number,
   ): Promise<void> {
-    await runGuarded(notifier, "Failed to move item", async () => {
-      await api.moveItemToSidebar(sourceCollectionId, itemId, sidebarPosition);
-      await refreshCollections();
-    });
+    await runGuarded(notifier, "Failed to move item", () =>
+      mutate(() =>
+        api.moveItemToSidebar(sourceCollectionId, itemId, sidebarPosition),
+      ),
+    );
   }
 
   function patchRequest(collectionId: string, req: HttpRequest): void {

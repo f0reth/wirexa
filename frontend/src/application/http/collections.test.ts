@@ -1,4 +1,4 @@
-import { createRoot } from "solid-js";
+import { createEffect, createRoot } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { ExpandedFoldersStorage } from "../../domain/http/ports";
 import type {
@@ -423,6 +423,173 @@ describe("createCollectionsState refresh", () => {
       await expect(state.refreshCollections()).rejects.toThrow("io");
       expect(state.collectionsLoaded()).toBe(false);
       expect(notifier.error).not.toHaveBeenCalled();
+    });
+  });
+
+  // 途中まで読めた一覧を反映すると、コレクションはあるのにサイドバーが空、のような
+  // 食い違った状態が見える。3 つとも読めてからまとめて反映する。
+  it("applies nothing when the last fetch fails", async () => {
+    const api = makeApi();
+    api.getCollections = vi.fn(async () => [makeCollection("col-1")]);
+    api.getRootItems = vi.fn(async () => [
+      makeRequestItem("r-root", "https://root.example"),
+    ]);
+    api.getSidebarLayout = vi.fn(async () => {
+      throw new Error("rpc down");
+    });
+    const { storage } = makeExpandedStorage({ gone: true });
+
+    await withState(
+      api,
+      async (state) => {
+        await expect(state.refreshCollections()).rejects.toThrow("rpc down");
+
+        expect(state.collections).toEqual([]);
+        expect(state.rootItems).toEqual([]);
+        expect(state.sidebarLayout).toEqual([]);
+        expect(state.collectionsLoaded()).toBe(false);
+        expect(storage.save).not.toHaveBeenCalled();
+      },
+      storage,
+    );
+  });
+});
+
+/** 完了を手で進められる Promise。 */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+/** 保留中の Promise の続きを流しきる。 */
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+describe("createCollectionsState serialization", () => {
+  it("does not start the next operation until the previous reload is applied", async () => {
+    const api = makeApi();
+    const firstLoad = deferred<Collection[]>();
+    api.getCollections = vi
+      .fn<CollectionsApi["getCollections"]>()
+      .mockReturnValueOnce(firstLoad.promise)
+      .mockResolvedValue([makeCollection("col-2")]);
+
+    await withState(api, async (state) => {
+      const first = state.deleteItem("col-1", "a");
+      const second = state.renameItem("col-1", "b", "N");
+      await flush();
+
+      // 先の操作の再読み込みが取得の途中。
+      expect(api.deleteItem).toHaveBeenCalledTimes(1);
+      expect(api.getCollections).toHaveBeenCalledTimes(1);
+      expect(api.renameItem).not.toHaveBeenCalled();
+
+      firstLoad.resolve([makeCollection("col-1")]);
+      await first;
+      expect(state.collections).toEqual([makeCollection("col-1")]);
+
+      await second;
+      expect(api.renameItem).toHaveBeenCalledWith("col-1", "b", "N");
+      expect(state.collections).toEqual([makeCollection("col-2")]);
+    });
+  });
+
+  it("makes an external refresh wait for the running operation", async () => {
+    const api = makeApi();
+    const moved = deferred<void>();
+    api.moveItem = vi.fn(() => moved.promise);
+
+    await withState(api, async (state) => {
+      const move = state.moveItem("col-1", "i", "col-2", "", 0);
+      const refresh = state.refreshCollections();
+      await flush();
+      expect(api.getCollections).not.toHaveBeenCalled();
+
+      moved.resolve();
+      await Promise.all([move, refresh]);
+      expect(api.getCollections).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // 3 つの取得は同じ時点のスナップショットではない。先の再読み込みが getCollections を終えた
+  // あとに「ルート → コレクション」の移動が入ると、getRootItems には移動後が返り、リクエストが
+  // どこにも無いツリーが組み上がる (選択中のリクエストなら削除されたように見える)。
+  it("never applies a tree in which a moved request is nowhere", async () => {
+    const request = makeRequestItem("r-1", "https://moving.example");
+    // バックエンドの状態。取得はその時点の値を返す。
+    const backend = { collectionItems: [] as TreeItem[], rootItems: [request] };
+    const api = makeApi();
+    const loads: Array<() => void> = [];
+    api.getCollections = vi.fn(() => {
+      const snapshot = [
+        { id: "col-1", name: "col-1", items: backend.collectionItems },
+      ];
+      return new Promise<Collection[]>((resolve) => {
+        loads.push(() => resolve(snapshot));
+      });
+    });
+    api.getRootItems = vi.fn(async () => backend.rootItems);
+    api.moveItem = vi.fn(async () => {
+      backend.collectionItems = [request];
+      backend.rootItems = [];
+    });
+
+    await withState(api, async (state) => {
+      const found: boolean[] = [];
+      createEffect(() => {
+        if (!state.collectionsLoaded()) return;
+        found.push(
+          [ROOT_COLLECTION_ID, "col-1"].some(
+            (colId) =>
+              findRequestById(
+                state.collections,
+                state.rootItems,
+                colId,
+                "r-1",
+              ) !== null,
+          ),
+        );
+      });
+
+      const refresh = state.refreshCollections();
+      await flush();
+      const move = state.moveItem(ROOT_COLLECTION_ID, "r-1", "col-1", "", -1);
+      await flush();
+      // 再読み込みが getCollections を終える前に、移動の RPC は始まらない。
+      expect(api.moveItem).not.toHaveBeenCalled();
+
+      loads[0]();
+      await refresh;
+      expect(state.rootItems).toEqual([request]);
+
+      await flush();
+      expect(api.moveItem).toHaveBeenCalledTimes(1);
+      loads[1]();
+      await move;
+
+      expect(state.rootItems).toEqual([]);
+      expect(state.collections[0].items).toEqual([request]);
+      expect(found.length).toBeGreaterThan(0);
+      expect(found).not.toContain(false);
+    });
+  });
+
+  it("runs the next operation after a failed one", async () => {
+    const api = makeApi();
+    api.deleteItem = vi.fn(async () => {
+      throw new Error("gone");
+    });
+
+    await withState(api, async (state, notifier) => {
+      const first = state.deleteItem("col-1", "a");
+      const second = state.renameItem("col-1", "b", "N");
+      await Promise.all([first, second]);
+
+      expect(notifier.error).toHaveBeenCalledTimes(1);
+      expect(api.renameItem).toHaveBeenCalledWith("col-1", "b", "N");
+      expect(state.collectionsLoaded()).toBe(true);
     });
   });
 });
