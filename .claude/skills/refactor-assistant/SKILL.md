@@ -213,7 +213,7 @@ AGENTS.md の「Architecture」（依存方向・入出力ポートの置き場�
 
 各候補について次を調べ、「出力形式」の同名の項目に書く。
 
-- **挙動を守っているテスト**: その箇所を検証している既存テスト。ユニットテスト（`*_test.go`・`*.test.ts`）に加えて、`internal/integration/` と `frontend/e2e/ui/**/*.spec.ts` も探す。`presentation/` と `components/ui/` はユニットテストがほとんど無く、UI の振る舞いは e2e の spec が守っている（例: `http/tree-drag-drop.spec.ts`・`common/sidebar-operations.spec.ts`）。どれにも無いときだけ「無し」とする。潜在バグの候補では、既存テストが正常系しか見ていないのが普通なので、発生条件を再現するテストを先に追加する前提で、追加先のテストファイルと確認する内容を書く
+- **挙動を守っているテスト**: その箇所を検証している既存テスト。ユニットテスト（`*_test.go`・`*.test.ts`）に加えて、`internal/integration/` と `frontend/e2e/ui/**/*.spec.ts` も探す。`presentation/` と `components/ui/` はユニットテストがほとんど無く、UI の振る舞いは e2e の spec が守っている（例: `http/tree-drag-drop.spec.ts`・`http/sidebar-operations.spec.ts`）。どれにも無いときだけ「無し」とする。潜在バグの候補では、既存テストが正常系しか見ていないのが普通なので、発生条件を再現するテストを先に追加する前提で、追加先のテストファイルと確認する内容を書く
 - **発生条件と影響**（潜在バグの候補だけ）: どの入力・操作順・タイミング、またはどんな変更をしたときに、何が起きるか。該当する行を追って確かめた内容だけを書き、確かめられなかった部分はそう明記する。修正で挙動が変わる範囲（修正前と修正後）も書く
 - **検証コマンド**: 常に `task format` → `task lint` → `task test`。加えて、並行処理に触れるなら `task go:test:race`、`internal/integration/` が検証する振る舞いに関わるなら `task go:test:integration`、UI の振る舞いに関わるなら `task frontend:test:e2e`
 - **付随作業**:

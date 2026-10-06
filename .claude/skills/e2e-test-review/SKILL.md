@@ -47,7 +47,7 @@ disable-model-invocation: true
 | udp | `presentation/components/udp/`、`sidebar/target-tree.tsx`・`profile-list.tsx`、`presentation/providers/udp-provider.tsx`、`application/udp/` | `internal/adapters/udp_handler.go` |
 | openapi | `presentation/components/openapi/`、`sidebar/openapi-file-tree.tsx`・`openapi-file-node.tsx`・`use-long-press-drag.ts`、`presentation/providers/openapi-provider.tsx`、`application/openapi/`、`infrastructure/app/lifecycle.ts`（終了時の確認） | `internal/adapters/openapi_handler.go` |
 
-`e2e/ui/common/` にはプロトコル固有のテストも入っている（HTTP のフォーム検証、リクエストの復元など）。プロトコルを絞った場合も、そのプロトコルに関わる `common/` のテストは読むこと。
+`e2e/ui/common/` にはプロトコル固有のテストも入っている（`keyboard-accessibility` の HTTP・MQTT のテスト、`initial-state` の各プロトコルの空状態など）。プロトコルを絞った場合も、そのプロトコルに関わる `common/` のテストは読むこと。
 
 ## 分析手順
 

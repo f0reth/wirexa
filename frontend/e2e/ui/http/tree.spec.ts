@@ -2,7 +2,7 @@ import type { Collection } from "../../../src/domain/http/types";
 import { type FakeControl, expect, test } from "../../fixtures/ui";
 
 // HTTP ツリーのフォルダ／リクエスト操作 (D&D 以外)。コレクション単位の操作は
-// common/sidebar-operations.spec.ts にある。フォルダは seed で仕込めないので UI で作る。
+// sidebar-operations.spec.ts にある。フォルダは seed で仕込めないので UI で作る。
 const COLLECTION = "Tree Collection";
 const REQUEST = "Tree Request";
 
