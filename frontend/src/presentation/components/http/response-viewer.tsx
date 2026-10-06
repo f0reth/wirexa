@@ -4,6 +4,7 @@ import { Badge } from "../../../components/ui/badge";
 import { createCopyButton } from "../../../components/ui/copy-button";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { TabList, tabId, tabPanelId } from "../../../components/ui/tabs";
+import type { HttpResponse } from "../../../domain/http/types";
 import { useHttpRequest } from "../../providers/http-provider";
 import { formatJson } from "../../utils/format";
 import { highlightJson } from "../../utils/json-highlight";
@@ -39,7 +40,14 @@ export function ResponseViewer() {
 
   const [responseTab, setResponseTab] = createSignal("body");
   const { copy, isCopied } = createCopyButton();
-  const [showTruncatedBody, setShowTruncatedBody] = createSignal(false);
+  // 打ち切られた本文の表示を選んだレスポンス。選ぶのはレスポンスごとなので、次のレスポンスが
+  // 来たら選択の画面（全文の保存を含む）に戻る。
+  const [truncatedBodyShownFor, setTruncatedBodyShownFor] =
+    createSignal<HttpResponse | null>(null);
+  const showTruncatedBody = () => {
+    const shown = truncatedBodyShownFor();
+    return shown !== null && shown === response();
+  };
 
   function handleCopy() {
     const resp = response();
@@ -201,7 +209,7 @@ export function ResponseViewer() {
                               <button
                                 type="button"
                                 class={styles.responseBodyLimitBtn}
-                                onClick={() => setShowTruncatedBody(true)}
+                                onClick={() => setTruncatedBodyShownFor(resp())}
                               >
                                 Show truncated body
                               </button>

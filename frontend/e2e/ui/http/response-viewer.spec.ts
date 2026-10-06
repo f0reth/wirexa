@@ -232,6 +232,30 @@ test.describe("truncated response body", () => {
       body.getByText(/Response body exceeds the size limit/),
     ).toBeHidden();
   });
+
+  // 表示を選ぶのはレスポンスごと。選んだ状態が次のレスポンスに残ると、全文を保存するボタンが
+  // 出ないまま、打ち切られた本文だけが表示される。
+  test("a new truncated response offers the save choice again after showing the previous one", async ({
+    app,
+    fake,
+  }) => {
+    await send(app);
+    const viewer = app.responseViewer;
+    const body = viewer.getByTestId("response-body");
+    await viewer.getByRole("button", { name: "Show truncated body" }).click();
+    await expect(body.getByText(/Showing truncated body/)).toBeVisible();
+
+    await app.sendButton.click();
+    await fake.waitForCalls("SendRequest", 2);
+
+    await expect(
+      body.getByText(/Response body exceeds the size limit/),
+    ).toBeVisible();
+    await expect(
+      viewer.getByRole("button", { name: "Save body to file" }),
+    ).toBeVisible();
+    await expect(body).not.toContainText('{"partial": tru');
+  });
 });
 
 test.describe("capped response body", () => {
