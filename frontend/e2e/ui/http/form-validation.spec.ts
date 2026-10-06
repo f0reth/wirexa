@@ -1,3 +1,4 @@
+import type { HttpRequest } from "../../../src/domain/http/types";
 import { expect, test } from "../../fixtures/ui";
 
 test.beforeEach(async ({ page }) => {
@@ -41,6 +42,26 @@ test("send button is re-disabled after clearing a valid URL", async ({
   await expect(page.getByRole("button", { name: "Send" })).toBeEnabled();
   await urlInput.clear();
   await expect(page.getByRole("button", { name: "Send" })).toBeDisabled();
+});
+
+// Send ボタンは無効でも、Enter は別の経路で送信に届く。
+test("pressing Enter with an invalid URL does not send", async ({
+  app,
+  fake,
+}) => {
+  await app.urlInput.press("Enter");
+  await app.urlInput.fill("not-a-url");
+  await app.urlInput.press("Enter");
+
+  // 「送られない」は待っても確かめられないので、正しい URL を Enter で送り、それが最初の
+  // 送信であることを見る。
+  await app.urlInput.fill("https://example.com/valid");
+  await app.urlInput.press("Enter");
+  await fake.waitForCalls("SendRequest");
+  const sent = await fake.args("SendRequest");
+  expect(sent.map(([, req]) => (req as HttpRequest).url)).toEqual([
+    "https://example.com/valid",
+  ]);
 });
 
 // ── 観点D-4: key-valueエディタの行追加・削除 ─────────────────────────────────

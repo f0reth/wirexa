@@ -42,7 +42,11 @@ export function RequestBar(props: RequestBarProps) {
   const urlValid = createMemo(() => isValidHttpUrl(url()));
   const methodColor = createMemo(() => METHOD_COLORS[method()]);
 
+  // Send ボタンと URL 欄の Enter は同じ条件で送る。
+  const canSend = createMemo(() => urlValid() && !loading());
+
   async function handleSend() {
+    if (!canSend()) return;
     try {
       await sendRequest();
     } catch (err) {
@@ -96,7 +100,7 @@ export function RequestBar(props: RequestBarProps) {
       ) : (
         <Button
           onClick={handleSend}
-          disabled={!urlValid()}
+          disabled={!canSend()}
           class={styles.sendButton}
         >
           <Send size={14} />

@@ -47,6 +47,24 @@ test.describe("while a request is in progress", () => {
     const [[executionId]] = await fake.args("SendRequest");
     expect(await fake.args("CancelRequest")).toEqual([[executionId]]);
   });
+
+  // 送信中はボタンが Cancel に替わるのでクリックでは二重に送れない。Enter も同じ条件にする。
+  test("pressing Enter while a request is in progress does not send a second one", async ({
+    app,
+    fake,
+  }) => {
+    await app.urlInput.fill("http://127.0.0.1:9999/slow");
+    await app.sendButton.click();
+    await expect(app.cancelButton).toBeVisible();
+
+    await app.urlInput.press("Enter");
+
+    // Enter で送っていれば、押した時点で 2 件目の SendRequest が呼ばれている。
+    await app.cancelButton.click();
+    await expect(app.sendButton).toBeVisible();
+    expect(await fake.calls("SendRequest")).toBe(1);
+    expect(await fake.calls("CancelRequest")).toBe(1);
+  });
 });
 
 // ── 観点E-2: レスポンス受信後にレスポンスビューワーに内容が表示される ─────────
