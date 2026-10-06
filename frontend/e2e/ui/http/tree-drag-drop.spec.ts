@@ -169,3 +169,62 @@ test("a negative sidebar position appends to the end, like the Go backend", asyn
     { kind: "item", id: REQUEST.id },
   ]);
 });
+
+// 偽バックエンドが Go の MoveItem と同じく、自分の子孫への移動を取り外す前に拒否することを確かめる
+// (拒否しないと、取り外したフォルダごと移動先が消える)。
+test("moving a folder into its own subtree is rejected, like the Go backend", async ({
+  fake,
+}) => {
+  expect(await fake.callHttp("AddFolder", ALPHA.id, "", "Outer")).toBeNull();
+  const outer = (await fake.collection(ALPHA.id)).items.find(
+    (i) => i.name === "Outer",
+  );
+  if (!outer) throw new Error("Outer is missing in the fake backend");
+  expect(
+    await fake.callHttp("AddFolder", ALPHA.id, outer.id, "Inner"),
+  ).toBeNull();
+  const before = await fake.collection(ALPHA.id);
+  const inner = before.items.find((i) => i.id === outer.id)?.children[0];
+  if (!inner) throw new Error("Inner is missing in the fake backend");
+
+  const rejected = "invalid parent: cannot move an item into its own subtree";
+  expect(
+    await fake.callHttp("MoveItem", ALPHA.id, outer.id, ALPHA.id, inner.id, 0),
+  ).toBe(rejected);
+  expect(
+    await fake.callHttp("MoveItem", ALPHA.id, outer.id, ALPHA.id, outer.id, 0),
+  ).toBe(rejected);
+  expect(await fake.collection(ALPHA.id)).toEqual(before);
+});
+
+// 偽バックエンドが Go の GetSidebarLayout と同じく、読み出すたびにコレクションと突き合わせることを
+// 確かめる。ルートから出したアイテムのエントリが残ると、そのあとの並び替えの position が Go とずれる。
+test("an item moved out of the sidebar root leaves the layout, like the Go backend", async ({
+  fake,
+}) => {
+  expect(
+    await fake.callHttp("MoveItemToSidebar", ALPHA.id, REQUEST.id, 0),
+  ).toBeNull();
+  expect((await fake.snapshot()).sidebar).toEqual([
+    { kind: "item", id: REQUEST.id },
+    { kind: "collection", id: ALPHA.id },
+    { kind: "collection", id: BETA.id },
+  ]);
+
+  expect(
+    await fake.callHttp("MoveItem", "__root__", REQUEST.id, BETA.id, "", -1),
+  ).toBeNull();
+  expect((await fake.snapshot()).sidebar).toEqual([
+    { kind: "collection", id: ALPHA.id },
+    { kind: "collection", id: BETA.id },
+  ]);
+
+  // 残ったエントリを数えないので、位置 0 は Alpha の前。
+  expect(
+    await fake.callHttp("MoveSidebarEntry", "collection", BETA.id, 0),
+  ).toBeNull();
+  expect((await fake.snapshot()).sidebar).toEqual([
+    { kind: "collection", id: BETA.id },
+    { kind: "collection", id: ALPHA.id },
+  ]);
+});

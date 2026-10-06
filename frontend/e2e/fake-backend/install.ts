@@ -1,12 +1,14 @@
 // UI e2e 用の偽バックエンド。Wails が注入する window.go / window.runtime を、メモリ上に状態を
 // 持つ実装で置き換える。Go の CollectionService (internal/application/http/collection_service.go)
-// の意味論に合わせてある: __root__ 予約コレクション、サイドバーレイアウトへの追従など。
+// の意味論に合わせてある: __root__ 予約コレクション、見つからない対象の拒否、サイドバーレイアウトの
+// 突合など。
 //
 // 状態は sessionStorage に載せてある。Playwright はテストごとに新しいブラウザコンテキストを作る
 // ので、これで「リロードを跨いで残るが、テストは跨がない」隔離になる。ディスクにも実バックエンド
 // にも触れないため fullyParallel で安全に並列実行でき、後始末も要らない。
 import {
   DEFAULT_SETTINGS,
+  HTTP_METHODS,
   type Collection,
   type FileReference,
   type HttpRequest,
@@ -38,6 +40,13 @@ const clone = <T>(v: T): T => structuredClone(v);
  */
 function sortedById<T extends { id: string }>(items: T[]): T[] {
   return clone(items).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/** 名前の昇順に並べた複製を返す。Go の GetCollections と同じ順。 */
+function sortedByName<T extends { name: string }>(items: T[]): T[] {
+  return clone(items).sort((a, b) =>
+    a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+  );
 }
 
 // ── 永続化 (sessionStorage) ───────────────────────────────────────────────────
@@ -209,9 +218,14 @@ function mutates<A extends unknown[], R>(
 
 // ── ツリー操作 (Go 側 domain/http/types.go の TreeItem 操作に対応) ─────────────
 
+// Go の NotFoundError.Error() と同じ "<resource> not found: <id>" の形で失敗させる。
+function notFoundError(resource: string, id: string): Error {
+  return new Error(`${resource} not found: ${id}`);
+}
+
 function collection(id: string): Collection {
   const c = db.collections.find((x) => x.id === id);
-  if (!c) throw new Error(`collection not found: ${id}`);
+  if (!c) throw notFoundError("collection", id);
   return c;
 }
 
@@ -219,7 +233,7 @@ function collection(id: string): Collection {
 // 変更（削除・リネーム）を拒否する。中のアイテムの操作は対象外。
 function rejectReservedCollection(id: string): void {
   if (id === ROOT_COLLECTION_ID) {
-    throw new Error(`reserved collection cannot be modified: ${id}`);
+    throw validationError("id", "reserved collection cannot be modified");
   }
 }
 
@@ -231,15 +245,28 @@ function findNode(col: Collection, id: string): TreeItem | undefined {
   return walk(col.items).find((i) => i.id === id);
 }
 
+/** コレクションの中のアイテム。無ければ Go と同じ文言で失敗させる。 */
+function treeItem(col: Collection, id: string): TreeItem {
+  const node = findNode(col, id);
+  if (!node) throw notFoundError("item", id);
+  return node;
+}
+
 // Go の cmn.InsertAt と同じく、負または範囲外の position は末尾として扱う。
 function insertAt<T>(list: T[], item: T, position: number): void {
   if (position < 0 || position > list.length) list.push(item);
   else list.splice(position, 0, item);
 }
 
-/** parentId が空文字ならコレクション直下、そうでなければそのフォルダの children。 */
-function childrenOf(col: Collection, parentId: string): TreeItem[] | undefined {
-  return parentId === "" ? col.items : findNode(col, parentId)?.children;
+/**
+ * parentId が空文字ならコレクション直下、そうでなければそのフォルダの children。
+ * Go の AppendItem・InsertItem と同じく、親が無い・フォルダでないときは失敗させる。
+ */
+function childrenOf(col: Collection, parentId: string): TreeItem[] {
+  if (parentId === "") return col.items;
+  const parent = findNode(col, parentId);
+  if (parent?.type !== "folder") throw notFoundError("parent", parentId);
+  return parent.children;
 }
 
 function removeNode(col: Collection, id: string): void {
@@ -251,6 +278,31 @@ function removeNode(col: Collection, id: string): void {
       return;
     }
   }
+}
+
+// Go の reconcileSidebarLayout と同じ突合。保存済みの並びから、無いエントリと重複を落とし、
+// 並びに無いコレクションを名前順で、ルート直下のアイテムをツリー順で末尾に足す。
+// Go と同じく、追加・削除・ルートへの移動は保存済みの並び (db.sidebar) をそのまま書き換え、
+// 読み出し (GetSidebarLayout) と並び替え (MoveSidebarEntry) のときにこれを通す。
+function reconciledSidebar(): SidebarEntry[] {
+  const cols = db.collections.filter((c) => c.id !== ROOT_COLLECTION_ID);
+  const rootItems = collection(ROOT_COLLECTION_ID).items;
+  const key = (e: SidebarEntry) => `${e.kind}:${e.id}`;
+  const valid = new Set([
+    ...cols.map((c) => `collection:${c.id}`),
+    ...rootItems.map((i) => `item:${i.id}`),
+  ]);
+  const kept = new Set<string>();
+  const next: SidebarEntry[] = [];
+  const keep = (entry: SidebarEntry) => {
+    if (!valid.has(key(entry)) || kept.has(key(entry))) return;
+    kept.add(key(entry));
+    next.push(entry);
+  };
+  for (const entry of db.sidebar) keep(clone(entry));
+  for (const c of sortedByName(cols)) keep({ kind: "collection", id: c.id });
+  for (const i of rootItems) keep({ kind: "item", id: i.id });
+  return next;
 }
 
 // ── HttpHandler ───────────────────────────────────────────────────────────────
@@ -306,6 +358,11 @@ function sendRequest(
   return new Promise<HttpResponse>((resolve, reject) => {
     if (!validExecutionId(executionId)) {
       reject(new Error(`invalid executionID: ${executionId}`));
+      return;
+    }
+    // Go の HTTPRequestService.SendRequest と同じく、未知のメソッドは送らない。
+    if (!HTTP_METHODS.includes(req.method)) {
+      reject(validationError("method", req.method));
       return;
     }
     if (fileAccessDenied(req)) {
@@ -373,7 +430,7 @@ function httpMutates<A extends unknown[], R>(
 
 const HttpHandler = {
   GetCollections: httpReads("GetCollections", async () =>
-    clone(db.collections.filter((c) => c.id !== ROOT_COLLECTION_ID)),
+    sortedByName(db.collections.filter((c) => c.id !== ROOT_COLLECTION_ID)),
   ),
 
   GetRootItems: httpReads("GetRootItems", async () =>
@@ -381,10 +438,11 @@ const HttpHandler = {
   ),
 
   GetSidebarLayout: httpReads("GetSidebarLayout", async () =>
-    clone(db.sidebar),
+    reconciledSidebar(),
   ),
 
   CreateCollection: httpMutates("CreateCollection", (name: string) => {
+    if (name.trim() === "") throw validationError("name", "is required");
     const col: Collection = { id: newId("col"), name, items: [] };
     db.collections.push(col);
     db.sidebar.push({ kind: "collection", id: col.id });
@@ -393,31 +451,35 @@ const HttpHandler = {
 
   DeleteCollection: httpMutates("DeleteCollection", (id: string) => {
     rejectReservedCollection(id);
+    collection(id);
     db.collections = db.collections.filter((c) => c.id !== id);
     db.sidebar = db.sidebar.filter(
       (e) => !(e.kind === "collection" && e.id === id),
     );
   }),
 
-  RenameCollection: httpMutates("RenameCollection", (id: string, name: string) => {
-    rejectReservedCollection(id);
-    collection(id).name = name;
-  }),
+  RenameCollection: httpMutates(
+    "RenameCollection",
+    (id: string, name: string) => {
+      rejectReservedCollection(id);
+      collection(id).name = name;
+    },
+  ),
 
   AddFolder: httpMutates(
     "AddFolder",
     (collectionId: string, parentId: string, name: string) => {
-      const item: TreeItem = {
+      const folder: TreeItem = {
         type: "folder",
         id: newId("folder"),
         name,
         children: [],
       };
-      childrenOf(collection(collectionId), parentId)?.push(item);
+      childrenOf(collection(collectionId), parentId).push(folder);
       if (collectionId === ROOT_COLLECTION_ID && parentId === "") {
-        db.sidebar.push({ kind: "item", id: item.id });
+        db.sidebar.push({ kind: "item", id: folder.id });
       }
-      return clone(item);
+      return clone(folder);
     },
   ),
 
@@ -426,18 +488,18 @@ const HttpHandler = {
     (collectionId: string, parentId: string, req: HttpRequest) => {
       // Go 側と同じく、呼び出し側の id は使わず常に採番する。
       const request: HttpRequest = { ...req, id: newId("req") };
-      const item: TreeItem = {
+      const added: TreeItem = {
         type: "request",
         id: request.id,
         name: request.name,
         children: [],
         request,
       };
-      childrenOf(collection(collectionId), parentId)?.push(item);
+      childrenOf(collection(collectionId), parentId).push(added);
       if (collectionId === ROOT_COLLECTION_ID && parentId === "") {
-        db.sidebar.push({ kind: "item", id: item.id });
+        db.sidebar.push({ kind: "item", id: added.id });
       }
-      return clone(item);
+      return clone(added);
     },
   ),
 
@@ -445,7 +507,7 @@ const HttpHandler = {
     "UpdateRequest",
     (collectionId: string, req: HttpRequest) => {
       const node = findNode(collection(collectionId), req.id);
-      if (!node) return;
+      if (node?.type !== "request") throw notFoundError("request", req.id);
       // Go 側と同じく、名前はツリー側が正 (リネームは RenameItem 経由)。
       node.request = { ...req, name: node.name };
     },
@@ -454,22 +516,28 @@ const HttpHandler = {
   RenameItem: httpMutates(
     "RenameItem",
     (collectionId: string, itemId: string, name: string) => {
-      const node = findNode(collection(collectionId), itemId);
-      if (!node) return;
+      const node = treeItem(collection(collectionId), itemId);
       node.name = name;
       if (node.request) node.request.name = name;
     },
   ),
 
-  DeleteItem: httpMutates("DeleteItem", (collectionId: string, itemId: string) => {
-    removeNode(collection(collectionId), itemId);
-    if (collectionId === ROOT_COLLECTION_ID) {
-      db.sidebar = db.sidebar.filter(
-        (e) => !(e.kind === "item" && e.id === itemId),
-      );
-    }
-  }),
+  DeleteItem: httpMutates(
+    "DeleteItem",
+    (collectionId: string, itemId: string) => {
+      const col = collection(collectionId);
+      treeItem(col, itemId);
+      removeNode(col, itemId);
+      if (collectionId === ROOT_COLLECTION_ID) {
+        db.sidebar = db.sidebar.filter(
+          (e) => !(e.kind === "item" && e.id === itemId),
+        );
+      }
+    },
+  ),
 
+  // Go と同じ順に検証し、どれかで失敗したら何も動かさない。ルートから出したアイテムの
+  // レイアウトのエントリはここでは消さない (Go も消さず、読み出し時の突合で落とす)。
   MoveItem: httpMutates(
     "MoveItem",
     (
@@ -481,34 +549,41 @@ const HttpHandler = {
     ) => {
       const src = collection(sourceCollectionId);
       const dst = collection(targetCollectionId);
-      const item = findNode(src, itemId);
-      if (!item) return;
+      const moving = treeItem(src, itemId);
+      const target = childrenOf(dst, targetParentId);
+      // 自身のサブツリー内へは移動できない (取り外すと移動先ごと消えるため)。
+      if (
+        targetParentId !== "" &&
+        [moving, ...walk(moving.children)].some((n) => n.id === targetParentId)
+      ) {
+        throw validationError(
+          "parent",
+          "cannot move an item into its own subtree",
+        );
+      }
 
-      // 同一コレクション内の前方移動では、削除で 1 つ詰まる分を先に補正する (Go 側と同じ)。
+      // position は移動前の配列に対する位置なので、同じ親の中で後方へ移すときは 1 つ詰める。
       let index = position;
       if (sourceCollectionId === targetCollectionId && position > 0) {
-        const siblings = childrenOf(dst, targetParentId) ?? [];
-        const current = siblings.findIndex((i) => i.id === itemId);
+        const current = target.findIndex((i) => i.id === itemId);
         if (current >= 0 && current < position) index--;
       }
 
       removeNode(src, itemId);
-      const target = childrenOf(dst, targetParentId);
-      if (!target) return;
-      insertAt(target, item, index);
+      insertAt(target, moving, index);
     },
   ),
 
+  // Go と同じく、突合した並びの中で動かして保存する。
   MoveSidebarEntry: httpMutates(
     "MoveSidebarEntry",
     (kind: string, id: string, position: number) => {
-      const current = db.sidebar.findIndex(
-        (e) => e.kind === kind && e.id === id,
-      );
-      if (current < 0) return;
-      const [entry] = db.sidebar.splice(current, 1);
-      const index = current < position ? position - 1 : position;
-      insertAt(db.sidebar, entry, index);
+      const layout = reconciledSidebar();
+      const current = layout.findIndex((e) => e.kind === kind && e.id === id);
+      if (current < 0) throw notFoundError("sidebar entry", id);
+      const [entry] = layout.splice(current, 1);
+      insertAt(layout, entry, current < position ? position - 1 : position);
+      db.sidebar = layout;
     },
   ),
 
@@ -516,10 +591,9 @@ const HttpHandler = {
     "MoveItemToSidebar",
     (sourceCollectionId: string, itemId: string, sidebarPosition: number) => {
       const src = collection(sourceCollectionId);
-      const item = findNode(src, itemId);
-      if (!item) return;
+      const moving = treeItem(src, itemId);
       removeNode(src, itemId);
-      collection(ROOT_COLLECTION_ID).items.push(item);
+      collection(ROOT_COLLECTION_ID).items.push(moving);
       insertAt(db.sidebar, { kind: "item", id: itemId }, sidebarPosition);
     },
   ),
@@ -1134,7 +1208,7 @@ window.__wirexaFake = {
       db.collections.filter((c) => c.id !== ROOT_COLLECTION_ID),
     ),
     rootItems: clone(collection(ROOT_COLLECTION_ID).items),
-    sidebar: clone(db.sidebar),
+    sidebar: reconciledSidebar(),
     udpTargets: clone(db.udpTargets),
     mqttProfiles: clone(db.mqttProfiles),
     mqttConnections: clone(db.mqttConnections),

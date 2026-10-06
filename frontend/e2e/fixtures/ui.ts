@@ -1,4 +1,5 @@
 import { test as base, expect, type Page } from "@playwright/test";
+import type { Collection } from "../../src/domain/http/types";
 import { WailsEvents } from "../../src/shared/wails-events";
 import type { FakeBackend, FakeSeed } from "../fake-backend/types";
 import { App } from "./app";
@@ -83,6 +84,45 @@ export class FakeControl {
       },
       [name, payloads] as const,
     );
+  }
+
+  /** バインディングが呼ばれるのを待ち、最後の呼び出しの引数を返す。 */
+  async lastArgs(name: string): Promise<unknown[]> {
+    await this.waitForCalls(name);
+    const all = await this.args(name);
+    return all[all.length - 1];
+  }
+
+  /**
+   * HTTPHandler のバインディングを画面を通さずに直接呼ぶ。失敗したらそのメッセージを、成功したら
+   * null を返す。画面から送れない値 (無い ID、予約済みの __root__ など) の扱いを確かめるのに使う。
+   */
+  callHttp(method: string, ...callArgs: unknown[]): Promise<string | null> {
+    return this.app.page.evaluate(
+      async ([m, a]) => {
+        type Handler = Record<string, (...args: unknown[]) => Promise<unknown>>;
+        const handler = (
+          window as unknown as { go: { adapters: { HTTPHandler: Handler } } }
+        ).go.adapters.HTTPHandler;
+        try {
+          await handler[m](...a);
+          return null;
+        } catch (err) {
+          return err instanceof Error ? err.message : String(err);
+        }
+      },
+      [method, callArgs] as const,
+    );
+  }
+
+  /** 偽バックエンドが持つコレクション (__root__ 以外)。ID か名前で引く。 */
+  async collection(idOrName: string): Promise<Collection> {
+    const { collections } = await this.snapshot();
+    const col = collections.find(
+      (c) => c.id === idOrName || c.name === idOrName,
+    );
+    if (!col) throw new Error(`${idOrName} is missing in the fake backend`);
+    return col;
   }
 
   /** 偽バックエンドが持っている状態のスナップショット。 */
