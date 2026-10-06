@@ -112,8 +112,6 @@ export interface CollectionsApi {
  * - 戻り値を持つ操作: 通知したうえで例外を再送出する（notifyOnError）。
  *   呼び出し側は戻り値の有無で成功／失敗を分岐できる。
  */
-export type CollectionsState = ReturnType<typeof createCollectionsState>;
-
 export function createCollectionsState(
   api: CollectionsApi,
   notifier: Notifier,
@@ -348,3 +346,5 @@ export function createCollectionsState(
     setExpanded,
   };
 }
+
+export type CollectionsState = ReturnType<typeof createCollectionsState>;
