@@ -167,7 +167,7 @@ test.describe("saved file request", () => {
       collections: [
         {
           name: "Files",
-          requests: [
+          items: [
             {
               name: "Upload",
               body: {

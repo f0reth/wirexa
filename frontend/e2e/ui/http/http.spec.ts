@@ -384,7 +384,7 @@ test.describe("with a saved request", () => {
       collections: [
         {
           name: "Doc Collection",
-          requests: [{ name: "Documented", url: "https://example.com/doc" }],
+          items: [{ name: "Documented", url: "https://example.com/doc" }],
         },
       ],
     },
@@ -462,7 +462,7 @@ test.describe("when saving the request fails", () => {
   test.use({
     seed: {
       collections: [
-        { name: "Failing Collection", requests: [{ name: "Unsaved" }] },
+        { name: "Failing Collection", items: [{ name: "Unsaved" }] },
       ],
       updateRequestError: "disk is full",
     },
@@ -502,7 +502,7 @@ const switchingSeed = (bodyTruncated: boolean) => ({
   collections: [
     {
       name: "Switch Collection",
-      requests: [
+      items: [
         { name: "Sent First", url: "https://example.com/first" },
         { name: "Opened Later", url: "https://example.com/later" },
       ],

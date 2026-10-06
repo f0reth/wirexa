@@ -2,8 +2,8 @@
 // 作れない。フロントエンド domain 層の interface が同じ JSON 形状を表しているのでそちらを使う。
 import type {
   Collection,
+  HttpRequest,
   HttpResponse,
-  RequestBody,
   SidebarEntry,
   TreeItem,
 } from "../../src/domain/http/types";
@@ -14,20 +14,23 @@ import type {
 import type { OpenApiFile } from "../../src/domain/openapi/types";
 import type { UdpTarget } from "../../src/domain/udp/types";
 
+/**
+ * seed に置くツリーのアイテム。
+ * - リクエスト: name のほかに、method・url・headers・body などリクエストの項目を任意で持つ。
+ *   省いた項目は空のリクエストの値になる。
+ * - フォルダ: folder が名前で、items が子。
+ * id を省くと採番する。
+ */
+export type SeedItem =
+  | ({ name: string; id?: string } & Partial<Omit<HttpRequest, "id" | "name">>)
+  | { folder: string; id?: string; items?: SeedItem[] };
+
 /** テストが addInitScript で仕込む初期状態。すべて任意。 */
 export interface FakeSeed {
-  /** __root__ 以外のコレクション。requests を省くと空のコレクションになる。 */
-  collections?: Array<{
-    id?: string;
-    name: string;
-    requests?: Array<{
-      id?: string;
-      name: string;
-      url?: string;
-      /** 保存済みのボディ。file 参照の再選択表示などの検証に使う。 */
-      body?: RequestBody;
-    }>;
-  }>;
+  /** __root__ 以外のコレクション。items を省くと空のコレクションになる。 */
+  collections?: Array<{ id?: string; name: string; items?: SeedItem[] }>;
+  /** __root__ 直下のアイテム。サイドバーレイアウトの末尾に並ぶ。 */
+  rootItems?: SeedItem[];
   /** GetSidebarLayout を必ず失敗させる (起動時の読み込みが途中で失敗する場合を模す)。 */
   getSidebarLayoutError?: string;
   /** OpenFilePicker (ファイルダイアログ) で選ばれたことにするファイル。未設定ならキャンセル。 */

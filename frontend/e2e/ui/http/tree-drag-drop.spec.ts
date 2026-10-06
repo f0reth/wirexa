@@ -9,7 +9,7 @@ const REQUEST = { id: "req-moving", name: "Moving Request" };
 
 test.use({
   seed: {
-    collections: [{ ...ALPHA, requests: [REQUEST] }, BETA],
+    collections: [{ ...ALPHA, items: [REQUEST] }, BETA],
   },
 });
 

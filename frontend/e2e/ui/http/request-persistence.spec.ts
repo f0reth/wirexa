@@ -6,7 +6,7 @@ import { expect, test } from "../../fixtures/ui";
 test.use({
   seed: {
     collections: [
-      { name: "Persistence Collection", requests: [{ name: "Saved Request" }] },
+      { name: "Persistence Collection", items: [{ name: "Saved Request" }] },
     ],
   },
 });

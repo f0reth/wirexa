@@ -2,12 +2,12 @@ import type { Collection } from "../../../src/domain/http/types";
 import { type FakeControl, expect, test } from "../../fixtures/ui";
 
 // HTTP ツリーのフォルダ／リクエスト操作 (D&D 以外)。コレクション単位の操作は
-// sidebar-operations.spec.ts にある。フォルダは seed で仕込めないので UI で作る。
+// sidebar-operations.spec.ts にある。フォルダは UI で作る (追加の操作も通すため)。
 const COLLECTION = "Tree Collection";
 const REQUEST = "Tree Request";
 
 test.use({
-  seed: { collections: [{ name: COLLECTION, requests: [{ name: REQUEST }] }] },
+  seed: { collections: [{ name: COLLECTION, items: [{ name: REQUEST }] }] },
 });
 
 test.beforeEach(async ({ app }) => {
@@ -221,7 +221,7 @@ test.describe("when loading collections fails on startup", () => {
         {
           id: COLLECTION_ID,
           name: COLLECTION,
-          requests: [
+          items: [
             { id: REQUEST_ID, name: REQUEST, url: "https://example.test/saved" },
           ],
         },

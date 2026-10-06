@@ -144,7 +144,7 @@ test.describe("selecting with the keyboard", () => {
       collections: [
         {
           name: "Keyboard Collection",
-          requests: [
+          items: [
             { name: "Keyboard Request", url: "https://api.example.com/kb" },
           ],
         },

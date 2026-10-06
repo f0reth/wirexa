@@ -28,7 +28,7 @@ import type {
 } from "../../src/domain/udp/types";
 import { WailsEvents } from "../../src/shared/wails-events";
 import type { mqttdomain } from "../../wailsjs/go/models";
-import type { FakeSeed } from "./types";
+import type { FakeSeed, SeedItem } from "./types";
 
 const clone = <T>(v: T): T => structuredClone(v);
 
@@ -63,18 +63,39 @@ function newId(prefix: string): string {
   return `${prefix}-${++db.nextId}`;
 }
 
-function blankRequest(id: string, name: string, url: string): HttpRequest {
+function blankRequest(id: string, name: string): HttpRequest {
   return {
     id,
     name,
     method: "GET",
-    url,
+    url: "",
     headers: [],
     params: [],
     body: { type: "none", contents: {} },
     auth: { type: "none", username: "", password: "", token: "" },
     settings: { ...DEFAULT_SETTINGS },
     doc: "",
+  };
+}
+
+/** seed のアイテムをツリーのノードにする。省いたリクエストの項目は空のリクエストの値になる。 */
+function seedItem(item: SeedItem): TreeItem {
+  if ("folder" in item) {
+    return {
+      type: "folder",
+      id: item.id ?? newId("folder"),
+      name: item.folder,
+      children: (item.items ?? []).map(seedItem),
+    };
+  }
+  const { id: seedId, name, ...fields } = item;
+  const id = seedId ?? newId("req");
+  return {
+    type: "request",
+    id,
+    name,
+    children: [],
+    request: { ...blankRequest(id, name), ...fields },
   };
 }
 
@@ -98,21 +119,14 @@ function seeded(seed: FakeSeed): Db {
     const col: Collection = {
       id: c.id ?? newId("col"),
       name: c.name,
-      items: [],
+      items: (c.items ?? []).map(seedItem),
     };
-    for (const r of c.requests ?? []) {
-      const id = r.id ?? newId("req");
-      const request = blankRequest(id, r.name, r.url ?? "");
-      col.items.push({
-        type: "request",
-        id,
-        name: r.name,
-        children: [],
-        request: r.body ? { ...request, body: r.body } : request,
-      });
-    }
     fresh.collections.push(col);
     fresh.sidebar.push({ kind: "collection", id: col.id });
+  }
+  for (const item of (seed.rootItems ?? []).map(seedItem)) {
+    fresh.collections[0].items.push(item);
+    fresh.sidebar.push({ kind: "item", id: item.id });
   }
   for (const t of seed.udpTargets ?? []) {
     fresh.udpTargets.push({ ...t, id: t.id ?? newId("target") });
