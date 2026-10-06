@@ -273,6 +273,11 @@ export class App {
     return this.page.getByRole("button", { name: "Cancel", exact: true });
   }
 
+  /** 自動保存の失敗を知らせるバナー。閉じるボタン (Dismiss) を含む。 */
+  get saveErrorBanner(): Locator {
+    return this.page.getByText(/^Save failed: /).locator("xpath=..");
+  }
+
   /** リクエストのメソッド選択。 */
   async selectMethod(method: string): Promise<void> {
     const methodSelect = this.page.getByTestId("method-select");

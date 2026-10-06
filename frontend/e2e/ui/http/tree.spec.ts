@@ -1,5 +1,6 @@
-import type { Collection } from "../../../src/domain/http/types";
-import { type FakeControl, expect, test } from "../../fixtures/ui";
+import type { Locator, Page } from "@playwright/test";
+import type { Collection, HttpRequest } from "../../../src/domain/http/types";
+import { type App, type FakeControl, expect, test } from "../../fixtures/ui";
 
 // HTTP ツリーのフォルダ／リクエスト操作 (D&D 以外)。コレクション単位の操作は
 // sidebar-operations.spec.ts にある。フォルダは UI で作る (追加の操作も通すため)。
@@ -75,6 +76,105 @@ test("cancelling the delete dialog keeps the item", async ({
   await expect(dialog).toBeHidden();
   await expect(request).toBeVisible();
   expect(await fake.calls("DeleteItem")).toBe(0);
+});
+
+// 開いているリクエストが消えたら、編集エリアは保存せずに未選択へ戻す。残すと、消えた
+// リクエストへ自動保存しようとして "request not found" の Save failed が出続ける。
+test.describe("deleting the open request", () => {
+  const ACTIVE_REQUEST_KEY = "wirexa:http:activeRequest";
+  const OPEN = { id: "req-open", name: "Open Request" };
+  const HELD = { id: "req-held", name: "Held Request" };
+  const SURVIVOR = { id: "req-survivor", name: "Survivor" };
+
+  test.use({
+    seed: {
+      collections: [
+        {
+          name: COLLECTION,
+          items: [OPEN, { folder: "Holder", items: [HELD] }, SURVIVOR],
+        },
+      ],
+    },
+  });
+
+  const savedSelection = (page: Page) =>
+    page.evaluate((key) => localStorage.getItem(key), ACTIVE_REQUEST_KEY);
+
+  /** request を開いて編集し、保存されるのを待つ。 */
+  async function openAndEdit(
+    app: App,
+    fake: FakeControl,
+    request: Locator,
+  ): Promise<void> {
+    await request.click();
+    await app.urlInput.fill("https://example.com/doomed");
+    await fake.waitForCalls("UpdateRequest");
+  }
+
+  /**
+   * 編集エリアが未選択に戻り、消えたリクエストへの保存が起きていないことを確かめる。
+   * 「保存が起きない」は待っても確かめられないので、残ったリクエストを編集して保存させ、
+   * savesBefore 以降の保存がそのリクエストのものだけであることを見る。
+   */
+  async function expectEditorCleared(
+    page: Page,
+    app: App,
+    fake: FakeControl,
+    savesBefore: number,
+  ): Promise<void> {
+    await expect(app.urlInput).toHaveValue("");
+    await expect.poll(() => savedSelection(page)).toBeNull();
+
+    await app.request(/Survivor/).click();
+    await app.urlInput.fill("https://example.com/survivor");
+    await expect
+      .poll(async () => (await fake.args("UpdateRequest")).at(-1))
+      .toMatchObject([
+        expect.anything(),
+        { id: SURVIVOR.id, url: "https://example.com/survivor" },
+      ]);
+    const later = (await fake.args("UpdateRequest")).slice(savesBefore);
+    expect(later.map(([, req]) => (req as HttpRequest).id)).toEqual(
+      later.map(() => SURVIVOR.id),
+    );
+    await expect(app.saveErrorBanner).toBeHidden();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Failed to" }),
+    ).toHaveCount(0);
+  }
+
+  test("deleting the open request clears the editor", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    const request = app.request(/Open Request/);
+    await openAndEdit(app, fake, request);
+    expect(await savedSelection(page)).not.toBeNull();
+    const saves = await fake.calls("UpdateRequest");
+
+    await app.rowAction(request, "Delete request").click();
+    await app.confirmDelete();
+    await expect(request).toBeHidden();
+
+    await expectEditorCleared(page, app, fake, saves);
+  });
+
+  test("deleting the folder that holds the open request clears the editor", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.folder("Holder").click();
+    await openAndEdit(app, fake, app.request(/Held Request/));
+    const saves = await fake.calls("UpdateRequest");
+
+    await app.rowAction(app.folder("Holder"), "Delete folder").click();
+    await app.confirmDelete();
+    await expect(app.folder("Holder")).toBeHidden();
+
+    await expectEditorCleared(page, app, fake, saves);
+  });
 });
 
 // ── リネーム ────────────────────────────────────────────────────────────────

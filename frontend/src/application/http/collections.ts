@@ -54,6 +54,19 @@ export function findRequestById(
 }
 
 /**
+ * リクエストが今どのコレクションにあるかを返す。サイドバー直下（そのフォルダの中を含む）なら
+ * __root__、どこにも無ければ null。
+ */
+export function findRequestLocation(
+  collections: readonly Collection[],
+  rootItems: readonly TreeItem[],
+  requestId: string,
+): string | null {
+  if (findRequestIn(rootItems, requestId)) return ROOT_COLLECTION_ID;
+  return collections.find((c) => findRequestIn(c.items, requestId))?.id ?? null;
+}
+
+/**
  * moveItem の position に渡すと、移動先の末尾に追加する。
  * Go 側の domain.PositionEnd (internal/domain/slices.go) と同じ値にする。
  */
@@ -99,6 +112,8 @@ export interface CollectionsApi {
  * - 戻り値を持つ操作: 通知したうえで例外を再送出する（notifyOnError）。
  *   呼び出し側は戻り値の有無で成功／失敗を分岐できる。
  */
+export type CollectionsState = ReturnType<typeof createCollectionsState>;
+
 export function createCollectionsState(
   api: CollectionsApi,
   notifier: Notifier,

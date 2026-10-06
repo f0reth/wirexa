@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup } from "solid-js";
+import { batch, createEffect, createSignal, onCleanup } from "solid-js";
 import type { Logger } from "../../application/logger";
 import type {
   ContentBodyType,
@@ -119,6 +119,11 @@ export function createRequestState(
   // 編集中のリクエストの世代。別のリクエストへ切り替えるたびに進め、
   // 切り替え前に送信した応答が切り替え先に表示されないようにする。
   let view = 0;
+  // 保存先（リクエストとその所属）の世代。所属の付け替えとクローズで進め、それより前に
+  // 始めた保存の結果を捨てる。付け替えではレスポンスを残すので、view とは別に持つ。
+  // loadRequest・newRequest による切り替えでは進めない（切り替え前のリクエストの保存の
+  // 失敗は通知する）。
+  let saveTarget = 0;
 
   // file 種別は本文を contents に持たない（送信元は file 参照の token だけ）。
   const contentKey = (): ContentBodyType | null => {
@@ -305,34 +310,65 @@ export function createRequestState(
       view++;
       replaceResponse(null);
     }
-    setMethod(req.method);
-    setUrl(req.url);
-    setHeaders(req.headers);
-    setParams(req.params);
-    setBody(req.body);
-    setAuth(req.auth);
-    setSettings(req.settings ?? { ...DEFAULT_SETTINGS });
-    setDoc(req.doc ?? "");
-    setActiveRequestId(req.id);
-    setActiveCollectionId(collectionId);
+    // リクエストと所属はまとめて切り替える。途中の状態（新しいリクエストと前の所属の組）を
+    // effect に見せると、所属が変わったと解釈される。
+    batch(() => {
+      setMethod(req.method);
+      setUrl(req.url);
+      setHeaders(req.headers);
+      setParams(req.params);
+      setBody(req.body);
+      setAuth(req.auth);
+      setSettings(req.settings ?? { ...DEFAULT_SETTINGS });
+      setDoc(req.doc ?? "");
+      setActiveRequestId(req.id);
+      setActiveCollectionId(collectionId);
+    });
+  }
+
+  // 編集エリアを未選択の初期状態へ戻す。
+  function resetEditor(): void {
+    view++;
+    replaceResponse(null);
+    batch(() => {
+      setMethod("GET");
+      setUrl("");
+      setHeaders([]);
+      setParams([]);
+      setBody({ type: "none", contents: {} });
+      setAuth({ type: "none", username: "", password: "", token: "" });
+      setSettings({ ...DEFAULT_SETTINGS });
+      setDoc("");
+      setActiveRequestId(null);
+      setActiveCollectionId(null);
+    });
   }
 
   function newRequest(): void {
     saveCurrentRequest().catch((err) =>
       notifier.error("Failed to save request", errorMessage(err)),
     );
-    view++;
-    replaceResponse(null);
-    setMethod("GET");
-    setUrl("");
-    setHeaders([]);
-    setParams([]);
-    setBody({ type: "none", contents: {} });
-    setAuth({ type: "none", username: "", password: "", token: "" });
-    setSettings({ ...DEFAULT_SETTINGS });
-    setDoc("");
-    setActiveRequestId(null);
-    setActiveCollectionId(null);
+    resetEditor();
+  }
+
+  // 開いているリクエストがツリーから消えたときに、保存せずに未選択へ戻す
+  // （消えたリクエストへの保存は必ず失敗する）。先に始めていた保存の結果も捨てる。
+  function closeRequest(): void {
+    saveTarget++;
+    resetEditor();
+    setSaveError(null);
+  }
+
+  // 開いているリクエストが別のコレクション（またはルート）へ移ったときに、保存先を
+  // 付け替える。移動の RPC からここまでの間に古い保存先へ向けた保存は失敗するので、
+  // その結果は捨てて、新しい保存先へ保存し直す。
+  function relocateActiveRequest(collectionId: string): void {
+    if (!activeRequestId()) return;
+    saveTarget++;
+    setActiveCollectionId(collectionId);
+    saveCurrentRequest().catch((err) =>
+      notifier.error("Failed to save request", errorMessage(err)),
+    );
   }
 
   async function saveCurrentRequest(): Promise<void> {
@@ -351,11 +387,14 @@ export function createRequestState(
       settings: settings(),
       doc: doc(),
     };
+    const target = saveTarget;
     try {
       await api.updateRequest(colId, req);
+      if (target !== saveTarget) return;
       setSaveError(null);
       api.afterSave?.(colId, req);
     } catch (err) {
+      if (target !== saveTarget) return;
       const msg = err instanceof Error ? err.message : String(err);
       setSaveError(msg);
       throw err;
@@ -397,6 +436,8 @@ export function createRequestState(
     pickFile,
     loadRequest,
     newRequest,
+    closeRequest,
+    relocateActiveRequest,
     saveCurrentRequest,
   };
 }

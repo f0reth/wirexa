@@ -13,6 +13,7 @@ import {
   type CollectionsApi,
   createCollectionsState,
   findRequestById,
+  findRequestLocation,
 } from "./collections";
 
 function makeNotifier(): Notifier {
@@ -198,6 +199,51 @@ describe("findRequestById", () => {
     expect(findRequestById(cols, [], "col-1", "r-1")?.url).toBe(
       "https://child.example",
     );
+  });
+});
+
+describe("findRequestLocation", () => {
+  const collections: Collection[] = [
+    {
+      id: "col-1",
+      name: "col-1",
+      items: [makeRequestItem("r-top", "https://top.example")],
+    },
+    {
+      id: "col-2",
+      name: "col-2",
+      items: [
+        {
+          ...makeTreeItem("folder-1"),
+          children: [makeRequestItem("r-nested", "https://nested.example")],
+        },
+      ],
+    },
+  ];
+  const rootItems: TreeItem[] = [
+    makeRequestItem("r-root", "https://root.example"),
+    {
+      ...makeTreeItem("root-folder"),
+      children: [makeRequestItem("r-root-nested", "https://deep.example")],
+    },
+  ];
+
+  it.each([
+    ["directly under a collection", "r-top", "col-1"],
+    ["inside a folder of a collection", "r-nested", "col-2"],
+    ["directly under the sidebar root", "r-root", ROOT_COLLECTION_ID],
+    [
+      "inside a folder under the sidebar root",
+      "r-root-nested",
+      ROOT_COLLECTION_ID,
+    ],
+  ])("finds a request %s", (_, id, expected) => {
+    expect(findRequestLocation(collections, rootItems, id)).toBe(expected);
+  });
+
+  it("returns null for a request that is nowhere, and for a folder", () => {
+    expect(findRequestLocation(collections, rootItems, "gone")).toBeNull();
+    expect(findRequestLocation(collections, rootItems, "folder-1")).toBeNull();
   });
 });
 

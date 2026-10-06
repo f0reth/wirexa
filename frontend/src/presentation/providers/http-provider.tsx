@@ -6,6 +6,7 @@ import {
   onMount,
   useContext,
 } from "solid-js";
+import { createActiveRequestTracking } from "../../application/http/active-request";
 import {
   createCollectionsState,
   findRequestById,
@@ -74,6 +75,8 @@ export interface RequestContextValue {
   pickFile: (hint: string) => Promise<FileReference | undefined>;
   loadRequest: (req: HttpRequest, collectionId: string) => void;
   newRequest: () => void;
+  closeRequest: () => void;
+  relocateActiveRequest: (collectionId: string) => void;
   saveCurrentRequest: () => Promise<void>;
 }
 
@@ -147,6 +150,7 @@ export function HttpProvider(props: { children: JSX.Element }) {
   );
 
   createAutoSaveEffect(requestState, notify);
+  createActiveRequestTracking(requestState, collectionsState);
 
   // アクティブリクエストをlocalStorageに永続化する
   const activeRequestStorage = createActiveRequestStorage();

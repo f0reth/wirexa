@@ -140,6 +140,75 @@ test("dropping a request into a folder nests it", async ({ app, fake }) => {
   await expect(request).toBeHidden();
 });
 
+// ── 開いているリクエストの移動 ──────────────────────────────────────────────
+
+// 保存先のコレクションは選択したときの値なので、移動に追従しないと、Go は元のコレクションで
+// リクエストを探して "request not found" を返し、以後の編集が保存されない。
+test("edits made after moving the open request to another collection are saved", async ({
+  page,
+  app,
+  fake,
+}) => {
+  const request = app.request(/Moving Request/);
+  await request.click();
+  await app.dragTreeNode(request, app.collection(BETA.name));
+  await fake.waitForCalls("MoveItem");
+
+  await app.urlInput.fill("https://example.com/moved");
+  // 回数ではなく最後の保存の内容で待つ (移動の直後にも、新しい保存先へ保存し直す)。
+  await expect
+    .poll(async () => (await fake.args("UpdateRequest")).at(-1))
+    .toMatchObject([
+      BETA.id,
+      { id: REQUEST.id, url: "https://example.com/moved" },
+    ]);
+  await expect(app.saveErrorBanner).toBeHidden();
+  expect((await fake.collection(BETA.id)).items[0].request?.url).toBe(
+    "https://example.com/moved",
+  );
+
+  // 選択も新しいコレクションで覚えているので、リロード後に復元される。
+  await page.reload();
+  await app.switchTo("HTTP");
+  await expect(app.request(/Moving Request/)).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await expect(app.urlInput).toHaveValue("https://example.com/moved");
+});
+
+test("edits made after moving the open request to the sidebar root are saved", async ({
+  page,
+  app,
+  fake,
+}) => {
+  const request = app.request(/Moving Request/);
+  await request.click();
+  // 先頭のアイテムなのでゾーン 0・1 は隠れる (上の NOTE を参照)。
+  await app.dragTreeNode(request, app.sidebarDropZone(2));
+  await fake.waitForCalls("MoveItemToSidebar");
+
+  await app.urlInput.fill("https://example.com/rooted");
+  await expect
+    .poll(async () => (await fake.args("UpdateRequest")).at(-1))
+    .toMatchObject([
+      "__root__",
+      { id: REQUEST.id, url: "https://example.com/rooted" },
+    ]);
+  await expect(app.saveErrorBanner).toBeHidden();
+  expect((await fake.snapshot()).rootItems[0].request?.url).toBe(
+    "https://example.com/rooted",
+  );
+
+  await page.reload();
+  await app.switchTo("HTTP");
+  await expect(app.request(/Moving Request/)).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await expect(app.urlInput).toHaveValue("https://example.com/rooted");
+});
+
 // ルートのフォルダの中のリクエストは collectionId が __root__ で、ルート直下には無い。保存した
 // 内容がツリーに反映されないと、別のリクエストから戻ったときに古い値が編集エリアに入り、
 // 自動保存がそれで上書きする。

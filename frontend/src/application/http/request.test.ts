@@ -1065,6 +1065,222 @@ describe("createRequestState load and save", () => {
   });
 });
 
+/** 完了を手で進められる updateRequest の 1 回分。 */
+function deferredSave() {
+  let resolve!: () => void;
+  let reject!: (err: unknown) => void;
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+describe("createRequestState closeRequest", () => {
+  it("returns to an unselected editor without saving", async () => {
+    await createRoot(async (dispose) => {
+      const { api, execIds, settle } = makeApi();
+      api.updateRequest.mockRejectedValueOnce(new Error("locked"));
+      const state = createRequestState(api, noopLogger, makeNotifier());
+      state.loadRequest(makeRequest("a"), "col-1");
+      state.setMethod("POST");
+      await expect(state.saveCurrentRequest()).rejects.toThrow("locked");
+      const send = state.sendRequest();
+      settle(0, makeTruncatedResponse());
+      await send;
+      api.updateRequest.mockClear();
+
+      state.closeRequest();
+
+      expect(api.updateRequest).not.toHaveBeenCalled();
+      expect(state.activeRequestId()).toBeNull();
+      expect(state.activeCollectionId()).toBeNull();
+      expect(state.method()).toBe("GET");
+      expect(state.url()).toBe("");
+      expect(state.response()).toBeNull();
+      expect(api.discardResponseBody).toHaveBeenCalledWith(execIds[0]);
+      expect(state.saveError()).toBeNull();
+      dispose();
+    });
+  });
+
+  it("does not show a response that arrives after closing", async () => {
+    await createRoot(async (dispose) => {
+      const { api, settle } = makeApi();
+      const state = createRequestState(api, noopLogger, makeNotifier());
+      state.loadRequest(makeRequest("a"), "col-1");
+      const send = state.sendRequest();
+
+      state.closeRequest();
+      settle(0, makeResponse());
+      await send;
+
+      expect(state.response()).toBeNull();
+      dispose();
+    });
+  });
+
+  // 消えたリクエストへの保存は失敗する。閉じたあとにバナーとトーストを出さない。
+  it("drops the failure of a save that was still pending when closing", async () => {
+    await createRoot(async (dispose) => {
+      const { api } = makeApi();
+      const pending = deferredSave();
+      api.updateRequest.mockReturnValueOnce(pending.promise);
+      const state = createRequestState(api, noopLogger, makeNotifier());
+      state.loadRequest(makeRequest("a"), "col-1");
+      const save = state.saveCurrentRequest();
+
+      state.closeRequest();
+      pending.reject(new Error("request not found: a"));
+
+      await expect(save).resolves.toBeUndefined();
+      expect(state.saveError()).toBeNull();
+      dispose();
+    });
+  });
+});
+
+describe("createRequestState relocateActiveRequest", () => {
+  it("switches the save target and saves there, keeping the response", async () => {
+    await createRoot(async (dispose) => {
+      const { api, settle } = makeApi();
+      const afterSave = vi.fn();
+      const state = createRequestState(
+        { ...api, afterSave },
+        noopLogger,
+        makeNotifier(),
+      );
+      state.loadRequest(makeRequest("a"), "col-1");
+      state.setUrl("https://edited.example");
+      const send = state.sendRequest();
+      settle(0, makeResponse());
+      await send;
+
+      state.relocateActiveRequest("col-2");
+      await flush();
+
+      expect(state.activeCollectionId()).toBe("col-2");
+      expect(api.updateRequest).toHaveBeenCalledTimes(1);
+      expect(api.updateRequest).toHaveBeenCalledWith(
+        "col-2",
+        expect.objectContaining({ id: "a", url: "https://edited.example" }),
+      );
+      expect(afterSave).toHaveBeenCalledWith(
+        "col-2",
+        expect.objectContaining({ id: "a" }),
+      );
+      expect(state.response()).not.toBeNull();
+      dispose();
+    });
+  });
+
+  it("does nothing without an active request", async () => {
+    await createRoot(async (dispose) => {
+      const { api } = makeApi();
+      const state = createRequestState(api, noopLogger, makeNotifier());
+
+      state.relocateActiveRequest("col-2");
+      await flush();
+
+      expect(state.activeCollectionId()).toBeNull();
+      expect(api.updateRequest).not.toHaveBeenCalled();
+      dispose();
+    });
+  });
+
+  it("notifies when saving to the new collection fails", async () => {
+    await createRoot(async (dispose) => {
+      const { api } = makeApi();
+      api.updateRequest.mockRejectedValueOnce(new Error("disk full"));
+      const notifier = makeNotifier();
+      const state = createRequestState(api, noopLogger, notifier);
+      state.loadRequest(makeRequest("a"), "col-1");
+
+      state.relocateActiveRequest("col-2");
+      await flush();
+
+      expect(notifier.error).toHaveBeenCalledWith(
+        "Failed to save request",
+        "disk full",
+      );
+      expect(state.saveError()).toBe("disk full");
+      dispose();
+    });
+  });
+
+  // 移動の RPC のあと、一覧の再読み込みが終わる前に始まった保存は古いコレクションへ向かい、
+  // 失敗する。新しい保存先へ保存し直しているので、その失敗は出さない。
+  it("drops the failure of an earlier save to the old collection", async () => {
+    await createRoot(async (dispose) => {
+      const { api } = makeApi();
+      const stale = deferredSave();
+      api.updateRequest.mockReturnValueOnce(stale.promise);
+      const afterSave = vi.fn();
+      const state = createRequestState(
+        { ...api, afterSave },
+        noopLogger,
+        makeNotifier(),
+      );
+      state.loadRequest(makeRequest("a"), "col-1");
+      const staleSave = state.saveCurrentRequest();
+
+      state.relocateActiveRequest("col-2");
+      await flush();
+      expect(afterSave).toHaveBeenCalledTimes(1);
+      stale.reject(new Error("request not found: a"));
+
+      await expect(staleSave).resolves.toBeUndefined();
+      expect(state.saveError()).toBeNull();
+      expect(afterSave).toHaveBeenCalledTimes(1);
+      dispose();
+    });
+  });
+
+  it("does not call afterSave for an earlier save that succeeds late", async () => {
+    await createRoot(async (dispose) => {
+      const { api } = makeApi();
+      const stale = deferredSave();
+      api.updateRequest.mockReturnValueOnce(stale.promise);
+      const afterSave = vi.fn();
+      const state = createRequestState(
+        { ...api, afterSave },
+        noopLogger,
+        makeNotifier(),
+      );
+      state.loadRequest(makeRequest("a"), "col-1");
+      const staleSave = state.saveCurrentRequest();
+
+      state.relocateActiveRequest("col-2");
+      await flush();
+      stale.resolve();
+      await staleSave;
+
+      expect(afterSave).toHaveBeenCalledTimes(1);
+      expect(afterSave).toHaveBeenCalledWith("col-2", expect.anything());
+      dispose();
+    });
+  });
+
+  // loadRequest による切り替えでは保存先の世代を進めない。
+  it("still reports a failed save of the previous request after switching", async () => {
+    await createRoot(async (dispose) => {
+      const { api } = makeApi();
+      const pending = deferredSave();
+      api.updateRequest.mockReturnValueOnce(pending.promise);
+      const state = createRequestState(api, noopLogger, makeNotifier());
+      state.loadRequest(makeRequest("a"), "col-1");
+      const save = state.saveCurrentRequest();
+
+      state.loadRequest(makeRequest("b"), "col-1");
+      pending.reject(new Error("locked"));
+
+      await expect(save).rejects.toThrow("locked");
+      expect(state.saveError()).toBe("locked");
+      dispose();
+    });
+  });
+});
+
 describe("createAutoSaveEffect", () => {
   beforeEach(() => {
     vi.useFakeTimers();
