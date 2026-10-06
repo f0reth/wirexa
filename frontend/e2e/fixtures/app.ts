@@ -236,11 +236,17 @@ export class App {
 
   /**
    * ツリーのマウス方式 D&D (use-long-press-drag.ts → use-tree-drag-drop.ts) で source を
-   * target の中心へ落とす。HTML5 DnD ではないので locator.dragTo() は使えない。
+   * target へ落とす。HTML5 DnD ではないので locator.dragTo() は使えない。
    * 5px を超えて動かした時点でドラッグが始まり、挿入ゾーンが広がって行の位置がずれるので、
    * ドロップ先の座標はドラッグを始めてから取る。
+   * at は target の中の落とす位置。行に落とすと上半分ならその行の前、下半分なら後ろに入るので、
+   * 同じ親の中の並び替えでは "upper" / "lower" を指定する。
    */
-  async dragTreeNode(source: Locator, target: Locator): Promise<void> {
+  async dragTreeNode(
+    source: Locator,
+    target: Locator,
+    at: "center" | "upper" | "lower" = "center",
+  ): Promise<void> {
     const mouse = this.page.mouse;
     await source.scrollIntoViewIfNeeded();
     const from = await centerOf(source);
@@ -248,8 +254,12 @@ export class App {
     await mouse.down();
     await mouse.move(from.x, from.y + 6);
     await target.scrollIntoViewIfNeeded();
-    const to = await centerOf(target);
-    await mouse.move(to.x, to.y, { steps: 5 });
+    const box = await target.boundingBox();
+    if (!box) throw new Error(`element is not visible: ${target}`);
+    const ratio = { upper: 0.25, center: 0.5, lower: 0.75 }[at];
+    await mouse.move(box.x + box.width / 2, box.y + box.height * ratio, {
+      steps: 5,
+    });
     await mouse.up();
   }
 

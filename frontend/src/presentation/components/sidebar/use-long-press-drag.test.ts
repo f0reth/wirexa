@@ -129,6 +129,38 @@ describe("makeLongPressDragHandlers", () => {
     expect(suppressRef.suppress).toBe(false);
   });
 
+  // ドラッグを終える mouseup は、同じ行の上なら click になる。click は mouseup と同じタスクで
+  // 届くので、そのあとで降ろす。別の要素の上で離したときは click が届かないので、呼び出し側の
+  // onClick に降ろさせると立ったまま残る。
+  it("keeps suppressing through the click of the releasing mouseup, then stops", () => {
+    const suppressRef = { suppress: false };
+    const { handleMouseDown } = makeLongPressDragHandlers(suppressRef, vi.fn());
+
+    handleMouseDown(mouseDown(0, 0));
+    dispatchMove(10, 0);
+    expect(suppressRef.suppress).toBe(true);
+
+    dispatchUp();
+    // mouseup に続く click が届く時点では、まだ立っている。
+    expect(suppressRef.suppress).toBe(true);
+
+    vi.advanceTimersByTime(0);
+    expect(suppressRef.suppress).toBe(false);
+  });
+
+  it("stops suppressing after a long-press drag is released", () => {
+    const suppressRef = { suppress: false };
+    const { handleMouseDown } = makeLongPressDragHandlers(suppressRef, vi.fn());
+
+    handleMouseDown(mouseDown(0, 0));
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+    expect(suppressRef.suppress).toBe(true);
+
+    dispatchUp();
+    vi.advanceTimersByTime(0);
+    expect(suppressRef.suppress).toBe(false);
+  });
+
   it("ignores non-primary buttons", () => {
     const onActivate = vi.fn();
     const addSpy = vi.spyOn(document, "addEventListener");

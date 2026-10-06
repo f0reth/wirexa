@@ -79,10 +79,7 @@ export function CollectionNode(props: {
           type="button"
           class={styles.treeNodeToggle}
           onClick={() => {
-            if (suppressRef.suppress) {
-              suppressRef.suppress = false;
-              return;
-            }
+            if (suppressRef.suppress) return;
             toggleExpanded();
           }}
         >

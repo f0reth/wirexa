@@ -15,7 +15,6 @@ test.use({
 
 test.beforeEach(async ({ app }) => {
   await app.switchTo("HTTP");
-  await expect(app.request(/Moving Request/)).toBeVisible();
 });
 
 async function storedCollection(
@@ -138,6 +137,105 @@ test("dropping a request into a folder nests it", async ({ app, fake }) => {
   await expect(request).toBeVisible();
   await folder.click();
   await expect(request).toBeHidden();
+});
+
+// ── 同じ親の中の並び替え ────────────────────────────────────────────────────
+
+test.describe("reordering within the same parent", () => {
+  const ORDERED = { id: "col-ordered", name: "Ordered Collection" };
+  const FIRST = { id: "req-first", name: "First Request" };
+  const SECOND = { id: "req-second", name: "Second Request" };
+  const THIRD = { id: "req-third", name: "Third Request" };
+
+  test.use({
+    seed: { collections: [{ ...ORDERED, items: [FIRST, SECOND, THIRD] }] },
+  });
+
+  const storedOrder = async (fake: FakeControl) =>
+    (await fake.collection(ORDERED.id)).items.map((i) => i.id);
+
+  // position は移動前の並びに対する挿入位置。後ろへ動かすときは Go (偽バックエンド) が、
+  // 取り除いたぶんを 1 つ詰める。
+  test("dropping a request on the lower half of a sibling moves it after that sibling", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.dragTreeNode(
+      app.request(/First Request/),
+      app.request(/Second Request/),
+      "lower",
+    );
+
+    await fake.waitForCalls("MoveItem");
+    expect(await fake.args("MoveItem")).toEqual([
+      [ORDERED.id, FIRST.id, ORDERED.id, "", 2],
+    ]);
+    expect(await storedOrder(fake)).toEqual([SECOND.id, FIRST.id, THIRD.id]);
+    await expect(page.getByRole("button", { name: /Request$/ })).toHaveText([
+      /Second Request/,
+      /First Request/,
+      /Third Request/,
+    ]);
+  });
+
+  test("dropping a request on the upper half of a sibling moves it before that sibling", async ({
+    page,
+    app,
+    fake,
+  }) => {
+    await app.dragTreeNode(
+      app.request(/Third Request/),
+      app.request(/First Request/),
+      "upper",
+    );
+
+    await fake.waitForCalls("MoveItem");
+    expect(await fake.args("MoveItem")).toEqual([
+      [ORDERED.id, THIRD.id, ORDERED.id, "", 0],
+    ]);
+    expect(await storedOrder(fake)).toEqual([THIRD.id, FIRST.id, SECOND.id]);
+    await expect(page.getByRole("button", { name: /Request$/ })).toHaveText([
+      /Third Request/,
+      /First Request/,
+      /Second Request/,
+    ]);
+  });
+
+  // ドラッグを始めた行は、直後の click を 1 回無視する (ドラッグを終える mouseup が click に
+  // ならないように)。別の行の上で離すと click が届かず、並び替えでは行も作り直されないので、
+  // 無視する状態が残って次のクリックが効かなかった。
+  test("a request can be selected with one click right after it was reordered", async ({
+    app,
+    fake,
+  }) => {
+    const first = app.request(/First Request/);
+    await app.dragTreeNode(first, app.request(/Second Request/), "lower");
+    await fake.waitForCalls("MoveItem");
+    await expect
+      .poll(() => storedOrder(fake))
+      .toEqual([SECOND.id, FIRST.id, THIRD.id]);
+
+    await first.click();
+    await expect(first).toHaveAttribute("aria-current", "true");
+  });
+});
+
+test("a collection can be collapsed with one click right after it was reordered", async ({
+  page,
+  app,
+  fake,
+}) => {
+  const collections = page.getByRole("button", {
+    name: /^(Alpha|Beta) Collection$/,
+  });
+  // 先頭のコレクションなのでゾーン 0・1 は隠れる。末尾 (2) へ動かす。
+  await app.dragTreeNode(app.collection(ALPHA.name), app.sidebarDropZone(2));
+  await fake.waitForCalls("MoveSidebarEntry");
+  await expect(collections).toHaveText([BETA.name, ALPHA.name]);
+
+  await app.collection(ALPHA.name).click();
+  await expect(app.request(/Moving Request/)).toBeHidden();
 });
 
 // ── 開いているリクエストの移動 ──────────────────────────────────────────────

@@ -53,10 +53,7 @@ export function OpenApiFileNode(props: {
         type="button"
         class={styles.requestSelectBtn}
         onClick={() => {
-          if (suppressRef.suppress) {
-            suppressRef.suppress = false;
-            return;
-          }
+          if (suppressRef.suppress) return;
           props.onSelect(props.file.path);
         }}
       >

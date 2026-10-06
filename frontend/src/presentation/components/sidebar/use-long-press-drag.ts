@@ -7,7 +7,9 @@ const DRAG_THRESHOLD_PX = 5;
  * 異なるため onActivate に委譲する。
  *
  * suppressRef はドラッグ後の mouseup で click が誤発火するのを抑えるためのもので、
- * 立てるのはここ、降ろすのは呼び出し側の onClick。
+ * 立てるのも降ろすのもここ。呼び出し側の onClick は読むだけにする。ドラッグを終える mouseup の
+ * あと、それに続く click の配送（mouseup と同じタスク）が済んでから降ろす。同じ行の上で
+ * 離したときの click は抑止され、別の要素の上で離して click が届かなくても立ったまま残らない。
  *
  * ドロップ検出は sidebar/use-tree-drag-drop.ts（ツリー）と
  * openapi-file-tree.tsx（OpenAPI ファイル一覧）が各々担う。
@@ -23,6 +25,15 @@ export function makeLongPressDragHandlers(
 
     const activate = (x: number, y: number) => {
       suppressRef.suppress = true;
+      document.addEventListener(
+        "mouseup",
+        () => {
+          setTimeout(() => {
+            suppressRef.suppress = false;
+          }, 0);
+        },
+        { once: true },
+      );
       onActivate(x, y);
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);

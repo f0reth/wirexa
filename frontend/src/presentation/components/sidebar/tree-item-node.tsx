@@ -147,10 +147,7 @@ export function TreeItemNode(props: {
             type="button"
             class={styles.treeNodeToggle}
             onClick={() => {
-              if (suppressRef.suppress) {
-                suppressRef.suppress = false;
-                return;
-              }
+              if (suppressRef.suppress) return;
               toggleExpanded();
             }}
           >
@@ -288,10 +285,7 @@ export function TreeItemNode(props: {
         class={styles.requestSelectBtn}
         aria-current={isActive() ? "true" : undefined}
         onClick={() => {
-          if (suppressRef.suppress) {
-            suppressRef.suppress = false;
-            return;
-          }
+          if (suppressRef.suppress) return;
           if (!isRenaming()) ui.onSelectRequest(props.item, props.collectionId);
         }}
         onKeyDown={(e) => {
