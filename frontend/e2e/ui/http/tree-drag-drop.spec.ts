@@ -209,6 +209,26 @@ test("edits made after moving the open request to the sidebar root are saved", a
   await expect(app.urlInput).toHaveValue("https://example.com/rooted");
 });
 
+// 開閉の記録は再読み込みのたびに、もう無い ID を掃除する。ルートのアイテムを有効な ID に数えないと、
+// ルートのフォルダは開いても次の再読み込み (追加・リネーム・移動のたびに走る) で閉じる。
+test("a folder moved to the sidebar root stays expanded after adding a request to it", async ({
+  app,
+  fake,
+}) => {
+  await app.addFolder(ALPHA.name, "Rooted Folder");
+  const folder = app.folder("Rooted Folder");
+  await app.dragTreeNode(folder, app.sidebarDropZone(0));
+  await fake.waitForCalls("MoveItemToSidebar");
+  await expect
+    .poll(async () => (await fake.snapshot()).rootItems.map((i) => i.name))
+    .toEqual(["Rooted Folder"]);
+
+  await folder.click();
+  // 閉じたフォルダに足すとリネーム入力が出ないので、addRequest が通れば開いたままである。
+  await app.addRequest("Rooted Folder", "Inside Root Folder");
+  await expect(app.request(/Inside Root Folder/)).toBeVisible();
+});
+
 // ルートのフォルダの中のリクエストは collectionId が __root__ で、ルート直下には無い。保存した
 // 内容がツリーに反映されないと、別のリクエストから戻ったときに古い値が編集エリアに入り、
 // 自動保存がそれで上書きする。

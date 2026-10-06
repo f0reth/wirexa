@@ -136,7 +136,9 @@ export function createCollectionsState(
     expandedStorage.save({ ...expandedIds, [id]: val });
   }
 
-  function pruneExpandedIds(cols: Collection[]): void {
+  // もう無いコレクション・アイテムの開閉の記録を消す。フォルダはサイドバー直下にも置けるので、
+  // ルートのアイテムも有効な ID に数える。
+  function pruneExpandedIds(cols: Collection[], roots: TreeItem[]): void {
     const validIds = new Set<string>();
     const walk = (items: TreeItem[]) => {
       for (const item of items) {
@@ -148,6 +150,7 @@ export function createCollectionsState(
       validIds.add(col.id);
       walk(col.items);
     }
+    walk(roots);
     const staleIds = Object.keys(expandedIds).filter((id) => !validIds.has(id));
     if (staleIds.length === 0) return;
     setExpandedIds(
@@ -181,7 +184,7 @@ export function createCollectionsState(
       setCollections(reconcile(cols, { key: "id" }));
       setRootItems(reconcile(items, { key: "id" }));
       setSidebarLayout(reconcile(layout));
-      pruneExpandedIds(cols);
+      pruneExpandedIds(cols, items);
       setCollectionsLoaded(true);
     });
   }

@@ -340,6 +340,32 @@ describe("createCollectionsState expanded state", () => {
     );
   });
 
+  // フォルダはサイドバー直下へ出せる。ルートのアイテムを数えないと、開いても次の再読み込みで閉じる。
+  it("keeps expanded ids of folders under the sidebar root", async () => {
+    const api = makeApi();
+    api.getRootItems = vi.fn(async () => [
+      {
+        ...makeTreeItem("root-folder"),
+        children: [makeTreeItem("root-inner")],
+      },
+    ]);
+    const { storage } = makeExpandedStorage({
+      "root-folder": true,
+      "root-inner": true,
+    });
+
+    await withState(
+      api,
+      async (state) => {
+        await state.refreshCollections();
+        expect(storage.save).not.toHaveBeenCalled();
+        expect(state.isExpanded("root-folder", false)).toBe(true);
+        expect(state.isExpanded("root-inner", false)).toBe(true);
+      },
+      storage,
+    );
+  });
+
   it("does not save when no stored id is stale", async () => {
     const api = makeApi();
     api.getCollections = vi.fn(async () => [makeCollection("col-1")]);
