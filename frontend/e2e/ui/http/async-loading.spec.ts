@@ -65,7 +65,13 @@ test("response viewer shows status and body after successful request", async ({
 // ── 観点E-5: エラー時にエラーメッセージが表示される ─────────────────────────
 
 test.describe("when the request fails", () => {
-  test.use({ seed: { httpError: "dial tcp 127.0.0.1:1: connection refused" } });
+  test.use({
+    seed: {
+      httpRpcErrors: {
+        SendRequest: "dial tcp 127.0.0.1:1: connection refused",
+      },
+    },
+  });
 
   test("connection error displays error message in response viewer", async ({
     page,

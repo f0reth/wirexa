@@ -464,7 +464,7 @@ test.describe("when saving the request fails", () => {
       collections: [
         { name: "Failing Collection", items: [{ name: "Unsaved" }] },
       ],
-      updateRequestError: "disk is full",
+      httpRpcErrors: { UpdateRequest: "disk is full" },
     },
   });
 

@@ -31,8 +31,14 @@ export interface FakeSeed {
   collections?: Array<{ id?: string; name: string; items?: SeedItem[] }>;
   /** __root__ 直下のアイテム。サイドバーレイアウトの末尾に並ぶ。 */
   rootItems?: SeedItem[];
-  /** GetSidebarLayout を必ず失敗させる (起動時の読み込みが途中で失敗する場合を模す)。 */
-  getSidebarLayoutError?: string;
+  /**
+   * HTTP のバインディング名 (GetSidebarLayout・UpdateRequest・SendRequest など) → 失敗させる文言。
+   * 文字列なら必ず失敗し、times を付けるとその回数だけ失敗してあとは成功する (回数はリロードで
+   * 数え直す)。SendRequest は httpResponseDelayMs の遅延のあとで失敗する。
+   */
+  httpRpcErrors?: Record<string, string | { message: string; times: number }>;
+  /** SaveResponseBody が false を返す (保存ダイアログのキャンセル)。 */
+  saveResponseBodyCancelled?: boolean;
   /** OpenFilePicker (ファイルダイアログ) で選ばれたことにするファイル。未設定ならキャンセル。 */
   pickedFile?: { token: string; name: string; contentType: string };
   udpTargets?: Array<{ id?: string; name: string; host: string; port: number }>;
@@ -107,12 +113,6 @@ export interface FakeSeed {
   httpResponse?: Partial<HttpResponse>;
   /** SendRequest が解決するまでの遅延 (ms)。ローディング状態の検証に使う。 */
   httpResponseDelayMs?: number;
-  /** SendRequest を必ず失敗させる (接続エラーの検証に使う)。 */
-  httpError?: string;
-  /** UpdateRequest を必ず失敗させる (自動保存の失敗バナーの検証に使う)。 */
-  updateRequestError?: string;
-  /** SaveResponseBody を必ず失敗させる (回収済み一時ファイルの検証に使う)。 */
-  saveResponseError?: string;
   /** StartListen を検証のあとで必ず失敗させる (使用中ポートなど、ソケットを開けない場合を模す)。 */
   startListenError?: string;
   /** StartListen が検証のあと解決するまでの遅延 (ms)。"Starting..." 表示の検証に使う。 */

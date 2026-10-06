@@ -63,7 +63,7 @@ test.describe("reclaimed response body", () => {
   test.use({
     seed: {
       httpResponse: { bodyTruncated: true },
-      saveResponseError: "response body unavailable",
+      httpRpcErrors: { SaveResponseBody: "response body unavailable" },
     },
   });
 

@@ -318,8 +318,12 @@ function sendRequest(
     }
     const timer = setTimeout(() => {
       inFlight.delete(executionId);
-      if (seed.httpError) reject(new Error(seed.httpError));
-      else resolve({ ...DEFAULT_RESPONSE, ...seed.httpResponse });
+      try {
+        failInjectedHttpRpc("SendRequest");
+        resolve({ ...DEFAULT_RESPONSE, ...seed.httpResponse });
+      } catch (err) {
+        reject(err);
+      }
     }, seed.httpResponseDelayMs ?? 0);
 
     inFlight.set(executionId, () => {
@@ -330,31 +334,64 @@ function sendRequest(
   });
 }
 
+// seed.httpRpcErrors で、HTTP のバインディングを名前ごとに失敗させる (ディスクの I/O エラーや
+// Wails のランタイムの不調など、RPC 自体の失敗を模す)。times を付けた注入はその回数だけ失敗し、
+// あとは成功する。回数はページのメモリで数えるので、リロードすると数え直す。
+const httpRpcFailures: Record<string, number> = {};
+
+function failInjectedHttpRpc(name: string): void {
+  const injected = seed.httpRpcErrors?.[name];
+  if (injected === undefined) return;
+  if (typeof injected === "string") throw new Error(injected);
+  const failures = httpRpcFailures[name] ?? 0;
+  if (failures >= injected.times) return;
+  httpRpcFailures[name] = failures + 1;
+  throw new Error(injected.message);
+}
+
+/** HttpHandler の状態を変えないバインディング。先頭で seed.httpRpcErrors の注入を見る。 */
+function httpReads<A extends unknown[], R>(
+  name: string,
+  fn: (...args: A) => Promise<R>,
+): (...args: A) => Promise<R> {
+  return counted(name, async (...args: A) => {
+    failInjectedHttpRpc(name);
+    return fn(...args);
+  });
+}
+
+/** HttpHandler の状態を変えるバインディング。先頭で seed.httpRpcErrors の注入を見る。 */
+function httpMutates<A extends unknown[], R>(
+  name: string,
+  fn: (...args: A) => R,
+): (...args: A) => Promise<R> {
+  return mutates(name, (...args: A) => {
+    failInjectedHttpRpc(name);
+    return fn(...args);
+  });
+}
+
 const HttpHandler = {
-  GetCollections: counted("GetCollections", async () =>
+  GetCollections: httpReads("GetCollections", async () =>
     clone(db.collections.filter((c) => c.id !== ROOT_COLLECTION_ID)),
   ),
 
-  GetRootItems: counted("GetRootItems", async () =>
+  GetRootItems: httpReads("GetRootItems", async () =>
     clone(collection(ROOT_COLLECTION_ID).items),
   ),
 
-  // seed.getSidebarLayoutError で RPC 自体の失敗 (Wails のランタイムの不調など) を模す。
-  GetSidebarLayout: counted("GetSidebarLayout", async () => {
-    if (seed.getSidebarLayoutError) {
-      throw new Error(seed.getSidebarLayoutError);
-    }
-    return clone(db.sidebar);
-  }),
+  GetSidebarLayout: httpReads("GetSidebarLayout", async () =>
+    clone(db.sidebar),
+  ),
 
-  CreateCollection: mutates("CreateCollection", (name: string) => {
+  CreateCollection: httpMutates("CreateCollection", (name: string) => {
     const col: Collection = { id: newId("col"), name, items: [] };
     db.collections.push(col);
     db.sidebar.push({ kind: "collection", id: col.id });
     return clone(col);
   }),
 
-  DeleteCollection: mutates("DeleteCollection", (id: string) => {
+  DeleteCollection: httpMutates("DeleteCollection", (id: string) => {
     rejectReservedCollection(id);
     db.collections = db.collections.filter((c) => c.id !== id);
     db.sidebar = db.sidebar.filter(
@@ -362,12 +399,12 @@ const HttpHandler = {
     );
   }),
 
-  RenameCollection: mutates("RenameCollection", (id: string, name: string) => {
+  RenameCollection: httpMutates("RenameCollection", (id: string, name: string) => {
     rejectReservedCollection(id);
     collection(id).name = name;
   }),
 
-  AddFolder: mutates(
+  AddFolder: httpMutates(
     "AddFolder",
     (collectionId: string, parentId: string, name: string) => {
       const item: TreeItem = {
@@ -384,7 +421,7 @@ const HttpHandler = {
     },
   ),
 
-  AddRequest: mutates(
+  AddRequest: httpMutates(
     "AddRequest",
     (collectionId: string, parentId: string, req: HttpRequest) => {
       // Go 側と同じく、呼び出し側の id は使わず常に採番する。
@@ -404,11 +441,9 @@ const HttpHandler = {
     },
   ),
 
-  UpdateRequest: mutates(
+  UpdateRequest: httpMutates(
     "UpdateRequest",
     (collectionId: string, req: HttpRequest) => {
-      // seed.updateRequestError で書き込みの失敗 (ディスクの I/O エラーなど) を模す。
-      if (seed.updateRequestError) throw new Error(seed.updateRequestError);
       const node = findNode(collection(collectionId), req.id);
       if (!node) return;
       // Go 側と同じく、名前はツリー側が正 (リネームは RenameItem 経由)。
@@ -416,7 +451,7 @@ const HttpHandler = {
     },
   ),
 
-  RenameItem: mutates(
+  RenameItem: httpMutates(
     "RenameItem",
     (collectionId: string, itemId: string, name: string) => {
       const node = findNode(collection(collectionId), itemId);
@@ -426,7 +461,7 @@ const HttpHandler = {
     },
   ),
 
-  DeleteItem: mutates("DeleteItem", (collectionId: string, itemId: string) => {
+  DeleteItem: httpMutates("DeleteItem", (collectionId: string, itemId: string) => {
     removeNode(collection(collectionId), itemId);
     if (collectionId === ROOT_COLLECTION_ID) {
       db.sidebar = db.sidebar.filter(
@@ -435,7 +470,7 @@ const HttpHandler = {
     }
   }),
 
-  MoveItem: mutates(
+  MoveItem: httpMutates(
     "MoveItem",
     (
       sourceCollectionId: string,
@@ -464,7 +499,7 @@ const HttpHandler = {
     },
   ),
 
-  MoveSidebarEntry: mutates(
+  MoveSidebarEntry: httpMutates(
     "MoveSidebarEntry",
     (kind: string, id: string, position: number) => {
       const current = db.sidebar.findIndex(
@@ -477,7 +512,7 @@ const HttpHandler = {
     },
   ),
 
-  MoveItemToSidebar: mutates(
+  MoveItemToSidebar: httpMutates(
     "MoveItemToSidebar",
     (sourceCollectionId: string, itemId: string, sidebarPosition: number) => {
       const src = collection(sourceCollectionId);
@@ -489,33 +524,34 @@ const HttpHandler = {
     },
   ),
 
+  // 失敗の注入は遅延のあとで見るので、httpReads を通さない (sendRequest を参照)。
   SendRequest: counted(
     "SendRequest",
     (executionId: string, req: HttpRequest) => sendRequest(executionId, req),
   ),
 
-  CancelRequest: counted("CancelRequest", async (executionId: string) => {
+  CancelRequest: httpReads("CancelRequest", async (executionId: string) => {
     inFlight.get(executionId)?.();
   }),
 
   // ダイアログで seed.pickedFile が選ばれたものとして返す (未設定ならキャンセル)。
   // hint は Go 側と同じく初期位置にしか使わないので、戻り値に影響しない。
-  OpenFilePicker: counted(
+  OpenFilePicker: httpReads(
     "OpenFilePicker",
     async (_hint: string) =>
       seed.pickedFile ?? { token: "", name: "", contentType: "" },
   ),
-  // Go 側と同じく execution ID だけを受け取る。seed.saveResponseError で
-  // 回収済み (TTL・上限) の一時ファイルを模す。
-  SaveResponseBody: counted("SaveResponseBody", async (_executionId: string) => {
-    if (seed.saveResponseError) throw new Error(seed.saveResponseError);
-    return true;
-  }),
-  DiscardResponseBody: counted(
+  // Go 側と同じく execution ID だけを受け取り、保存したら true を返す。
+  // seed.saveResponseBodyCancelled なら保存ダイアログがキャンセルされたものとして false を返す。
+  SaveResponseBody: httpReads(
+    "SaveResponseBody",
+    async (_executionId: string) => !seed.saveResponseBodyCancelled,
+  ),
+  DiscardResponseBody: httpReads(
     "DiscardResponseBody",
     async (_executionId: string) => {},
   ),
-  SaveResponseBase64: counted("SaveResponseBase64", async () => {}),
+  SaveResponseBase64: httpReads("SaveResponseBase64", async () => {}),
 };
 
 // ── UdpHandler ────────────────────────────────────────────────────────────────

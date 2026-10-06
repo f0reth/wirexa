@@ -226,7 +226,7 @@ test.describe("when loading collections fails on startup", () => {
           ],
         },
       ],
-      getSidebarLayoutError: "rpc down",
+      httpRpcErrors: { GetSidebarLayout: "rpc down" },
     },
   });
 
